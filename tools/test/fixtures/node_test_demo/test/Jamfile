@@ -26,3 +26,17 @@ webcpp.run-fail returns_zero_after_suspension_asyncify : returns_after_suspensio
 webcpp.run-fail never_finishes : never_finishes.cpp : $(jspi) ;
 webcpp.run-fail exit_in_coroutine_asyncify : exit_in_coroutine.cpp : $(asyncify) ;
 webcpp.run-fail exit_in_handler_jspi : exit_in_handler.cpp : $(jspi) ;
+webcpp.run returns_zero_after_suspension_jspi : returns_after_suspension.cpp
+  : $(jspi) <define>WEBCPP_TEST_STATUS=0 ;
+webcpp.run-fail never_resumes_jspi : never_resumes.cpp : $(jspi) ;
+webcpp.run-fail never_resumes_asyncify : never_resumes.cpp : $(asyncify) ;
+webcpp.run-fail keeps_the_first_status_jspi : keeps_the_first_status.cpp : $(jspi) ;
+webcpp.run-fail keeps_the_first_status_asyncify : keeps_the_first_status.cpp : $(asyncify) ;
+webcpp.run ends_with_a_timer_pending_jspi : ends_with_a_timer_pending.cpp : $(jspi) ;
+webcpp.run ends_with_a_timer_pending_asyncify : ends_with_a_timer_pending.cpp : $(asyncify) ;
+webcpp.run exits_unmarked_jspi : exits_unmarked.cpp : $(jspi) ;
+webcpp.run-fail exits_unmarked_asyncify : exits_unmarked.cpp : $(asyncify) ;
+webcpp.run-fail bound_zero : bound_out_of_range.cpp
+  : $(jspi) <define>WEBCPP_TEST_BOUND=0 ;
+webcpp.run-fail bound_too_long : bound_out_of_range.cpp
+  : $(jspi) <define>WEBCPP_TEST_BOUND=2147484 ;

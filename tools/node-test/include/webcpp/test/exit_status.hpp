@@ -20,26 +20,33 @@
 namespace webcpp::test {
 
 /**
- Ends main with status: natively returns it; on emscripten tells webcpp's test support that
- main finished, then exits.
+ Ends main with status: natively returns it; on emscripten gives it to webcpp's test support,
+ which ends node with the first status it is given on its next turn, then exits.
 
- Tip: under Asyncify a main that suspended loses the value it returns, and node would exit 0
- (measured, asio-plan/exitcode); exit keeps it on both variants.
+ Tip: under Asyncify a main that suspended loses the value it returns, and node would exit 0;
+ and std::exit alone leaves node running while anything is pending, so that a later write
+ replaces the status (both measured with Emscripten 6.0.11 and node 26.7.0).
 */
 [[nodiscard]] inline int exit_status(int status) {
 #ifdef __EMSCRIPTEN__
-    EM_ASM({
-        if (Module['webcppTestFinished']) {
-            Module['webcppTestFinished']();
-        }
-    });
+    EM_ASM(
+        {
+            if (Module['webcppTestFinished']) {
+                Module['webcppTestFinished']($0);
+            }
+        },
+        status);
     std::exit(status);
 #else
     return status;
 #endif
 }
 
-/** Re-arms the bound of this test under node to limit, from now; natively does nothing. */
+/**
+ Re-arms the bound of this test under node to limit, from now; natively does nothing.
+
+ Tip: a limit outside 1 to 2147483 s, which node's timers cannot hold, stops the test with 1.
+*/
 inline void bound(std::chrono::seconds limit) {
 #ifdef __EMSCRIPTEN__
     EM_ASM(

@@ -168,13 +168,32 @@ def test_compile_builds_only_where_declared(root):
     assert not passed(result), result.stdout[-4000:]
     assert 'native_only' not in result.stdout, result.stdout[-4000:]
     # Declared for wasip2 too, it is compiled there, and a source that does not compile fails it.
-    line = '  : <library>/webcpp/demo//demo <library>/webcpp//node-test'
+    line = 'webcpp.compile native_only_compiles : native_only.cpp : <library>/webcpp/demo//demo'
     harness.replace(root / 'libs/demo/test/Jamfile', f'{line} : native ;',
                     f'{line} : native wasip2 ;')
     result = harness.run_b2(root, *WASIP2, target)
     harness.expect(result, False, 'native_only is declared for native only')
     assert re.search(r'^\.\.\.failed .*native_only_compiles', result.stdout, re.MULTILINE), (
         result.stdout[-4000:])
+
+
+def test_a_compile_finds_the_test_support(root):
+    # A test's main ends with webcpp::test::exit_status, so a rule that only compiles a test's
+    # source finds <webcpp/test/exit_status.hpp> as webcpp.run does: webcpp.compile,
+    # webcpp.compile-fail and webcpp.compile-diagnostic take /webcpp//node-test too.
+    harness.add_library(
+        root, 'support',
+        'import webcpp ;\n'
+        '\n'
+        'webcpp.compile compiles : compiles.cpp ;\n'
+        'webcpp.compile-diagnostic diagnosed : diagnosed.cpp ;\n',
+        {'compiles.cpp': '#include <webcpp/test/exit_status.hpp>\n\n'
+                         'int main() { return webcpp::test::exit_status(0); }\n',
+         'diagnosed.cpp': '#include <webcpp/test/exit_status.hpp>\n\n'
+                          '// expected-error@+1 {{stated here}}\n#error "stated here"\n'})
+    result = harness.run_b2(root, '-a', 'libs/support/test')
+    harness.expect(result, True)
+    assert passed(result) == {'compiles', 'diagnosed'}, (passed(result), result.stdout[-4000:])
 
 
 def test_compile_diagnostic_passes_only_on_its_diagnostic(root):
@@ -1056,6 +1075,7 @@ CASES = [
     test_wasip2_skips_native_only_and_has_exceptions,
     test_wasip3_catches_a_throw,
     test_compile_builds_only_where_declared,
+    test_a_compile_finds_the_test_support,
     test_compile_diagnostic_passes_only_on_its_diagnostic,
     test_filter_maps_each_toolset_to_its_target,
     test_undeclared_jamfile_is_native_only,

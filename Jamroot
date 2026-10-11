@@ -426,8 +426,10 @@ for local name in boost_url boost_charconv boost_locale boost_cobalt
 # pre-js that fails a test under node whose main did not finish, and stops
 # one past its bound (tools/node-test/node-pre.js). Quoted, as the Boost
 # directory is, so that a path that holds a space builds. The pre-js is also a
-# dependency of every program that links it, so that an edit of it relinks them
-# in an incremental build (b2 does not read a link flag's file as a source).
+# dependency of every program that links it, so that an edit of it rebuilds
+# them in an incremental build, recompiled and relinked, since a dependency
+# reaches every target of a program (b2 does not read a link flag's file as a
+# source).
 alias node-test : : : : <include>tools/node-test/include
   <toolset>emscripten:<linkflags>"--pre-js \"$(WEBCPP_ROOT)/tools/node-test/node-pre.js\""
   <toolset>emscripten:<dependency>$(WEBCPP_ROOT)/tools/node-test/node-pre.js ;

@@ -16,10 +16,12 @@ process behind, and one that no own lane names is refused; and a native build ne
 The suspension variant, jspi by default and asyncify on request, builds with the exceptions each
 needs, asyncify in a directory of its own, and natively adds nothing. Every program node runs links
 the test support (/webcpp//node-test), whose fixture library node_test_demo pins each case's exact
-status: a main that did not finish fails, a status given through webcpp::test::exit_status is kept,
-and a test past its bound is stopped. Each case builds a scratch superproject with browser_demo and
-node_test_demo, whose path holds a space, and the emsdk linked into its .local; Emscripten's cache
-is the one the harness gives every b2. Run with the names of some cases to run only those."""
+status: a main that did not finish fails, the first status given through webcpp::test::exit_status
+ends the test at once and is kept, and a test past its bound is stopped; a program node runs that
+links -sMODULARIZE or -sEXPORT_ES6, which node would load without running, is refused. Each case
+builds a scratch superproject with browser_demo and node_test_demo, whose path holds a space, and
+the emsdk linked into its .local; Emscripten's cache is the one the harness gives every b2. Run
+with the names of some cases to run only those."""
 
 from __future__ import annotations
 
@@ -140,7 +142,8 @@ def test_programs_are_wasm32(root):
 def test_suspend_variants_build_apart(root):
     # jspi, the default, compiles with WebAssembly exceptions and adds no directory; asyncify
     # composes JavaScript exceptions, which Asyncify needs (an Asyncify program built with
-    # -fwasm-exceptions traps, P/timer_catch.cpp), and builds in a directory of its own.
+    # -fwasm-exceptions traps, measured with Emscripten 6.0.11), and builds in a directory of its
+    # own.
     result = harness.run_b2(root, '-a', '-n', '-d+2', *EMSCRIPTEN,
                             'libs/browser_demo/test//catches')
     harness.expect(result, True)
@@ -183,15 +186,68 @@ def test_a_test_ends_as_its_main_ends(root):
         'returns_without_suspension', 'exits_zero_after_suspension_jspi',
         'exits_zero_after_suspension_asyncify', 'returns_one_after_suspension_jspi',
         'returns_zero_after_suspension_asyncify', 'never_finishes',
-        'exit_in_coroutine_asyncify', 'exit_in_handler_jspi'}, result.stdout[-4000:]
+        'exit_in_coroutine_asyncify', 'exit_in_handler_jspi',
+        'returns_zero_after_suspension_jspi', 'never_resumes_jspi', 'never_resumes_asyncify',
+        'keeps_the_first_status_jspi', 'keeps_the_first_status_asyncify',
+        'ends_with_a_timer_pending_jspi', 'ends_with_a_timer_pending_asyncify',
+        'exits_unmarked_jspi', 'exits_unmarked_asyncify', 'bound_zero',
+        'bound_too_long'}, result.stdout[-4000:]
     assert exit_status(root, 'returns_one_after_suspension_jspi')[0] == 1
+    # Under JSPI a main that returns 0 after a suspension finished: the pre-js reads its end
+    # after main's promise settles, never before.
+    assert exit_status(root, 'returns_zero_after_suspension_jspi')[0] == 0
     status, text = exit_status(root, 'returns_zero_after_suspension_asyncify')
     assert status == 1 and 'webcpp: main did not finish' in text, text
     status, text = exit_status(root, 'never_finishes')
     assert status == 1 and 'webcpp: the test ran past its bound of 3 s' in text, text
+    # A main that awaits what never comes, with nothing else alive, fails as node ends, long
+    # before its bound.
+    for name in ('never_resumes_jspi', 'never_resumes_asyncify'):
+        status, text = exit_status(root, name)
+        assert status == 1 and 'webcpp: main did not finish' in text, (name, text)
+        assert 'past its bound' not in text, (name, text)
     assert exit_status(root, 'exit_in_coroutine_asyncify')[0] == 3
     assert exit_status(root, 'exit_in_handler_jspi')[0] == 3
-    assert time.monotonic() - started < 600, 'the bound did not stop never_finishes'
+    # The first status exit_status gives ends the test at once: neither a later exit_status(0)
+    # nor a later write of process.exitCode = 0 replaces it, and a pending timer does not hold
+    # it to its bound.
+    for name in ('keeps_the_first_status_jspi', 'keeps_the_first_status_asyncify'):
+        assert exit_status(root, name)[0] == 3, name
+    for name in ('ends_with_a_timer_pending_jspi', 'ends_with_a_timer_pending_asyncify'):
+        status, text = exit_status(root, name)
+        assert status == 0 and 'past its bound' not in text, (name, text)
+    # An unmarked std::exit after a suspension: JSPI keeps its status, Asyncify fails it.
+    assert exit_status(root, 'exits_unmarked_jspi')[0] == 0
+    status, text = exit_status(root, 'exits_unmarked_asyncify')
+    assert status == 1 and 'webcpp: main did not finish' in text, text
+    # A bound node's timers cannot hold is refused, naming it.
+    for name, seconds in (('bound_zero', 0), ('bound_too_long', 2147484)):
+        status, text = exit_status(root, name)
+        assert status == 1 and (f'webcpp: the bound of {seconds} s is outside 1 to 2147483 s'
+                                in text), (name, text)
+    assert time.monotonic() - started < 300, 'a test waited for its bound'
+
+
+def test_a_program_node_cannot_run_is_refused(root):
+    # -sMODULARIZE and -sEXPORT_ES6 wrap a program in a factory that node never calls, so a run
+    # would pass having run nothing: webcpp.run, webcpp.run-fail and webcpp.example refuse them
+    # on emscripten, naming the flag; webcpp.link, for a page, takes them.
+    jamfile = root / 'libs/node_test_demo/test/Jamfile'
+    text = jamfile.read_text()
+    for declaration, flag in (
+            ('webcpp.run modular : returns.cpp : <linkflags>-sMODULARIZE=1', '-sMODULARIZE=1'),
+            ('webcpp.run-fail modular : returns.cpp : <linkflags>-sEXPORT_ES6', '-sEXPORT_ES6'),
+            ('webcpp.run modular : returns.cpp : <toolset>emscripten:<linkflags>-sMODULARIZE',
+             '-sMODULARIZE'),
+            ('webcpp.example returns.cpp : <linkflags>-sEXPORT_ES6=1', '-sEXPORT_ES6=1')):
+        jamfile.write_text(f'{text}{declaration} ;\n')
+        result = harness.run_b2(root, '-n', *EMSCRIPTEN, NODE_TEST)
+        harness.expect(result, False, f'webcpp: {flag} makes node load the program without '
+                       'running it')
+    jamfile.write_text(f'{text}webcpp.link modular : returns.cpp : <linkflags>-sMODULARIZE=1 ;\n')
+    result = harness.run_b2(root, *EMSCRIPTEN, f'{NODE_TEST}//modular')
+    harness.expect(result, True)
+    assert passed(result) == {'modular'}, result.stdout[-4000:]
 
 
 def test_every_test_and_example_links_the_support(root):
@@ -394,6 +450,7 @@ CASES = [prepared(case) for case in (
     test_a_test_ends_as_its_main_ends,
     test_every_test_and_example_links_the_support,
     test_natively_the_support_is_a_header,
+    test_a_program_node_cannot_run_is_refused,
     test_a_failure_reaches_the_report,
     test_link_only_builds_and_never_runs,
     test_link_only_unresolved_symbol_fails,

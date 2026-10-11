@@ -114,10 +114,10 @@ feature.feature webcpp-require-external : on : optional incidental propagated ;
 feature.feature webcpp-data : : free incidental ;
 toolset.flags testing.capture-output LAUNCHER : <webcpp-data> : unchecked ;
 
-# The suspension variant of a program on emscripten (WEBCPP_ASIO_SPEC.md
-# section 4.4): jspi, JavaScript Promise Integration, the default, with
-# WebAssembly exceptions; or asyncify, Emscripten's Asyncify, which traps
-# with WebAssembly exceptions and so composes JavaScript-based ones.
+# The suspension variant of a program on emscripten (AGENTS.md chapter 9):
+# jspi, JavaScript Promise Integration, the default, with WebAssembly
+# exceptions; or asyncify, Emscripten's Asyncify, which traps with
+# WebAssembly exceptions and so composes JavaScript-based ones.
 # Composite, since b2 takes only free features from usage requirements;
 # propagated, so that every library a program uses is built for its
 # variant. A non-default value builds in a directory of its own.
@@ -142,7 +142,8 @@ feature.compose <webcpp-suspend>asyncify : <exception-handling-method>js ;
 
 # What every test and example links (Jamroot's node-test): no library's
 # Jamfile can leave it out, and one that links -sJSPI or -sASYNCIFY gets it
-# with the rest.
+# with the rest. The rules that only compile take it too, for its header: a
+# test's main ends with webcpp::test::exit_status.
 .node-test = <library>/webcpp//node-test ;
 
 if [ os.name ] = NT { .python = python ; } else { .python = python3 ; }
@@ -313,6 +314,7 @@ local rule program ( kind : names + : targets * )
 # A test that passes when its program, built from sources, exits with 0.
 rule run ( name : sources + : requirements * : targets * )
 {
+    node-runnable webcpp.run $(name) : $(requirements) ;
     testing.run $(sources) : : : $(requirements) [ program run : $(name) : $(targets) ]
         $(.handler) $(.node-raw-fs) $(.node-test) : $(name) ;
 }
@@ -345,6 +347,7 @@ rule boost-test ( name : sources + : requirements * )
 # status other than 0.
 rule run-fail ( name : sources + : requirements * : targets * )
 {
+    node-runnable webcpp.run-fail $(name) : $(requirements) ;
     testing.run-fail $(sources) : : : $(requirements) [ program run-fail : $(name) : $(targets) ]
         $(.handler) $(.node-raw-fs) $(.node-test) : $(name) ;
 }
@@ -373,6 +376,32 @@ rule data ( directories + )
         result += <target-os>wasi:<webcpp-data>"--dir=\"$(directory)\"" ;
     }
     return $(result) ;
+}
+
+# Stops the build, naming the flag and the program, when the requirements
+# of a program node runs (run, run-fail, example), or its Jamfile's, link
+# -sMODULARIZE or -sEXPORT_ES6, under a condition or not. Either wraps the
+# program in a factory that node never calls: the program, its pre-js among
+# it, would never run, and its test would pass. A page's program, which
+# webcpp.link links, may take them. Read from the declaration, since b2
+# evaluates a conditional requirement before it adds the free requirements;
+# a library's usage requirements are not read.
+local rule node-runnable ( kind name : requirements * )
+{
+    local jamfile = [ jamfile ] ;
+    local inherited = [ project.attribute $(jamfile) requirements ] ;
+    for local property in $(requirements) [ $(inherited).raw ]
+    {
+        local flag = [ MATCH "<linkflags>(.*)$" : $(property) ] ;
+        local found = [ MATCH "^-s(MODULARIZE|EXPORT_ES6)(=(.*))?$" : $(flag) ] ;
+        if $(found) && $(found[3]) != 0
+        {
+            local place = [ where ] ;
+            errors.user-error "webcpp: $(flag) makes node load the program without running it,"
+                "and $(kind) $(name) in $(place[4]) runs it under node; a page's program,"
+                "which webcpp.link links, may take it" ;
+        }
+    }
 }
 
 # A test that passes when its program, built from sources, links, which it
@@ -406,14 +435,14 @@ rule link ( name : sources + : requirements * : targets * )
 rule compile ( name : sources + : requirements * : targets * )
 {
     testing.compile $(sources) : $(requirements) [ program compile : $(name) : $(targets) ]
-        : $(name) ;
+        $(.node-test) : $(name) ;
 }
 
 # A test that passes when sources do not compile.
 rule compile-fail ( name : sources + : requirements * : targets * )
 {
     testing.compile-fail $(sources) : $(requirements)
-        [ program compile-fail : $(name) : $(targets) ] : $(name) ;
+        [ program compile-fail : $(name) : $(targets) ] $(.node-test) : $(name) ;
 }
 
 # A test that passes when sources stop with the errors they state, in
@@ -434,6 +463,7 @@ rule compile-diagnostic ( name : sources + : requirements * : targets * )
     testing.compile $(sources)
       : $(requirements) <cxxflags>"-Xclang -verify -Xclang -verify-ignore-unexpected=error,note"
         <conditional>@webcpp%clang-only [ program compile-diagnostic : $(name) : $(targets) ]
+        $(.node-test)
       : $(name) ;
 }
 
@@ -457,6 +487,7 @@ rule example ( source : requirements * : targets * )
 {
     local name = $(source:B) ;
     local only = [ program example : $(name) : $(targets) ] ;
+    node-runnable webcpp.example $(name) : $(requirements) ;
     exe $(name) : $(source) : $(requirements) $(only) $(.handler) $(.node-raw-fs)
         $(.node-test) ;
     local found = [ where ] ;

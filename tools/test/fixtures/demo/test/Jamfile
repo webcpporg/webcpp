@@ -12,10 +12,7 @@ webcpp.run pass : pass.cpp : <library>/webcpp/demo//demo ;
 webcpp.run-fail fails : fails.cpp : <library>/webcpp/demo//demo ;
 webcpp.compile-fail rejects : rejects.cpp : <library>/webcpp/demo//demo ;
 webcpp.run native_only : native_only.cpp : <library>/webcpp/demo//demo : native ;
-# Compiles native_only.cpp a second time, the same way as native_only, whose
-# test support it takes too: the lint's database lists the command once.
-webcpp.compile native_only_compiles : native_only.cpp
-  : <library>/webcpp/demo//demo <library>/webcpp//node-test : native ;
+webcpp.compile native_only_compiles : native_only.cpp : <library>/webcpp/demo//demo : native ;
 webcpp.headers-alone demo : ../include ;
 # A Boost.Test suite: built and run natively only.
 webcpp.boost-test suite : suite_test.cpp : <library>/webcpp/demo//demo ;
