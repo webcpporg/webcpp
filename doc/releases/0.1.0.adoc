@@ -188,6 +188,8 @@ exceptions, which would link the `jspi` variant with them.
 exceptions, such as an `asyncify` variant's.
 * Fixed a test ending through `webcpp::test::exit_status` printing
 Emscripten's notice that the runtime is kept alive.
+* Changed the lint rule `bare-throw` to leave alone the JavaScript of an
+`EM_JS` function or an `EM_ASM` block.
 
 [#webcpp-0-1-0-compilers-tested]
 == Compilers tested

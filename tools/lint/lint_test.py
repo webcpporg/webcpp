@@ -1389,8 +1389,9 @@ def test_bare_throw(root):
     # A library header raises through boost::throw_exception alone. A throw in a template that
     # nothing instantiates, which no build compiles, fails, and so does a rethrow inside the
     # region a build with exceptions compiles; what only reads as a throw does not: the
-    # function, a string, a comment, a Doc Comment, a raw string, noexcept(false), and a name
-    # that holds the word. A test or an example may throw: catches.cpp does.
+    # function, a string, a comment, a Doc Comment, a raw string, noexcept(false), a name
+    # that holds the word, and JavaScript's throw in an EM_JS body, after which C++ is read
+    # again. A test or an example may throw: catches.cpp does.
     header = 'libs/demo/include/webcpp/demo/raising.hpp'
     write(root, header, CPP + '\n'
           '#ifndef WEBCPP_DEMO_RAISING_HPP\n'
@@ -1404,6 +1405,18 @@ def test_bare_throw(root):
           '\n'
           '#if defined(BOOST_NO_EXCEPTIONS) && !defined(WEBCPP_DEMO_NO_EXCEPTIONS)\n'
           '#define WEBCPP_DEMO_NO_EXCEPTIONS\n'
+          '#endif\n'
+          '\n'
+          '#ifdef __EMSCRIPTEN__\n'
+          '#include <emscripten/em_js.h>\n'
+          '\n'
+          '// clang-format off\n'
+          'EM_JS(void, planted_javascript, (int kind), {\n'
+          '    if (kind === 1) {\n'
+          '        throw new Error("a JavaScript throw");\n'
+          '    }\n'
+          '});\n'
+          '// clang-format on\n'
           '#endif\n'
           '\n'
           'namespace webcpp::demo {\n'
@@ -1479,6 +1492,7 @@ def test_bare_throw(root):
     ], spared=(at(root, header, 'say throw'), at(root, header, 'throws, the one way'),
                at(root, header, 'boost::throw_exception('), at(root, header, 'R"(throw'),
                at(root, header, 'noexcept(false)'), at(root, header, 'std::rethrow_exception('),
+               at(root, header, 'throw new Error'),
                'libs/demo/example/catches.cpp:'))
 
 

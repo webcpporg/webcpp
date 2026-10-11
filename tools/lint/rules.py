@@ -451,6 +451,38 @@ def doc_code_spans(path: str, text: str) -> Iterator[Finding]:
 LIBRARY_HEADER = re.compile(r'(libs|tools/test/fixtures)/[^/]+/include/.+\.(hpp|hxx|hh|h|ipp|inl)')
 
 
+# Emscripten's macros whose arguments end with JavaScript: the body of an EM_JS function, the code
+# of an EM_ASM block. The tokens of C++ read it, and a throw there is JavaScript's.
+JAVASCRIPT_MACROS = frozenset({
+    'EM_JS', 'EM_ASYNC_JS', 'EM_ASM', 'EM_ASM_INT', 'EM_ASM_PTR', 'EM_ASM_DOUBLE',
+    'MAIN_THREAD_EM_ASM', 'MAIN_THREAD_EM_ASM_INT', 'MAIN_THREAD_EM_ASM_PTR',
+    'MAIN_THREAD_EM_ASM_DOUBLE', 'MAIN_THREAD_ASYNC_EM_ASM',
+})
+
+
+def outside_javascript(tokens: list[Token]) -> list[Token]:
+    """The tokens, but those of each call of a macro of JAVASCRIPT_MACROS, from its name to the
+    parenthesis that closes it."""
+    kept: list[Token] = []
+    index = 0
+    while index < len(tokens):
+        kind, word, _ = tokens[index]
+        opens = tokens[index + 1:index + 2] and tokens[index + 1][1] == '('
+        if kind != 'word' or word not in JAVASCRIPT_MACROS or not opens:
+            kept.append(tokens[index])
+            index += 1
+            continue
+        depth = 0
+        index += 1
+        while index < len(tokens):
+            if tokens[index][0] == 'other':
+                depth += {'(': 1, ')': -1}.get(tokens[index][1], 0)
+            index += 1
+            if depth == 0:
+                break
+    return kept
+
+
 def bare_throw(path: str, text: str) -> Iterator[Finding]:
     """A library's public header holds no throw expression, outside its comments and its
     literals: an exception is raised through boost::throw_exception, which a build without
@@ -458,10 +490,12 @@ def bare_throw(path: str, text: str) -> Iterator[Finding]:
     build with exceptions compiles is refused too, and so is a rethrow, throw;, which
     std::rethrow_exception replaces. The words noexcept, throws and throw_exception are other
     words. Unlike the build without exceptions that clang-tidy analyses, this reads a template
-    that nothing instantiates."""
+    that nothing instantiates. The JavaScript of an EM_JS function or an EM_ASM block is not
+    read: a throw there is JavaScript's."""
     if not LIBRARY_HEADER.fullmatch(path):
         return
-    tokens = [token for token in cpp_tokens(text) if not token[0].endswith('-comment')]
+    tokens = outside_javascript(
+        [token for token in cpp_tokens(text) if not token[0].endswith('-comment')])
     for index, (kind, word, line) in enumerate(tokens):
         if kind != 'word' or word != 'throw':
             continue
