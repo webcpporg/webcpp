@@ -240,7 +240,7 @@ def test_the_docs_and_lint_jobs_install_emsdk_when_a_library_declares_emscripten
     assert 'python3 tools/ci/matrix.py register clang-18 wasip2 wasip3 emscripten' not in lint
 
 
-def test_a_target_without_a_lane_fails(_):
+def test_a_target_without_a_lane_fails(root):
     # Every target has a lane today; one added to the report's TARGETS before the CI has a lane
     # for it fails the plan by name, rather than leave it untested.
     pairs = [('browser', 'emscripten'), ('demo', 'native')]
@@ -256,9 +256,18 @@ def test_a_target_without_a_lane_fails(_):
         raise AssertionError('a target without a lane was planned')
     finally:
         matrix.LANES = original
-    # This checkout's own site/Jamfile is real, so plan(..., None) adds site-test, as it would for
-    # any whole-superproject plan run from here.
-    assert [lane.id for lane in matrix.plan(pairs, None)] == NATIVE + ['emscripten', 'site-test']
+    # With its lanes back, the plan has them all, and site-test only once a site/Jamfile is
+    # there: the scratch superproject's, never this checkout's, whose site/ may or may not be
+    # checked out.
+    jamfile = matrix.SITE_JAMFILE
+    matrix.SITE_JAMFILE = root / 'site/Jamfile'
+    try:
+        assert [lane.id for lane in matrix.plan(pairs, None)] == NATIVE + ['emscripten']
+        site_jamfile(root)
+        assert [lane.id for lane in matrix.plan(pairs, None)] == NATIVE + ['emscripten',
+                                                                          'site-test']
+    finally:
+        matrix.SITE_JAMFILE = jamfile
 
 
 def test_an_unknown_library_fails(root):
