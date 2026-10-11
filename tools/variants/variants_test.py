@@ -6,10 +6,10 @@
 # https://www.boost.org/LICENSE_1_0.txt)
 
 """Checks tools/variants/variants.py: a manifest names each variant's script relative to itself and
-the size of its .wasm, in sorted keys and four spaces; an artifact without its .wasm is refused
-before anything is written; a table lists each program with its sizes and their ratio, in the file
-and on the standard output; and a manifest that is not one is refused, naming it. Run with the
-names of some cases to run only those."""
+the size of its .wasm, in sorted keys and four spaces; an artifact without its script or its .wasm
+is refused before anything is written; a table lists each program with its sizes and their ratio,
+in the file and on the standard output; and a manifest that is not one is refused, naming it. Run
+with the names of some cases to run only those."""
 
 from __future__ import annotations
 
@@ -61,6 +61,16 @@ def test_manifest_refuses_an_artifact_without_its_wasm(root: Path) -> None:
     assert not (root / 'page.variants.json').exists()
 
 
+def test_manifest_refuses_an_artifact_without_its_script(root: Path) -> None:
+    jspi, asyncify = scripts(root)
+    jspi.unlink()
+    result = variants('manifest', '--out', root / 'page.variants.json', '--jspi', jspi,
+                      '--asyncify', asyncify)
+    assert result.returncode == 1, result.returncode
+    assert f'{jspi} does not exist' in result.stderr, result.stderr
+    assert not (root / 'page.variants.json').exists()
+
+
 def test_table_lists_each_program_with_its_ratio(root: Path) -> None:
     jspi, asyncify = scripts(root)
     manifest = root / 'page.variants.json'
@@ -84,6 +94,7 @@ def test_table_refuses_a_manifest_that_is_not_one(root: Path) -> None:
 CASES: list[Callable[[Path], None]] = [
     test_manifest_names_each_artifact_from_its_own_directory,
     test_manifest_refuses_an_artifact_without_its_wasm,
+    test_manifest_refuses_an_artifact_without_its_script,
     test_table_lists_each_program_with_its_ratio,
     test_table_refuses_a_manifest_that_is_not_one,
 ]
