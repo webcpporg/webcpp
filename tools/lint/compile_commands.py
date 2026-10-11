@@ -150,6 +150,7 @@ EMSCRIPTEN_VERSION = 'emcc (Emscripten'
 # each with clang 23's spelling of the same: JavaScript-based exceptions, which a compile with
 # -fexceptions asks for (the asyncify variant's), are -femscripten-exceptions in clang 24 and
 # -mllvm -enable-emscripten-cxx-exceptions before it; neither changes what the front end defines.
+# An entry goes when wasi-sdk's clang takes its word.
 CLANG_23_SPELLING = {
     '-femscripten-exceptions': ('-mllvm', '-enable-emscripten-cxx-exceptions'),
 }

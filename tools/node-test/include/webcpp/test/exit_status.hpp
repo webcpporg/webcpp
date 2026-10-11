@@ -5,13 +5,12 @@
 // https://www.boost.org/LICENSE_1_0.txt)
 
 // How a test ends under webcpp's test support (tools/node-test/node-pre.js), which every test
-// and example links: natively a plain status, on emscripten an exit that node keeps.
+// and example links: natively a plain status, on emscripten a status the support keeps.
 
 #ifndef WEBCPP_TEST_EXIT_STATUS_HPP
 #define WEBCPP_TEST_EXIT_STATUS_HPP
 
 #include <chrono>
-#include <cstdlib>
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten/em_asm.h>
@@ -20,12 +19,14 @@
 namespace webcpp::test {
 
 /**
- Ends main with status: natively returns it; on emscripten gives it to webcpp's test support,
- which ends node with the first status it is given on its next turn, then exits.
+ Gives status to webcpp's test support and returns it, so that main ends with it: natively
+ the status is main's; on emscripten the support ends node with the first status it is given,
+ on its next turn, whatever is still pending or runs later.
 
- Tip: under Asyncify a main that suspended loses the value it returns, and node would exit 0;
- and std::exit alone leaves node running while anything is pending, so that a later write
- replaces the status (both measured with Emscripten 6.0.11 and node 26.7.0).
+ Tip: it never calls std::exit, which under Emscripten's default EXIT_RUNTIME=0 neither ends
+ node nor keeps the status from a later write, and in a debug build prints Emscripten's notice
+ "program exited ..., but keepRuntimeAlive() is set"; and under Asyncify a main that suspended
+ loses the value it returns, which the support already holds (Emscripten 6.0.11, node 26.7.0).
 */
 [[nodiscard]] inline int exit_status(int status) {
 #ifdef __EMSCRIPTEN__
@@ -36,10 +37,8 @@ namespace webcpp::test {
             }
         },
         status);
-    std::exit(status);
-#else
-    return status;
 #endif
+    return status;
 }
 
 /**

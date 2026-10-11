@@ -186,6 +186,8 @@ Boost's way, with its suspension variant.
 exceptions, which would link the `jspi` variant with them.
 * Fixed the lint stopping on a program built with JavaScript-based
 exceptions, such as an `asyncify` variant's.
+* Fixed a test ending through `webcpp::test::exit_status` printing
+Emscripten's notice that the runtime is kept alive.
 
 [#webcpp-0-1-0-compilers-tested]
 == Compilers tested

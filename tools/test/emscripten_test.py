@@ -229,6 +229,14 @@ def test_a_test_ends_as_its_main_ends(root):
         status, text = exit_status(root, name)
         assert status == 1 and (f'webcpp: the bound of {seconds} s is outside 1 to 2147483 s'
                                 in text), (name, text)
+    # A test that ends through exit_status prints only what it printed: none of Emscripten's
+    # notice that the runtime is kept alive, which an explicit exit prints in a debug build.
+    for name in ('exits_zero_after_suspension_jspi', 'exits_zero_after_suspension_asyncify',
+                 'exit_in_coroutine_asyncify', 'exit_in_handler_jspi',
+                 'keeps_the_first_status_jspi', 'keeps_the_first_status_asyncify',
+                 'ends_with_a_timer_pending_jspi', 'ends_with_a_timer_pending_asyncify'):
+        text = exit_status(root, name)[1]
+        assert 'keepRuntimeAlive' not in text, (name, text)
     assert time.monotonic() - started < 300, 'a test waited for its bound'
 
 
