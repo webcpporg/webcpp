@@ -168,7 +168,7 @@ def test_compile_builds_only_where_declared(root):
     assert not passed(result), result.stdout[-4000:]
     assert 'native_only' not in result.stdout, result.stdout[-4000:]
     # Declared for wasip2 too, it is compiled there, and a source that does not compile fails it.
-    line = 'webcpp.compile native_only_compiles : native_only.cpp : <library>/webcpp/demo//demo'
+    line = '  : <library>/webcpp/demo//demo <library>/webcpp//node-test'
     harness.replace(root / 'libs/demo/test/Jamfile', f'{line} : native ;',
                     f'{line} : native wasip2 ;')
     result = harness.run_b2(root, *WASIP2, target)

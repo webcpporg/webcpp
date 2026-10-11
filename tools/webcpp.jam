@@ -114,6 +114,18 @@ feature.feature webcpp-require-external : on : optional incidental propagated ;
 feature.feature webcpp-data : : free incidental ;
 toolset.flags testing.capture-output LAUNCHER : <webcpp-data> : unchecked ;
 
+# The suspension variant of a program on emscripten (WEBCPP_ASIO_SPEC.md
+# section 4.4): jspi, JavaScript Promise Integration, the default, with
+# WebAssembly exceptions; or asyncify, Emscripten's Asyncify, which traps
+# with WebAssembly exceptions and so composes JavaScript-based ones.
+# Composite, since b2 takes only free features from usage requirements;
+# propagated, so that every library a program uses is built for its
+# variant. A non-default value builds in a directory of its own.
+# tag::suspend[]
+feature.feature webcpp-suspend : jspi asyncify : propagated composite ;
+feature.compose <webcpp-suspend>asyncify : <exception-handling-method>js ;
+# end::suspend[]
+
 # What links tools/throw_exception.cpp, the handler Boost calls in place of
 # a throw, into a program a user builds with exception-handling=off, on any
 # target. Every library supports a build without exceptions; webcpp builds
@@ -127,6 +139,11 @@ toolset.flags testing.capture-output LAUNCHER : <webcpp-data> : unchecked ;
 # for the wrong reason. A program of webcpp.link, which a browser runs, never
 # gets it, nor does one a driver runs (webcpp.drive).
 .node-raw-fs = <toolset>emscripten:<linkflags>-sNODERAWFS=1 ;
+
+# What every test and example links (Jamroot's node-test): no library's
+# Jamfile can leave it out, and one that links -sJSPI or -sASYNCIFY gets it
+# with the rest.
+.node-test = <library>/webcpp//node-test ;
 
 if [ os.name ] = NT { .python = python ; } else { .python = python3 ; }
 
@@ -297,7 +314,7 @@ local rule program ( kind : names + : targets * )
 rule run ( name : sources + : requirements * : targets * )
 {
     testing.run $(sources) : : : $(requirements) [ program run : $(name) : $(targets) ]
-        $(.handler) $(.node-raw-fs) : $(name) ;
+        $(.handler) $(.node-raw-fs) $(.node-test) : $(name) ;
 }
 
 # A Boost.Test suite, built from sources and the header-only framework of
@@ -329,7 +346,7 @@ rule boost-test ( name : sources + : requirements * )
 rule run-fail ( name : sources + : requirements * : targets * )
 {
     testing.run-fail $(sources) : : : $(requirements) [ program run-fail : $(name) : $(targets) ]
-        $(.handler) $(.node-raw-fs) : $(name) ;
+        $(.handler) $(.node-raw-fs) $(.node-test) : $(name) ;
 }
 
 # The requirements, or usage requirements, that give a program of webcpp.run
@@ -440,7 +457,8 @@ rule example ( source : requirements * : targets * )
 {
     local name = $(source:B) ;
     local only = [ program example : $(name) : $(targets) ] ;
-    exe $(name) : $(source) : $(requirements) $(only) $(.handler) $(.node-raw-fs) ;
+    exe $(name) : $(source) : $(requirements) $(only) $(.handler) $(.node-raw-fs)
+        $(.node-test) ;
     local found = [ where ] ;
     local input ;
     if [ path.glob $(found[2]) : $(source:S=.input) ]

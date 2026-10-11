@@ -1,0 +1,14 @@
+# Copyright (c) 2026 WebCpp.org
+#
+# Distributed under the Boost Software License, Version 1.0. (See
+# accompanying file LICENSE_1_0.txt or copy at
+# https://www.boost.org/LICENSE_1_0.txt)
+#
+# node_test_demo: the programs of the test support every program on
+# emscripten links (/webcpp//node-test), which the tests of tools/test place
+# under libs/node_test_demo of a scratch superproject: a library of its own,
+# so that no count of browser_demo's page changes.
+
+project /webcpp/node_test_demo ;
+
+alias node_test_demo : : : : <library>/boost//headers ;

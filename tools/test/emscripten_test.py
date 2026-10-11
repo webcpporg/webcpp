@@ -13,9 +13,13 @@ failure reaches the report; a program of webcpp.link is linked and never run, an
 nothing defines; a test of webcpp.drive runs its program through a script of node's on each of its
 targets, in an own lane, a driver or a program that hangs fails it within its bound and leaves no
 process behind, and one that no own lane names is refused; and a native build needs no Emscripten.
-Each case builds a scratch superproject with browser_demo, whose path holds a space, and the emsdk
-linked into its .local; Emscripten's cache is the one the harness gives every b2. Run with the names
-of some cases to run only those."""
+The suspension variant, jspi by default and asyncify on request, builds with the exceptions each
+needs, asyncify in a directory of its own, and natively adds nothing. Every program node runs links
+the test support (/webcpp//node-test), whose fixture library node_test_demo pins each case's exact
+status: a main that did not finish fails, a status given through webcpp::test::exit_status is kept,
+and a test past its bound is stopped. Each case builds a scratch superproject with browser_demo and
+node_test_demo, whose path holds a space, and the emsdk linked into its .local; Emscripten's cache
+is the one the harness gives every b2. Run with the names of some cases to run only those."""
 
 from __future__ import annotations
 
@@ -131,6 +135,81 @@ def test_programs_are_wasm32(root):
         assert '-sMEMORY64' not in result.stdout, request
     directories = [path for path in (root / 'bin').rglob('*') if 'address-model-64' in path.name]
     assert not directories, directories
+
+
+def test_suspend_variants_build_apart(root):
+    # jspi, the default, compiles with WebAssembly exceptions and adds no directory; asyncify
+    # composes JavaScript exceptions, which Asyncify needs (an Asyncify program built with
+    # -fwasm-exceptions traps, P/timer_catch.cpp), and builds in a directory of its own.
+    result = harness.run_b2(root, '-a', '-n', '-d+2', *EMSCRIPTEN,
+                            'libs/browser_demo/test//catches')
+    harness.expect(result, True)
+    assert '-fwasm-exceptions' in result.stdout and 'webcpp-suspend-' not in result.stdout, (
+        result.stdout[-4000:])
+    result = harness.run_b2(root, '-a', '-n', '-d+2', *EMSCRIPTEN, 'webcpp-suspend=asyncify',
+                            'libs/browser_demo/test//catches')
+    harness.expect(result, True)
+    assert '-fexceptions' in result.stdout, result.stdout[-4000:]
+    assert '-fwasm-exceptions' not in result.stdout, result.stdout[-4000:]
+    assert '/webcpp-suspend-asyncify/' in result.stdout, result.stdout[-4000:]
+
+
+def test_a_native_build_ignores_the_variant(root):
+    # The feature exists on every toolset; natively its default adds nothing.
+    harness.without_emscripten(root)
+    result = harness.run_b2(root, '-a', 'libs/browser_demo/test')
+    harness.expect(result, True)
+    assert not [path for path in (root / 'bin').rglob('*') if 'webcpp-suspend' in path.name]
+
+
+NODE_TEST = 'libs/node_test_demo/test'
+
+
+def exit_status(root: Path, name: str) -> tuple[int, str]:
+    """The status b2 recorded for the program name, and what it printed."""
+    outputs = built(root, f'{name}.output')
+    assert len(outputs) == 1, (name, outputs)
+    text = outputs[0].read_text()
+    found = re.search(r'^EXIT STATUS: ([0-9]+)$', text, re.MULTILINE)
+    assert found, (name, text)
+    return int(found.group(1)), text
+
+
+def test_a_test_ends_as_its_main_ends(root):
+    started = time.monotonic()
+    result = harness.run_b2(root, '-a', '-d+2', *EMSCRIPTEN, NODE_TEST)
+    harness.expect(result, True)
+    assert passed(result) == {
+        'returns_without_suspension', 'exits_zero_after_suspension_jspi',
+        'exits_zero_after_suspension_asyncify', 'returns_one_after_suspension_jspi',
+        'returns_zero_after_suspension_asyncify', 'never_finishes',
+        'exit_in_coroutine_asyncify', 'exit_in_handler_jspi'}, result.stdout[-4000:]
+    assert exit_status(root, 'returns_one_after_suspension_jspi')[0] == 1
+    status, text = exit_status(root, 'returns_zero_after_suspension_asyncify')
+    assert status == 1 and 'webcpp: main did not finish' in text, text
+    status, text = exit_status(root, 'never_finishes')
+    assert status == 1 and 'webcpp: the test ran past its bound of 3 s' in text, text
+    assert exit_status(root, 'exit_in_coroutine_asyncify')[0] == 3
+    assert exit_status(root, 'exit_in_handler_jspi')[0] == 3
+    assert time.monotonic() - started < 600, 'the bound did not stop never_finishes'
+
+
+def test_every_test_and_example_links_the_support(root):
+    # webcpp.run, webcpp.run-fail and webcpp.example link the pre-js on emscripten; a program
+    # webcpp.link links, which a browser runs, does not.
+    result = harness.run_b2(root, '-a', '-d+2', *EMSCRIPTEN, 'libs/browser_demo/test',
+                            'libs/browser_demo/example')
+    harness.expect(result, True)
+    assert 'node-pre.js' in link_line(root, result, 'reads')
+    assert 'node-pre.js' in link_line(root, result, 'hello')
+    assert 'node-pre.js' not in link_line(root, result, 'page')
+
+
+def test_natively_the_support_is_a_header(root):
+    harness.without_emscripten(root)
+    result = harness.run_b2(root, '-a', '-d+2', 'libs/browser_demo/test//reads')
+    harness.expect(result, True)
+    assert 'tools/node-test/include' in result.stdout and 'node-pre.js' not in result.stdout
 
 
 def test_a_failure_reaches_the_report(root):
@@ -310,6 +389,11 @@ CASES = [prepared(case) for case in (
     test_a_launcher_is_refused_on_emscripten,
     test_input_file_is_read_from_the_host,
     test_programs_are_wasm32,
+    test_suspend_variants_build_apart,
+    test_a_native_build_ignores_the_variant,
+    test_a_test_ends_as_its_main_ends,
+    test_every_test_and_example_links_the_support,
+    test_natively_the_support_is_a_header,
     test_a_failure_reaches_the_report,
     test_link_only_builds_and_never_runs,
     test_link_only_unresolved_symbol_fails,
@@ -322,4 +406,4 @@ CASES = [prepared(case) for case in (
 
 if __name__ == '__main__':
     sys.exit(harness.run_cases('emscripten_test', CASES, sys.argv[1:],
-                               fixtures=('browser_demo',)))
+                               fixtures=('browser_demo', 'node_test_demo')))

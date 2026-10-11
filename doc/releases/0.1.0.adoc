@@ -166,6 +166,11 @@ slices of a suite's cases.
 in 70 characters, and no line of its output ends in whitespace.
 * Changed the libraries' CI to check out the superproject's submodules without
 theirs, so a pinned third-party repository's own submodules are not fetched.
+* Added `webcpp-suspend`, an emscripten program's suspension variant:
+`jspi`, the default, or `asyncify`, built with JavaScript-based exceptions.
+* Added `/webcpp//node-test`, which every test and example links, with
+`<webcpp/test/exit_status.hpp>`: under Node, a test whose `main` never
+finishes fails, and one past its bound of 120 s stops.
 
 [#webcpp-0-1-0-compilers-tested]
 == Compilers tested

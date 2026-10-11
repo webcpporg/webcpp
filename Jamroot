@@ -421,6 +421,17 @@ for local name in boost_url boost_charconv boost_locale boost_cobalt
     alias $(name) : tools/boost//$(name) : <conditional>@boost-source-usable ;
 }
 
+# What every test and example of a library links (tools/webcpp.jam): the
+# header webcpp/test/exit_status.hpp on every target, and on emscripten the
+# pre-js that fails a test under node whose main did not finish, and stops
+# one past its bound (tools/node-test/node-pre.js). Quoted, as the Boost
+# directory is, so that a path that holds a space builds. The pre-js is also a
+# dependency of every program that links it, so that an edit of it relinks them
+# in an incremental build (b2 does not read a link flag's file as a source).
+alias node-test : : : : <include>tools/node-test/include
+  <toolset>emscripten:<linkflags>"--pre-js \"$(WEBCPP_ROOT)/tools/node-test/node-pre.js\""
+  <toolset>emscripten:<dependency>$(WEBCPP_ROOT)/tools/node-test/node-pre.js ;
+
 # The emsdk a library's reference is read with, for Emscripten's target, as
 # its em++ compiles (tools/doc/doc.jam): a reference puts
 # <library>/webcpp//emscripten-reference in its requirements when one of the
@@ -746,7 +757,7 @@ actions dist
 notfile dist : @dist : : <dependency>doc <webcpp-boost-check>off ;
 
 explicit boost_version throw_exception boost_json boost_url boost_charconv
-    boost_locale boost_cobalt emscripten-reference test example doc install $(.install)
+    boost_locale boost_cobalt node-test emscripten-reference test example doc install $(.install)
     declared-targets declared-lanes site site-serve check-release whats-new
     dist ;
 if [ glob site/Jamfile ]

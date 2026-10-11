@@ -111,6 +111,10 @@ webcpp/
     boost/            Jamfile: the compiled Boost libraries built from Boost's sources
                       (/webcpp//boost_url, boost_charconv, boost_locale and
                       boost_cobalt)
+    node-test/        the test support every test and example links (/webcpp//node-test,
+                      chapter 9): include/webcpp/test/exit_status.hpp on every target, and
+                      node-pre.js, the pre-js on emscripten that fails a test under node whose
+                      main did not finish, and stops one past its bound
     oracle/           the shared oracle (chapter 5): oracle.jam, twins.py, compare.py and their
                       tests
     lint/             lint.sh, rules.py, compile_commands.py and their test
@@ -134,7 +138,7 @@ webcpp/
                       third-party code, the oracle's rules, the check of generated files,
                       the component rules, the emscripten target, the libraries webcpp does
                       not build and the doc build, their harness, and the fixture libraries
-                      demo, oracle_demo, component_demo and browser_demo
+                      demo, oracle_demo, component_demo, browser_demo and node_test_demo
     ci/               matrix.py (the lanes), assemble.py (the site), download.sh and
                       helpers.sh (what the actions share), wasi-sdk.jam
                       and emsdk.jam (the lines that register the WASI and emscripten
@@ -1479,6 +1483,76 @@ testing.launcher on emscripten", chapter 12). Every program that node runs
 without it, node gives it an empty file system of Emscripten's own, and a
 test reads its input file as empty. No other program gets it.
 
+**The suspension variant on emscripten.** A program on emscripten that
+suspends, waiting inside a call for the browser's event loop, is built for
+one of two variants, the feature `webcpp-suspend` (the region `suspend` of
+`tools/webcpp.jam`):
+
+```
+feature.feature webcpp-suspend : jspi asyncify : propagated composite ;
+feature.compose <webcpp-suspend>asyncify : <exception-handling-method>js ;
+```
+
+`jspi`, the default, is JavaScript Promise Integration: it builds with
+WebAssembly exceptions (`-fwasm-exceptions`), in the ordinary build
+directory. `asyncify` is Emscripten's Asyncify, for an engine without JSPI:
+a program built for it with WebAssembly exceptions traps, so the value
+composes `<exception-handling-method>js`, and b2's toolset then compiles and
+links with JavaScript-based exceptions (`-fexceptions`), in a directory of
+its own, `webcpp-suspend-asyncify/`. The feature is propagated, so that every
+library a program uses is built for its variant, and composite, since b2
+takes only free features from usage requirements. A build asks for a
+variant with `webcpp-suspend=asyncify` on its command line, and a program
+with the requirement `<webcpp-suspend>asyncify`. The feature exists on every
+toolset, and natively, as on WASI, its default adds nothing. It chooses the
+exceptions and the directory only: the link flag that makes a program
+suspend, `-sJSPI` or `-sASYNCIFY`, is given by the program or by the library
+that suspends.
+
+**A test under node ends as its main ends.** Every program that node runs,
+`webcpp.run`'s, `webcpp.run-fail`'s and `webcpp.example`'s, links
+`/webcpp//node-test`, which `tools/webcpp.jam` adds on every target, so that
+no library's Jamfile can leave it out: its usage requirements give the header
+`<webcpp/test/exit_status.hpp>` (`tools/node-test/include`) everywhere, and
+on emscripten the pre-js `tools/node-test/node-pre.js` (`--pre-js`), which is
+also a dependency of the program, so that an edit of it relinks it. Under
+node, a `main` that suspended and then returns loses its value under
+Asyncify, and node would exit 0; a `main` that never finishes would exit 0
+on both variants. Under the pre-js, a program ends with these statuses
+(measured with Emscripten 6.0.11 and node 26.7.0, the same source built
+without a variant, with `-sJSPI` and with `-sASYNCIFY`):
+
+| `main` | without suspension | JSPI | Asyncify |
+| --- | --- | --- | --- |
+| returns 3, no suspension | 3 | 3 | 3 |
+| suspends, returns 0 | (aborts: no suspension built) | 0 | **1**, with the line below |
+| suspends, returns 3 | (aborts) | 3 | **1**, with the line below |
+| suspends, `exit_status(4)` | (aborts) | 4 | 4 |
+| suspends, `std::exit(7)` unmarked | (aborts) | 7 | 7 |
+| sleeps 600 s after `bound(3s)` | (aborts) | 1 after 3 s | 1 after 3 s |
+| returns 1, a timer sets `process.exitCode = 0` later (trystero's tests) | 0 | 0 | 0 |
+
+The line, on standard error, is `webcpp: main did not finish: it never
+returned, or it returned after a suspension under Asyncify, which loses the
+value; end it with webcpp::test::exit_status`: the pre-js replaces only a 0
+that `main` never gave, since any other status is a failure already. A test
+is also bounded: past 120 s, the pre-js stops it with 1 and the line
+`webcpp: the test ran past its bound of <n> s`. 120 s is longer than any
+emscripten test of webcpp, and short enough that a test that waits forever
+fails inside the CI job instead of running to the job's own timeout. A test
+that needs longer calls `webcpp::test::bound(std::chrono::seconds(<n>))`,
+which re-arms the bound from that moment (natively it does nothing), and
+says why. The watchdog is `unref`'d: it ends only a test that something else
+keeps alive. It bounds a test that waits, not one that spins inside
+WebAssembly, which no JavaScript timer interrupts. In a browser, which has no
+process, the pre-js does nothing, and a program of `webcpp.link` or
+`webcpp.drive` never links it. The rule: **a test whose `main` may suspend
+under Asyncify ends through `webcpp::test::exit_status`**, which natively
+returns its status, and on emscripten tells the pre-js that `main` finished
+and exits with it: `return webcpp::test::exit_status(boost::report_errors());`.
+`tools/test/emscripten_test.py` pins each case's exact status on the fixture
+library `node_test_demo`.
+
 ### The Jamfile API (`tools/webcpp.jam`)
 
 A library's test and example Jamfiles declare their programs only with these
@@ -1504,13 +1578,13 @@ webcpp.data         <directory> + ;   (requirements)
 | Rule | Passes when | Notes |
 | --- | --- | --- |
 | `webcpp.targets t ...` | | the Jamfile's default targets; before its first program, once; each is `native`, `emscripten`, `wasip2` or `wasip3`, or the build stops naming it |
-| `webcpp.run` | the program exits with 0 | built once per target it declares; a user's `exception-handling=off` links `tools/throw_exception.cpp`; on emscripten, run by node, linked with `-sNODERAWFS=1` |
-| `webcpp.run-fail` | the program exits with another status | |
+| `webcpp.run` | the program exits with 0 | built once per target it declares; a user's `exception-handling=off` links `tools/throw_exception.cpp`; on emscripten, run by node, linked with `-sNODERAWFS=1`; links `/webcpp//node-test` on every target (Targets, above) |
+| `webcpp.run-fail` | the program exits with another status | built and run as `webcpp.run`'s, and links `/webcpp//node-test` likewise |
 | `webcpp.compile` | the sources compile | no program is linked |
 | `webcpp.compile-fail` | the sources do not compile | left out of clang-tidy; any error passes it, the wrong one included |
 | `webcpp.compile-diagnostic` | the sources stop with every error they state in clang's `-verify` comments, `// expected-error@<file>:* {{<message>}}` for a header they include or `// expected-error@+1 {{<message>}}` for the next line | compiled with `-Xclang -verify -Xclang -verify-ignore-unexpected=error,note`, so an error not stated and a note are ignored; built on b2's `clang` toolset only (native clang, `clang-wasip2`, `clang-wasip3`) and skipped elsewhere, since `-verify` is clang's: a refusal would turn every gcc and msvc lane red for a declaration that holds; left out of clang-tidy |
 | `webcpp.boost-test` | every case of the Boost.Test suite passes | native only, whatever the Jamfile declares; the header-only framework, `tools/boost_test_runner.cpp`, is one object of the suite's, always compiled with exceptions |
-| `webcpp.example` | the program exits with 0, and its standard output, carriage returns removed, equals `<stem>.expected` beside it | its standard input is `<stem>.input` beside it, else empty, never the terminal, on every target (wasmtime passes it through, and node under `-sNODERAWFS=1`); run through `testing.launcher` for WASI, and on emscripten with the node on `PATH`, not the one b2's toolset registered, which b2 gives only to its own testing rules, by `tools/example/run_example.py`, which names a failing exit status (or the signal) before the diff; always run again, and `<stem>.input` is a source of the run |
+| `webcpp.example` | the program exits with 0, and its standard output, carriage returns removed, equals `<stem>.expected` beside it | its standard input is `<stem>.input` beside it, else empty, never the terminal, on every target (wasmtime passes it through, and node under `-sNODERAWFS=1`); run through `testing.launcher` for WASI, and on emscripten with the node on `PATH`, not the one b2's toolset registered, which b2 gives only to its own testing rules, by `tools/example/run_example.py`, which names a failing exit status (or the signal) before the diff; always run again, and `<stem>.input` is a source of the run; links `/webcpp//node-test` on every target (Targets, above) |
 | `webcpp.link` | the program links | never run: a program for a browser, which node refuses to run (`-sENVIRONMENT=web`), or one that needs the network; b2's `link` test, which `--dump-tests` lists and the report shows as a link test; never linked with `-sNODERAWFS=1`. The explicit target `<name>-program` is the same program, an `exe` of the same sources and requirements, `<name>-program.js` on emscripten, for a target that needs its files, such as a page that loads it. An example Jamfile's is shown on the page by its code, and has no `.expected` (chapter 8) |
 | `webcpp.headers-alone` | each public header compiles alone | one test per header, `alone-<path>` with `/` as `-` (`alone-xactor-scheduler`), against `/webcpp/<library>//<library>` and the requirements given, for the targets given or the Jamfile's; `only` restricts a call to the public headers its globs match, relative to `<include-root>/webcpp/` (`wasi/http/response.hpp`), a glob that matches none stopping the build; a library may call it several times, and a header two calls take stops the build, naming it |
 | `webcpp.data` | | requirements, or usage requirements, that give a program of `webcpp.run` or `webcpp.run-fail` the absolute directories, each read at the same path on every target: on wasip2 and wasip3 wasmtime preopens it (`wasmtime --dir="<directory>" <program>`); natively and on emscripten (`-sNODERAWFS=1`) the program reads the host's files already. A relative directory stops the build, as does one whose path holds `"`, `$` or a backquote, which the shell would read inside `--dir="..."`, naming the character |

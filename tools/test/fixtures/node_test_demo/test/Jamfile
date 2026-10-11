@@ -1,0 +1,28 @@
+# Copyright (c) 2026 WebCpp.org
+#
+# Distributed under the Boost Software License, Version 1.0. (See
+# accompanying file LICENSE_1_0.txt or copy at
+# https://www.boost.org/LICENSE_1_0.txt)
+
+# The test support every program on emscripten links: a main that did not
+# finish fails, a status is kept, and a test past its bound is stopped.
+project : requirements <library>/webcpp/node_test_demo//node_test_demo
+  <define>BOOST_ASIO_DISABLE_THREADS ;
+
+import webcpp ;
+
+webcpp.targets emscripten ;
+
+local jspi = <linkflags>-sJSPI ;
+local asyncify = <webcpp-suspend>asyncify <linkflags>-sASYNCIFY ;
+
+webcpp.run returns_without_suspension : returns.cpp ;
+webcpp.run exits_zero_after_suspension_jspi : exits_zero.cpp : $(jspi) ;
+webcpp.run exits_zero_after_suspension_asyncify : exits_zero.cpp : $(asyncify) ;
+webcpp.run-fail returns_one_after_suspension_jspi : returns_after_suspension.cpp
+  : $(jspi) <define>WEBCPP_TEST_STATUS=1 ;
+webcpp.run-fail returns_zero_after_suspension_asyncify : returns_after_suspension.cpp
+  : $(asyncify) <define>WEBCPP_TEST_STATUS=0 ;
+webcpp.run-fail never_finishes : never_finishes.cpp : $(jspi) ;
+webcpp.run-fail exit_in_coroutine_asyncify : exit_in_coroutine.cpp : $(asyncify) ;
+webcpp.run-fail exit_in_handler_jspi : exit_in_handler.cpp : $(jspi) ;
