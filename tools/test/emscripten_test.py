@@ -18,13 +18,16 @@ needs, asyncify in a directory of its own, and natively adds nothing. Every prog
 the test support (/webcpp//node-test), whose fixture library node_test_demo pins each case's exact
 status: a main that did not finish fails, the first status given through webcpp::test::exit_status
 ends the test at once and is kept, and a test past its bound is stopped; a program node runs that
-links -sMODULARIZE or -sEXPORT_ES6, which node would load without running, is refused. Each case
-builds a scratch superproject with browser_demo and node_test_demo, whose path holds a space, and
-the emsdk linked into its .local; Emscripten's cache is the one the harness gives every b2. Run
-with the names of some cases to run only those."""
+links -sMODULARIZE or -sEXPORT_ES6, which node would load without running, is refused. A program a
+page loads (webcpp.variants) is named Boost's way in each variant, debug and release, with its
+manifest beside its jspi artifact and its size table (webcpp.size-table), and none of them is built
+natively. Each case builds a scratch superproject with browser_demo and node_test_demo, whose path
+holds a space, and the emsdk linked into its .local; Emscripten's cache is the one the harness
+gives every b2. Run with the names of some cases to run only those."""
 
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import sys
@@ -313,6 +316,53 @@ def test_link_only_unresolved_symbol_fails(root):
     assert not passed(result), result.stdout[-4000:]
 
 
+def test_artifacts_are_named_boost_s_way(root):
+    # common.format-name's tags joined by '-': the toolset's version alone (60), d for debug,
+    # and the variant; a release drops the d; asyncify builds in its own directory.
+    for request, name in (((), 'shell-60-d-jspi.js'),
+                          (('webcpp-suspend=asyncify',), 'shell-60-d-asyncify.js'),
+                          (('variant=release',), 'shell-60-jspi.js')):
+        result = harness.run_b2(root, '-a', *EMSCRIPTEN, *request,
+                                'libs/browser_demo/test/variants//shell')
+        harness.expect(result, True)
+        assert built(root, name), (request, name, sorted((root / 'bin').rglob('shell*.js')))
+    asyncify = built(root, 'shell-60-d-asyncify.js')
+    assert asyncify[0].parent.name == 'webcpp-suspend-asyncify', asyncify
+
+
+def test_variants_write_the_manifest_beside_the_jspi_artifact(root):
+    result = harness.run_b2(root, '-a', '-d+2', *EMSCRIPTEN,
+                            'libs/browser_demo/test/variants//shell.variants.json')
+    harness.expect(result, True)
+    manifests = built(root, 'shell.variants.json')
+    assert len(manifests) == 1, manifests
+    manifest = json.loads(manifests[0].read_text())
+    assert manifest['jspi']['script'] == 'shell-60-d-jspi.js', manifest
+    assert manifest['asyncify']['script'] == (
+        'webcpp-suspend-asyncify/shell-60-d-asyncify.js'), manifest
+    for entry in manifest.values():
+        wasm = (manifests[0].parent / entry['script']).with_suffix('.wasm')
+        assert wasm.stat().st_size == entry['bytes'], (entry, wasm)
+    # A page loads the glue as an ES module.
+    assert '-sMODULARIZE' in link_line(root, result, 'shell-60-d-jspi'), result.stdout[-4000:]
+    assert '-sEXPORT_ES6' in link_line(root, result, 'shell-60-d-asyncify')
+
+
+def test_the_size_table_lists_every_variant(root):
+    result = harness.run_b2(root, '-a', *EMSCRIPTEN,
+                            'libs/browser_demo/test/variants//shell.sizes.md')
+    harness.expect(result, True, '| shell |')
+    tables = built(root, 'shell.sizes.md')
+    assert len(tables) == 1 and tables[0].read_text().startswith('| program | jspi |'), tables
+
+
+def test_variants_are_not_built_natively(root):
+    harness.without_emscripten(root)
+    result = harness.run_b2(root, '-a', 'libs/browser_demo/test/variants//shell.sizes.md')
+    harness.expect(result, True)
+    assert not built(root, 'shell.sizes.md') and not built(root, 'shell.variants.json')
+
+
 def test_drive_runs_its_program_on_each_target(root):
     # The test builds driven and runs `node drive.mjs --program <program>`: the program's
     # JavaScript on emscripten, the program itself natively.
@@ -456,6 +506,10 @@ CASES = [prepared(case) for case in (
     test_a_failure_reaches_the_report,
     test_link_only_builds_and_never_runs,
     test_link_only_unresolved_symbol_fails,
+    test_artifacts_are_named_boost_s_way,
+    test_variants_write_the_manifest_beside_the_jspi_artifact,
+    test_the_size_table_lists_every_variant,
+    test_variants_are_not_built_natively,
     test_drive_runs_its_program_on_each_target,
     test_a_hanging_drive_is_stopped_within_its_bound,
     test_a_drive_outside_every_lane_is_refused,

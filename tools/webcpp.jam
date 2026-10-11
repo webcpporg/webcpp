@@ -21,6 +21,12 @@
 #     webcpp.link name : sources + : requirements * : targets * ;
 #     webcpp.data directories + ;  (requirements: a run's data on WASI)
 #
+# the rules of a program a page loads, on emscripten alone, in both
+# suspension variants, its manifest and the table of their sizes:
+#
+#     webcpp.variants name : sources + : requirements * ;
+#     webcpp.size-table name : variants + ;
+#
 # the rule with which any test or example Jamfile of a library declares one
 # of its own lanes, which `b2 declared-lanes` lists, once per target it
 # runs on:
@@ -71,6 +77,7 @@
 # without a word. On emscripten, b2's toolset runs a program with node
 # itself, and a build that also gives testing.launcher stops, naming it.
 import alias ;
+import common ;
 import errors ;
 import feature ;
 import make ;
@@ -156,6 +163,10 @@ if [ os.name ] = NT { .python = python ; } else { .python = python3 ; }
 # The example runner, beside this file, as an absolute native path: the
 # action that runs it starts in the directory b2 was started in.
 .runner = [ path.native [ path.join $(.tools) example/run_example.py ] ] ;
+
+# The script that writes a page program's manifest and the table of sizes,
+# as the runner is.
+.variants-script = [ path.native [ path.join $(.tools) variants/variants.py ] ] ;
 
 # The Boost.Test framework of webcpp.boost-test, beside this file, as a plain
 # file of /webcpp, this file's own project, by its location relative to the
@@ -434,6 +445,73 @@ rule link ( name : sources + : requirements * : targets * )
             }
         }
     }
+}
+
+# The name of a program on emscripten, Boost's way: its tags joined by '-',
+# the toolset's version (60 for Emscripten 6.0.11, which common.jam knows by
+# its version alone), d for a debug build, and the variant:
+# page-60-d-jspi.js. Other targets, and other toolsets, keep their names.
+rule suspend-tag ( name : type ? : property-set )
+{
+    if $(type) = EXE && [ $(property-set).get <toolset> ] = emscripten
+    {
+        return [ common.format-name <base> <toolset> <threading> <runtime>
+            <property:webcpp-suspend> : $(name) : $(type) : $(property-set) ] ;
+    }
+}
+
+# A program a page loads, in both suspension variants, and its manifest:
+# the explicit executable <name>, on emscripten alone, linked as an ES
+# module whose factory a page calls (-sMODULARIZE -sEXPORT_ES6), named
+# Boost's way; and the explicit <name>.variants.json, beside the jspi
+# artifact, which names each variant's script relative to itself and the
+# size of its .wasm, which webcpp-asio-loader.mjs reads. Never run by
+# node: no -sNODERAWFS=1.
+rule variants ( name : sources + : requirements * )
+{
+    local only = <webcpp-targets>emscripten <conditional>@webcpp%filter ;
+    exe $(name) : $(sources)
+      : $(requirements) $(only) $(.handler) <tag>@webcpp%suspend-tag
+        <linkflags>-sMODULARIZE <linkflags>-sEXPORT_ES6 ;
+    make $(name).variants.json
+      : $(name)/<webcpp-suspend>jspi $(name)/<webcpp-suspend>asyncify
+      : @webcpp%write-variants : $(only) ;
+    local found = [ where ] ;
+    $(found[1]).mark-target-as-explicit $(name) $(name).variants.json ;
+}
+
+rule write-variants ( targets * : sources * : properties * )
+{
+    PYTHON on $(targets) = $(.python) ;
+    SCRIPT on $(targets) = $(.variants-script) ;
+}
+
+actions write-variants
+{
+    "$(PYTHON)" "$(SCRIPT)" manifest --out "$(<)" --jspi "$(>[1])" --asyncify "$(>[2])"
+}
+
+# The sizes of the variants of each program webcpp.variants declared in this
+# Jamfile under the names variants: the explicit <name>.sizes.md, a Markdown
+# table the build also prints, and which the CI keeps from an own lane's job
+# (.github/workflows/library.yml, the artifact sizes-<lane>).
+rule size-table ( name : variants + )
+{
+    make $(name).sizes.md : $(variants).variants.json : @webcpp%write-size-table
+      : <webcpp-targets>emscripten <conditional>@webcpp%filter ;
+    local found = [ where ] ;
+    $(found[1]).mark-target-as-explicit $(name).sizes.md ;
+}
+
+rule write-size-table ( targets * : sources * : properties * )
+{
+    PYTHON on $(targets) = $(.python) ;
+    SCRIPT on $(targets) = $(.variants-script) ;
+}
+
+actions write-size-table
+{
+    "$(PYTHON)" "$(SCRIPT)" table --out "$(<)" "$(>)"
 }
 
 # A test that passes when sources compile, which builds no program.

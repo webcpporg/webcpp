@@ -131,6 +131,10 @@ webcpp/
     generated/        generated.jam, the rule of a library's generated files (chapter 9),
                       generated.py, which runs a generator and checks or writes what it writes,
                       and its test
+    variants/         variants.py, which writes the manifest of a page program's suspension
+                      variants (<name>.variants.json, for the page's loader) and the Markdown
+                      table of their sizes (<name>.sizes.md) that webcpp.variants and
+                      webcpp.size-table build (chapter 9), and its test
     node/             install.py, which installs the Node packages of the documentation, an
                       oracle and the lint once per lockfile, and its test
     report/           report.py, lanes.py, pages.py: the test matrix, and the CI verdict
@@ -1615,6 +1619,62 @@ webcpp.data         <directory> + ;   (requirements)
 | `webcpp.headers-alone` | each public header compiles alone | one test per header, `alone-<path>` with `/` as `-` (`alone-xactor-scheduler`), against `/webcpp/<library>//<library>` and the requirements given, for the targets given or the Jamfile's; `only` restricts a call to the public headers its globs match, relative to `<include-root>/webcpp/` (`wasi/http/response.hpp`), a glob that matches none stopping the build; a library may call it several times, and a header two calls take stops the build, naming it |
 | `webcpp.data` | | requirements, or usage requirements, that give a program of `webcpp.run` or `webcpp.run-fail` the absolute directories, each read at the same path on every target: on wasip2 and wasip3 wasmtime preopens it (`wasmtime --dir="<directory>" <program>`); natively and on emscripten (`-sNODERAWFS=1`) the program reads the host's files already. A relative directory stops the build, as does one whose path holds `"`, `$` or a backquote, which the shell would read inside `--dir="..."`, naming the character |
 
+**A program a page loads, in both variants** (`tools/webcpp.jam`). A page
+that runs a program which suspends loads the variant its browser supports: a
+test or example Jamfile declares the program once, with its manifest and the
+table of its sizes:
+
+```
+webcpp.variants   <name> : <sources> + : <requirements> * ;
+webcpp.size-table <name> : <variants> + ;
+```
+
+| Rule | Builds | Notes |
+| --- | --- | --- |
+| `webcpp.variants` | the explicit executable `<name>` and the explicit `<name>.variants.json` | on emscripten alone (`<build>no` elsewhere), linked with `-sMODULARIZE -sEXPORT_ES6`, an ES module whose factory a page calls, and never with `-sNODERAWFS=1`: node never runs it, so it is no test, and neither counted on a page nor listed by `declared-targets`. The manifest, beside the `jspi` artifact, builds the program as `<name>/<webcpp-suspend>jspi` and `<name>/<webcpp-suspend>asyncify` and names, for each variant, its `script` relative to itself, with `/`, and the `bytes` of the `.wasm` beside it, in sorted keys and four spaces (`tools/variants/variants.py manifest`), which a page's loader reads |
+| `webcpp.size-table` | the explicit `<name>.sizes.md` | on emscripten alone; a Markdown table of the manifest of each `<variants>` program of the Jamfile, one row per program, sorted, with its `jspi` and `asyncify` sizes and their ratio, which the build also prints (`tools/variants/variants.py table`), and which the CI keeps from an own lane's job as the artifact `sizes-<id>` (CI, below) |
+
+A manifest, `page.variants.json`:
+
+```json
+{
+    "asyncify": {
+        "bytes": 297636,
+        "script": "webcpp-suspend-asyncify/page-60-d-asyncify.js"
+    },
+    "jspi": {
+        "bytes": 102988,
+        "script": "page-60-d-jspi.js"
+    }
+}
+```
+
+and its table:
+
+```
+| program | jspi | asyncify | asyncify / jspi |
+| --- | ---: | ---: | ---: |
+| page | 102,988 | 297,636 | 2.89 |
+```
+
+Such a program is named Boost's way, by the tag rule `webcpp.suspend-tag`,
+`<tag>@webcpp%suspend-tag`, which a library may also give its programs as a
+usage requirement: on emscripten an executable is named by
+`common.format-name`'s tags joined by `-`, the toolset's version alone (`60`
+for Emscripten 6.0.11), `d` for a debug build and the variant, so
+`page-60-d-jspi.js`, `webcpp-suspend-asyncify/page-60-d-asyncify.js` and, in
+a release build, `page-60-jspi.js`; every other target, and every other
+toolset, keeps its name. `tools/test/emscripten_test.py` pins the names, the
+manifest, the table and that a native build builds none of them, on the
+fixture browser_demo's `test/variants/Jamfile`:
+
+```
+import webcpp ;
+
+webcpp.variants shell : shell.cpp ;
+webcpp.size-table shell : shell ;
+```
+
 **WebAssembly components** (`tools/component/component.jam`). A library's
 `build.jam` declares the C bindings of a world, and its test and example
 Jamfiles the HTTP components that wasmtime serves:
@@ -2147,6 +2207,11 @@ jobs:
     --dump-tests --out-xml=<id>.xml toolset=<toolset> [<options>]
     <directory>//<lane> ...`, and it uploads `<id>.xml` as a lane uploads its
     XML, the artifact `lane-<id>`.
+  - Every own lane's job uploads the size tables its lane wrote
+    (`bin/**/*.sizes.md`, `webcpp.size-table`), whatever its outcome, as the
+    artifact `sizes-<id>`, or `sizes-<name>` for one that names no target,
+    so that the sizes of a page program's variants are kept beyond the job;
+    a lane that wrote none uploads nothing.
   - An own lane of the kind `original` has the CI's Node, its entry's
     `node` (`&node`): an oracle runs npm and its original with it, and a
     driven test its driver, natively too. Without it, a native one would run
@@ -2472,6 +2537,7 @@ superproject's new `main`. `main` is the only branch.
     `tools/doc/doc_check_test.py`, `tools/doc/doc_comments_test.py`,
     `tools/doc/extensions_test.py`, `tools/doc/counts_test.py`,
     `tools/oracle/twins_test.py`, `tools/oracle/compare_test.py`,
+    `tools/variants/variants_test.py`,
     `tools/example/run_example_test.py`, `tools/component/serve_test.py`,
     `tools/drive/drive_test.py`, `tools/node/install_test.py`,
     `tools/ci/matrix_test.py`, `tools/ci/assemble_test.py`,
@@ -2706,6 +2772,10 @@ Each of these was measured; each has cost time.
   Apple's clang searches `/usr/local/include` before every `-isystem`
   directory, so clang keeps Boost's directory as `-I` and marks the headers
   `<boost/...>` names as system ones (`--system-header-prefix=boost/`).
+- **A `<tag>` given as a usage requirement renames the dependent's
+  executable** (measured, `.superpowers/sdd/plan-reviews/asio-plan/b2-tag`),
+  and a target whose sources name `<program>/<feature>value` builds that
+  program with that value.
 - **A checkout path that holds a space** builds: every path b2 hands to an
   action is quoted, and the tests of the build run in such a path.
 - **A target named `release-<word>` is no target.** b2 reads it as the

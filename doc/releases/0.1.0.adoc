@@ -177,6 +177,11 @@ with the first status it is given.
 that Node runs, which would pass having run nothing.
 * Fixed a test passing under Node when its `main` never ran, or when
 `-sMODULARIZE` came among other flags of one value.
+* Added `webcpp.variants` and `webcpp.size-table`: a page's program in both
+suspension variants, its manifest for the page's loader, and its sizes,
+kept by the CI.
+* Added the tag rule `webcpp.suspend-tag`, which names an emscripten program
+Boost's way, with its suspension variant.
 
 [#webcpp-0-1-0-compilers-tested]
 == Compilers tested
