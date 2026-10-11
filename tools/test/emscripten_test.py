@@ -21,8 +21,9 @@ ends the test at once and is kept, and a test past its bound is stopped; a progr
 links -sMODULARIZE or -sEXPORT_ES6, which node would load without running, is refused. A program a
 page loads (webcpp.variants) is named Boost's way in each variant, debug and release, with its
 manifest beside its jspi artifact and its size table (webcpp.size-table), and none of them is built
-natively. Each case builds a scratch superproject with browser_demo and node_test_demo, whose path
-holds a space, and the emsdk linked into its .local; Emscripten's cache is the one the harness
+natively; a build of them that asks for JavaScript exceptions, which their jspi variant would keep,
+is refused. Each case builds a scratch superproject with browser_demo and node_test_demo, whose
+path holds a space, and the emsdk linked into its .local; Emscripten's cache is the one the harness
 gives every b2. Run with the names of some cases to run only those."""
 
 from __future__ import annotations
@@ -348,6 +349,18 @@ def test_variants_write_the_manifest_beside_the_jspi_artifact(root):
     assert '-sEXPORT_ES6' in link_line(root, result, 'shell-60-d-asyncify')
 
 
+def test_variants_asked_for_with_javascript_exceptions_are_refused(root):
+    # b2 cannot take an optional property back from a request: the jspi variant would be linked
+    # with JavaScript exceptions, and the manifest and the size table would give it as jspi's.
+    for request, target in ((('webcpp-suspend=asyncify',), 'shell.variants.json'),
+                            (('exception-handling=on-js',), 'shell.sizes.md')):
+        result = harness.run_b2(root, '-a', *EMSCRIPTEN, *request,
+                                f'libs/browser_demo/test/variants//{target}')
+        harness.expect(result, False, 'webcpp.variants shell in libs/browser_demo/test/variants/'
+                       'Jamfile builds both suspension variants itself')
+        assert not built(root, 'shell*.js') and not built(root, target), request
+
+
 def test_the_size_table_lists_every_variant(root):
     result = harness.run_b2(root, '-a', *EMSCRIPTEN,
                             'libs/browser_demo/test/variants//shell.sizes.md')
@@ -508,6 +521,7 @@ CASES = [prepared(case) for case in (
     test_link_only_unresolved_symbol_fails,
     test_artifacts_are_named_boost_s_way,
     test_variants_write_the_manifest_beside_the_jspi_artifact,
+    test_variants_asked_for_with_javascript_exceptions_are_refused,
     test_the_size_table_lists_every_variant,
     test_variants_are_not_built_natively,
     test_drive_runs_its_program_on_each_target,

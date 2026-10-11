@@ -182,6 +182,8 @@ suspension variants, its manifest for the page's loader, and its sizes,
 kept by the CI.
 * Added the tag rule `webcpp.suspend-tag`, which names an emscripten program
 Boost's way, with its suspension variant.
+* Changed `webcpp.variants` to refuse a build that asks for JavaScript
+exceptions, which would link the `jspi` variant with them.
 
 [#webcpp-0-1-0-compilers-tested]
 == Compilers tested

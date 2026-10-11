@@ -104,6 +104,10 @@ feature.feature webcpp-include : : free incidental ;
 # reads.
 feature.feature webcpp-lane : : free incidental ;
 
+# The program a manifest of webcpp.variants is of, <directory>/<name>, which
+# variants-request reads.
+feature.feature webcpp-variants : : free incidental ;
+
 # webcpp-require-external=on: a library webcpp does not build that is not
 # found stops the build (external-found), as the CI asks, rather than leave
 # the library that needs it out. Incidental, so that it plays no part in a
@@ -466,18 +470,42 @@ rule suspend-tag ( name : type ? : property-set )
 # Boost's way; and the explicit <name>.variants.json, beside the jspi
 # artifact, which names each variant's script relative to itself and the
 # size of its .wasm, which webcpp-asio-loader.mjs reads. Never run by
-# node: no -sNODERAWFS=1.
+# node: no -sNODERAWFS=1. The manifest builds both variants itself, so a
+# build that asks for one of them is refused (variants-request).
 rule variants ( name : sources + : requirements * )
 {
     local only = <webcpp-targets>emscripten <conditional>@webcpp%filter ;
     exe $(name) : $(sources)
       : $(requirements) $(only) $(.handler) <tag>@webcpp%suspend-tag
         <linkflags>-sMODULARIZE <linkflags>-sEXPORT_ES6 ;
+    local found = [ where ] ;
+    local key = $(found[3])/$(name) ;
+    .variants-shown.$(key) = "webcpp.variants $(name) in $(found[4])" ;
     make $(name).variants.json
       : $(name)/<webcpp-suspend>jspi $(name)/<webcpp-suspend>asyncify
-      : @webcpp%write-variants : $(only) ;
-    local found = [ where ] ;
+      : @webcpp%write-variants
+      : $(only) <webcpp-variants>$(key) <conditional>@webcpp%variants-request ;
     $(found[1]).mark-target-as-explicit $(name) $(name).variants.json ;
+}
+
+# The conditional requirement of a manifest of webcpp.variants: a build on
+# emscripten that asks for JavaScript exceptions, by webcpp-suspend=asyncify
+# or exception-handling=on-js, stops, naming the program. Its jspi
+# variant would keep them, since a property a source names replaces a
+# request's value but cannot take back an optional one such as
+# exception-handling-method, and the manifest and the size table would give
+# a JSPI program linked with JavaScript exceptions, in a directory of its
+# own, as the jspi artifact. The lanes ask for a manifest without either.
+rule variants-request ( properties * )
+{
+    if [ webcpp-target.target-of $(properties) ] = emscripten
+      && <exception-handling-method>js in $(properties)
+    {
+        local key = [ feature.get-values <webcpp-variants> : $(properties) ] ;
+        errors.user-error "$(.variants-shown.$(key)) builds both suspension variants itself, and"
+            "this build asks for JavaScript exceptions, which its jspi variant would be linked"
+            "with: give neither webcpp-suspend=asyncify nor exception-handling=on-js" ;
+    }
 }
 
 rule write-variants ( targets * : sources * : properties * )
