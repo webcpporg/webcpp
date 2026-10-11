@@ -184,6 +184,8 @@ kept by the CI.
 Boost's way, with its suspension variant.
 * Changed `webcpp.variants` to refuse a build that asks for JavaScript
 exceptions, which would link the `jspi` variant with them.
+* Fixed the lint stopping on a program built with JavaScript-based
+exceptions, such as an `asyncify` variant's.
 
 [#webcpp-0-1-0-compilers-tested]
 == Compilers tested

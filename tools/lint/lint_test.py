@@ -13,14 +13,14 @@ library component_demo's world and its programs that declare no native target, i
 wasi-sdk's clang++ builds it, with no host target, the header on wasip2 and on wasip3, each with
 exceptions and without them; the fixture library browser_demo, whose headers no one target builds,
 has an aggregate per target, its emscripten one analysed by wasi-sdk's clang++ with the words of
-em++ --cflags, and its native one, against the fake dependency that throws, twinned without the
-header that needs exceptions and with a native header whose own headers-alone call does not declare
-them; a public header that no target compiles alone, a target whose toolset is not configured, and a
-WebAssembly command whose compiler is neither wasi-sdk's clang++ nor, on emscripten, Emscripten's
-em++, fail the database by name. Each case lints a scratch superproject whose libs/demo is the
-fixture library demo, a repository of its own as a library's submodule is, and libs/component_demo
-or libs/browser_demo too in the cases of WASI and of emscripten. Run with the names of some cases to
-run only those."""
+em++ --cflags, a program of its asyncify variant with them in clang 23's spelling, and its native
+one, against the fake dependency that throws, twinned without the header that needs exceptions and
+with a native header whose own headers-alone call does not declare them; a public header that no
+target compiles alone, a target whose toolset is not configured, and a WebAssembly command whose
+compiler is neither wasi-sdk's clang++ nor, on emscripten, Emscripten's em++, fail the database by
+name. Each case lints a scratch superproject whose libs/demo is the fixture library demo, a
+repository of its own as a library's submodule is, and libs/component_demo or libs/browser_demo too
+in the cases of WASI and of emscripten. Run with the names of some cases to run only those."""
 
 from __future__ import annotations
 
@@ -685,6 +685,30 @@ def test_clang_tidy_reads_what_only_one_target_builds(root):
     for name in ('PlantedPage', 'PlantedNative'):
         assert f"invalid case style for function '{name}'" in result.stdout, (
             name, result.stdout[-6000:])
+
+
+def test_clang_tidy_reads_a_program_of_javascript_exceptions(root):
+    # A program of the asyncify variant compiles with JavaScript-based exceptions, for which em++
+    # --cflags prints -femscripten-exceptions, a word of Emscripten's clang 24 that wasi-sdk's
+    # clang 23 refuses: the database gives clang 23 its own spelling of the same exceptions, so
+    # that clang-tidy reads the program rather than stop at an unknown argument.
+    prepare(root)
+    add_browser_demo(root)
+    # page.cpp builds only on emscripten, so that each of its variants is analysed.
+    with (root / 'libs/browser_demo/example/Jamfile').open('a') as jamfile:
+        jamfile.write('webcpp.link page_asyncify : page.cpp\n'
+                      '  : <linkflags>-sENVIRONMENT=web <webcpp-suspend>asyncify : emscripten ;\n')
+    completed = compile_database(root)
+    assert completed.returncode == 0, completed.stdout[-6000:]
+    entries = json.loads((root / 'compile database/compile_commands.json').read_text())
+    page = [entry['arguments'] for entry in entries
+            if Path(entry['file']) == root / 'libs/browser_demo/example/page.cpp']
+    javascript = [command for command in page
+                  if '-fexceptions' in command and '-fwasm-exceptions' not in command]
+    assert len(javascript) == 1, page
+    assert '-femscripten-exceptions' not in javascript[0], javascript[0]
+    assert '-enable-emscripten-cxx-exceptions' in javascript[0], javascript[0]
+    expect_clean(lint(root))
 
 
 def test_a_dependency_s_warnings_are_not_ours(root):
@@ -2032,6 +2056,7 @@ CASES = [
     test_clang_tidy_reads_what_an_own_lane_builds,
     test_compile_database_gives_each_target_its_aggregate,
     test_clang_tidy_reads_what_only_one_target_builds,
+    test_clang_tidy_reads_a_program_of_javascript_exceptions,
     test_a_dependency_s_warnings_are_not_ours,
     test_a_compiled_boost_library_s_sources_are_not_analysed,
     test_clang_tidy_refuses_a_throw_on_each_target_without_exceptions,

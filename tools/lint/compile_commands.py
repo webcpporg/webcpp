@@ -37,7 +37,8 @@ wasi-sdk's clang++, the one --wasi-clang names (the lint gives the one beside it
 after the words that em++ gives clang for that compile, which `em++ <its options> --cflags`
 prints (its target, wasm32-unknown-emscripten, its sysroot in Emscripten's cache, the
 -iwithsysroot directories compat and fakesdl, and the words of its exceptions: with b2's
--fwasm-exceptions, the legacy encoding em++ compiles with; without exceptions,
+-fwasm-exceptions, the legacy encoding em++ compiles with; with -fexceptions alone, the
+asyncify variant's JavaScript-based ones, in clang 23's spelling; without exceptions,
 -fignore-exceptions), read once per run for each set of options, and before b2's own words.
 --cflags alone is not enough: without -fwasm-exceptions, em++ gives -enable-emscripten-sjlj,
 which clang refuses beside -fwasm-exceptions. The sysroot holds Emscripten's headers once em++
@@ -144,6 +145,14 @@ EMSCRIPTEN = 'emscripten'
 
 # What the first line em++ --version prints starts with.
 EMSCRIPTEN_VERSION = 'emcc (Emscripten'
+
+# The words em++ --cflags prints that Emscripten's clang 24 knows and wasi-sdk's clang 23 refuses,
+# each with clang 23's spelling of the same: JavaScript-based exceptions, which a compile with
+# -fexceptions asks for (the asyncify variant's), are -femscripten-exceptions in clang 24 and
+# -mllvm -enable-emscripten-cxx-exceptions before it; neither changes what the front end defines.
+CLANG_23_SPELLING = {
+    '-femscripten-exceptions': ('-mllvm', '-enable-emscripten-cxx-exceptions'),
+}
 
 # The suffix of the stem of an aggregate's twin that holds fewer headers than the aggregate.
 WITHOUT_SUFFIX = '-exception-handling-off'
@@ -335,11 +344,13 @@ def emscripten_words(compiler: str, options: tuple[str, ...]) -> tuple[str, ...]
     """The words Emscripten's em++, compiler, gives clang for a compile with options, as
     `em++ <options> --cflags` prints them: its target, its sysroot in Emscripten's cache, and the
     -iwithsysroot directories compat and fakesdl, with the words of the exceptions options asks
-    for (-fwasm-exceptions: the legacy encoding; none: -fignore-exceptions). Read once per run for
-    each set of options."""
+    for (-fwasm-exceptions: the legacy encoding; -fexceptions: JavaScript-based ones; none:
+    -fignore-exceptions), each word that wasi-sdk's clang 23 refuses in its spelling there
+    (CLANG_23_SPELLING). Read once per run for each set of options."""
     emscripten_ready(compiler)
-    return tuple(shlex.split(run_emscripten(compiler, [*options, '--cflags'],
-                                            'print the words it gives clang, --cflags')))
+    words = shlex.split(run_emscripten(compiler, [*options, '--cflags'],
+                                       'print the words it gives clang, --cflags'))
+    return tuple(spelled for word in words for spelled in CLANG_23_SPELLING.get(word, (word,)))
 
 
 def run_emscripten(compiler: str, arguments: list[str], what: str) -> str:
