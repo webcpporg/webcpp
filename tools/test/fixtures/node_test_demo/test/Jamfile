@@ -36,6 +36,8 @@ webcpp.run ends_with_a_timer_pending_jspi : ends_with_a_timer_pending.cpp : $(js
 webcpp.run ends_with_a_timer_pending_asyncify : ends_with_a_timer_pending.cpp : $(asyncify) ;
 webcpp.run exits_unmarked_jspi : exits_unmarked.cpp : $(jspi) ;
 webcpp.run-fail exits_unmarked_asyncify : exits_unmarked.cpp : $(asyncify) ;
+# The glue never calls a main linked with -sINVOKE_RUN=0.
+webcpp.run-fail main_never_called : returns.cpp : <linkflags>-sINVOKE_RUN=0 ;
 webcpp.run-fail bound_zero : bound_out_of_range.cpp
   : $(jspi) <define>WEBCPP_TEST_BOUND=0 ;
 webcpp.run-fail bound_too_long : bound_out_of_range.cpp

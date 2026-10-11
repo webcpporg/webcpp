@@ -190,7 +190,7 @@ def test_a_test_ends_as_its_main_ends(root):
         'returns_zero_after_suspension_jspi', 'never_resumes_jspi', 'never_resumes_asyncify',
         'keeps_the_first_status_jspi', 'keeps_the_first_status_asyncify',
         'ends_with_a_timer_pending_jspi', 'ends_with_a_timer_pending_asyncify',
-        'exits_unmarked_jspi', 'exits_unmarked_asyncify', 'bound_zero',
+        'exits_unmarked_jspi', 'exits_unmarked_asyncify', 'main_never_called', 'bound_zero',
         'bound_too_long'}, result.stdout[-4000:]
     assert exit_status(root, 'returns_one_after_suspension_jspi')[0] == 1
     # Under JSPI a main that returns 0 after a suspension finished: the pre-js reads its end
@@ -200,9 +200,9 @@ def test_a_test_ends_as_its_main_ends(root):
     assert status == 1 and 'webcpp: main did not finish' in text, text
     status, text = exit_status(root, 'never_finishes')
     assert status == 1 and 'webcpp: the test ran past its bound of 3 s' in text, text
-    # A main that awaits what never comes, with nothing else alive, fails as node ends, long
-    # before its bound.
-    for name in ('never_resumes_jspi', 'never_resumes_asyncify'):
+    # A main that awaits what never comes, with nothing else alive, and one the glue never
+    # calls, fail as node ends, long before their bound.
+    for name in ('never_resumes_jspi', 'never_resumes_asyncify', 'main_never_called'):
         status, text = exit_status(root, name)
         assert status == 1 and 'webcpp: main did not finish' in text, (name, text)
         assert 'past its bound' not in text, (name, text)
@@ -239,7 +239,9 @@ def test_a_program_node_cannot_run_is_refused(root):
             ('webcpp.run-fail modular : returns.cpp : <linkflags>-sEXPORT_ES6', '-sEXPORT_ES6'),
             ('webcpp.run modular : returns.cpp : <toolset>emscripten:<linkflags>-sMODULARIZE',
              '-sMODULARIZE'),
-            ('webcpp.example returns.cpp : <linkflags>-sEXPORT_ES6=1', '-sEXPORT_ES6=1')):
+            ('webcpp.example returns.cpp : <linkflags>-sEXPORT_ES6=1', '-sEXPORT_ES6=1'),
+            ('webcpp.run modular : returns.cpp : <linkflags>"-sJSPI -sMODULARIZE"',
+             '-sMODULARIZE')):
         jamfile.write_text(f'{text}{declaration} ;\n')
         result = harness.run_b2(root, '-n', *EMSCRIPTEN, NODE_TEST)
         harness.expect(result, False, f'webcpp: {flag} makes node load the program without '

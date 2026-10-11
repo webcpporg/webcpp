@@ -392,14 +392,19 @@ local rule node-runnable ( kind name : requirements * )
     local inherited = [ project.attribute $(jamfile) requirements ] ;
     for local property in $(requirements) [ $(inherited).raw ]
     {
-        local flag = [ MATCH "<linkflags>(.*)$" : $(property) ] ;
-        local found = [ MATCH "^-s(MODULARIZE|EXPORT_ES6)(=(.*))?$" : $(flag) ] ;
-        if $(found) && $(found[3]) != 0
+        # A value may hold several flags, "-sJSPI -sMODULARIZE".
+        local value = [ MATCH "<linkflags>(.*)$" : $(property) ] ;
+        for local flag in [ regex.split-list $(value) : "[ 	
+]+" ]
         {
-            local place = [ where ] ;
-            errors.user-error "webcpp: $(flag) makes node load the program without running it,"
-                "and $(kind) $(name) in $(place[4]) runs it under node; a page's program,"
-                "which webcpp.link links, may take it" ;
+            local found = [ MATCH "^-s(MODULARIZE|EXPORT_ES6)(=(.*))?$" : $(flag) ] ;
+            if $(found) && $(found[3]) != 0
+            {
+                local place = [ where ] ;
+                errors.user-error "webcpp: $(flag) makes node load the program without running"
+                    "it, and $(kind) $(name) in $(place[4]) runs it under node; a page's program,"
+                    "which webcpp.link links, may take it" ;
+            }
         }
     }
 }

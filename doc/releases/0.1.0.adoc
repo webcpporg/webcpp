@@ -175,6 +175,8 @@ finishes fails, and one past its bound of 120 s stops.
 with the first status it is given.
 * Added a refusal of `-sMODULARIZE` and `-sEXPORT_ES6` on a test or example
 that Node runs, which would pass having run nothing.
+* Fixed a test passing under Node when its `main` never ran, or when
+`-sMODULARIZE` came among other flags of one value.
 
 [#webcpp-0-1-0-compilers-tested]
 == Compilers tested

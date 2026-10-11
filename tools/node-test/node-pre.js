@@ -5,9 +5,9 @@
 // https://www.boost.org/LICENSE_1_0.txt)
 
 // webcpp's test support under node, which every test and example on emscripten links
-// (--pre-js, tools/webcpp.jam): a test whose main did not finish fails, a test that ends through
-// webcpp::test::exit_status ends with the first status it gives, and a test that runs past its
-// bound is stopped. In a browser, which has no process, it does nothing.
+// (--pre-js, tools/webcpp.jam): a test whose main did not run or did not finish fails, a test
+// that ends through webcpp::test::exit_status ends with the first status it gives, and a test
+// that runs past its bound is stopped. In a browser, which has no process, it does nothing.
 if (typeof process === 'object' && typeof process.on === 'function') {
     let finished = false
     // The first status exit_status gives, the test's own; null until then.
@@ -40,10 +40,21 @@ if (typeof process === 'object' && typeof process.on === 'function') {
             setImmediate(() => process.exit(status))
         }
     }
+    // Whether main was called: postRun runs all the same in a program whose glue never calls
+    // it (-sINVOKE_RUN=0). The glue's callMain, in the scope this file shares, is wrapped; a
+    // glue whose callMain were gone would fail every test, rather than pass any.
+    let called = false
+    if (typeof callMain === 'function') {
+        const call = callMain
+        callMain = (...args) => {
+            called = true
+            return call(...args)
+        }
+    }
     // After main returned: under Asyncify a main that suspended returns early, unwound, and
     // Asyncify.currData is then set; that return is not main's end.
     Module['postRun'] = [].concat(Module['postRun'] ?? [], () => {
-        if (typeof Asyncify === 'undefined' || !Asyncify.currData) {
+        if (called && (typeof Asyncify === 'undefined' || !Asyncify.currData)) {
             finished = true
         }
     })
@@ -56,9 +67,9 @@ if (typeof process === 'object' && typeof process.on === 'function') {
         }
         if (!finished && !process.exitCode) {
             process.exitCode = 1
-            process.stderr.write('webcpp: main did not finish: it never returned, or it ended ' +
-                'after a suspension under Asyncify through a return or std::exit, which loses ' +
-                'the status; end it with webcpp::test::exit_status\n')
+            process.stderr.write('webcpp: main did not finish: it never ran, never returned, ' +
+                'or ended after a suspension under Asyncify through a return or std::exit, ' +
+                'which loses the status; end it with webcpp::test::exit_status\n')
         }
     })
 }

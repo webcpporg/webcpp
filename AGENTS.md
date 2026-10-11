@@ -1539,17 +1539,21 @@ with `-sASYNCIFY`):
 | suspends, `exit_status(3)`; later a callback gives `exit_status(0)` and a timer sets `process.exitCode = 0` | (aborts) | 3 at once | 3 at once |
 | suspends, `exit_status(0)` while a timer of 300 s is pending | (aborts) | 0 at once | 0 at once |
 | sleeps 600 s after `bound(3s)` | (aborts) | 1 after 3 s | 1 after 3 s |
+| never called (`-sINVOKE_RUN=0`), returns 0 | **1**, with the line below | **1**, with the line below | **1**, with the line below |
 | `bound(0s)`, or a bound past 2147483 s | (aborts) | **1** at once, naming it | **1** at once, naming it |
 | returns 1, a timer sets `process.exitCode = 0` later (trystero's tests) | 0 | 0 | 0 |
 
-The line, on standard error, is `webcpp: main did not finish: it never
-returned, or it ended after a suspension under Asyncify through a return or
-std::exit, which loses the status; end it with webcpp::test::exit_status`:
+The line, on standard error, is `webcpp: main did not finish: it never ran,
+never returned, or ended after a suspension under Asyncify through a return
+or std::exit, which loses the status; end it with webcpp::test::exit_status`:
 the pre-js replaces only a 0 that `main` never gave, since any other status
-is a failure already. `webcpp::test::exit_status` gives its status to the
-pre-js, which ends node with the first status it is given on node's next
-turn, whatever is still pending or runs later, and restores it over any
-later write of `process.exitCode`. A test is also bounded: past 120 s, the
+is a failure already. It reads `main` as finished only when the glue called
+it (it wraps the glue's `callMain`), so that a program linked with
+`-sINVOKE_RUN=0`, whose `main` nothing calls, fails too.
+`webcpp::test::exit_status` gives its status to the pre-js, which ends node
+with the first status it is given on node's next turn, whatever is still
+pending or runs later, and restores it over any later write of
+`process.exitCode`. A test is also bounded: past 120 s, the
 pre-js stops it with 1 and the line `webcpp: the test ran past its bound of
 <n> s`. 120 s is longer than any emscripten test of webcpp, and short enough
 that a test that waits forever fails inside the CI job instead of running to
@@ -1565,8 +1569,9 @@ nothing, and a program of `webcpp.link` or `webcpp.drive` never links it. A
 program node runs may not link `-sMODULARIZE` or `-sEXPORT_ES6`, which wrap
 it in a factory that node never calls, so that it would pass having run
 nothing: `webcpp.run`, `webcpp.run-fail` and `webcpp.example` stop the build
-naming the flag, when their requirements or their Jamfile's give it (a
-library's usage requirements are not read). The rule: **a test or example
+naming the flag, when their requirements or their Jamfile's give it, alone or
+among other flags of one value (a library's usage requirements are not
+read). The rule: **a test or example
 whose `main` may suspend under Asyncify ends through
 `webcpp::test::exit_status`, never through `return` or `std::exit`**, which
 natively returns its status, and on emscripten ends node with it:
