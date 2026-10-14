@@ -28,7 +28,7 @@
 # The site's Jamfile declares context.json, what its pages are rendered with,
 # with write-context below, pages, which renders them, test, which runs the
 # site's own tests, and valid-html, which checks every page of bin/site/ is
-# valid HTML, html-validate against .htmlvalidate.json.
+# valid HTML, html-validate against htmlvalidate.json.
 #
 # b2 site builds the docs with b2 doc, in the layout of the site (doc.jam),
 # unless -sWEBCPP_SITE_DOCS=<dir> names pages built already, a superproject's

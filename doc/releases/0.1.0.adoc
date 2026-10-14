@@ -7,9 +7,6 @@
 [#webcpp-0-1-0]
 = webcpp 0.1.0
 
-In preparation: no tag names this version yet, and its libraries' entries
-are their changelogs' "Unreleased" sections.
-
 [#webcpp-0-1-0-new-libraries]
 == New Libraries
 
@@ -52,6 +49,8 @@ None.
 [#webcpp-0-1-0-tools-and-build]
 == Tools and build
 
+* Fixed source distributions rejecting pinned site and third-party dependencies.
+* Changed release checks to accept the tested compiler subset.
 * Added agent skills with validated metadata for common contributor workflows.
 * *Breaking change:* changed wasip2 programs to build with exceptions, as
 wasip3 does; whether a program uses them is its developer's choice.
@@ -171,13 +170,5 @@ theirs, so a pinned third-party repository's own submodules are not fetched.
 [#webcpp-0-1-0-compilers-tested]
 == Compilers tested
 
-* GCC 14 (container, no network)
 * GCC 15
-* Clang 18 (libstdc{plus}{plus}, container, no network)
-* Clang 22 (libstdc{plus}{plus})
-* Apple Clang (macOS 15)
-* MSVC 14.3 (Visual Studio 2022)
-* MSVC 14.5 (Visual Studio 2026)
 * Emscripten 6.0.11 (node)
-* wasm32-wasip2 (wasi-sdk 34, wasmtime 47.0.3)
-* wasm32-wasip3 (wasi-sdk 34, wasmtime 47.0.3)
