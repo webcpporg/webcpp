@@ -1677,6 +1677,14 @@ webcpp.variants shell : shell.cpp ;
 webcpp.size-table shell : shell ;
 ```
 
+A `webcpp.variants` executable consumes its library usage requirements at
+its own link and exports none to downstream consumers. A driver can pass
+the explicit target reference `.//shell` to `webcpp.drive`, with
+`<dependency>shell.variants.json`, without linking the libraries' source
+objects again or combining the two suspension variants. The driver must
+not inherit the page program's library requirements; apply those to the
+page program itself.
+
 **WebAssembly components** (`tools/component/component.jam`). A library's
 `build.jam` declares the C bindings of a world, and its test and example
 Jamfiles the HTTP components that wasmtime serves:

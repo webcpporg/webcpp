@@ -357,6 +357,44 @@ def test_variants_write_the_manifest_beside_the_jspi_artifact(root):
     assert '-sEXPORT_ES6' in link_line(root, result, 'shell-60-d-asyncify')
 
 
+def test_variants_can_be_driven_without_relinking_dependencies(root):
+    # A library's source usage belongs to each linked variant, not to its consumer.
+    folder = root / 'libs/browser_demo/test/variants'
+    library = root / 'libs/browser_demo/build.jam'
+    library.write_text(library.read_text() + "\nobj support : support.cpp ;\n"
+                       "alias supported : : : : <source>support <include>include ;\n")
+    (library.parent / 'support.cpp').write_text('int support() { return 7; }\n')
+    (folder / 'shell.cpp').write_text('#include <cstdio>\nint support();\n'
+                                     'int main() { std::printf("support=%d\\n", support()); }\n')
+    jam = folder / 'Jamfile'
+    jam.write_text(jam.read_text().replace(
+        'webcpp.variants shell : shell.cpp ;',
+        'webcpp.variants shell : shell.cpp : <library>/webcpp/browser_demo//supported ;')
+        + '\nwebcpp.targets emscripten ;\nwebcpp.original node ;\n'
+        'webcpp.drive loads : .//shell : <dependency>shell.variants.json : load.mjs ;\n'
+        'webcpp.lane load : loads : emscripten ;\n')
+    for name in ('package.json', 'package-lock.json'):
+        (folder / name).write_bytes((folder.parent / 'driver' / name).read_bytes())
+    (folder / 'load.mjs').write_text("""import assert from 'node:assert/strict'
+import {readFileSync} from 'node:fs'
+import {dirname, join} from 'node:path'
+import {pathToFileURL} from 'node:url'
+const manifestUrl = pathToFileURL(join(dirname(process.argv.at(-1)), 'shell.variants.json'))
+const manifest = JSON.parse(readFileSync(manifestUrl, 'utf8'))
+for (const variant of ['jspi', 'asyncify']) {
+    const lines = []
+    const {default: factory} = await import(new URL(manifest[variant].script, manifestUrl))
+    await factory({print: line => lines.push(line)})
+    assert.deepEqual(lines, ['support=7'])
+}
+console.log('both linked variants loaded')
+""")
+    result = harness.run_b2(root, '-a', '-d+2', *EMSCRIPTEN,
+                            'libs/browser_demo/test/variants//load')
+    harness.expect(result, True, 'both linked variants loaded')
+    assert passed(result) == {'loads'}, (passed(result), result.stdout[-4000:])
+
+
 def test_variants_asked_for_with_javascript_exceptions_are_refused(root):
     # b2 cannot take an optional property back from a request: the jspi variant would be linked
     # with JavaScript exceptions, and the manifest and the size table would give it as jspi's.
@@ -529,6 +567,7 @@ CASES = [prepared(case) for case in (
     test_link_only_unresolved_symbol_fails,
     test_artifacts_are_named_boost_s_way,
     test_variants_write_the_manifest_beside_the_jspi_artifact,
+    test_variants_can_be_driven_without_relinking_dependencies,
     test_variants_asked_for_with_javascript_exceptions_are_refused,
     test_the_size_table_lists_every_variant,
     test_variants_are_not_built_natively,

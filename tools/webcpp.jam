@@ -89,6 +89,7 @@ import project ;
 import regex ;
 import sequence ;
 import set ;
+import targets ;
 import testing ;
 import toolset ;
 
@@ -472,10 +473,32 @@ rule suspend-tag ( name : type ? : property-set )
 # size of its .wasm, which webcpp-asio-loader.mjs reads. Never run by
 # node: no -sNODERAWFS=1. The manifest builds both variants itself, so a
 # build that asks for one of them is refused (variants-request).
+# A page program is a finished executable, not a link dependency. Its
+# library usage requirements have already been consumed by its own link.
+# Exporting them would make a driver or a manifest consumer link those
+# sources again, combining objects from incompatible suspension variants.
+class variant-program : typed-target
+{
+    import property-set ;
+
+    rule __init__ ( name : project : sources * : requirements *
+        : default-build * : usage-requirements * )
+    {
+        typed-target.__init__ $(name) : $(project) : EXE : $(sources)
+          : $(requirements) : $(default-build) : $(usage-requirements) ;
+    }
+
+    rule compute-usage-requirements ( subvariant )
+    {
+        return [ property-set.empty ] ;
+    }
+}
+
 rule variants ( name : sources + : requirements * )
 {
     local only = <webcpp-targets>emscripten <conditional>@webcpp%filter ;
-    exe $(name) : $(sources)
+    targets.create-metatarget variant-program : [ project.current ]
+      : $(name) : $(sources)
       : $(requirements) $(only) $(.handler) <tag>@webcpp%suspend-tag
         <linkflags>-sMODULARIZE <linkflags>-sEXPORT_ES6 ;
     local found = [ where ] ;
