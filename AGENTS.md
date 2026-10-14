@@ -2510,7 +2510,10 @@ superproject's new `main`. `main` is the only branch.
   is, "from <authors>"), Updated Libraries (each library a section that
   includes its changelog's region, alphabetical), Removed Libraries (what
   went out, and what replaces it), Tools and build, Compilers tested (the
-  CI's lanes). The index page includes each, newest first. While a version
+  tested compiler lanes, a nonempty ordered unique subset of the CI's
+  canonical lane names). List only the compilers actually tested for this
+  release; a local-only release does not claim coverage of other CI lanes.
+  The index page includes each, newest first. While a version
   is in preparation its notes open with the paragraph "In preparation: ..."
   and include each library's `tag=unreleased`.
 
@@ -2533,6 +2536,15 @@ targets, which run only when named:
 `check-release` reads every library's checkout, so `git submodule update
 --init` runs first: a submodule of HEAD not checked out fails it by name
 (`git submodule update --init libs/<name>`).
+
+`dist` also bundles the tracked sources and upstream licences of the root
+source submodules `site` and `third_party/libs/<name>`, at their recorded
+commits, with no dot files. Each must be checked out at that commit and
+hold no uncommitted changes. It never initializes submodules. The unused
+upstream nested submodules of `third_party/libs/nativejson-benchmark` are
+omitted, as chapter 2 requires; its own sources, benchmark data and licence
+are bundled. Every other unsupported root or nested submodule is refused
+by name, so required sources are never silently omitted.
 
 Nothing is released until the owner asks. Then:
 

@@ -15,6 +15,7 @@ import contextlib
 import gzip
 import hashlib
 import io
+import json
 import os
 import re
 import shutil
@@ -460,14 +461,19 @@ def test_compilers_tested_are_the_ci_lanes(directory: Path) -> None:
     assert release.check(tree.root, V010) == []
     tree.commit_file('doc/releases/0.1.0.adoc', scratch.notes_text(
         '0.1.0', new=('alpha', 'beta', 'config'), compilers=lanes[1:]))
-    expect(release.check(tree.root, V010), 'Compilers tested lists')
+    assert release.check(tree.root, V010) == []
+    for invalid in ((lanes[1], lanes[0]), (lanes[0], lanes[0]), ('Unknown compiler',)):
+        tree.commit_file('doc/releases/0.1.0.adoc', scratch.notes_text(
+            '0.1.0', new=('alpha', 'beta', 'config'), compilers=invalid))
+        expect(release.check(tree.root, V010), 'Compilers tested lists')
     # The notes write a lane as changelog.notes_lane does, and the check compares through it: the
     # CI's own spelling, libstdc++, is no lane of the notes, which doc-check refuses in prose.
     tree.commit_file('doc/releases/0.1.0.adoc', scratch.notes_text(
         '0.1.0', new=('alpha', 'beta', 'config'), compilers=lanes).replace('{plus}', '+'))
     expect(release.check(tree.root, V010), 'Compilers tested lists GCC 14 (container, no '
-           'network), GCC 15, Clang 18 (libstdc++, container, no network), ', "and the CI's "
-           'lanes are GCC 14 (container, no network), GCC 15, Clang 18 (libstdc{plus}{plus}, '
+           'network), GCC 15, Clang 18 (libstdc++, container, no network), ',
+           "must list a nonempty ordered subset of the CI's lanes: "
+           'GCC 14 (container, no network), GCC 15, Clang 18 (libstdc{plus}{plus}, '
            'container, no network), ')
 
 
@@ -504,6 +510,20 @@ def test_frozen_state(directory: Path) -> None:
     assert release.check(tree.root, V020) == []
 
 
+def test_frozen_notes_can_record_only_tested_compilers(directory: Path) -> None:
+    tree = scratch.make_tree(directory)
+    released(tree)
+    tree.change('alpha', 'include/webcpp/alpha.hpp', '// alpha, changed\n')
+    frozen(tree, ('GCC 15', 'Emscripten 6.0.11 (node)'))
+    completed = subprocess.run([sys.executable, str(Path(release.__file__)), 'check', '--root',
+                               str(tree.root), '--version', '0.2.0'],
+                              capture_output=True, text=True, check=False)
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    tree.commit_file('doc/releases/0.2.0.adoc', scratch.notes_text(
+        '0.2.0', preparing=False, updated=(('alpha', '0.2.0'),)))
+    expect(release.check(tree.root, V020), 'Compilers tested is None., and the version is frozen')
+
+
 def test_index_includes_every_version_newest_first(directory: Path) -> None:
     tree = scratch.make_tree(directory)
     released(tree)
@@ -534,8 +554,9 @@ def test_the_tree_s_notes_name_the_ci_lanes(directory: Path) -> None:
     notes, faults = changelog.parse_notes(path.read_text(encoding='utf-8'), version.name)
     assert faults == [], faults
     if notes.compilers is not None:
-        assert notes.compilers == [changelog.notes_lane(lane.name) for lane in matrix.LANES], (
-            notes.compilers)
+        lanes = [changelog.notes_lane(lane.name) for lane in matrix.LANES]
+        assert notes.compilers and notes.compilers == [lane for lane in lanes
+                                                       if lane in notes.compilers], notes.compilers
 
 
 def test_whats_new_skeleton(directory: Path) -> None:
@@ -1169,6 +1190,139 @@ def run_dist(root: Path, version: release.Version, out: Path) -> None:
     assert printed.getvalue() == f'{archive}\n{archive}.txt\n', printed.getvalue()
 
 
+def source_submodule(tree: scratch.Tree, path: str, *, nested: bool = False) -> Path:
+    """Adds a local source submodule with its upstream licence and an optional unused gitlink.
+    No fixture fetches a nested submodule."""
+    origin = tree.root.parent / ('origin-' + path.replace('/', '-'))
+    scratch.write(origin / 'LICENSE', 'Upstream licence\n')
+    scratch.write(origin / 'data/source.txt', f'{path}: pinned source\n')
+    scratch.write(origin / '.hidden', 'Not in the source archive\n')
+    if path == 'site':
+        scratch.write(origin / 'package.json', '{"name":"fixture-site"}\n')
+    elif path.endswith('JSON-Schema-Test-Suite'):
+        scratch.write(origin / 'tests/draft7/type.json', '[{"schema":{"type":"string"}}]\n')
+    elif path.endswith('nativejson-benchmark'):
+        scratch.write(origin / 'data/canada.json', '{"type":"FeatureCollection","features":[]}\n')
+    scratch.git(origin, 'init', '-q')
+    scratch.git(origin, 'add', '.')
+    scratch.git(origin, 'commit', '-q', '-m', 'The upstream sources')
+    if nested:
+        commit = scratch.git(origin, 'rev-parse', 'HEAD').strip()
+        scratch.git(origin, 'update-index', '--add', '--cacheinfo',
+                    f'160000,{commit},unused/dependency')
+        scratch.git(origin, 'commit', '-q', '-m', 'An unused upstream dependency')
+    scratch.git(tree.root, 'submodule', 'add', '-q', str(origin), path)
+    scratch.git(tree.root, 'commit', '-q', '-m', f'{path}: recorded')
+    return tree.root / path
+
+
+def dist_cli(root: Path, out: Path) -> subprocess.CompletedProcess[str]:
+    """Runs the user's release command in another process against a real Git checkout."""
+    return subprocess.run([sys.executable, str(Path(release.__file__)), 'dist', '--root',
+                           str(root), '--version', '0.1.0', '--out', str(out)],
+                          capture_output=True, text=True, check=False)
+
+
+def test_dist_bundles_pinned_source_submodules(directory: Path) -> None:
+    # Omitting a supported repository, its licence, or its pin must fail this CLI test.
+    tree = scratch.make_tree(directory)
+    paths = ('site', 'third_party/libs/JSON-Schema-Test-Suite',
+             'third_party/libs/nativejson-benchmark')
+    for path in paths:
+        source_submodule(tree, path, nested=path.endswith('nativejson-benchmark'))
+    out = directory / 'out'
+    completed = dist_cli(tree.root, out)
+    assert completed.returncode == 0, (completed.stdout + completed.stderr)
+    first = (out / 'webcpp-0.1.0.tar.gz').read_bytes()
+    with tarfile.open(out / 'webcpp-0.1.0.tar.gz') as archive:
+        for path in paths:
+            prefix = f'webcpp-0.1.0/{path}/'
+            assert member_bytes(archive, archive.getmember(prefix + 'LICENSE')) == \
+                b'Upstream licence\n'
+            assert member_bytes(archive, archive.getmember(prefix + 'data/source.txt')) == \
+                f'{path}: pinned source\n'.encode()
+            assert prefix + '.hidden' not in archive.getnames()
+        assert not any('/unused/' in name for name in archive.getnames())
+        archive.extractall(directory / 'extracted')
+    extracted = directory / 'extracted/webcpp-0.1.0'
+    assert json.loads((extracted / 'site/package.json').read_text()) == {'name': 'fixture-site'}
+    assert json.loads((extracted / paths[1] / 'tests/draft7/type.json').read_text()) == [
+        {'schema': {'type': 'string'}}]
+    assert json.loads((extracted / paths[2] / 'data/canada.json').read_text()) == {
+        'type': 'FeatureCollection', 'features': []}
+    other = directory / 'another place'
+    shutil.copytree(tree.root, other, symlinks=True)
+    completed = dist_cli(other, directory / 'out two')
+    assert completed.returncode == 0, (completed.stdout + completed.stderr)
+    assert (directory / 'out two/webcpp-0.1.0.tar.gz').read_bytes() == first
+    digest, name = (out / 'webcpp-0.1.0.tar.gz.txt').read_text().split()
+    assert (digest, name) == (hashlib.sha256(first).hexdigest(), 'webcpp-0.1.0.tar.gz')
+
+
+def test_dist_refuses_source_submodules_not_as_recorded(directory: Path) -> None:
+    for number, path in enumerate(('site', 'third_party/libs/JSON-Schema-Test-Suite')):
+        case = directory / str(number)
+        case.mkdir()
+        tree = scratch.make_tree(case)
+        checkout = source_submodule(tree, path)
+        out = case / 'out'
+        scratch.git(checkout, 'commit', '-q', '--allow-empty', '-m', 'An unrecorded commit')
+        completed = dist_cli(tree.root, out)
+        output = completed.stdout + completed.stderr
+        assert completed.returncode == 1 and not out.exists(), completed
+        assert f'{path} is at ' in output and ', and the superproject records ' in output, output
+        scratch.git(checkout, 'reset', '--hard', 'HEAD~1')
+        for changed in ('tracked', 'staged', 'untracked'):
+            file = checkout / ('new.txt' if changed == 'untracked' else 'data/source.txt')
+            scratch.write(file, 'A change the pin does not record\n')
+            if changed == 'staged':
+                scratch.git(checkout, 'add', 'data/source.txt')
+            completed = dist_cli(tree.root, out)
+            output = completed.stdout + completed.stderr
+            assert completed.returncode == 1 and not out.exists(), completed
+            assert output.splitlines() == [
+                f'dist: {path}/{file.relative_to(checkout)} is not committed: '
+                'a tag carries only what HEAD records'], output
+            scratch.git(checkout, 'reset', '--hard', 'HEAD')
+            if changed == 'untracked':
+                file.unlink()
+        shutil.rmtree(checkout)
+        checkout.mkdir()
+        completed = dist_cli(tree.root, out)
+        output = completed.stdout + completed.stderr
+        assert completed.returncode == 1 and not out.exists(), completed
+        assert f'{path} is not checked out: git submodule update --init {path}' in output, output
+
+
+def test_dist_refuses_nested_source_submodules(directory: Path) -> None:
+    for number, path in enumerate(('site', 'third_party/libs/other')):
+        case = directory / str(number)
+        case.mkdir()
+        tree = scratch.make_tree(case)
+        source_submodule(tree, path, nested=True)
+        out = case / 'out'
+        completed = dist_cli(tree.root, out)
+        output = completed.stdout + completed.stderr
+        assert completed.returncode == 1 and not out.exists(), completed
+        assert f'{path}/unused/dependency is a submodule of {path}, which dist does not archive' \
+            in output, output
+
+
+def test_dist_names_source_paths_that_are_not_utf8(directory: Path) -> None:
+    tree = scratch.make_tree(directory)
+    commit = scratch.git(tree.library('alpha'), 'rev-parse', 'HEAD').strip().encode()
+    subprocess.run([*scratch.GIT, '-C', str(tree.root), 'update-index', '--add', '--cacheinfo',
+                    b'160000,' + commit + b',third_party/libs/caf\xe9'],
+                   capture_output=True, check=True)
+    scratch.git(tree.root, 'commit', '-q', '-m', 'A source path that is not UTF-8')
+    out = directory / 'out'
+    completed = dist_cli(tree.root, out)
+    assert completed.returncode == 2 and not out.exists(), completed
+    assert "the path b'third_party/libs/caf\\xe9' is not UTF-8" in completed.stderr, \
+        completed.stderr
+    assert 'Traceback' not in completed.stderr, completed.stderr
+
+
 def test_dist_is_reproducible(directory: Path) -> None:
     tree = scratch.make_tree(directory)
     run_dist(tree.root, V010, directory / 'out one')
@@ -1619,6 +1773,9 @@ def git_checkout(root: Path) -> None:
     scratch.write(root / 'doc/index.adoc', scratch.index_text(('0.1.0',)))
     scratch.write(root / 'doc/releases/0.1.0.adoc',
                   scratch.notes_text('0.1.0', new=('config', 'demo')))
+    # The real tree may already hold the owner's authored release body. This fixture tests
+    # creating its own skeleton, and must not inherit that body from the copied superproject.
+    (root / 'doc/releases/0.1.0.whats-new.md').unlink(missing_ok=True)
     scratch.git(root, 'init', '-q')
     scratch.git(root, 'add', '.')
     scratch.git(root, 'commit', '-q', '-m', 'The scratch superproject')
@@ -1742,6 +1899,7 @@ CASES: list[Callable[[Path], None]] = [
     test_lines_out_of_form_are_named,
     test_compilers_tested_are_the_ci_lanes,
     test_frozen_state,
+    test_frozen_notes_can_record_only_tested_compilers,
     test_index_includes_every_version_newest_first,
     test_template_opens_a_version_that_checks,
     test_the_tree_s_notes_name_the_ci_lanes,
@@ -1758,6 +1916,10 @@ CASES: list[Callable[[Path], None]] = [
     test_whats_new_section_ends_at_a_heading,
     test_whats_new_a_continuation_starts_no_markdown_block,
     test_whats_new_five_highlights_with_continuations_check_clean,
+    test_dist_bundles_pinned_source_submodules,
+    test_dist_refuses_source_submodules_not_as_recorded,
+    test_dist_refuses_nested_source_submodules,
+    test_dist_names_source_paths_that_are_not_utf8,
     test_dist_is_reproducible,
     test_dist_leaves_out_dot_files_and_what_git_does_not_track,
     test_dist_refuses_a_dirty_tree_and_missing_pages,

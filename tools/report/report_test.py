@@ -66,7 +66,7 @@ OWN_SITE = 'https://github.com/webcpporg/'
 EM_DASH = chr(0x2014)
 
 # The longest title html-validate's long-title accepts, as the site's valid-html runs it on every
-# page of the report (site/.htmlvalidate.json).
+# page of the report (site/htmlvalidate.json).
 LONGEST_TITLE = 70
 
 
