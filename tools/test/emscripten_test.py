@@ -108,6 +108,54 @@ def test_emscripten_lane_runs_under_node(root):
     assert any(harness.emscripten_cache().iterdir()), harness.emscripten_cache()
 
 
+def add_source_dependency(root):
+    """Give the fixture a linked object like Asio's browser bridge support."""
+    library = root / 'libs/browser_demo/build.jam'
+    library.write_text(library.read_text() + "\nobj support : support.cpp ;\n"
+                       "alias supported : : : : <source>support ;\n")
+    (library.parent / 'support.cpp').write_text('int support() { return 7; }\n')
+
+
+def test_example_expected_survives_source_dependencies(root):
+    # The expected file must not be confused with an appended library object.
+    add_source_dependency(root)
+    folder = root / 'libs/browser_demo/example'
+    jam = folder / 'Jamfile'
+    jam.write_text(jam.read_text().replace(
+        '<library>/webcpp/browser_demo//browser_demo',
+        '<library>/webcpp/browser_demo//browser_demo <library>/webcpp/browser_demo//supported'))
+    (folder / 'hello.cpp').write_text('#include <cstdio>\nint support();\n'
+                                     'int main() { std::printf("support=%d\\n", support()); }\n')
+    (folder / 'hello.expected').write_text('support=7\n')
+    for request in ((), ('webcpp-suspend=asyncify',)):
+        result = harness.run_b2(root, '-a', *EMSCRIPTEN, *request,
+                               'libs/browser_demo/example//hello.output')
+        harness.expect(result, True)
+    outputs = built(root, 'hello.output')
+    assert len(outputs) == 2, outputs
+    assert all(path.read_text() == 'support=7\n' for path in outputs), outputs
+    (folder / 'hello.expected').write_text('wrong output\n')
+    result = harness.run_b2(root, *EMSCRIPTEN, 'libs/browser_demo/example//hello.output')
+    harness.expect(result, False, 'wrong output')
+
+
+def test_size_table_ignores_linked_source_dependencies(root):
+    # A table consumes manifests, not the source objects inherited by its make target.
+    add_source_dependency(root)
+    folder = root / 'libs/browser_demo/test/variants'
+    jam = folder / 'Jamfile'
+    jam.write_text('project : requirements <library>/webcpp/browser_demo//supported ;\n'
+                   + jam.read_text())
+    result = harness.run_b2(root, '-a', *EMSCRIPTEN,
+                           'libs/browser_demo/test/variants//shell.sizes.md')
+    harness.expect(result, True)
+    tables = built(root, 'shell.sizes.md')
+    assert len(tables) == 1, tables
+    manifest = json.loads(built(root, 'shell.variants.json')[0].read_text())
+    assert f"{manifest['jspi']['bytes']:,}" in tables[0].read_text()
+    assert f"{manifest['asyncify']['bytes']:,}" in tables[0].read_text()
+
+
 def test_a_launcher_is_refused_on_emscripten(root):
     # b2's emscripten toolset runs a program with node itself: a launcher would make the command
     # `node "node" x.js`, which fails, so it is refused by name before anything is built.
@@ -553,6 +601,8 @@ def prepared(case):
 
 CASES = [prepared(case) for case in (
     test_emscripten_lane_runs_under_node,
+    test_example_expected_survives_source_dependencies,
+    test_size_table_ignores_linked_source_dependencies,
     test_a_launcher_is_refused_on_emscripten,
     test_input_file_is_read_from_the_host,
     test_programs_are_wasm32,

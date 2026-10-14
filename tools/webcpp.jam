@@ -558,11 +558,22 @@ rule write-size-table ( targets * : sources * : properties * )
 {
     PYTHON on $(targets) = $(.python) ;
     SCRIPT on $(targets) = $(.variants-script) ;
+    # A project's libraries can append source objects to this make target.
+    # Only variant manifests are table inputs.
+    local manifests ;
+    for local source in $(sources)
+    {
+        if $(source:S) = .json
+        {
+            manifests += $(source) ;
+        }
+    }
+    MANIFESTS on $(targets) = $(manifests) ;
 }
 
-actions write-size-table
+actions write-size-table bind MANIFESTS
 {
-    "$(PYTHON)" "$(SCRIPT)" table --out "$(<)" "$(>)"
+    "$(PYTHON)" "$(SCRIPT)" table --out "$(<)" "$(MANIFESTS)"
 }
 
 # A test that passes when sources compile, which builds no program.
@@ -632,10 +643,10 @@ rule example ( source : requirements * : targets * )
     }
     # The program's main target can generate more than the executable, which
     # it lists first: MSVC's debug link adds the .pdb after the .exe. So the
-    # action reads the program as the first source and the expected output
-    # as the last, never as the second, and run-and-compare finds the input
-    # by its suffix. The input is a source of the output, so that editing it
-    # runs the example again.
+    # action reads the program as the first source. Library source usage
+    # can also append objects, so run-and-compare finds both the expected
+    # output and the optional input by suffix, not by position. The input
+    # is a source of the output, so editing it runs the example again.
     make $(name).output : $(name) $(input) $(source:S=.expected) : @webcpp%run-and-compare
         : $(requirements) $(only) ;
     # testing.launcher is a free feature: it plays no part in the target's
@@ -675,19 +686,25 @@ rule run-and-compare ( targets * : sources * : properties * )
     # The action binds it to its path, and its word `--input="$(INPUT)"`,
     # which holds a reference to it, disappears whole when it is empty.
     local input ;
+    local expected ;
     for local source in $(sources)
     {
         if $(source:S) = .input
         {
             input = $(source) ;
         }
+        if $(source:S) = .expected
+        {
+            expected = $(source) ;
+        }
     }
     INPUT on $(targets) = $(input) ;
+    EXPECTED on $(targets) = $(expected) ;
 }
 
-actions run-and-compare bind INPUT
+actions run-and-compare bind INPUT EXPECTED
 {
-    "$(PYTHON)" "$(RUNNER)" $(LAUNCHER_ARGS) --input="$(INPUT)" --expected "$(>[-1])" --output "$(<)" -- "$(>[1])"
+    "$(PYTHON)" "$(RUNNER)" $(LAUNCHER_ARGS) --input="$(INPUT)" --expected "$(EXPECTED)" --output "$(<)" -- "$(>[1])"
 }
 
 # A test per public header of library, each a translation unit that only
