@@ -783,7 +783,8 @@ than leave it green on the rest.
   is: its calculator's environment takes the user's `Allocator`; and as
   trystero is, through `std::pmr`: a `std::pmr::memory_resource` given in
   its `app_config`, and in a room's `room_options`, reaches every allocation
-  of the app and its rooms, which a counting test
+  of the app and its rooms, including the immutable password in the app's
+  resource, which a counting test
   proves natively and on emscripten. The libraries written before it are
   brought to it by a review (chapter 13).
 - **Asynchronous code is built on xactor.** A library that ports anything
