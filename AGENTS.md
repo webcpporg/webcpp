@@ -2230,7 +2230,8 @@ jobs:
     kind `programs` on any other target, such as wasi's served lanes, has
     none.
   - An own lane whose driver meets a browser, one of `CHROME_LANES` in
-    `tools/ci/matrix.py` (trystero's `interop`, natively and on emscripten),
+    `tools/ci/matrix.py` (trystero's `interop`, natively and on emscripten,
+    document's `js`, and asio's `browser`),
     has its entry's `chrome`, and its job runs the `chrome` action, which
     gives it `CHROME`, a pinned Chrome rather than the image's, which moves
     with the image, so that a red interop lane is never a browser nobody

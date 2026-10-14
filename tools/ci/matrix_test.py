@@ -1092,12 +1092,21 @@ def test_a_container_lane_has_its_image_from_the_cache(_):
     assert 'if: matrix.container\n' in steps[container[0]], steps[container[0]]
 
 
+def test_asio_browser_lane_receives_chrome(root):
+    # The browser driver needs Chrome when the lane is scheduled, on emscripten alone.
+    own = matrix.OwnLane('asio', 'browser', ('libs/asio/test/browser',),
+                         'emscripten', 'original')
+    entry = own_lane_entry_of(own)
+    assert entry['chrome'] is True, entry
+
+
 def test_a_browser_lane_has_the_pinned_chrome(root):
-    # An own lane whose driver meets a browser, trystero's interop and document's js
+    # An own lane whose driver meets a browser, asio's browser, trystero's interop and document's js
     # (CHROME_LANES), says chrome, on every target it runs on, and its job installs the pinned
     # chrome-headless-shell, which gives CHROME; no other own lane does, and no job names the
     # image's Chrome.
-    assert matrix.CHROME_LANES == {('document', 'js'), ('trystero', 'interop')}, matrix.CHROME_LANES
+    assert matrix.CHROME_LANES == {
+        ('asio', 'browser'), ('document', 'js'), ('trystero', 'interop')}, matrix.CHROME_LANES
     boost_only(root)
     external_library(root)
     oracle_library(root, 'beta')
@@ -1307,6 +1316,7 @@ CASES = [
     test_whether_a_library_has_external_dependencies,
     test_the_jobs_install_the_external_dependencies,
     test_a_container_lane_has_its_image_from_the_cache,
+    test_asio_browser_lane_receives_chrome,
     test_a_browser_lane_has_the_pinned_chrome,
     test_container_apt_get_retries_transient_failures,
     test_a_container_lane_runs_b2_with_no_network,
