@@ -782,7 +782,8 @@ than leave it green on the rest.
   A library ported or written from now on is born with this rule, as pratt
   is: its calculator's environment takes the user's `Allocator`; and as
   trystero is, through `std::pmr`: a `std::pmr::memory_resource` given in
-  its `room_config` reaches every allocation of a room, which a counting test
+  its `app_config`, and in a room's `room_options`, reaches every allocation
+  of the app and its rooms, which a counting test
   proves natively and on emscripten. The libraries written before it are
   brought to it by a review (chapter 13).
 - **Asynchronous code is built on xactor.** A library that ports anything
