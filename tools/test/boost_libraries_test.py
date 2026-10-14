@@ -14,7 +14,8 @@ library's sources each stopping the build by name, while a build that needs none
 /webcpp//boost_charconv links on every target, with and without exceptions; /webcpp//boost_locale
 converts, and translates from a catalog, natively, on wasip2, wasip3 and emscripten, where its
 sources alone are told that pthreads are there, which no public header depends on, and is refused
-by name without exceptions.
+by name without exceptions. Boost.Cobalt follows the consumer's exception setting,
+including a result-based coroutine and timer cancellation handled as a value.
 Each case builds a scratch superproject with the fixture library demo, whose path holds a space.
 Run with the names of some cases to run only those."""
 
@@ -532,7 +533,78 @@ def test_boost_locale_is_refused_without_exceptions(root: Path) -> None:
                                                               result.stdout[-4000:])
 
 
+COBALT_JAMFILE = ('import webcpp ;\n'
+                  'webcpp.targets native emscripten ;\n'
+                  'webcpp.run coroutines : coroutines.cpp : <library>/webcpp//boost_cobalt ;\n')
+
+COBALT_SOURCE = r'''#include <boost/asio/io_context.hpp>
+#include <boost/asio/post.hpp>
+#include <boost/asio/steady_timer.hpp>
+#include <boost/cobalt/op.hpp>
+#include <boost/cobalt/result.hpp>
+#include <boost/cobalt/promise.hpp>
+#include <boost/cobalt/this_thread.hpp>
+#include <webcpp/test/exit_status.hpp>
+
+#include <chrono>
+#include <cstdio>
+
+boost::cobalt::promise<int> answer() {
+    co_return 42;
+}
+
+boost::cobalt::promise<int> exercise(boost::asio::io_context& ctx) {
+    // Eager promises provide a result without moving a pending task.
+    auto child = answer();
+    auto result = co_await boost::cobalt::as_result(child);
+    if (!result || *result != 42)
+        co_return 1;
+    boost::asio::steady_timer timer(ctx, std::chrono::hours(1));
+    boost::asio::post(ctx, [&timer] { timer.cancel(); });
+    auto [error] = co_await boost::cobalt::as_tuple(
+        timer.async_wait(boost::cobalt::use_op));
+    co_return error == boost::asio::error::operation_aborted ? 42 : 2;
+}
+
+int main() {
+    webcpp::test::bound(std::chrono::seconds(10));
+    boost::asio::io_context ctx;
+    boost::cobalt::this_thread::set_executor(ctx.get_executor());
+    auto operation = exercise(ctx);
+    ctx.run();
+    bool const ok = operation.ready() && operation.get() == 42;
+    std::puts(ok ? "result and cancellation passed" : "failed");
+    return webcpp::test::exit_status(ok ? 0 : 1);
+}
+'''
+
+
+def test_boost_cobalt_preserves_exception_setting(root: Path) -> None:
+    # A blanket exception requirement would reject a valid result-based consumer.
+    # Build the real archive and execute eager promises and cancellation in each mode.
+    harness.link_emsdk(root)
+    harness.add_library(root, 'coroutines', COBALT_JAMFILE, {'coroutines.cpp': COBALT_SOURCE})
+    wasm = (*EMSCRIPTEN, 'define=BOOST_ASIO_DISABLE_THREADS')
+    count = 0
+    for request in ((), wasm, (*wasm, 'webcpp-suspend=asyncify')):
+        for exceptions in ('off', 'on'):
+            result = harness.run_b2(root, '-a', '-j4', '-d+2', '--verbose-test', *request,
+                                    f'exception-handling={exceptions}', 'libs/coroutines/test')
+            harness.expect(result, True, 'result and cancellation passed')
+            assert passed(result) == {'coroutines'}, (request, exceptions, result.stdout[-4000:])
+            compiles = [line for line in result.stdout.splitlines()
+                        if ' -c ' in line and ('coroutines.cpp' in line or '/cobalt/src/' in line)]
+            assert any('coroutines.cpp' in line for line in compiles), result.stdout[-4000:]
+            assert any('/cobalt/src/' in line for line in compiles), result.stdout[-4000:]
+            assert all(('-fno-exceptions' in line) == (exceptions == 'off')
+                       for line in compiles), (request, exceptions, compiles)
+            count += 1
+            assert len(list((root / 'bin').rglob('libboost_cobalt.a'))) == count
+            print(f'cobalt {request or ("native",)} exceptions={exceptions}: passed', flush=True)
+
+
 CASES = [
+    test_boost_cobalt_preserves_exception_setting,
     test_boost_url_links_on_every_target,
     test_boost_charconv_links_on_every_target,
     test_boost_locale_on_every_target,

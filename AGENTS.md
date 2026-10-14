@@ -2867,7 +2867,13 @@ What webcpp does not have yet, and the chapters that mention it:
 - **Compiled Boost libraries.** Boost.URL, Boost.Charconv, Boost.Locale and
   Boost.Cobalt are built from Boost's sources (`/webcpp//boost_url`,
   `/webcpp//boost_charconv`, `/webcpp//boost_locale`, `/webcpp//boost_cobalt`).
-  Boost.Locale and Boost.Cobalt have no build without exceptions, and it is not yet measured on Windows. A
+  Boost.Locale requires exceptions. Boost.Cobalt follows the consumer's exception
+  setting without a blanket refusal. This is not a guarantee that all of Cobalt
+  works without exceptions: in Boost 1.92, moving a pending task calls
+  std::make_exception_ptr, which aborts with libc++ and -fno-exceptions, even
+  when the application uses as_result. Eager promises and timer cancellation
+  handled as values are covered by tools/test/boost_libraries_test.py.
+  The compiled libraries are not yet measured on Windows. A
   Boost.Test suite still compiles the framework's header-only form (chapters
   2 and 9).
 - **Bundled toolchains.** Each toolchain is installed by hand and configured

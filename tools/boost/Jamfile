@@ -167,25 +167,13 @@ rule cobalt-sources ( )
     return $(sources) ;
 }
 
-# Boost.Cobalt throws, through boost::throw_exception and
-# std::rethrow_exception, so it is refused without exceptions, as Boost.Locale
-# is; a program that uses it declares <exception-handling>on in its own
-# requirements.
-rule cobalt-configuration ( properties * )
-{
-    if <exception-handling>off in $(properties)
-    {
-        errors.user-error "/webcpp//boost_cobalt needs exceptions: Boost.Cobalt throws, and"
-            "a program that uses it declares <exception-handling>on in its own requirements,"
-            "which keeps it with exceptions in a build without them (b2 ignores it as a usage"
-            "requirement), or leaves Boost.Cobalt out" ;
-    }
-}
-
 # Boost.Cobalt, with the macros of its own build: its sources see
-# BOOST_COBALT_SOURCE=1, and its users BOOST_COBALT_NO_LIB=1. Native only in
-# practice: the programs that use it are declared native.
+# BOOST_COBALT_SOURCE=1, and its users BOOST_COBALT_NO_LIB=1. Exception handling
+# follows the consumer: result-based programs may disable it without a blanket
+# configuration refusal. This does not guarantee every Cobalt operation works
+# without exceptions: moving a pending task creates an exception_ptr in Boost
+# 1.92, which libc++ aborts on when built with -fno-exceptions.
 compiled boost_cobalt : [ cobalt-sources ]
   : libs/cobalt/src holds no .cpp file
-  : <define>BOOST_COBALT_SOURCE=1 <conditional>@cobalt-configuration
+  : <define>BOOST_COBALT_SOURCE=1
   : <define>BOOST_COBALT_NO_LIB=1 ;
