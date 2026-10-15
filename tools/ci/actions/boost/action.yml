@@ -6,7 +6,7 @@
 
 name: Boost
 description: >-
-  Installs Boost 1.92.0's headers, the sources of its compiled libraries and its b2 in a cached
+  Installs Boost 1.92.0's headers, compiled-library sources (including Cobalt) and b2 in a cached
   prefix, from the source archive of archives.boost.io checked against its SHA-256, writes the
   `using boost` line and the sources' `modules.poke` of .local/user-config.jam, and puts b2 on
   PATH. On Linux, macOS and Windows.

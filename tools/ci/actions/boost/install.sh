@@ -23,7 +23,7 @@
 #
 # The headers are installed, and beside them, in <prefix>/source, the sources of Boost's compiled
 # libraries, from which webcpp builds those it needs (the Jamroot's /webcpp//boost_url,
-# boost_charconv and boost_locale).
+# boost_charconv, boost_locale and boost_cobalt).
 set -euo pipefail
 
 version=1.92.0

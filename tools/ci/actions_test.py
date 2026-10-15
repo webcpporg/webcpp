@@ -200,6 +200,10 @@ def boost_archive(scratch: Path) -> Path:
                        ('libs/charconv/src/from_chars.cpp', '// charconv\n'),
                        ('libs/locale/src/message.cpp', '// locale\n'),
                        ('libs/cobalt/src/this_thread.cpp', '// cobalt\n'),
+                       ('libs/cobalt/src/main.cpp', '// cobalt main\n'),
+                       ('libs/cobalt/src/detail/util.cpp', '// cobalt detail\n'),
+                       ('libs/cobalt/src/io/sleep.cpp', '// cobalt io\n'),
+                       ('libs/cobalt/src/io/ssl.cpp', '// cobalt ssl\n'),
                        ('libs/url/doc/index.html', '<p>not kept</p>\n')):
         (tree / path).parent.mkdir(parents=True, exist_ok=True)
         (tree / path).write_text(text)
@@ -260,6 +264,8 @@ def test_boost_install_fails_when_the_prefix_is_incomplete(scratch: Path) -> Non
 # tree, nothing else.
 MARKER = '.webcpp-boost-source'
 KEPT_SOURCES = [MARKER, 'boost/version.hpp', 'libs/charconv/src/from_chars.cpp',
+                'libs/cobalt/src/detail/util.cpp', 'libs/cobalt/src/io/sleep.cpp',
+                'libs/cobalt/src/io/ssl.cpp', 'libs/cobalt/src/main.cpp',
                 'libs/cobalt/src/this_thread.cpp', 'libs/json/src/src.cpp',
                 'libs/locale/src/message.cpp', 'libs/url/src/detail/pattern.hpp',
                 'libs/url/src/url.cpp']

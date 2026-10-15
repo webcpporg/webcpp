@@ -322,6 +322,29 @@ being on the compiler's default include path, naming the `using boost` line to
 add, and if it lacks the library's sources; a build that needs none never
 looks.
 
+**Cobalt source target.** `/webcpp//boost_cobalt` builds a static library from
+24 of Boost 1.92's 26 Cobalt sources: `src/*.cpp`, `src/detail/*.cpp` and
+`src/io/*.cpp`, excluding `src/main.cpp` and `src/io/ssl.cpp`. It supplies no
+OpenSSL integration or default `co_main` runner; the webcpp runner belongs to
+the subsequent Asio integration task. Ordinary `main` consumers can use it now.
+Its sources define `BOOST_COBALT_SOURCE=1` and `BOOST_COBALT_IO_SOURCE=1`, while
+consumers receive `BOOST_COBALT_NO_LIB=1`. On Emscripten, both sources and
+consumers define `BOOST_ASIO_DISABLE_THREADS`; native thread support is unchanged.
+Use the shared `BOOST_SOURCE` setup above, not a separate Cobalt source tree.
+
+**Cobalt without exceptions.** A build that uses `/webcpp//boost_cobalt` with
+`exception-handling=off` emits a non-fatal configuration warning with
+https://github.com/boostorg/cobalt/issues/287 and recommends enabling exception
+handling. Boost 1.92 with libc++ can abort when a pending task is moved, including
+moves performed inside Cobalt. This warning describes a runtime risk; it does
+not claim to detect a move or prove a program safe. It appears once per distinct
+Cobalt build configuration in each b2 invocation, including dry runs, and never
+for an exceptions-enabled Cobalt configuration or an unrelated target. It does
+not change the exception setting or the build exit status. Compiler and lint
+warnings still follow their existing warnings-as-errors policies; a b2 warning
+is not a compiler diagnostic. Keep the warning until an upstream fix has been
+verified, rather than assuming a newer Boost release fixes the issue.
+
 **Machine-local setup.** `.local/` is git-ignored and holds what one machine
 needs: `.local/user-config.jam`, `.local/wasi-sdk/`, `.local/mrdocs/`,
 `.local/wit-bindgen/` and `.local/wasi-wit/p2` and `p3`, `.local/emsdk` (an
@@ -2868,7 +2891,8 @@ What webcpp does not have yet, and the chapters that mention it:
   Boost.Cobalt are built from Boost's sources (`/webcpp//boost_url`,
   `/webcpp//boost_charconv`, `/webcpp//boost_locale`, `/webcpp//boost_cobalt`).
   Boost.Locale requires exceptions. Boost.Cobalt follows the consumer's exception
-  setting without a blanket refusal. This is not a guarantee that all of Cobalt
+  setting with a non-fatal warning when disabled (chapter 1). This is not a
+  guarantee that all of Cobalt
   works without exceptions: in Boost 1.92, moving a pending task calls
   std::make_exception_ptr, which aborts with libc++ and -fno-exceptions, even
   when the application uses as_result. Eager promises and timer cancellation

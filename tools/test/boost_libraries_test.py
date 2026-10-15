@@ -537,9 +537,20 @@ COBALT_JAMFILE = ('import webcpp ;\n'
                   'webcpp.targets native emscripten ;\n'
                   'webcpp.run coroutines : coroutines.cpp : <library>/webcpp//boost_cobalt ;\n')
 
-COBALT_SOURCE = r'''#include <boost/asio/io_context.hpp>
+COBALT_SOURCE = r'''#if defined(__EMSCRIPTEN__) && !defined(BOOST_ASIO_DISABLE_THREADS)
+#error Cobalt must configure Asio for the browser in its usage requirements
+#endif
+#if !defined(__EMSCRIPTEN__) && defined(BOOST_ASIO_DISABLE_THREADS)
+#error Native consumers must retain their normal thread configuration
+#endif
+#if defined(BOOST_COBALT_SOURCE) || defined(BOOST_COBALT_IO_SOURCE)
+#error Source-only macros must not leak into consumers
+#endif
+
+#include <boost/asio/io_context.hpp>
 #include <boost/asio/post.hpp>
 #include <boost/asio/steady_timer.hpp>
+#include <boost/cobalt/io/steady_timer.hpp>
 #include <boost/cobalt/op.hpp>
 #include <boost/cobalt/result.hpp>
 #include <boost/cobalt/promise.hpp>
@@ -559,6 +570,11 @@ boost::cobalt::promise<int> exercise(boost::asio::io_context& ctx) {
     auto result = co_await boost::cobalt::as_result(child);
     if (!result || *result != 42)
         co_return 1;
+    boost::cobalt::io::steady_timer cobalt_timer(std::chrono::milliseconds(1),
+                                                ctx.get_executor());
+    auto [timer_error] = co_await boost::cobalt::as_tuple(cobalt_timer.wait());
+    if (timer_error)
+        co_return 3;
     boost::asio::steady_timer timer(ctx, std::chrono::hours(1));
     boost::asio::post(ctx, [&timer] { timer.cancel(); });
     auto [error] = co_await boost::cobalt::as_tuple(
@@ -579,23 +595,100 @@ int main() {
 '''
 
 
+def test_boost_cobalt_names_missing_or_mismatched_sources(root: Path) -> None:
+    harness.without_boost_source(root)
+    target = '/webcpp//boost_cobalt'
+    harness.expect(harness.run_b2(root, '-a', target), False,
+                   "Boost's sources", '-sBOOST_SOURCE=<dir>', '.local/boost-source')
+    harness.expect(harness.run_b2(root, '-a', 'libs/demo/test//pass'), True)
+    empty = fake_sources(root / 'no cobalt sources', 109200, with_url=False)
+    harness.expect(harness.run_b2(root, '-a', f'-sBOOST_SOURCE={empty}', target), False,
+                   'libs/cobalt/src holds no .cpp file', target)
+    old = with_sources_of(fake_sources(root / 'old sources', 109100), 'cobalt')
+    harness.expect(harness.run_b2(root, '-a', f'-sBOOST_SOURCE={old}', target), False,
+                   "holds Boost 1.91.0's sources", 'is 1.92.0')
+
+
+def test_boost_cobalt_omits_main_and_ssl_from_supplied_sources(root: Path) -> None:
+    # Poison the excluded sources: compiling either would break the application boundary.
+    sources = fake_sources(root / 'cobalt sources', 109200, with_url=False)
+    for name in ('channel.cpp', 'detail/util.cpp', 'io/sleep.cpp', 'main.cpp', 'io/ssl.cpp'):
+        source = sources / 'libs/cobalt/src' / name
+        source.parent.mkdir(parents=True, exist_ok=True)
+        text = '#error This source must not be compiled by boost_cobalt\n'
+        if name not in ('main.cpp', 'io/ssl.cpp'):
+            text = ('#if !defined(BOOST_COBALT_SOURCE) || !defined(BOOST_COBALT_IO_SOURCE)\n'
+                    '#error Both source macros are required\n#endif\n')
+            text += 'int fixture_' + name.replace('/', '_').replace('.', '_') + ' = 0;\n'
+        source.write_text(text)
+    result = harness.run_b2(root, '-a', '-j4', '-d+2', f'-sBOOST_SOURCE={sources}',
+                            '/webcpp//boost_cobalt')
+    harness.expect(result, True)
+    compiled = set(re.findall(r'libs/cobalt/src/([a-z/_]+[.]cpp)"', result.stdout))
+    assert compiled == {'channel.cpp', 'detail/util.cpp', 'io/sleep.cpp'}, compiled
+    assert len(list((root / 'bin').rglob('libboost_cobalt.a'))) == 1
+
+
+def test_boost_cobalt_warns_only_for_disabled_exceptions(root: Path) -> None:
+    # Missing, unconditional or repeated warnings would hide or misrepresent the risk.
+    # Dry runs exercise dependency configuration without recompiling the archive.
+    harness.add_library(root, 'coroutines', COBALT_JAMFILE, {'coroutines.cpp': COBALT_SOURCE})
+    harness.add_library(root, 'more_coroutines', COBALT_JAMFILE,
+                        {'coroutines.cpp': COBALT_SOURCE})
+    issue = 'https://github.com/boostorg/cobalt/issues/287'
+    targets = ('libs/coroutines/test', 'libs/more_coroutines/test')
+    for exceptions, expected in (('on', 0), ('off', 1)):
+        result = harness.run_b2(root, '-a', '-n', f'exception-handling={exceptions}', *targets)
+        harness.expect(result, True)
+        assert result.stdout.count(issue) == expected, result.stdout
+        if expected:
+            assert 'warning:' in result.stdout, result.stdout
+            assert 'pending task' in result.stdout, result.stdout
+            assert 'libc++' in result.stdout, result.stdout
+            assert 'exception-handling=on' in result.stdout, result.stdout
+    unrelated = harness.run_b2(root, '-a', '-n', 'exception-handling=off', 'libs/demo/test//pass')
+    harness.expect(unrelated, True)
+    assert issue not in unrelated.stdout, unrelated.stdout
+    variants = harness.run_b2(root, '-a', '-n', 'exception-handling=off',
+                              'variant=debug,release', *targets)
+    harness.expect(variants, True)
+    assert variants.stdout.count(issue) == 2, variants.stdout
+    # A consumer may require exceptions even in an otherwise exception-free build.
+    forced = COBALT_JAMFILE.replace('<library>/webcpp//boost_cobalt',
+                                   '<library>/webcpp//boost_cobalt <exception-handling>on')
+    (root / 'libs/coroutines/test/Jamfile').write_text(forced)
+    result = harness.run_b2(root, '-a', '-n', 'exception-handling=off', targets[0])
+    harness.expect(result, True)
+    assert issue not in result.stdout, result.stdout
+
+
 def test_boost_cobalt_preserves_exception_setting(root: Path) -> None:
     # A blanket exception requirement would reject a valid result-based consumer.
     # Build the real archive and execute eager promises and cancellation in each mode.
     harness.link_emsdk(root)
     harness.add_library(root, 'coroutines', COBALT_JAMFILE, {'coroutines.cpp': COBALT_SOURCE})
-    wasm = (*EMSCRIPTEN, 'define=BOOST_ASIO_DISABLE_THREADS')
+    wasm = EMSCRIPTEN
     count = 0
     for request in ((), wasm, (*wasm, 'webcpp-suspend=asyncify')):
         for exceptions in ('off', 'on'):
             result = harness.run_b2(root, '-a', '-j4', '-d+2', '--verbose-test', *request,
                                     f'exception-handling={exceptions}', 'libs/coroutines/test')
             harness.expect(result, True, 'result and cancellation passed')
+            issue = 'https://github.com/boostorg/cobalt/issues/287'
+            assert result.stdout.count(issue) == (1 if exceptions == 'off' else 0), result.stdout
             assert passed(result) == {'coroutines'}, (request, exceptions, result.stdout[-4000:])
             compiles = [line for line in result.stdout.splitlines()
                         if ' -c ' in line and ('coroutines.cpp' in line or '/cobalt/src/' in line)]
             assert any('coroutines.cpp' in line for line in compiles), result.stdout[-4000:]
-            assert any('/cobalt/src/' in line for line in compiles), result.stdout[-4000:]
+            library_compiles = [line for line in compiles if '/cobalt/src/' in line]
+            assert len(library_compiles) == 24, library_compiles
+            assert not any('/main.cpp' in line or '/io/ssl.cpp' in line
+                           for line in library_compiles), library_compiles
+            for line in library_compiles:
+                assert '-DBOOST_COBALT_SOURCE=1' in line, line
+                assert '-DBOOST_COBALT_IO_SOURCE=1' in line, line
+            assert all(('-DBOOST_ASIO_DISABLE_THREADS' in line) == bool(request)
+                       for line in compiles), compiles
             assert all(('-fno-exceptions' in line) == (exceptions == 'off')
                        for line in compiles), (request, exceptions, compiles)
             count += 1
@@ -604,6 +697,9 @@ def test_boost_cobalt_preserves_exception_setting(root: Path) -> None:
 
 
 CASES = [
+    test_boost_cobalt_names_missing_or_mismatched_sources,
+    test_boost_cobalt_omits_main_and_ssl_from_supplied_sources,
+    test_boost_cobalt_warns_only_for_disabled_exceptions,
     test_boost_cobalt_preserves_exception_setting,
     test_boost_url_links_on_every_target,
     test_boost_charconv_links_on_every_target,
