@@ -1,0 +1,10 @@
+# Copyright (c) 2026 WebCpp.org
+#
+# Distributed under the Boost Software License, Version 1.0. (See
+# accompanying file LICENSE_1_0.txt or copy at
+# https://www.boost.org/LICENSE_1_0.txt)
+
+interface:
+  display_name: "WebCPP Documentation"
+  short_description: "Diataxis, AsciiDoc, and MrDocs for WebCPP libraries"
+  default_prompt: "Use $webcpp-documentation to update the selected WebCPP library's documentation within the requested scope."
