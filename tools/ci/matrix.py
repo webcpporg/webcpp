@@ -162,7 +162,11 @@ EMSDK_JAM = ROOT / 'tools/ci/emsdk.jam'
 # until webcpp builds them from third_party/ (AGENTS.md chapter 13): the CI's actions of these
 # names, tools/ci/actions/<name>, install each where the build looks, in .local/, before a lane,
 # an own lane, the docs or the lint that builds such a library runs.
-EXTERNAL_DEPENDENCIES = {'trystero': ('secp256k1', 'libdatachannel', 'openssl')}
+# Asio's native ssl header requires the program to name OpenSSL.
+EXTERNAL_DEPENDENCIES = {
+    'asio': ('openssl',),
+    'trystero': ('secp256k1', 'libdatachannel', 'openssl'),
+}
 
 # The variables that name those libraries' directories, which the actions give a job, and a lane
 # of such a library passes to b2 as -s<VARIABLE>=<dir>: a library's build.jam reads them from b2's
