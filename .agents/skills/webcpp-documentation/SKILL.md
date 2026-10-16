@@ -1,12 +1,18 @@
 ---
 name: webcpp-documentation
-description: Use when authoring or reviewing documentation for any WebCPP library, including Diataxis guides, AsciiDoc examples, MrDocs API comments, and documented test or benchmark results.
+description: Use when authoring or reviewing documentation for any WebCPP library, including Diataxis guides, AsciiDoc examples, Boost-style C++ contracts, MrDocs API comments, and documented test or benchmark results.
 ---
 
 # WebCPP documentation
 
 Organize documentation by the reader's need using Diataxis. Preserve WebCPP's
 AsciiDoc toolchain and generate API reference from C++ Doc Comments with MrDocs.
+
+When writing or reviewing API contracts, configuration, or guide coverage, read
+[Boost guidance for WebCPP](references/boost-guidance.md). It adapts Boost's
+documentation recommendations to this workflow, including precise C++ semantics
+and context for readers entering through a deep link. These are recommendations,
+not Boost submission requirements or a replacement for the project's toolchain.
 
 ## Establish the scope
 
@@ -79,7 +85,9 @@ include::{examples}/asio_promise.expected[]
 Adapt filenames and tags to the selected library. Register new examples in its
 Jamfile and verify their output. Use `[source,bash]` for commands and `[listing]`
 for output or Jam syntax. Reuse build-provided attributes and dynamic counts.
-Never hand-edit generated reference, generated measurements, or changelogs.
+Never hand-edit `CHANGELOG.md` or files marked as generated, including generated
+reference and measurements. Follow repository rules for maintained AsciiDoc
+release notes within the authorized scope.
 
 ## Verify locally
 
