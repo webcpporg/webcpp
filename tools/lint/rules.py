@@ -33,7 +33,7 @@ Exit 0 when there is none, 1 when there is one, 2 on a usage error.
   octal-escapes       no octal escape of a C or C++ literal is followed by a decimal digit, which
                       MSVC's warning C4125 refuses;
   changelog           a library's changelog and a version's release notes keep AGENTS.md
-                      chapter 11's form, every line a bullet in it;
+                      chapter 5's form, every line a bullet in it;
   include-boundaries  a library keeps to the include boundaries its own
                       libs/<name>/meta/include-boundaries.json declares, when it has one.
 """
@@ -690,7 +690,7 @@ def include_boundaries(paths: list[str]) -> Iterator[Finding]:
 
 
 def changelog_lines(path: str, text: str) -> Iterator[Finding]:
-    """A library's changelog and a version's release notes keep AGENTS.md chapter 11's form, each
+    """A library's changelog and a version's release notes keep AGENTS.md chapter 5's form, each
     line of them a bullet in it (tools/release/changelog.py)."""
     import changelog
 

@@ -435,8 +435,8 @@ def compiled_locale_sources(output: str) -> dict[str, str]:
 
 def test_boost_locale_on_windows_is_boost_s_configuration(root: Path) -> None:
     # No Windows machine measures it yet: a dry run for target-os=windows on this host holds the
-    # branch to AGENTS.md's table until the CI's MSVC lanes build it, the winapi and std backends,
-    # without iconv.
+    # branch to the table of CODING-GUIDELINES.md chapter 10 until the CI's MSVC lanes build it,
+    # the winapi and std backends, without iconv.
     add_locales(root)
     result = harness.run_b2(root, '-a', '-n', '-d+2', 'target-os=windows',
                             'libs/locales/test//converts')

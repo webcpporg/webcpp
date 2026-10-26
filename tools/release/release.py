@@ -5,7 +5,7 @@
 # accompanying file LICENSE_1_0.txt or copy at
 # https://www.boost.org/LICENSE_1_0.txt)
 
-"""webcpp's release tooling (AGENTS.md chapter 11), which the Jamroot's explicit targets run.
+"""webcpp's release tooling (AGENTS.md chapter 5), which the Jamroot's explicit targets run.
 
 Usage: release.py check --root <superproject> --version <a.b.c>
        release.py whats-new --root <superproject> --version <a.b.c>
@@ -869,7 +869,8 @@ def link_refusal(path: str, target: bytes) -> str | None:
 def repository_refusals(root: Path, names: list[str]) -> list[str]:
     """What the superproject's tree and those of the libraries names hold that the archive cannot:
     an unsupported root or nested submodule; a link that link_refusal refuses. Only the unused
-    nested dependencies of nativejson-benchmark are intentionally omitted (chapter 2)."""
+    nested dependencies of nativejson-benchmark are intentionally omitted (CODING-GUIDELINES.md
+    chapter 10)."""
     refusals = []
     sources = source_submodules(root)
     for base, directory in repositories(root, names):
