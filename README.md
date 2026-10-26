@@ -159,7 +159,8 @@ does not declare for a target is skipped there.
 webcpp has one version, `WEBCPP_VERSION` in `<webcpp/version.hpp>`, part of
 `libs/config`. Each library's page ends with its changelog, and the index
 page shows each version's release notes. Each library moves onto
-`<webcpp/config.hpp>` once `webcpporg/config` exists (AGENTS.md's roadmap).
+`<webcpp/config.hpp>` once `webcpporg/config` exists (the roadmap,
+`CODING-GUIDELINES.md` chapter 16).
 
 A library may also run some of its programs in lanes of its own, which
 `test` and `example` leave out: the HTTP components wasmtime serves, for
@@ -264,10 +265,12 @@ generated files, the installer of the Node packages and the CI's scripts.
 Every library is developed inside a checkout of the superproject, as a Boost
 library is developed inside Boost. [CONTRIBUTING.md](CONTRIBUTING.md) is the
 way in: what webcpp asks of a library, how to propose one, and how a change
-is made and accepted. [AGENTS.md](AGENTS.md) holds every rule a
-contributor, human or agent, needs to port a library or change one: the
-layout, the names, the build, the tests, the documentation, the evidence a
-port gives and how a change is made.
+is made and accepted. [CODING-GUIDELINES.md](CODING-GUIDELINES.md) holds
+every rule a contributor, human or agent, needs to port a library or change
+one, and every decision of webcpp's design with its reason: the names, the
+C++ rules, the tests, the evidence a port gives and how a change is made.
+[AGENTS.md](AGENTS.md) says how to work in the tree: the layout, the build,
+the lanes, the documentation and the releases.
 
 ## License
 

@@ -52,9 +52,11 @@ A b2 project uses a library through `/webcpp/<name>//<name>`; CMake or a
 plain compiler uses the headers that `b2 install --prefix=<dir>` copies to
 `<dir>/include/webcpp/`. The
 https://github.com/webcpporg/webcpp/blob/main/README.md[README] lists the
-prerequisites and how to configure them, and
-https://github.com/webcpporg/webcpp/blob/main/AGENTS.md[AGENTS.md] is the
-rulebook for porting a library to webcpp.
+prerequisites and how to configure them,
+https://github.com/webcpporg/webcpp/blob/main/CODING-GUIDELINES.md[CODING-GUIDELINES.md]
+holds the rules for porting a library to webcpp and the decisions of its
+design, and https://github.com/webcpporg/webcpp/blob/main/AGENTS.md[AGENTS.md]
+says how to work in the tree.
 
 [#releases]
 == Releases
