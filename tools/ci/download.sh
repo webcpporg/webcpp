@@ -20,8 +20,11 @@ url="$1"
 expected="$2"
 file="$3"
 
-# A failed download can leave part of the file, which must not be taken for the whole.
-curl -fsSL --retry 3 -o "${file}" "${url}" || {
+# A failed download can leave part of the file, which must not be taken for the whole. curl's
+# --retry alone tries again only a timeout and an HTTP 408, 429 or 5xx; --retry-all-errors also
+# tries again a connection the server drops, as a TLS handshake cut short does (curl's exit
+# statuses 35, 52 and 56), which failed CI lanes downloading Boost.
+curl -fsSL --retry 3 --retry-all-errors -o "${file}" "${url}" || {
     status=$?
     rm -f "${file}"
     printf 'download.sh: could not download %s (curl exit status %s)\n' "${url}" "${status}" >&2

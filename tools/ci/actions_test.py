@@ -6,7 +6,8 @@
 # https://www.boost.org/LICENSE_1_0.txt)
 
 """Checks the shell steps of tools/ci/actions: download.sh keeps a file only when its SHA-256 is
-the pinned one, exits 1 and leaves no file when the digest differs or the download fails; and the
+the pinned one, tries again a connection the server drops, exits 1 and leaves no file when the
+digest differs or the download fails; and the
 Boost action's install.sh refuses an empty or relative prefix before it downloads anything, since
 b2 given an empty --prefix installs into /usr/local, installs b2 in <prefix>/bin and the headers
 in <prefix>/include/boost on every runner, Windows's included, where the default layouts would put
@@ -45,7 +46,8 @@ lib/VC/x64/MD first, downloads the pinned installer when the image has none, and
 is not OpenSSL 3; and each refuses a runner it builds nothing for. The node action keys npm's
 cache on the lock file of every directory a job runs npm ci in: tools/doc, tools/lint, every
 library's oracle and the site. Nothing is fetched
-from the network: the downloads are file:// URLs, git is a stand-in, and install.sh runs against
+from the network: the downloads are file:// URLs or a server of the test's own on the loopback, git
+is a stand-in, and install.sh runs against
 a download.sh that only says it was called, or that hands it a stand-in archive. Run with the
 names of some cases to run only those."""
 
@@ -56,10 +58,12 @@ import io
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import tarfile
 import tempfile
+import threading
 import zipfile
 from collections.abc import Callable
 from pathlib import Path
@@ -116,6 +120,54 @@ def test_a_failed_download_exits_1_and_leaves_no_file(scratch: Path) -> None:
     assert result.returncode == 1, (result.returncode, result.stderr)
     assert 'could not download' in result.stderr, result.stderr
     assert not file.exists()
+
+
+class DroppingServer:
+    """An HTTP server on the loopback whose first connection closes with no reply, as a server
+    that drops a TLS handshake does, and which serves `body` on every later one."""
+
+    def __init__(self, body: bytes) -> None:
+        self.body = body
+        self.connections = 0
+        self.listener = socket.create_server(('127.0.0.1', 0))
+        self.thread = threading.Thread(target=self.serve, daemon=True)
+        self.thread.start()
+
+    @property
+    def url(self) -> str:
+        return f'http://127.0.0.1:{self.listener.getsockname()[1]}/archive.tar.gz'
+
+    def serve(self) -> None:
+        while True:
+            try:
+                connection, _ = self.listener.accept()
+            except OSError:
+                return
+            with connection:
+                self.connections += 1
+                if self.connections == 1:
+                    continue
+                connection.recv(65536)
+                head = f'HTTP/1.1 200 OK\r\nContent-Length: {len(self.body)}\r\n'
+                connection.sendall(f'{head}Connection: close\r\n\r\n'.encode() + self.body)
+
+    def close(self) -> None:
+        self.listener.close()
+        self.thread.join(timeout=5)
+
+
+def test_a_dropped_connection_is_tried_again(scratch: Path) -> None:
+    path, digest = source(scratch)
+    server = DroppingServer(path.read_bytes())
+    file = scratch / 'downloaded'
+    try:
+        result = run(DOWNLOAD, server.url, digest, file,
+                     env={'no_proxy': '127.0.0.1', 'NO_PROXY': '127.0.0.1'})
+    finally:
+        server.close()
+    assert result.returncode == 0, (result.returncode, result.stderr)
+    assert server.connections == 2, server.connections
+    assert file.read_bytes() == path.read_bytes()
 
 
 def test_a_usage_error_exits_2(scratch: Path) -> None:
@@ -1714,6 +1766,7 @@ CASES: list[Callable[[Path], None]] = [
     test_a_pinned_download_is_kept,
     test_another_digest_leaves_no_file,
     test_a_failed_download_exits_1_and_leaves_no_file,
+    test_a_dropped_connection_is_tried_again,
     test_a_usage_error_exits_2,
     test_boost_refuses_an_empty_or_relative_prefix,
     test_boost_installs_b2_and_the_headers_where_configure_finds_them,
