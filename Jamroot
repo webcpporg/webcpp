@@ -414,8 +414,8 @@ use-project /webcpp/boost-libraries : tools/boost ;
 # that needs one puts <library>/webcpp//boost_url, boost_charconv, boost_locale
 # or boost_cobalt in its main target's usage requirements, as one that needs
 # Boost.JSON does with boost_json. Each alias checks the sources before anything
-# is built; what Boost.Locale gives on each target is AGENTS.md chapter 2's
-# table.
+# is built; what Boost.Locale gives on each target is the table of
+# CODING-GUIDELINES.md chapter 10.
 for local name in boost_url boost_charconv boost_locale boost_cobalt
 {
     alias $(name) : tools/boost//$(name) : <conditional>@boost-source-usable ;
@@ -685,11 +685,11 @@ rule webcpp-version ( )
     return $(number) $(name:J=.) ;
 }
 
-# The release tooling, tools/release/release.py (AGENTS.md chapter 11), run
+# The release tooling, tools/release/release.py (AGENTS.md chapter 5), run
 # only when named: check-release, what a tag needs; whats-new, the skeleton
 # of a version's What's new; dist, its archive. No release target is named
 # release-<word>, which b2 reads as the variant release (AGENTS.md
-# chapter 12).
+# chapter 6).
 if [ os.name ] = NT { .python = python ; } else { .python = python3 ; }
 
 rule release-tool ( targets * : sources * : properties * )

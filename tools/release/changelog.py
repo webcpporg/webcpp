@@ -5,7 +5,7 @@
 # accompanying file LICENSE_1_0.txt or copy at
 # https://www.boost.org/LICENSE_1_0.txt)
 
-"""The form of webcpp's changelog files (AGENTS.md chapter 11), which tools/lint/rules.py reads
+"""The form of webcpp's changelog files (AGENTS.md chapter 5), which tools/lint/rules.py reads
 on every lint run and tools/release/release.py before a release.
 
 A library's changelog, libs/<name>/doc/changelog.adoc, after its notice: [appendix],

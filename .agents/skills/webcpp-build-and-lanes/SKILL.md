@@ -5,9 +5,10 @@ description: "Build and test webcpp: targets (native, wasip2, wasip3, emscripten
 
 # Building and testing webcpp
 
-The rules are in `AGENTS.md`: chapter 1 ("Prerequisites", "The build commands"), chapter 9
-(Targets, The Jamfile API, Tests, Lanes, The report, CI), chapter 10 (Process) and chapter 12 (b2
-facts). The CI is `.github/workflows/library.yml`, which `ci.yml` and each library call.
+How to work is in `AGENTS.md`: chapter 1 ("Prerequisites", "The build commands"), chapter 4
+(Targets, The Jamfile API, Lanes, The report, CI) and chapter 6 (b2 facts). How a test is written
+and what counts as green are in `CODING-GUIDELINES.md`: chapter 8 (Tests) and chapter 1
+(Process). The CI is `.github/workflows/library.yml`, which `ci.yml` and each library call.
 
 ## Iterating on one library
 ```
@@ -17,14 +18,15 @@ b2 toolset=clang-wasip2 testing.launcher=wasmtime libs/<name>/test libs/<name>/e
 b2 toolset=emscripten libs/<name>/test libs/<name>/example                                 # no launcher
 b2 declared-targets -d0 && b2 declared-lanes -d0                                           # what CI will run
 ```
-One toolset per command. Test and example Jamfiles use only the `webcpp.*` rules of chapter 9.
+One toolset per command. Test and example Jamfiles use only the `webcpp.*` rules of `AGENTS.md`
+chapter 4.
 
 ## A lane, as CI runs it
 `b2 -a --dump-tests --out-xml=<lane>.xml toolset=<toolset> libs/<name>/test libs/<name>/example`,
 then `tools/report/report.py`; b2's exit status is not the verdict. `tools/ci/matrix.py` runs
 plan, lane and own lane the CI's way. Parallel lanes use distinct `--build-dir`.
 
-## Green, before asking for a merge (chapter 10)
+## Green, before asking for a merge (`CODING-GUIDELINES.md` chapter 1)
 1. Every declared lane and own lane from scratch (`b2 -a`), oracle included.
 2. `b2 -a doc`.
 3. `tools/lint/lint.sh ...` prints `lint: clean`.
@@ -32,4 +34,4 @@ plan, lane and own lane the CI's way. Parallel lanes use distinct `--build-dir`.
 5. CI green, the library's and the superproject's.
 
 ## When something is odd
-Read chapter 12 before debugging b2: most surprises are recorded there.
+Read `AGENTS.md` chapter 6 before debugging b2: most surprises are recorded there.

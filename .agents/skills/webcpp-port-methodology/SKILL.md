@@ -5,13 +5,13 @@ description: "Port a library from another language into webcpp, or specify such 
 
 # Porting a library
 
-The rules are in `AGENTS.md`: chapter 2 ("Choosing"), chapter 4 (Fidelity), chapter 5 (Evidence:
-oracle and twins) and chapter 10 ("Porting a library, step by step"). xstate is the model
-(`libs/xstate/AGENTS.md`, `libs/xstate/test/oracle/`).
+The rules are in `CODING-GUIDELINES.md`: chapter 10 ("Choosing"), chapter 11 (Fidelity), chapter
+12 (Evidence: oracle and twins) and chapter 13 ("Porting a library, step by step"). xstate is the
+model (`libs/xstate/AGENTS.md`, `libs/xstate/test/oracle/`, and its design in chapter 15).
 
 ## Steps
 1. Pin the original at an exact release; record it in `meta/libraries.json` (`"port-of"`) and the
-   library's `AGENTS.md`. Check its licence against chapter 2; keep its notice in
+   library's `AGENTS.md`. Check its licence against chapter 10; keep its notice in
    `LICENSE-<ORIGIN>.txt`.
 2. Make `libs/<name>` (skill `webcpp-library-conventions`).
 3. Port the original's tests as data-driven cases; write the oracle in `test/oracle/` (the pinned

@@ -1825,7 +1825,7 @@ CHANGELOG = (CPP + '\n[appendix]\n[#demo-changelog]\n== Changelog\n\nWhat change
 
 def test_changelog(root):
     prepare(root)
-    # A library's changelog keeps AGENTS.md chapter 11's form: a wrapped line is one line; one
+    # A library's changelog keeps AGENTS.md chapter 5's form: a wrapped line is one line; one
     # that starts with no verb of the list fails, at its line.
     write(root, 'libs/demo/doc/changelog.adoc', CHANGELOG.format(line='* Fixed a crash.'))
     commit(root / 'libs/demo', 'A changelog')

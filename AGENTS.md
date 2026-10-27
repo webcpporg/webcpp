@@ -1,38 +1,39 @@
 # Working on webcpp
 
-This is webcpp's rulebook. It is written for coding agents and human
-contributors alike, and it holds every rule needed to port a library to
-webcpp or to change one: an agent with no other context ports a library by
-following it. Each library's own `AGENTS.md` (`libs/<name>/AGENTS.md`) holds
-only what is specific to that library: the original and its version, how its
-oracle drives the original, its particular cautions. Read this file first,
-then the library's.
+This file is how to work in webcpp's tree, for coding agents and human
+contributors alike: what webcpp is and where everything is, the
+prerequisites and the commands, the API reference and the pages, the tests,
+the lanes, the report, the site and the CI, the changelogs and the
+releases, and the facts of b2. The rules every change keeps, how code is
+written and every decision of webcpp's design with its reason, are in
+[CODING-GUIDELINES.md](CODING-GUIDELINES.md), the single source of them.
+Read it first, then this file, then the library's own `AGENTS.md`
+(`libs/<name>/AGENTS.md`), which holds only what is specific to that
+library: the original and its version, how its oracle drives the original,
+its particular cautions. With the two files, an agent with no other context
+ports a library or changes one.
 
-Agent skills, short playbooks that point into this file for recurring
+Agent skills, short playbooks that point into the two files for recurring
 tasks, are in `.agents/skills/<name>/SKILL.md`: the library's conventions, a
 port, the build and its lanes, the documentation and the site, and text and
-commits. They never replace a rule here; where one disagrees, this file wins.
+commits. They never replace a rule; where one disagrees, the file it points
+to wins.
 
-This file describes the tree as it is. What is still to come is listed in
-the roadmap (chapter 13), to which every other mention of it refers. Every
-command below runs from the superproject's root, in a shell where `CPATH`,
-`CPLUS_INCLUDE_PATH` and `C_INCLUDE_PATH` are unset (chapter 12).
+This file describes the tree as it is. What is still to come is in the
+roadmap, `CODING-GUIDELINES.md` chapter 16, to which every other mention of
+it refers. Every command below runs from the superproject's root, in a
+shell where `CPATH`, `CPLUS_INCLUDE_PATH` and `C_INCLUDE_PATH` are unset
+(chapter 6). A chapter of this file is cited as "chapter N", one of the
+guidelines as "`CODING-GUIDELINES.md` chapter N".
 
 ## Contents
 
 1. What webcpp is
-2. Choosing and registering a port
-3. Names
-4. Fidelity
-5. Evidence: oracle and twins
-6. C++ rules
-7. Doc Comments and the API reference
-8. Documentation
-9. Tests, lanes, the report, the site and CI
-10. Process
-11. Commits and text
-12. b2 facts
-13. Roadmap
+2. The API reference
+3. Documentation
+4. Tests, lanes, the report, the site and CI
+5. Changelogs and releases
+6. b2 facts
 
 ## 1. What webcpp is
 
@@ -66,7 +67,7 @@ Each target has its purpose:
 | native | a program that wants close integration with its operating system |
 
 The documentation is written for C++ developers, and will also be written
-for web developers and for AI developers (chapter 13).
+for web developers and for AI developers (`CODING-GUIDELINES.md` chapter 16).
 
 ### The libraries
 
@@ -74,10 +75,10 @@ for web developers and for AI developers (chapter 13).
 | --- | --- | --- | --- |
 | config | webcpp's configuration, which every library includes first: the target, exceptions and webcpp's version, as Boost.Config is Boost's; webcpp's own | native, wasip2, wasip3, emscripten | a submodule at `libs/config` |
 | xactor | a deterministic actor system, webcpp's own | native, wasip2, wasip3 (`xactor_asio` native only) | a submodule at `libs/xactor`; the model for every port |
-| xstate | a port of XState 5.33.2's state machines and actors; depends on xactor and Boost.JSON | native, wasip2, wasip3; its oracle lane | a submodule at `libs/xstate`; the first user of the shared oracle (chapter 5) |
-| pratt | a Pratt parser engine, generic through concepts, with a calculator built on it, webcpp's own | native, emscripten, wasip2, wasip3 | a submodule at `libs/pratt`; born with the allocation rule (chapter 6) |
-| wasi | header-only helpers for C++ built as WebAssembly components: the HTTP handler a component exports, webcpp's own | wasip2, wasip3 (`response.hpp` also natively); its own lanes `http`, the components wasmtime serves | a submodule at `libs/wasi`; the first library built as components (chapter 9) |
-| document | a JSON document that behaves as JavaScript does (key order, `JSON.stringify`'s bytes, the array methods), exact in decimal, in one relocatable image; webcpp's own; its parser is Boost.JSON's | native, wasip2, wasip3, emscripten; its oracle lane | a submodule at `libs/document`; its core never throws (chapter 6) |
+| xstate | a port of XState 5.33.2's state machines and actors; depends on xactor and Boost.JSON | native, wasip2, wasip3; its oracle lane | a submodule at `libs/xstate`; the first user of the shared oracle (`CODING-GUIDELINES.md` chapter 12) |
+| pratt | a Pratt parser engine, generic through concepts, with a calculator built on it, webcpp's own | native, emscripten, wasip2, wasip3 | a submodule at `libs/pratt`; born with the allocation rule (`CODING-GUIDELINES.md` chapter 4) |
+| wasi | header-only helpers for C++ built as WebAssembly components: the HTTP handler a component exports, webcpp's own | wasip2, wasip3 (`response.hpp` also natively); its own lanes `http`, the components wasmtime serves | a submodule at `libs/wasi`; the first library built as components (chapter 4) |
+| document | a JSON document that behaves as JavaScript does (key order, `JSON.stringify`'s bytes, the array methods), exact in decimal, in one relocatable image; webcpp's own; its parser is Boost.JSON's | native, wasip2, wasip3, emscripten; its oracle lane | a submodule at `libs/document`; its core never throws (`CODING-GUIDELINES.md` chapter 6) |
 | idna | internationalized domain names: Punycode, UTS 46's ToASCII and ToUnicode, conformant to IdnaTestV2, and IDNA2008's validity, over Unicode 17.0.0 tables generated into its headers; webcpp's own | native, wasip2, wasip3, emscripten; its own lane `tables` | a submodule at `libs/idna`; its errors are values, and its span forms allocate nothing |
 | lexical | the string formats JSON Schema names (date-time, email, hostname, ipv4/ipv6, uri, iri, uri-template, json-pointer, uuid, regex), each a validator that allocates nothing and a Boost.URL grammar rule; regex is an ECMA-262 syntax validator of its own, checked against V8; depends on idna and Boost.URL; webcpp's own | native, wasip2, wasip3, emscripten; its own lanes `generated` and `oracle` | a submodule at `libs/formats` |
 | trystero | a port of Trystero 0.26.0, serverless WebRTC rooms | native, emscripten; its own lanes `oracle` and `interop` | a submodule at `libs/trystero`; born with the allocation rule through `std::pmr` |
@@ -88,7 +89,10 @@ for web developers and for AI developers (chapter 13).
 webcpp/
   Jamroot             the single build configuration: finds Boost, checks its version,
                       sets what every library shares, registers each library
-  AGENTS.md           this rulebook
+  AGENTS.md           how to work in the tree: the tools, the commands, the
+                      lanes, the CI and the releases
+  CODING-GUIDELINES.md  the rules on how code is written and every design
+                      decision, with its reason: the single source of them
   README.md           what webcpp is, the prerequisites, getting started
   LICENSE_1_0.txt
   .clang-format       clang-format's style, every repository's, which a library's own may
@@ -100,24 +104,26 @@ webcpp/
   third_party/        third-party code the libraries and their tests use, not webcpp's: each
                       a submodule under third_party/libs/, pinned at a commit and keeping its
                       own licence, and the Jamfile that declares it as
-                      /webcpp/third_party//<target> (chapter 2)
+                      /webcpp/third_party//<target> (guidelines chapter 10)
   doc/                the index page (index.adoc, Jamfile)
     releases/         each version's release notes, which the index page shows
   site/               the site, a repository of its own, webcpporg/webcpporg.github.io, a
-                      submodule here: its pages, components, tools and tests (chapter 9)
+                      submodule here: its pages, components, tools and tests (chapter 4)
   tools/
-    webcpp.jam        the Jamfile API (chapter 9): webcpp.targets, webcpp.run, ...
+    webcpp.jam        the Jamfile API (chapter 4): webcpp.targets, webcpp.run, ...
     target.jam        the targets, and the target a toolset builds for, which webcpp.jam and
                       component.jam both read
     throw_exception.cpp  what Boost calls in place of a throw, in a user's build without
                       exceptions
-    boost_json.cpp    Boost.JSON's definitions, built as /webcpp//boost_json (chapter 2)
-    boost_test_runner.cpp  Boost.Test's header-only framework, for webcpp.boost-test (chapter 9)
+    boost_json.cpp    Boost.JSON's definitions, built as /webcpp//boost_json
+                      (guidelines chapter 10)
+    boost_test_runner.cpp  Boost.Test's header-only framework, for webcpp.boost-test
+                      (guidelines chapter 8)
     boost/            Jamfile: the compiled Boost libraries built from Boost's sources
                       (/webcpp//boost_url, boost_charconv, boost_locale and
                       boost_cobalt)
-    oracle/           the shared oracle (chapter 5): oracle.jam, twins.py, compare.py and their
-                      tests
+    oracle/           the shared oracle (guidelines chapter 12): oracle.jam,
+                      twins.py, compare.py and their tests
     lint/             lint.sh, rules.py, compile_commands.py and their test
     doc/              the documentation toolchain: doc.jam, reference.py, doc_comments.py,
                       doc-check.py, libraries.py, counts.py, the Asciidoctor.js extensions, the
@@ -129,7 +135,7 @@ webcpp/
     drive/            drive.jam, the rule of a driven test (webcpp.drive), which a script of the
                       original's language runs over a linked program, drive.py, which runs it
                       bounded, and its test
-    generated/        generated.jam, the rule of a library's generated files (chapter 9),
+    generated/        generated.jam, the rule of a library's generated files (chapter 4),
                       generated.py, which runs a generator and checks or writes what it writes,
                       and its test
     node/             install.py, which installs the Node packages of the documentation, an
@@ -146,13 +152,13 @@ webcpp/
                       toolsets), container/Dockerfile (the image of the container lanes),
                       and actions/{boost,wasi-sdk,wasmtime,wit-bindgen,wasi-wit,emsdk,
                       secp256k1,libdatachannel,openssl,chrome,container,mrdocs,node}/
-                      (chapter 9)
+                      (chapter 4)
     site/             site.jam, the rules of b2 site and b2 site-serve, catalogue.py (the
                       site's libraries.json), redirect.py (the old address's two pages) and
-                      their tests (chapter 9)
+                      their tests (chapter 4)
     release/          changelog.py, the form of a changelog, which the lint checks; release.py,
                       the release tooling; template.adoc; scratch.py and their tests
-  .github/            workflows/library.yml, workflows/ci.yml, actionlint.yaml (chapter 9)
+  .github/            workflows/library.yml, workflows/ci.yml, actionlint.yaml (chapter 4)
   .local/             machine-local, git-ignored (below)
   bin/                b2's build directory, git-ignored
 ```
@@ -163,21 +169,24 @@ A library's layout:
 libs/<name>/
   build.jam                  project /webcpp/<name>: its headers and dependencies
   include/webcpp/<name>.hpp  the convenience header, which includes every public header but
-                             one that brings an optional heavy dependency (chapter 3)
+                             one that brings an optional heavy dependency
+                             (guidelines chapter 3)
   include/webcpp/<name>/...  one header per responsibility
   wit/                       the worlds of a library that builds WebAssembly components, whose
                              bindings its build.jam declares (wasi's http-p2.wit and http-p3.wit)
   test/                      Jamfile, the tests, and .clang-tidy when the tests need one
-  test/oracle/               a port's oracle (chapter 5): its Jamfile, the pinned original,
-                             the scripts that drive it, and the twins
+  test/oracle/               a port's oracle (guidelines chapter 12): its Jamfile,
+                             the pinned original, the scripts that drive it, and the
+                             twins
   example/                   Jamfile, the programs and their .expected outputs, and a served
-                             program's .requests (chapter 9)
+                             program's .requests (chapter 4)
   doc/                       Jamfile, the page (<name>.adoc and its sections), mrdocs.yml,
-                             and counts.py when the page counts what only it holds (chapter 8)
+                             and counts.py when the page counts what only it holds (chapter 3)
   doc/changelog.adoc         its changelog, the page's last appendix
   meta/libraries.json        Boost's fields, plus "port-of"
   meta/include-boundaries.json
-                             the include boundaries the lint checks, when it has any (chapter 6)
+                             the include boundaries the lint checks, when it has any
+                             (guidelines chapter 9)
   README.md
   AGENTS.md                  only what is specific to this library
   LICENSE_1_0.txt
@@ -188,7 +197,7 @@ libs/<name>/
                              (InheritParentConfig) and adds only what its code needs, with the
                              reason in a comment, as wasi's names the macros its main is
                              written between (MacroBlockBegin, MacroBlockEnd)
-  .github/workflows/ci.yml   calls the superproject's library.yml (chapter 9)
+  .github/workflows/ci.yml   calls the superproject's library.yml (chapter 4)
 ```
 
 A library has no Jamroot. It is developed inside a checkout of the
@@ -213,7 +222,7 @@ Jamroot is its build configuration, and `libs/<name>` is its repository.
   and the WIT for a reference that parses a component's bindings (wasi's),
   and emsdk, whose `em++` and `clang++` read a reference for Emscripten's
   target, that of a library with a header that builds only on emscripten
-  (`-sWEBCPP_EMSDK=<dir>`, else `.local/emsdk`, chapter 7);
+  (`-sWEBCPP_EMSDK=<dir>`, else `.local/emsdk`, chapter 2);
 - for a library's oracle lane: Node and npm, with Boost and a C++ toolset;
 - for the lint: wasi-sdk 34's clang-format, clang-tidy and clang++, Node,
   the wasip2 and wasip3 toolsets, the emscripten toolset when a library
@@ -221,29 +230,29 @@ Jamroot is its build configuration, and `libs/<name>` is its repository.
   toolsets compile;
 - for emscripten: Emscripten 6.0.11, from emsdk, and Node, which runs its
   programs; the tests of the build need it too;
-- for trystero, until webcpp builds them from `third_party/` (chapter 13):
-  libsecp256k1 0.8.0, static, with its `schnorrsig` and `extrakeys` modules,
-  natively and, for emscripten, built with Emscripten; and, for its native
-  backend, libdatachannel 0.24.6, built with the compiler and the standard
-  library that build the programs, and OpenSSL 3. Each is found in the
-  directory of its `include/` and `lib/` that `-sSECP256K1_ROOT=<dir>`,
-  `-sSECP256K1_EMSCRIPTEN_ROOT=<dir>`, `-sLIBDATACHANNEL_ROOT=<dir>` and
-  `-sOPENSSL_ROOT=<dir>` on b2's command line name, never the environment,
-  else in `.local/secp256k1-native`, `.local/secp256k1-emscripten`,
-  `.local/libdatachannel` and `.local/openssl` when it holds the library's
-  header (below), else, natively outside Windows, in `/usr/include` or
-  `/usr/local/include`, where a system install is legitimate; a relative
-  `-s` is read from b2's working directory. When none holds a library's
-  header, trystero is left out, its programs skipped, with one line that
-  names the library and every place it looked, so that `b2 test` builds
-  every other library, and the index names trystero without a link to its
-  page; with `webcpp-require-external=on` on b2's command line, as the CI
+- for trystero, until webcpp builds them from `third_party/`
+  (`CODING-GUIDELINES.md` chapter 16): libsecp256k1 0.8.0, static, with its
+  `schnorrsig` and `extrakeys` modules, natively and, for emscripten, built
+  with Emscripten; and, for its native backend, libdatachannel 0.24.6, built
+  with the compiler and the standard library that build the programs, and
+  OpenSSL 3. Each is found in the directory of its `include/` and `lib/` that
+  `-sSECP256K1_ROOT=<dir>`, `-sSECP256K1_EMSCRIPTEN_ROOT=<dir>`,
+  `-sLIBDATACHANNEL_ROOT=<dir>` and `-sOPENSSL_ROOT=<dir>` on b2's command
+  line name, never the environment, else in `.local/secp256k1-native`,
+  `.local/secp256k1-emscripten`, `.local/libdatachannel` and `.local/openssl`
+  when it holds the library's header (below), else, natively outside Windows,
+  in `/usr/include` or `/usr/local/include`, where a system install is
+  legitimate; a relative `-s` is read from b2's working directory. When none
+  holds a library's header, trystero is left out, its programs skipped, with
+  one line that names the library and every place it looked, so that `b2 test`
+  builds every other library, and the index names trystero without a link to
+  its page; with `webcpp-require-external=on` on b2's command line, as the CI
   and the lint build, the build stops instead, naming both libraries
-  (`webcpp.external` and its kin, chapter 9). trystero's page says how each is built. The CI's actions build
-  them so (chapter 9).
+  (`webcpp.external` and its kin, chapter 4). trystero's page says how each is
+  built. The CI's actions build them so (chapter 4).
 
-Each toolchain is installed by hand and configured in `user-config.jam`,
-until webcpp bundles the toolchains (chapter 13). b2 reads
+Each toolchain is installed by hand and configured in `user-config.jam`, until
+webcpp bundles the toolchains (`CODING-GUIDELINES.md` chapter 16). b2 reads
 `~/user-config.jam`, or the file `--user-config=<file>` names:
 
 ```
@@ -304,7 +313,7 @@ and `/webcpp//boost_cobalt` (`tools/boost/Jamfile`). An installed Boost has none
 reads them from `-sBOOST_SOURCE=<dir>` on b2's command line (or `-s
 BOOST_SOURCE=<dir>`), which wins, else `BOOST_SOURCE` as a user-config.jam's
 `modules.poke : BOOST_SOURCE : <dir> ;` or the environment gives it, which b2
-cannot tell apart (chapter 12), else `.local/boost-source`: a tree with
+cannot tell apart (chapter 6), else `.local/boost-source`: a tree with
 Boost's `boost/version.hpp` and the `libs/<library>/src` of each library,
 which `bash tools/ci/actions/boost/install.sh source .local/boost-source`
 fills from the archive the CI uses, checked against its SHA-256. It writes
@@ -327,7 +336,7 @@ install of emsdk, or a link to one) with Emscripten's cache in
 `.local/secp256k1-native`, `.local/secp256k1-emscripten`,
 `.local/libdatachannel` and `.local/openssl` (`include/openssl` and the two
 libraries of the system's OpenSSL 3, linked, as the CI's `openssl` action
-lays them out), where the CI's actions install them too (chapter 9). The
+lays them out), where the CI's actions install them too (chapter 4). The
 build finds each of them there with no `-s`: `b2 -a doc`, whose reference
 parses trystero's native backend, runs as it is. Another directory is named
 with `-sSECP256K1_ROOT=<dir>` and its kin on b2's command line, never with
@@ -339,7 +348,7 @@ where the `using clang` lines of `user-config.jam` name it, and, for a
 script's component, `-sWASI_SDK` (above). The emsdk is where the `using
 emscripten` line of `user-config.jam` names its `em++`, for the emscripten
 toolset, and, for a reference read for Emscripten's target,
-`-sWEBCPP_EMSDK=<dir>` on b2's command line, else `.local/emsdk` (chapter 7):
+`-sWEBCPP_EMSDK=<dir>` on b2's command line, else `.local/emsdk` (chapter 2):
 not a `modules.poke` of `user-config.jam`, nor the environment's `EMSDK`.
 `tools/lint/compile_commands.py` runs b2 with `.local/user-config.jam`, else
 with the file `$WEBCPP_USER_CONFIG` names, else with b2's own search. The
@@ -376,661 +385,35 @@ told: `b2 --user-config=.local/user-config.jam ...`.
 | `b2 test` | every library's tests, natively |
 | `b2 example` | every library's examples: each is built, run with its `.input` as its standard input when it has one, and its output compared with its `.expected` |
 | `b2 doc` | the index page, `doc/html/index.html`, and every library's page, `libs/<name>/doc/html/index.html` |
-| `b2 doc -sWEBCPP_INDEX=site` | the same, with the index linking each page where the site serves it, `libs/<name>/` (chapter 8) |
+| `b2 doc -sWEBCPP_INDEX=site` | the same, with the index linking each page where the site serves it, `libs/<name>/` (chapter 3) |
 | `b2 libs/<name>/test` | one library's tests; `libs/<name>/example` and `libs/<name>/doc` likewise |
 | `b2 libs/<name>/test//<test>` | one test, while working on it (`scheduler`) |
 | `b2 libs/<name>/doc//reference` | one library's API reference alone, MrDocs strict |
 | `b2 toolset=clang-wasip2 testing.launcher=wasmtime libs/<name>/test libs/<name>/example` | the same for wasm32-wasip2; `clang-wasip3` for wasm32-wasip3; one toolset per command |
-| `b2 toolset=emscripten libs/<name>/test libs/<name>/example` | the same for emscripten, whose programs b2's toolset runs with node itself: never with a `testing.launcher` (chapter 9) |
+| `b2 toolset=emscripten libs/<name>/test libs/<name>/example` | the same for emscripten, whose programs b2's toolset runs with node itself: never with a `testing.launcher` (chapter 4) |
 | `b2 install --prefix=<dir>` | copies every library's headers to `<dir>/include/webcpp/`, and its licence files, `LICENSE_1_0.txt` and a port's `LICENSE-<ORIGIN>.txt`, beside them in `<dir>/include/webcpp/<name>/` |
 | `b2 declared-targets -d0` | prints each `<library> <target>` pair the libraries declare: the CI's lanes |
-| `b2 declared-lanes -d0` | prints each `<library> <lane> <directory> <kind>` line of a library's own lanes, such as its oracle's, and `<library> <lane> <directory> <target> <kind>` once per target for a lane that names the targets it runs on; the kind is `original` for a lane that runs the original's language, else `programs` (chapters 5 and 9) |
-| `b2 toolset=clang-wasip2 testing.launcher=wasmtime libs/<name>/test//<lane>` | an own lane on wasip2, such as wasi's served tests, `libs/wasi/test//http` and `libs/wasi/example//http` (chapter 9) |
+| `b2 declared-lanes -d0` | prints each `<library> <lane> <directory> <kind>` line of a library's own lanes, such as its oracle's, and `<library> <lane> <directory> <target> <kind>` once per target for a lane that names the targets it runs on; the kind is `original` for a lane that runs the original's language, else `programs` (`CODING-GUIDELINES.md` chapter 12 and chapter 4) |
+| `b2 toolset=clang-wasip2 testing.launcher=wasmtime libs/<name>/test//<lane>` | an own lane on wasip2, such as wasi's served tests, `libs/wasi/test//http` and `libs/wasi/example//http` (chapter 4) |
 | `b2 -sWIT_BINDGEN=<path> -sWASI_WIT_P2=<dir> -sWASI_WIT_P3=<dir> -sWASMTIME=<path> ...` | any of these with the tools of a component where the defaults do not find them (above) |
-| `b2 libs/<name>/test/oracle//oracle` | a port's oracle lane: the original runs the cases and the twins, and the results are compared (chapter 5) |
-| `b2 libs/<name>/test/oracle//update-expected` | writes the original's results again, the only writer of an expected result (chapter 5) |
-| `b2 libs/<name>/test//generated-<name>` | a library's generated files checked against their generator: written into the build directory and compared, byte for byte (chapter 9) |
-| `b2 libs/<name>/test//update-generated` | writes every generated file of that Jamfile again, the only writer of a generated file (chapter 9) |
+| `b2 libs/<name>/test/oracle//oracle` | a port's oracle lane: the original runs the cases and the twins, and the results are compared (`CODING-GUIDELINES.md` chapter 12) |
+| `b2 libs/<name>/test/oracle//update-expected` | writes the original's results again, the only writer of an expected result (`CODING-GUIDELINES.md` chapter 12) |
+| `b2 libs/<name>/test//generated-<name>` | a library's generated files checked against their generator: written into the build directory and compared, byte for byte (chapter 4) |
+| `b2 libs/<name>/test//update-generated` | writes every generated file of that Jamfile again, the only writer of a generated file (chapter 4) |
 | `b2 -a ...` | any of these from scratch; the only build that counts as evidence |
-| `tools/lint/lint.sh --clang-format <wasi-sdk>/bin/clang-format --clang-tidy <wasi-sdk>/bin/clang-tidy` | the lint, of the superproject and every library (chapter 6) |
-| `python3 tools/<dir>/<name>_test.py` | a test of the build or of a tool (chapter 10) |
-| `python3 tools/ci/matrix.py plan`, `own-lanes`, `lane`, `own-lane`, `register`, `report` | the CI's lanes and own lanes, run the way the CI runs them (chapter 9) |
-| `b2 site`, `b2 site-serve` | the whole site, the site's pages with every library's page and the report, into `bin/site/`, every link checked (`tools/site/site.jam`, `tools/ci/assemble.py`); `site-serve` then serves it on http://127.0.0.1:8765/; `-sWEBCPP_SITE=release -sWEBCPP_SITE_VERSION=<version>` builds the release channel (chapter 9) |
-| `b2 check-release` | what a tag needs: every library's change has a line, the release notes are complete, and the version agrees everywhere (chapter 11) |
-| `b2 whats-new` | writes the skeleton of a version's "What's new", from its release notes (chapter 11) |
-| `b2 dist` | writes the version's reproducible archive and its checksum (chapter 11) |
+| `tools/lint/lint.sh --clang-format <wasi-sdk>/bin/clang-format --clang-tidy <wasi-sdk>/bin/clang-tidy` | the lint, of the superproject and every library (`CODING-GUIDELINES.md` chapter 9) |
+| `python3 tools/<dir>/<name>_test.py` | a test of the build or of a tool (`CODING-GUIDELINES.md` chapter 1) |
+| `python3 tools/ci/matrix.py plan`, `own-lanes`, `lane`, `own-lane`, `register`, `report` | the CI's lanes and own lanes, run the way the CI runs them (chapter 4) |
+| `b2 site`, `b2 site-serve` | the whole site, the site's pages with every library's page and the report, into `bin/site/`, every link checked (`tools/site/site.jam`, `tools/ci/assemble.py`); `site-serve` then serves it on http://127.0.0.1:8765/; `-sWEBCPP_SITE=release -sWEBCPP_SITE_VERSION=<version>` builds the release channel (chapter 4) |
+| `b2 check-release` | what a tag needs: every library's change has a line, the release notes are complete, and the version agrees everywhere (chapter 5) |
+| `b2 whats-new` | writes the skeleton of a version's "What's new", from its release notes (chapter 5) |
+| `b2 dist` | writes the version's reproducible archive and its checksum (chapter 5) |
 
-## 2. Choosing and registering a port
+## 2. The API reference
 
-### Choosing
-
-- **What.** A library widely used for the web in another language, ported at
-  an exact version of the original: a tag or a published release, recorded in
-  `meta/libraries.json` and in the library's `AGENTS.md`. A port follows that
-  version; moving to another one is a change of its own, with its evidence.
-- **The licence.** An original under a licence compatible with BSL-1.0 can be
-  ported: MIT, BSD and Apache-2.0. GPL cannot. MPL is decided case by case,
-  by the owner. A port that derives from the original's code keeps the
-  original's notice, unchanged, in `LICENSE-<ORIGIN>.txt` (`LICENSE-XSTATE.txt`,
-  `LICENSE-TRYSTERO.txt`), and its README names the parts that derive from
-  it. That adds no licence to webcpp's code: every file of webcpp is BSL-1.0
-  only, and no repository has a `LICENSE-MIT.txt`. A library of webcpp's own,
-  like xactor and pratt, has no `LICENSE-<ORIGIN>.txt`.
-- **The name.** `[a-z][a-z0-9_]*`, the name of the original where it has one
-  (xstate, trystero). `index` is reserved, in any case: the index page is the
-  doc build's page `index`, and the report refuses a library of that name,
-  nor `target`, `has`, `no`, `lib` or `version`, which config's macros take
-  (`WEBCPP_TARGET_*`, `WEBCPP_HAS_EXCEPTIONS`, ...), nor `test`, which the
-  test-only macros take (`WEBCPP_TEST_*`): the index refuses each.
-
-### The checklist of a new library
-
-Each item is done before the port's first green CI; the first two are the
-owner's:
-
-1. **The repository** `webcpporg/<name>`, public from its first commit, made
-   by the owner. An agent never creates a remote repository, never pushes,
-   and never changes a GitHub setting. Until the repository exists, the
-   library is a local repository at `libs/<name>` (`git init`), which the
-   lint and the build already treat as a library.
-2. **The submodule**, added by the owner once the repository exists, with a
-   URL relative to the superproject's, as Boost's `.gitmodules` writes its
-   libraries' (`libs/xactor` is `../xactor.git`), so that a clone fetches
-   the libraries over the same protocol as the superproject:
-
-   ```
-   git submodule add ../<name>.git libs/<name>
-   ```
-
-   Never `git add -A` or `git add libs` in the superproject: a library is a
-   repository of its own, and the superproject records only its commit.
-3. **`meta/libraries.json`**, Boost's file, with webcpp's `"port-of"`:
-
-   ```json
-   {
-       "key": "xstate",
-       "name": "xstate",
-       "authors": ["R"],
-       "description": "One sentence that says what the library is.",
-       "category": ["State"],
-       "maintainers": ["R <github.overboard312@passmail.net>"],
-       "cxxstd": "20",
-       "port-of": {
-           "name": "XState",
-           "language": "TypeScript",
-           "version": "5.33.2",
-           "url": "https://github.com/statelyai/xstate",
-           "licence": "MIT"
-       }
-   }
-   ```
-
-   `"port-of"` is `null` for a library of webcpp's own (xactor's is). `name`,
-   `description` and `port-of` are required, and every field of `port-of`,
-   whose `url` is an `https` URL; `tools/doc/libraries.py` fails the doc build,
-   naming the file and the field, otherwise.
-4. **`build.jam`**, which the Jamroot finds by its glob `libs/*/build.jam` and
-   registers as `/webcpp/<name>`. It declares one target, named after the
-   library, that adds its headers and its dependencies:
-
-   ```
-   # Copyright (c) 2026 WebCpp.org
-   # ... the licence notice (chapter 11)
-
-   project /webcpp/<name> ;
-
-   alias <name> : : : : <include>include <library>/boost//headers <library>/webcpp/config//config ;
-   ```
-
-   Every library adds config's target, `<library>/webcpp/config//config`,
-   since its `config.hpp` includes `<webcpp/config.hpp>` (chapter 3). A
-   dependency on another library is written as its target,
-   `<library>/webcpp/xactor//xactor`. A compiled Boost library is built by
-   webcpp from Boost's sources (chapter 1): a library that needs Boost.URL
-   adds `<library>/webcpp//boost_url` to its target's usage requirements,
-   static, built once per variant with Boost.URL's own macros; never
-   `/boost//url`, which would link the system's, nor
-   `/webcpp/boost-libraries//boost_url`, which the Jamroot's alias checks
-   the sources' version for. Boost.Charconv and Boost.Locale likewise,
-   `<library>/webcpp//boost_charconv` and `<library>/webcpp//boost_locale`:
-   Boost.Locale without ICU, with what it gives on each target in this
-   table:
-
-   | Target | `/webcpp//boost_locale` | `/webcpp//boost_charconv` |
-   | --- | --- | --- |
-   | native Linux (gcc, clang, glibc) | backends posix and std; iconv from glibc; no ICU (measured) | yes (measured) |
-   | native macOS (Apple clang, gcc) | backends posix and std; iconv from the system's libiconv, `-liconv` given by the target; no ICU (measured) | yes (measured) |
-   | native Windows (MSVC) | backends winapi and std, no iconv, no ICU: Boost's own configuration on Windows. Not measured here: no Windows machine; the first CI run that builds it is its measurement, and a failure is reported to the owner, never hidden | yes; not measured here |
-   | wasip2, wasip3 | backends posix and std; iconv from wasi-libc; number, currency and date formatting in the C locale's form (no locale data, no ICU); a catalog is read from a directory the test gives (`webcpp.data`) (measured) | yes (measured) |
-   | emscripten | backends posix and std; iconv from Emscripten's libc; a catalog is read from the host's files, as natively; single-threaded: Boost.Locale's sources alone are compiled with `BOOST_HAS_PTHREADS`, so that Boost.Thread's mutex, which three of them include, builds against Emscripten's pthread functions, which do nothing there; no program gets it, nor `-pthread`, and no public header of Boost.Locale depends on it, which `tools/test/boost_libraries_test.py` checks by preprocessing every one with it and without (measured) | yes (measured) |
-   | any target, `exception-handling=off` | refused by name: Boost.Locale throws and catches unguarded (61 `throw`, 14 `try` in its sources, 8 `throw` in its headers) | yes (measured natively and on wasip2) |
-
-   Since Boost.Locale needs exceptions, a program that names
-   `/webcpp//boost_locale`, directly or through a library, declares
-   `<exception-handling>on` in its own requirements, which keeps it with
-   exceptions in a build without them, the lint's twins included (chapter 6):
-   b2 ignores it as a usage requirement, and the refusal stops the whole
-   build, naming that fix but not the program, which b2 does not give it.
-
-   A library that needs Boost.JSON adds `<library>/webcpp//boost_json` to its
-   target's usage requirements, as xstate's `build.jam` does: the Jamroot's
-   `boost_json`, `tools/boost_json.cpp`, compiles Boost.JSON's definitions
-   (`<boost/json/src.hpp>`, as Boost.JSON documents for a header-only build)
-   into a static library, once per variant, so a user's build without
-   exceptions gets them built without exceptions too. A library that builds
-   WebAssembly components declares the C bindings of its worlds there too,
-   with `webcpp.wit-bindings` (chapter 9), as wasi's `build.jam` does for the
-   world of each WASI version under its `wit/`. Nothing else registers a
-   library: the test, example and doc directories join the aggregates `test`,
-   `example` and `doc` by themselves, and `include/webcpp/**` joins
-   `install`.
-5. **`test/Jamfile`, `example/Jamfile` and `doc/Jamfile`**, with the rules of
-   chapter 9 and chapter 8.
-6. **The files of the repository:** `LICENSE_1_0.txt`, `README.md` (what the
-   library is, how to build and test it inside the superproject, where its
-   page is published, its licence), `AGENTS.md` (only what is specific to it,
-   with a link to this file as `../../AGENTS.md`), `doc/changelog.adoc` (its
-   changelog, the page's last appendix, chapter 11), `.gitattributes`, and a
-   `.gitignore` that holds at least `doc/html/`, and for a library with an
-   oracle `node_modules`, the link to the installed packages, which a pattern
-   with a slash would miss, and `.node-modules/`, where `tools/node/install.py`
-   installs them: the superproject's own `.gitignore` names only its top-level
-   `doc/html/`.
-7. **CI.** `.github/workflows/ci.yml`, which calls the superproject's
-   reusable workflow (chapter 9), as `libs/xactor/.github/workflows/ci.yml`
-   does:
-
-   ```yaml
-   jobs:
-     ci:
-       uses: webcpporg/webcpp/.github/workflows/library.yml@main
-       with:
-         library: <name>
-   ```
-
-8. **The index page.** It lists every library of `libs/` from its
-   `meta/libraries.json`, so the entry exists once the file does, and `b2 doc`
-   shows it in `doc/html/index.html`, linked to the library's page, and its
-   line under New Libraries in the release notes of the version in
-   preparation. A library without a page fails the index.
-9. **`LICENSE-<ORIGIN>.txt`**, where the port derives from the original's
-   code (above).
-
-### Third-party code
-
-What a library or its tests use and webcpp does not own is never copied into
-a library: it is a submodule under `third_party/libs/<name>`, pinned at a
-commit, with the URL of its own repository, and `third_party/Jamfile`
-declares it as `/webcpp/third_party//<target>`, whose usage requirements
-give a program what it needs. It keeps its own licence and notices, and the
-lint never reads it (chapter 6). Adding one is the owner's decision; moving
-its pin is a change of its own, with its evidence. A target whose submodule
-is not checked out stops the build that needs it, naming `git submodule
-update --init third_party/libs/<name>`; a build that needs none never looks.
-
-| Target | What it is | Licence |
-| --- | --- | --- |
-| `json-schema-test-suite` | the JSON Schema Test Suite at `5b0ee16` (2026-09-21), test data: a test that names it reads the suite at run time from the directory its define `WEBCPP_TEST_JSON_SCHEMA_TEST_SUITE` gives, on every target (wasmtime is given it, `webcpp.data`), and runs again when a file of the suite changes | MIT |
-| `nativejson-benchmark` | Milo Yip's nativejson-benchmark at `478d572` (2022-10-28), test data: document's benchmarks (`libs/document/bench`) read its `data/canada.json`, `data/citm_catalog.json` and `data/twitter.json` at run time under the directory its define `WEBCPP_TEST_NATIVEJSON_BENCHMARK` gives, on every target (wasmtime is given it, `webcpp.data`), and run again when one of them changes; its own submodules are never checked out | MIT |
-
-## 3. Names
-
-| What | Rule | xactor's |
-| --- | --- | --- |
-| namespace | `webcpp::<name>` | `webcpp::xactor` |
-| what is not public | a namespace `detail`, at any depth | `webcpp::xactor::detail` |
-| convenience header | `<webcpp/<name>.hpp>`, which includes every public header, but may leave out one that brings an optional heavy dependency (below) | `<webcpp/xactor.hpp>` |
-| headers | `<webcpp/<name>/...>`, one per responsibility, `snake_case` | `<webcpp/xactor/scheduler.hpp>` |
-| macros | `WEBCPP_<NAME>_*` | `WEBCPP_XACTOR_*` |
-| configuration | `<webcpp/<name>/config.hpp>`, which every public header includes first, which includes `<webcpp/config.hpp>` first, with `WEBCPP_<NAME>_NO_EXCEPTIONS` (chapter 6) | `<webcpp/xactor/config.hpp>` |
-| test-only macros | `WEBCPP_TEST_*` | |
-| include guards | `WEBCPP_<NAME>_<HEADER>_HPP` | `WEBCPP_XACTOR_ACTOR_LOGIC_HPP` |
-| b2 target | `/webcpp/<name>//<name>` | `/webcpp/xactor//xactor` |
-| error category | `webcpp.<name>` | `webcpp.xactor` |
-| identifiers | `snake_case`, Boost's convention; `.clang-tidy` enforces it | |
-
-config is the one exception: it holds the collection's macros, `WEBCPP_*`, as
-Boost.Config holds `BOOST_*`, in `<webcpp/config.hpp>` and
-`<webcpp/version.hpp>`, whose include guards are `WEBCPP_CONFIG_HPP` and
-`WEBCPP_VERSION_HPP`, and declares no namespace.
-
-A convenience header may leave out a public header that brings an optional
-heavy dependency, which a user of the rest should not pay for, and names in
-its comment the header it leaves out and the dependency:
-`<webcpp/pratt.hpp>` includes pratt's engine, and leaves out
-`<webcpp/pratt/calculator.hpp>`, which brings Boost.Decimal.
-
-A test's helpers that are shared between tests go in `webcpp::test`
-(`libs/xactor/test/require.hpp`). Example programs alias the namespace
-(`namespace xactor = webcpp::xactor;`), as Boost's do.
-
-## 4. Fidelity
-
-- A port behaves as the original, at the version it ports: the same results,
-  the same order of events, the same errors, for the same inputs.
-- Every difference is a decision, recorded in the page's appendix
-  "Differences": what the original does, what the port does, and why. A
-  difference forced by C++ (no garbage collector, value types where the
-  original shares objects) is still recorded.
-- Each difference has an example `example/diff_<topic>.cpp`, with its
-  `.expected`, and its twin in the original's language (chapter 5), which
-  shows the original's behaviour; the page shows both outputs side by side.
-  xstate is the model, with its `diff_spawn_id`: XState keys a child spawned
-  without an id as `"undefined"`, the port as an empty string, and the page
-  shows the two outputs, each printed by its program.
-- No divergence goes unrecorded. A difference found later, in a test, a
-  review or a user's report, is either fixed or recorded in the same change
-  that finds it.
-
-## 5. Evidence: oracle and twins
-
-A port's evidence is the original itself. The port's tests do not state by
-hand what the original does: the pinned original runs the same cases and the
-twins of the examples, and the port must produce what it produced. The
-oracle that does it is shared by every port, in `tools/oracle/`; xstate is
-its first user, and the model:
-
-| Shared, in `tools/oracle/` | Per library, in `libs/<name>/test/oracle/` |
-| --- | --- |
-| the twin runner, `twins.py`, with its agreeing, divergent and without-twin bookkeeping | the pinned original (`package.json` and `package-lock.json`, for JavaScript) |
-| output and tree comparison, `twins.py` and `compare.py` | the oracle scripts that drive the original over the cases (xstate's `oracle.mjs` and `actors.mjs`) |
-| `update-expected`, with its refusals | the cases, and their C++ runner, under the library's `test/` |
-| the `.jam` module of rules, `oracle.jam`, that the library's `test/oracle/Jamfile` calls | the twins, `twins/`, with `without-twin.txt` |
-| the CI action that installs the language's runtime, `tools/ci/actions/node` | |
-
-- **Cases.** The original's tests are ported as data-driven cases, which the
-  C++ runner runs against the port.
-- **Expected results.** The oracle runs the pinned original over the same
-  cases and writes the expected results. The port must produce them.
-- **Twins.** Every documented example has a twin in the original's language,
-  `<name>.mjs` beside the C++ program in the library's twin directory, which
-  the page includes through `{twins}`. A twin either agrees (prints exactly
-  what the C++ example prints), or diverges, with the original's output
-  recorded as its own `.expected` and the difference in the appendix
-  (chapter 4), or is listed as without a twin, with the reason, as a line
-  `<path>: <reason>` of the twin directory's `without-twin.txt`.
-- **Nothing expected is written by hand.** Only `update-expected` writes an
-  expected result, and it refuses to write a twin's output for a twin that
-  agrees, since that output must be the C++ example's. Nor is a generated
-  file: only `update-generated` writes it (chapter 9).
-- **How the original runs.** Each library declares it: for JavaScript and
-  TypeScript, `node --conditions=development`.
-
-### The rules (`tools/oracle/oracle.jam`)
-
-A library's `test/oracle/Jamfile` declares its oracle with four rules of
-`tools/webcpp.jam`. xstate's, whole after its licence notice and its first
-comment:
-
-```
-import webcpp ;
-
-webcpp.original node --conditions=development ;
-webcpp.twins ../../example : twins : .mjs
-  : --test-reporter=spec --test-reporter-destination=stderr ;
-webcpp.cases machines : oracle.mjs : ../fixtures/cases : ../fixtures/expected ;
-webcpp.cases actors : actors.mjs : ../fixtures/actors/cases : ../fixtures/actors/expected ;
-webcpp.lane oracle : twins cases-machines cases-actors ;
-```
-
-| Rule | What it declares |
-| --- | --- |
-| `webcpp.original <word> + [ : <directory> ] ;` | how a program of the original's language runs, once and first; and the target `node-modules`, which installs what `package-lock.json` beside the Jamfile, or in the `<directory>` given (relative to the Jamfile: document's `test/js` runs the tests of `js/`, whose package pins Playwright and TypeScript), pins with `npm ci`, through `tools/node/install.py`: once per lockfile under `.node-modules/`, linked at `node_modules`, so that runs at once never install over each other |
-| `webcpp.twins <examples> : <twins> : <suffix> : <extra-word> * ;` | the target `twins`: `twins.py` runs the twin `<twins>/<path><suffix>` of every program `<examples>/<path>.cpp`, at any depth, with the original's words and the extra words, and compares what it prints with the program's `.expected`, or with the twin's own `.expected` for a difference, which must then differ from the program's. Declared once per library: the page shows and counts its twins (chapter 8) |
-| `webcpp.cases <name> : <script> : <cases> : <expected> ;` | the target `cases-<name>`: the original runs `<script> <cases> <output>` into the build directory, and `compare.py` finds the output equal to `<expected>`, file by file and byte by byte. The Jamfile stops loading at a cases directory that does not exist, and at an expected directory whose removal would take the oracle's directory or the cases |
-| `webcpp.lane <name> : <b2-target> + : <target> * ;` | an own lane of the library, the explicit alias `<name>` over the b2 targets, each a main target of the same Jamfile, which the lane makes explicit too, so that the ordinary lanes never build them; the alias compiles nothing, and leaves the Jamroot's check of Boost to the targets it names; `b2 declared-lanes` lists it and the CI runs it (chapter 9). An oracle's names no target. One that names targets runs on each, as the CI's lane of that target does, and its tests reach the report: each is one of the Jamfile's `webcpp.targets` (`native` without any), or the build stops naming it. Every lane-only program, of `webcpp.serve`, `webcpp.serve-script` or `webcpp.drive`, must be named by a lane of its Jamfile on every target it is built for, or `b2 declared-lanes`, and with it the CI's plan, stops naming it. Only a Jamfile under the library's `test/` or `example/` declares one |
-
-The first `webcpp.twins` or `webcpp.cases` also declares the target
-`update-expected`, which writes every expected directory again from the
-original, and each divergent twin's own output (`twins.py --update`, which
-refuses one that agrees). Directories are relative to the Jamfile.
-
-Every target is explicit: only a request by name, or a lane that names it,
-runs Node, and `b2 test` never does. Node and npm are looked for on `PATH`
-when an oracle target runs, and the build stops, naming the one that is
-missing. The targets compile nothing, but they sit in the library's test
-project and inherit its requirements, with the Jamroot's check of Boost, so
-an oracle lane needs Boost and a toolset beside Node and npm.
-
-| Command | What it does |
-| --- | --- |
-| `b2 -a libs/<name>/test/oracle//oracle` | the oracle lane, from scratch: every case and every twin on the original, compared |
-| `b2 libs/<name>/test/oracle//twins`, `//cases-<name>` | one part of it, while working on it |
-| `b2 libs/<name>/test/oracle//update-expected` | the original's results written again, over the committed ones; never a check |
-| `python3 tools/oracle/twins.py --list --suffix .mjs --examples libs/<name>/example --twins libs/<name>/test/oracle/twins` | each program as agreeing, divergent or without twin, and their total, running nothing |
-
-**What a port proves.** Its cases pass natively and on every target it
-declares, against expected results the original wrote; its oracle lane is
-green, so the original still writes every committed expected result and
-every twin agrees, or diverges as recorded; and its page shows each twin's
-code and each difference's two outputs. The runner accounts for every
-program by name, so a twin that is no longer compared fails the lane rather
-than leave it green on the rest.
-
-## 6. C++ rules
-
-### The language
-
-- C++20, header-only. The Jamroot sets `<cxxstd>20`, `<warnings>extra` and
-  `<warnings-as-errors>on` for everything.
-- **What a library builds on, in this order:** what webcpp already has;
-  then Boost (boost.org); then the C++ Alliance's libraries
-  ([cppalliance](https://github.com/cppalliance)), whose authors are Boost's;
-  then the standard library; then a library from outside that follows Boost,
-  the standard library and the standards of its field; then a C++ port of a
-  very widely used C library; and only then an implementation of the
-  library's own. A library from outside comes in after the owner's review,
-  with the reason written in the library's documentation (OpenSSL, for one,
-  because it is the standard of its field). The same order governs each
-  function an implementation of its own writes: it builds on those bases
-  first, and follows their standards. So a hash is Boost.Hash2's before
-  anything else, and a JSON parser is Boost.JSON's.
-- **Written for the web.** Every library is written to be taken to the web:
-  its memory, its I/O and its scheduling are its user's to customize (the
-  allocators below; the executors and schedulers it runs on), and on the
-  emscripten target it uses what the browser offers, so that a C++ program
-  in a web page has a development environment as good as the web's own.
-- **Within Boost, the newest library of a kind:** Boost.Coroutine2 rather
-  than Boost.Coroutine, Boost.Variant2 rather than Boost.Variant, Boost.Hash2
-  rather than Boost.ContainerHash for new hashing, Boost.Unordered's flat
-  maps rather than an older map, Boost.Charconv rather than a hand-written
-  conversion.
-- **A library from outside is wrapped,** behind an interface that follows its
-  counterpart in the standard library or in Boost as closely as it can, so
-  that the outside library is an implementation detail the user never names
-  and another implementation can replace it: as webcpp::trystero hides
-  libdatachannel behind its backend interface, with the browser's WebRTC as
-  the other backend.
-- **Types of a fixed meaning.** An integer whose width matters is one of the
-  fixed-width types of `<cstdint>` (`std::uint8_t`, `std::int64_t`,
-  `std::uint32_t`), as Boost.Config's `<boost/cstdint.hpp>` guidelines give
-  them; a size or an index is `std::size_t`, a difference
-  `std::ptrdiff_t`; plain `int`, `long`, `short` and `unsigned` appear only
-  where an interface of the standard library or of Boost asks for them.
-- **Errors as values.** An operation that can fail returns its error:
-  `boost::system::result<T>`, with an error category of the library's own
-  (`webcpp.<name>`) and fixed enumerator values that are never reused.
-- **No global or static mutable state.** `.clang-tidy` enforces part of it
-  (`cppcoreguidelines-avoid-non-const-global-variables`).
-- **Determinism.** No clock, file, network, process, thread, environment or
-  entropy, unless that is the library's purpose. The lint's world rule finds
-  them by name in every library header; a line that names one without
-  reaching the world (a simulated clock), or that reaches it because it is the
-  library's purpose, says why after `lint-world:` on the same line:
-
-  ```cpp
-  #include <boost/asio/io_context.hpp>  // lint-world: posts handlers only
-  ```
-
-- **Allocation.** A library is to avoid dynamic allocation as far as its job
-  allows, and to let its user customize the allocator of what it does
-  allocate, so that it can be used with Boost.Interprocess:
-  - **A data structure that makes sense to share** (a parsed JSON document,
-    a state machine's definition) takes an `Allocator` template parameter,
-    allocates through `std::allocator_traits` of it, and holds every pointer
-    as the allocator's `pointer` type (Boost.Interprocess's `offset_ptr`) or
-    as an offset, never an absolute address, a vtable or a `std::function`: it
-    can be built in a shared segment and used in place by another process
-    that maps it elsewhere.
-  - **Everything else** (run-time objects: actors, rooms, sockets, handlers)
-    routes every allocation through an allocator its user gives, a template
-    parameter or a `std::pmr::memory_resource`, with no requirement to live
-    in a shared segment.
-  - Each library's page says which of its types are shareable, and a test
-    that counts allocations proves that none goes elsewhere.
-
-  A library ported or written from now on is born with this rule, as pratt
-  is: its calculator's environment takes the user's `Allocator`; and as
-  trystero is, through `std::pmr`: a `std::pmr::memory_resource` given in
-  its `app_config`, and in a room's `room_options`, reaches every allocation
-  of the app and its rooms, including the immutable password in the app's
-  resource, which a counting test
-  proves natively and on emscripten. The libraries written before it are
-  brought to it by a review (chapter 13).
-- **Asynchronous code is built on xactor.** A library that ports anything
-  asynchronous runs it as actors on xactor, whose scheduler drives every
-  library the same way, deterministically, and in a browser from the page's
-  event loop, which owns the system's events. How such a library meets
-  Boost.Asio and Boost.Cobalt is still to be designed (chapter 13).
-- **Text** is passed and held as `std::string_view` where nothing must own
-  it; `std::string` only where something does.
-- **A function starts with its guards:** every condition it needs is checked
-  first, and what fails returns there, before any work begins.
-- **A comment says what the code does not make clear:** why, a constraint, an
-  example of a value. A descriptive comment is one sentence of what the code
-  that follows does, then an optional reason, in a few lines.
-- **JSON literals in code are laid out for their reader:** a raw string
-  literal that opens a line with `R"({` or `R"([` has its members four spaces
-  deeper than that line, one per line, and closes at that line's indentation.
-
-### Bringing a C library into webcpp
-
-A webcpp library that builds on a C library (webcpp::crypto on BearSSL and
-libsecp256k1, for example) brings it in this way, so that the C code stays
-exactly its authors' and the program carries only what it calls.
-
-1. The C library is a submodule under `third_party/libs/<name>`, pinned at a
-   commit and never edited. When upstream is not on GitHub, an unmodified
-   `webcpporg/<name>` mirror stands in (BearSSL's is `webcpporg/bearssl`),
-   refreshed only when the pin moves.
-2. `third_party/Jamfile` builds it from its own sources, file by file, as a
-   static library, in the library's own C dialect, on every target and with
-   every file: a file that does not apply to a target still compiles, to the
-   stubs other files call. A single unity source is not used.
-3. Every file is compiled with `-ffunction-sections -fdata-sections` (`/Gy
-   /Gw` on MSVC); upstream's warnings are not webcpp's (`<warnings>off`); each
-   define the library cannot work out for itself on a target sits beside the
-   sources with its reason (BearSSL's `BR_USE_GETENTROPY=1` on WebAssembly).
-4. Its usage requirements give the public include directory, the define
-   `WEBCPP_<LIB>_HAS_<NAME>=1`, and the link-time removal of unused sections
-   (`-Wl,--gc-sections`, `-Wl,-dead_strip`, `/OPT:REF`).
-5. A program names the C library in its own Jamfile, beside the webcpp library
-   that uses it, so that its choice is explicit:
-   `exe app : app.cpp /webcpp/crypto//crypto /third_party//bearssl ;`. A
-   library named and never called adds no byte to the program.
-6. Three layers stop a wrong build, each saying exactly what to add:
-   - at compile time, the backend's header checks `WEBCPP_<LIB>_HAS_<NAME>`
-     and `#error`s with the Jamfile line to add;
-   - at link time, every function that calls the C library references a
-     canary, `webcpp_<lib>_<name>_<commit7>_<configuration>__add_third_party_<name>_to_your_link`,
-     defined by a small file of webcpp's that the Jamfile adds to the library,
-     so that a missing library, or one of another commit or configuration,
-     fails to link with that name;
-   - on MSVC, the header and the canary carry `#pragma
-     detect_mismatch("webcpp_<lib>_backend_<name>", "<name>-<commit7>-<configuration>")`.
-7. A library webcpp does not build (OpenSSL) is found by `webcpp.external`,
-   linked shared or static by a propagated feature, refused on WebAssembly,
-   and announces itself by the same `HAS` define. When a program names it and
-   the machine lacks it, the build stops with the instruction (how to install
-   it, `-s<NAME>_ROOT=<dir>`, or another backend): it is never left out in
-   silence. Only webcpp's own tests and examples are left out, as chapter 9
-   says, and the CI requires them anyway.
-8. The webcpp library's `config.hpp` chooses the default backend from the
-   target and the `HAS` defines, and refuses impossible combinations with
-   `#error`. The backend is named after the C library (`backends::bearssl`),
-   never after a quality.
-9. The documentation gives, per backend, its Jamfile line, what it exports
-   (headers and functions), and every message above with its fix, written so
-   that an AI agent writes a correct Jamfile at once.
-10. One copy per program: webcpp's build of a C library is never linked
-    together with another copy of it.
-11. The CI proves, on every target: the C library's own tests pass on
-    webcpp's build; a program that uses it runs; one that names it without
-    calling it is byte-identical to one without it; each message above comes
-    from a test of its own, in a directory of its own; the canary's commit is
-    the submodule's.
-12. Moving a pin is a change of its own: the submodule, the canary's commit,
-    the tests on every target and the size table.
-
-### Exceptions and RTTI
-
-- **Every target builds with exceptions on.** Whether a program uses them is
-  the choice of whoever builds it, never an imposition of a library or of
-  webcpp. Natively the compiler's default holds. On wasip2 and wasip3 the
-  Jamroot compiles with `-fwasm-exceptions -mllvm -wasm-use-legacy-eh=false`
-  and links with `-fwasm-exceptions -lunwind` (its region
-  `wasi-exceptions`): wasi-sdk 34 emits the legacy encoding by default, which
-  wasmtime 47 refuses to run ("legacy_exceptions feature required"). A
-  program that uses exceptions on wasip2 needs a host that runs them:
-  wasmtime 47 or later (wasmtime 37 to 46 with `-W exceptions=y`), jco
-  with `jco transpile --bindgen-enable-wasm-exnref`, or another Wasm 3.0
-  engine.
-- **A user's build without exceptions.** `exception-handling=off` compiles
-  with `-fno-exceptions` on any target, Boost.Config then defines
-  `BOOST_NO_EXCEPTIONS`, and `webcpp.jam` links `tools/throw_exception.cpp`,
-  a `boost::throw_exception` handler that prints and aborts; MSVC also gets
-  `_HAS_EXCEPTIONS=0`. Whether a build has exceptions is the user's choice
-  alone: every library supports both (below), the lint analyses every
-  program both ways, and a library proves what behaves otherwise without
-  exceptions by tests of its own that declare `<exception-handling>off`
-  (trystero's `browser_*_no_exceptions`).
-- **Each library has its own configuration macro,**
-  `WEBCPP_<NAME>_NO_EXCEPTIONS`, as Boost.Asio has `BOOST_ASIO_NO_EXCEPTIONS`,
-  in `<webcpp/<name>/config.hpp>`, which the convenience header and every
-  public header include first, and which includes `<webcpp/config.hpp>` first.
-  It is defined when `WEBCPP_HAS_EXCEPTIONS` is not: when the code is compiled
-  without exceptions (`BOOST_NO_EXCEPTIONS`, which Boost.Config defines under
-  `-fno-exceptions` and so under `exception-handling=off`), or when the
-  developer defines `WEBCPP_NO_EXCEPTIONS`, which disables every library's at
-  once; and a developer may define it alone, to turn one library's exceptions
-  off in a build that has them. A program sets `WEBCPP_NO_EXCEPTIONS` for
-  every library alike, without knowing which one throws, so a library that
-  raises no exception of its own has the macro too, and says so in its Doc
-  Comment. Its test, `test/config_test.cpp`, is built three times: as the
-  build asks (`config`), where the macro is defined exactly when
-  `WEBCPP_HAS_EXCEPTIONS` is not; with `WEBCPP_NO_EXCEPTIONS` defined
-  (`config_all_off`); and with the macro itself defined on the command line
-  (`config_developer_defined`). wasi, which includes nothing of Boost, reads
-  `WEBCPP_NO_EXCEPTIONS` itself, beside the compiler's own macros, until its
-  redesign includes `<webcpp/config.hpp>`. MrDocs parses a library as a build
-  with exceptions does, so `config.hpp` defines the macro for the reference
-  under `#ifdef __MRDOCS__` and undefines it at once: the reference lists it,
-  and every API that throws stays in the parse.
-- **An exception is raised through `boost::throw_exception`, never a bare
-  `throw`,** and every API that throws sits behind
-  `#ifndef WEBCPP_<NAME>_NO_EXCEPTIONS`, so that code that uses it does not
-  compile without exceptions. The lint's bare throw rule refuses a `throw`
-  expression in a library's public header, outside comments and literals,
-  wherever it is: inside that `#ifndef` region too, in a template that
-  nothing instantiates, and as a rethrow, `throw;`, which
-  `std::rethrow_exception` replaces.
-- **A library works without exceptions.** Its headers compile with
-  `-fno-exceptions`: what throws, tries or catches sits behind
-  `#ifndef WEBCPP_<NAME>_NO_EXCEPTIONS`, and a failure that cannot be
-  returned goes through `boost::throw_exception`. The lint checks it, by
-  analysing every aggregate translation unit, and every test and example, a
-  second time as b2 compiles them with `exception-handling=off` (below).
-  Clang refuses a `throw`, a `try` or a `catch` there, in a template only
-  where a test or an example instantiates it: in a template that none of them
-  instantiates, only the bare throw rule sees a `throw`, and a `try` or a
-  `catch` is not checked. The one exception is a header that wraps a
-  dependency which reports errors by throwing: its library declares it with
-  `<exception-handling>on`, with the reason in a comment, on each
-  headers-alone call, test and program of the backend that brings the
-  dependency, since b2 lets no usage requirement override a build's
-  `exception-handling=off` (measured: a usage requirement of the backend's
-  target leaves its dependents compiled with `-fno-exceptions`); the lint
-  leaves that header out of the analysis without exceptions, and names it;
-  and the header declares nothing without exceptions: what follows its
-  `config.hpp` sits inside `#ifndef WEBCPP_<NAME>_NO_EXCEPTIONS`, with a
-  comment that names the dependency, so that a program built without
-  exceptions that uses it fails on the first name it uses (trystero's:
-  `no member named 'backend' in namespace 'webcpp::trystero::native'`), and
-  one that only includes it compiles. The
-  fixture browser_demo's `native.hpp` is one, against the fake dependency of
-  its `deps/include` (a fixture without `config.hpp`, it tests
-  `BOOST_NO_EXCEPTIONS`).
-- **A program that needs exceptions says so.** A test or an example that
-  throws, tries or catches on purpose declares `<exception-handling>on` in
-  its requirements, as the fixture demo's
-  `webcpp.example catches.cpp : <exception-handling>on ;` does: b2 then
-  builds it with exceptions whatever the build asks, a user's
-  `exception-handling=off` included, and the lint analyses it with them
-  alone and names it ("built with exceptions whatever the build asks").
-- **RTTI** is never restricted by webcpp, on any target, and no variant is
-  built without it; a user imposes their own.
-
-### What the lint enforces
-
-`tools/lint/lint.sh` lints the superproject and every library of `libs/` that
-is a repository: what git tracks and what it would track (untracked, not
-ignored), so a new file is linted before it is added, but nothing under
-`third_party/libs/`, third-party code that keeps its own style and licence
-(chapter 2). It prints each rule's section and ends with `lint: clean`, or
-with `lint: failed: <rule>` for each rule that failed.
-
-| Rule | What fails |
-| --- | --- |
-| clang-format | a C++ file not formatted as `.clang-format` says (Google-based, 4 spaces, 100 columns); `clang-format -i` fixes it |
-| clang-tidy | a finding of `.clang-tidy` (every warning is an error) in the compilation database `tools/lint/compile_commands.py` writes from b2's dry runs, one per target the libraries declare: every test and example natively, with every program an own lane builds on that target, or on none (a served component, which only its own lane builds, among them; a served program in no own lane fails it, as it fails `b2 declared-lanes`), and each source that no native program compiles with the command of the first target that compiles it (wasip2, wasip3, else emscripten). A WebAssembly command names wasi-sdk's `clang++`, with that target's `--target`, to which the lint adds no host target or SDK, once the dry run of that target has generated the bindings its commands include (so the lint needs wit-bindgen and the WIT, chapter 1); an emscripten command names Emscripten's `em++`, which clang-tidy cannot run, and is analysed with wasi-sdk's `clang++` in its place (the one beside the lint's clang-tidy), after the words `em++ <its options> --cflags` prints (the target `wasm32-unknown-emscripten`, the sysroot in Emscripten's cache, the `-iwithsysroot` directories compat and fakesdl, and the words of its exceptions), less the settings of em++ alone (`-sWASM_WORKERS`), which it reads and clang refuses, so the lint needs the emscripten toolset when a library declares emscripten. Plus each library's aggregate translation units, through which every public header is analysed, each compiled as a headers-alone translation unit of its target: a library whose public headers one target builds whole has one, of every header (`bin/aggregate/<name>.cpp`), natively, or, for a library whose headers build only for WASI, on wasip2 and on wasip3, each reading its version's branch; a library whose headers no single target builds (a native backend against a dependency of the host's, a browser backend for emscripten) has one per target its headers-alone units run on, of the headers that target builds (`bin/aggregate/<name>-native.cpp`, `<name>-emscripten.cpp`). Every command, a program's and an aggregate's, on every target, has its twin: the same translation unit as b2 compiles it with `exception-handling=off` on the same target (natively with the handler `tools/throw_exception.cpp`), so that what only a user's build without exceptions compiles (`#ifdef BOOST_NO_EXCEPTIONS`) is analysed too, and a `throw`, `try` or `catch` outside it fails, in a template where a test or an example instantiates it; a program that declares `<exception-handling>on` has none, and an aggregate's twin leaves out each header whose headers-alone call declares it (then a translation unit of its own, `<aggregate>-exception-handling-off.cpp`); the database names both. A public header without a headers-alone translation unit on any target, a declared target whose toolset is not configured, and a WebAssembly command whose compiler is neither wasi-sdk's `clang++` nor, on emscripten, Emscripten's `em++` (the lint would analyse it as a native command), fail it by name. Findings are reported in a library's public headers, in the headers of its tests and examples (`libs/xactor/test/require.hpp`) and in those of its JavaScript module (`libs/document/js/binding.hpp`), never in Boost's, the standard library's or a dependency's (`.clang-tidy`'s `HeaderFilterRegex`) |
-| io_context::run | a call of Boost.Asio's `run`, `run_one` or `run_for`, which block, on an `io_context` however its type is qualified (`boost::asio::io_context`, `asio::io_context` through a namespace alias, `io_context` after a using); a driver drains with `poll` and `poll_one`. A program whose purpose is network I/O says why on the line, after `lint-run:` (`io.run_for(timeout);  // lint-run: the memory relays post to it`); a library has no blanket exemption |
-| fluent chains | three calls chained in one expression |
-| returns `*this` | a function other than an assignment operator, a prefix `operator++` or `operator--` (the iterator requirements make them return `*this`), or a function whose head follows a line `// lint-std: <reason>` naming the member of the standard it reproduces (`std::basic_regex::assign`), returning `*this`; the reason holds none of `;`, `{`, `}`, `#` or `@`, so that clang and MrDocs still attach the Doc Comment above the line to the function |
-| em dash | U+2014 in any file |
-| JSON literals | a raw JSON literal laid out otherwise than chapter 6 says |
-| licence notice | a source file (C++, JavaScript, AsciiDoc, Python, shell, Jam, YAML, HTML) that does not open with the notice (chapter 11) |
-| banned word | the word that the pattern `veru[s]` matches, in any case, in a file, a file name or a commit (its author, committer or message) of any repository |
-| no clock, disk or network | a library header that names a clock, a file, a socket, a process, a thread, the environment or entropy (`random_device`, `getentropy`, `getrandom`, `arc4random`, OpenSSL's `RAND_bytes`, `<sys/random.h>`) without `lint-world:` |
-| raw b2 rules | `run`, `run-fail`, `compile`, `compile-fail`, `exe`, `unit-test`, `link` or `link-fail` in a library's test or example Jamfile (chapter 9) |
-| Doc Comments | a command webcpp does not allow, a bare `@`, or a colon after a reference (chapter 7) |
-| Pyright | an error or a warning in any Python file, with `pyrightconfig.json` (unused imports and variables are errors) |
-| Python line length | a Python line over 100 columns |
-| Python blank lines | a top-level `def` or `class` without two blank lines before it, its decorators and the comments just above it |
-| Jam comment width | a comment line of a Jam file (`.jam`, `Jamroot`, `Jamfile`) over 80 columns, the width Jam comments are wrapped at |
-| octal escapes | an octal escape of a C or C++ literal followed by a decimal digit (`"\\2200"`), which C++ reads as `"\\220"` and `"0"` and MSVC's warning C4125 refuses under `/WX` |
-| path.exists native | a `path.exists` of a Jam file given a path other than `[ path.native ... ]`: b2's builtin asks the system about the path as written, and b2's form of a Windows path, `/D:/a/...`, names no file there |
-| include boundaries | an `#include` that crosses a boundary the library declares in its `meta/include-boundaries.json` (below), at its line, with the boundary's reason; and a malformed file, or a glob that matches no file of the library |
-| bare throw | a `throw` expression in a library's public header (`libs/*/include/**`), outside comments and literals, at its line: inside `#ifndef WEBCPP_<NAME>_NO_EXCEPTIONS` too, in a template that nothing instantiates, which clang-tidy's analysis without exceptions does not see, and as a rethrow, `throw;`; `boost::throw_exception` is the one way to raise, `std::rethrow_exception` the one way to rethrow (above) |
-| changelog form | a library's changelog or a version's release notes out of chapter 11's form: a section or a region missing or out of order, a line that starts with no verb of the list, a cross-reference, more than ten lines for a library and a version, text outside a bullet |
-
-A source b2 expects not to compile (`webcpp.compile-fail`), and one that
-must stop with the error it states (`webcpp.compile-diagnostic`), are left
-out of clang-tidy only; every other rule reads them.
-
-**A library's include boundaries.** Every header compiles alone, so only a
-boundary check sees a part of a library start to depend on another. A
-library declares its boundaries in `meta/include-boundaries.json`, each a set
-of headers (a `headers` glob, less an `except` glob, each matched against the
-whole path under `libs/<name>/`, a `*` within one path segment) that must not
-include a path starting with one of its `must-not-include` prefixes, and
-`why`. xstate's keeps its machine core free of xactor and of the actor layer:
-
-```json
-{
-    "boundaries": [
-        {
-            "headers": ["include/webcpp/xstate.hpp", "include/webcpp/xstate/*.hpp"],
-            "except": ["include/webcpp/xstate/actors.hpp"],
-            "must-not-include": ["webcpp/xactor", "webcpp/xstate/actors"],
-            "why": "the machine core runs without xactor and the actor layer"
-        }
-    ]
-}
-```
-
-**A directory's own `.clang-tidy`.** A library's tests or examples may need
-one that inherits the root's (`InheritParentConfig: true`) and switches off
-what does not apply to them, each with its reason in a comment. xactor's
-`test/.clang-tidy` turns off `bugprone-unchecked-optional-access` (a test
-asserts with `BOOST_TEST` before it reads, which the check does not see) and
-`bugprone-exception-escape.CheckMain` (a test's `main` lets an exception end
-the process, which fails the test as it should); `example/.clang-tidy` turns
-off the second. The library's headers are still analysed with every check,
-through the aggregate translation unit. A check that applies to a library
-header is never switched off for a directory, since a header's templates are
-analysed only where a test or an example instantiates them: the header states
-its exemption on the line clang-tidy reports, `NOLINT(<check>)` (or
-`NOLINTNEXTLINE(<check>)` on the line above, when that line has no room; a tag
-comment between it and its function cancels the suppression), or, when a
-page's listing must hide the exemption, with `NOLINTBEGIN(<check>)` and
-`NOLINTEND(<check>)` around the exempt function or functions alone. The
-reason still goes in the comment above, in every form.
-
-**Sharding.** `--shard K/N` analyses the K-th of N interleaved slices with
-clang-tidy, and runs every other rule; the N shards together analyse every
-file once.
-
-## 7. Doc Comments and the API reference
+The rules of a Doc Comment, its format and what every public symbol needs,
+are `CODING-GUIDELINES.md` chapter 7. This chapter is how the reference is
+generated from them, and where it sits.
 
 ### Generation
 
@@ -1131,59 +514,6 @@ output, a warning) is refused and fails the reference: every library is
 documented as strictly as every other. xactor's sets `show-enum-constants:
 true`.
 
-### The format
-
-Doc Comments are Javadoc/Doxygen style, `/** ... */`, before the symbol they
-document:
-
-```cpp
-/**
- Handles one message, the payload of `cause`.
-
- The scheduler calls it once for each message delivered to the actor, and
- delivers the actor's next message only after it returns.
-
- @param turn What the actor may do while it handles the message.
- @param cause The message, in the envelope that says who sent it.
- @return Success, or an error of any category, which ends the actor with
- the status @ref status::error.
- @note An error ends this actor and only it.
- @see "Writing an actor logic", in the guide.
-*/
-virtual result<void> handle(xactor::turn<Message>& turn, const envelope<Message>& cause) = 0;
-```
-
-### What every public symbol needs
-
-A public symbol is one at namespace scope of `webcpp::<name>`, or a public
-member of a public class, outside every namespace `detail`. Every one is
-fully documented: functions, classes, structs, enums and enumerators,
-aliases, concepts, variables, data members and macros.
-
-- **A brief,** the first paragraph, which is a single sentence: MrDocs makes
-  the whole first paragraph the brief, and `doc_comments.py` fails a brief of
-  more than one sentence (an abbreviation such as `e.g.` and a code span do
-  not count).
-- **`@param`** for every parameter, **`@tparam`** for every named template
-  parameter (of a function, class, partial specialization, alias, variable or
-  concept, hidden friends and member templates included), and **`@return`**
-  for every function that returns a value. MrDocs reports a missing `@param`
-  or `@return`; `doc_comments.py` reports a missing `@tparam`, which MrDocs
-  does not.
-- **A deleted function takes no `@return`.** Nobody can call it, so a
-  `@return` would say nothing, and MrDocs accepts its absence:
-  `actor_logic& operator=(const actor_logic&) = delete;` has a brief and no
-  `@return`.
-- **`@throws`, `@pre`, `@post`, `@note`, `@see` and `@code`** where they
-  apply.
-- **Each enumerator and each data member has its own Doc Comment.** clang
-  attaches one comment to every declarator up to the next `;`, `{`, `}`, `#`
-  or `@`, so in `/** A. */ a, b,` the enumerator `b` has `a`'s comment, and in
-  `/** The x. */ int x, y;` so does `y`. `doc_comments.py` reports the second
-  as undocumented, public or `detail`. Comment each one itself, and declare
-  one data member per declaration.
-- **A `detail` symbol** needs only its brief.
-
 ### The commands
 
 - **Allowed:** `@brief`, `@param`, `@tparam`, `@return`, `@returns`,
@@ -1230,7 +560,7 @@ It replaces any hand-written reference chapter. The numbered guarantees stay
 in the guide part of the page, and a reference like `(doc: #anchor)` in a Doc
 Comment becomes `@see "<title>"`.
 
-## 8. Documentation
+## 3. Documentation
 
 ### The page
 
@@ -1263,14 +593,14 @@ sets its own title and attributes, as xactor's does:
 
 The doc build provides `{examples}` (the library's `example/` directory),
 `{reference}`, `{twins}` (the twin directory, for a library whose oracle
-declares twins, chapter 5), `{webcpp-root}` (the superproject, whose tracked
-files a page includes by tag, below), `{library-root}` (the library's own
-directory, whose tracked files it includes the same way), the counts and the
-links to other pages (below),
-and sets the highlighter, the shared style (`tools/doc/docinfo.html`, the
-system's fonts, no web fonts), no date and no footer: a page sets none of
-these. In that style a table too wide for the page scrolls in its own box,
-and an identifier breaks only between its parts.
+declares twins, `CODING-GUIDELINES.md` chapter 12), `{webcpp-root}` (the
+superproject, whose tracked files a page includes by tag, below),
+`{library-root}` (the library's own directory, whose tracked files it includes
+the same way), the counts and the links to other pages (below), and sets the
+highlighter, the shared style (`tools/doc/docinfo.html`, the system's fonts,
+no web fonts), no date and no footer: a page sets none of these. In that style
+a table too wide for the page scrolls in its own box, and an identifier breaks
+only between its parts.
 
 **What a page holds:**
 
@@ -1287,8 +617,9 @@ and an identifier breaks only between its parts.
   and where the test matrix is (https://webcpporg.github.io/report/);
 - **the reference,** `include::{reference}[leveloffset=+1]`, under a section
   `[#reference]`;
-- **the appendix "Differences"** for a port (chapter 4);
-- **the appendix Changelog,** `include::changelog.adoc[]`, last (chapter 11).
+- **the appendix "Differences"** for a port (`CODING-GUIDELINES.md` chapter
+  11);
+- **the appendix Changelog,** `include::changelog.adoc[]`, last (chapter 5).
 
 **Every listing is a compiled example, and every shown output comes from a
 `.expected` file.** A listing includes a region of an example, marked in the
@@ -1417,14 +748,14 @@ a library's own `counts.py` prints plain digits, `n-machine-steps=1234`.
 A page links another library's page as
 `link:{webcpp-libs}/<library>/{webcpp-page}#<anchor>[...]`, with two
 attributes `webcpp.doc` sets by the layout: where b2 builds the pages, by
-default, or where the site serves them, with `-sWEBCPP_INDEX=site`
-(chapter 9). Such a link written any other way after `{webcpp-libs}/` is a
-fault. A `//` comment of the library's files sends its reader to another
-library's page with `(doc: <library>#<anchor>)`, or a list or a range of
-them, as with its own page; a Doc Comment still uses `@see` (chapter 7). The
-build makes every linked page first, and the check of the rendered page fails
-on an anchor that page does not define, and on an overload's anchor, which
-ends in `-0<digit>` and which MrDocs may renumber.
+default, or where the site serves them, with `-sWEBCPP_INDEX=site` (chapter
+4). Such a link written any other way after `{webcpp-libs}/` is a fault. A
+`//` comment of the library's files sends its reader to another library's page
+with `(doc: <library>#<anchor>)`, or a list or a range of them, as with its
+own page; a Doc Comment still uses `@see` (`CODING-GUIDELINES.md` chapter 7).
+The build makes every linked page first, and the check of the rendered page
+fails on an anchor that page does not define, and on an overload's anchor,
+which ends in `-0<digit>` and which MrDocs may renumber.
 
 ### The index page
 
@@ -1443,7 +774,7 @@ The table links a page as `{library-pages}<name>/{library-page}`, two
 attributes `tools/doc/doc.jam` converts the index with. By default they point
 where b2 builds the page, `../../libs/<name>/doc/html/index.html` from
 `doc/html/`; with `-sWEBCPP_INDEX=site` they point where the site serves it,
-`libs/<name>/`, beside the index at the site's root (chapter 9). Any other
+`libs/<name>/`, beside the index at the site's root (chapter 4). Any other
 value stops the build.
 
 **One doc build at a time.** A doc build writes `doc/html/` and
@@ -1451,10 +782,10 @@ value stops the build.
 write the same files.
 
 The index also shows each version's release notes, `doc/releases/`, newest
-first (chapter 11). The notes name a library only once it is a submodule,
+first (chapter 5). The notes name a library only once it is a submodule,
 since the site's link check refuses a page that is not there.
 
-## 9. Tests, lanes, the report, the site and CI
+## 4. Tests, lanes, the report, the site and CI
 
 ### Targets
 
@@ -1471,7 +802,7 @@ A Jamfile declares its default with `webcpp.targets`, a program can override
 it with its own targets, and with no declaration a program is built for
 `native` only. For any other target, the program gets `<build>no` and b2 skips
 it without a word. This filter is conditioned on `<toolset>` and its version
-only, never on a derived feature (chapter 12).
+only, never on a derived feature (chapter 6).
 
 On emscripten the Jamroot builds wasm32, single-threaded and static (its
 region `emscripten-target`): browsers do not all run memory64, and an
@@ -1480,7 +811,7 @@ cross-origin isolation in a page; and Emscripten's shared libraries are
 experimental. b2's toolset runs a program's JavaScript with the node it
 found, so a build that also gives `testing.launcher` stops ("webcpp: b2's
 emscripten toolset runs a program with node itself; give no
-testing.launcher on emscripten", chapter 12). Every program that node runs
+testing.launcher on emscripten", chapter 6). Every program that node runs
 (`webcpp.run`, `webcpp.run-fail`, `webcpp.example`) links
 `-sNODERAWFS=1`, so that it reads the host's files and its standard input:
 without it, node gives it an empty file system of Emscripten's own, and a
@@ -1518,7 +849,7 @@ webcpp.data         <directory> + ;   (requirements)
 | `webcpp.compile-diagnostic` | the sources stop with every error they state in clang's `-verify` comments, `// expected-error@<file>:* {{<message>}}` for a header they include or `// expected-error@+1 {{<message>}}` for the next line | compiled with `-Xclang -verify -Xclang -verify-ignore-unexpected=error,note`, so an error not stated and a note are ignored; built on b2's `clang` toolset only (native clang, `clang-wasip2`, `clang-wasip3`) and skipped elsewhere, since `-verify` is clang's: a refusal would turn every gcc and msvc lane red for a declaration that holds; left out of clang-tidy |
 | `webcpp.boost-test` | every case of the Boost.Test suite passes | native only, whatever the Jamfile declares; the header-only framework, `tools/boost_test_runner.cpp`, is one object of the suite's, always compiled with exceptions |
 | `webcpp.example` | the program exits with 0, and its standard output, carriage returns removed, equals `<stem>.expected` beside it | its standard input is `<stem>.input` beside it, else empty, never the terminal, on every target (wasmtime passes it through, and node under `-sNODERAWFS=1`); run through `testing.launcher` for WASI, and on emscripten with the node on `PATH`, not the one b2's toolset registered, which b2 gives only to its own testing rules, by `tools/example/run_example.py`, which names a failing exit status (or the signal) before the diff; always run again, and `<stem>.input` is a source of the run |
-| `webcpp.link` | the program links | never run: a program for a browser, which node refuses to run (`-sENVIRONMENT=web`), or one that needs the network; b2's `link` test, which `--dump-tests` lists and the report shows as a link test; never linked with `-sNODERAWFS=1`. The explicit target `<name>-program` is the same program, an `exe` of the same sources and requirements, `<name>-program.js` on emscripten, for a target that needs its files, such as a page that loads it. An example Jamfile's is shown on the page by its code, and has no `.expected` (chapter 8) |
+| `webcpp.link` | the program links | never run: a program for a browser, which node refuses to run (`-sENVIRONMENT=web`), or one that needs the network; b2's `link` test, which `--dump-tests` lists and the report shows as a link test; never linked with `-sNODERAWFS=1`. The explicit target `<name>-program` is the same program, an `exe` of the same sources and requirements, `<name>-program.js` on emscripten, for a target that needs its files, such as a page that loads it. An example Jamfile's is shown on the page by its code, and has no `.expected` (chapter 3) |
 | `webcpp.headers-alone` | each public header compiles alone | one test per header, `alone-<path>` with `/` as `-` (`alone-xactor-scheduler`), against `/webcpp/<library>//<library>` and the requirements given, for the targets given or the Jamfile's; `only` restricts a call to the public headers its globs match, relative to `<include-root>/webcpp/` (`wasi/http/response.hpp`), a glob that matches none stopping the build; a library may call it several times, and a header two calls take stops the build, naming it |
 | `webcpp.data` | | requirements, or usage requirements, that give a program of `webcpp.run` or `webcpp.run-fail` the absolute directories, each read at the same path on every target: on wasip2 and wasip3 wasmtime preopens it (`wasmtime --dir="<directory>" <program>`); natively and on emscripten (`-sNODERAWFS=1`) the program reads the host's files already. A relative directory stops the build, as does one whose path holds `"`, `$` or a backquote, which the shell would read inside `--dir="..."`, naming the character |
 
@@ -1534,7 +865,7 @@ webcpp.serve-script <name> : <script> : <stem> : <targets> * ;
 
 | Rule | Passes when | Notes |
 | --- | --- | --- |
-| `webcpp.wit-bindings` | | the target `<name>`, the C bindings wit-bindgen generates for the world `<world>` of `<world-file>`, renamed `<rename>` (`--rename-world`), for the WASI version `<version>`, `p2` or `p3`, with the arguments given: on that version's toolset alone (`clang-wasip2`, `clang-wasip3`) its usage requirements put their directory on the include path and link `<rename>.c` and `<rename>_component_type.o`, and elsewhere they add nothing, so a native build needs no wit-bindgen. The explicit target `<name>-headers` puts the directory on the include path on any toolset, for a native parse such as the reference (chapter 7). The bindings are generated while b2 computes a target's properties, in a dry run too, under `<build-dir>/generated/<library>/<name>/`, and again only when the world file, the WIT, wit-bindgen's version or an argument changed, compared by content. A name declared twice in a library stops the build, naming both |
+| `webcpp.wit-bindings` | | the target `<name>`, the C bindings wit-bindgen generates for the world `<world>` of `<world-file>`, renamed `<rename>` (`--rename-world`), for the WASI version `<version>`, `p2` or `p3`, with the arguments given: on that version's toolset alone (`clang-wasip2`, `clang-wasip3`) its usage requirements put their directory on the include path and link `<rename>.c` and `<rename>_component_type.o`, and elsewhere they add nothing, so a native build needs no wit-bindgen. The explicit target `<name>-headers` puts the directory on the include path on any toolset, for a native parse such as the reference (chapter 2). The bindings are generated while b2 computes a target's properties, in a dry run too, under `<build-dir>/generated/<library>/<name>/`, and again only when the world file, the WIT, wit-bindgen's version or an argument changed, compared by content. A name declared twice in a library stops the build, naming both |
 | `webcpp.serve` | the transcript of the answers to the requests of `<stem>.requests` equals `<stem>.expected` | builds `<source>` as a reactor component that exports an HTTP handler, for its own targets, which may be only wasip2 and wasip3, else for those of its Jamfile that are, linking `tools/throw_exception.cpp` in a user's build without exceptions; `tools/component/serve.py` serves it with `wasmtime serve` (`-S cli` on wasip2, `-S cli,p3 -W component-model-async` on wasip3) on a port the system chooses, sends each request on a connection of its own, and stops wasmtime in every outcome, a SIGKILL of serve.py included, as b2 sends to an action that outlasts its `-l`: wasmtime runs under a keeper that kills it when serve.py's pipe to it ends. A test of b2's, which `--dump-tests` lists and `--out-xml` records, so the report sees it fail (as a run). It runs in an own lane, never in the ordinary ones (Lanes, below) |
 | `webcpp.serve-script` | as `webcpp.serve`, with the requests and the transcript of `<stem>` | the component is built by the shell script `<script>`, run as `sh <script> <p2\|p3> <component>` with `WASI_SDK` (wasi-sdk's directory, chapter 1), `WIT_BINDGEN` and `WASI_WIT` (the WIT of the lane's version) in its environment, the tools b2 found: a build by hand that a page shows, run as written. It runs at every build |
 
@@ -1559,8 +890,9 @@ GET /a?b=c%20d
 **Driven tests** (`tools/drive/drive.jam`). A test that only a script can
 drive, such as one of a peer that a browser or another process meets, is
 declared in a test or example Jamfile that says first how a program of the
-original's language runs, with `webcpp.original` (chapter 5), beside the
-`package.json` and `package-lock.json` that pin what the script needs:
+original's language runs, with `webcpp.original` (`CODING-GUIDELINES.md`
+chapter 12), beside the `package.json` and `package-lock.json` that pin what
+the script needs:
 
 ```
 webcpp.drive <name> : <sources> + : <requirements> * : <script> : <argument> * : <targets> * ;
@@ -1584,10 +916,10 @@ webcpp.drive driven : driven.cpp : : drive.mjs : --program ;
 webcpp.lane driver : driven : native emscripten ;
 ```
 
-**Libraries webcpp does not build** (`tools/webcpp.jam`), until it builds
-them from `third_party/` (chapter 13). A library's `build.jam` declares each,
-and checks them, with three rules, which share one computation of each
-candidate:
+**Libraries webcpp does not build** (`tools/webcpp.jam`), until it builds them
+from `third_party/` (`CODING-GUIDELINES.md` chapter 16). A library's
+`build.jam` declares each, and checks them, with three rules, which share one
+computation of each candidate:
 
 ```
 webcpp.external <owner> : <library> : <variable> : <directory> : <header> : <target> ;
@@ -1620,14 +952,14 @@ webcpp.generated <name> : <script> : <argument> * : <output> + ;
 | --- | --- | --- |
 | `webcpp.generated` | every output that `<script>` writes equals its committed `<output>`, byte for byte | the explicit target `generated-<name>`: `tools/generated/generated.py` runs the Python script `<script>` in the Jamfile's directory as `<script> <argument>... <path>...`, each path where it writes one output, in the order given, under the Jamfile's build directory, and compares each with its committed file (`tools/oracle/compare.py --files`), naming every one that differs, with the command that writes it again, `b2 libs/<name>/test//update-generated`, every one that is missing and every one the generator did not write; it writes nothing into the tree, passing or failing. The first declaration of a Jamfile also declares the explicit target `update-generated`, which runs each of its generators the same way, in a build directory apart from the check's, so that one request may build both, and, once all have succeeded, copies their outputs beside the committed files and renames each over its own: a generator or a copy that fails leaves every committed file as it was, and a rename that fails is named with the files it replaced and those it left. Paths are relative to the Jamfile; a script that is not a `.py` file or does not exist, a name declared twice, and an output named twice, by one generator or by two of the Jamfile, stop the build. An own lane names the check, `webcpp.lane <lane> : generated-<name> ;`, which runs natively, as an oracle's does, and is of the kind `programs`, since a generator runs Python, not the original's language; the ordinary lanes never build it, since a generator may need the network. Neither target compiles anything, so they need no Boost: they leave out the Jamroot's check of Boost, and the libraries their project's requirements name, whose targets would run it |
 
-The rules of the doc Jamfiles are in chapter 8: `webcpp.doc <library> :
+The rules of the doc Jamfiles are in chapter 3: `webcpp.doc <library> :
 <page>.adoc ;`, `webcpp.reference <library> : <requirements> * :
-<also-checked> * ;` (chapter 7) and, for the superproject's index,
+<also-checked> * ;` (chapter 2) and, for the superproject's index,
 `webcpp.index <page>.adoc ;`. Those of an oracle's Jamfile,
-`libs/<name>/test/oracle/Jamfile`, are in chapter 5: `webcpp.original`,
-`webcpp.twins`, `webcpp.cases` and `webcpp.lane`, which any test or example
-Jamfile of a library may also declare, with the targets its lane runs on
-(Lanes, below).
+`libs/<name>/test/oracle/Jamfile`, are in `CODING-GUIDELINES.md` chapter 12:
+`webcpp.original`, `webcpp.twins`, `webcpp.cases` and `webcpp.lane`, which any
+test or example Jamfile of a library may also declare, with the targets its
+lane runs on (Lanes, below).
 
 A library's Jamfiles, as xactor's, each whole after its licence notice.
 `libs/xactor/test/Jamfile`:
@@ -1677,32 +1009,8 @@ webcpp.example xactor_asio.cpp : : native ;
 
 ### Tests
 
-- Unit tests use Boost.Core's lightweight_test,
-  `<boost/core/lightweight_test.hpp>`, declared with `webcpp.run`. `main`
-  runs the cases and returns `boost::report_errors()`.
-- A case that cannot go on after a failed check returns:
-  `if (!BOOST_TEST(x.has_value())) { return; }`. A helper, which cannot
-  return from its case, calls `require(BOOST_TEST(...))`, which ends the
-  program with the errors counted so far
-  (`libs/xactor/test/require.hpp`): a user may build a test without
-  exceptions.
-- Boost.Test is for a test that needs it (fixtures, data-driven suites),
-  declared with `webcpp.boost-test`, natively only. The CI installs no
-  compiled `unit_test_framework`: the suite compiles Boost.Test's header-only
-  framework, `tools/boost_test_runner.cpp`, as an object of its own.
-- A test that reads files at run time is given their directory by a
-  `path-constant`, a `WEBCPP_TEST_*` define with forward slashes, quoted
-  whole, `[ webcpp.data <directory> ]` in its requirements, and a
-  `<dependency>` on the files it reads (a `glob-tree-ex` of them), so that a
-  changed file runs it again; `/webcpp/third_party//json-schema-test-suite`
-  gives all four for the JSON Schema Test Suite.
-- Every test runs on every target its Jamfile declares. What a target cannot
-  build is excluded by declaration (`: native`), and inside a program by the
-  same condition the library uses (`#ifndef __wasi__`), never by skipping
-  silently.
-- A test moved from the original's or another suite records the conversion,
-  case by case, and each converted case is seen failing on a planted defect
-  where the old one had a pinning test (`libs/xactor/test/CONVERSION.md`).
+How a test is written, its framework, its checks and the targets it runs on,
+is `CODING-GUIDELINES.md` chapter 8.
 
 ### Lanes
 
@@ -1745,21 +1053,21 @@ b2 -a --dump-tests --build-dir=bin/lane-wasip2 --out-xml=wasip2.xml toolset=clan
 ```
 
 Two concurrent b2 runs never share a build directory, and at most one of
-them builds the documentation (chapter 8).
+them builds the documentation (chapter 3).
 
-**Own lanes.** A library may also declare lanes of its own with
-`webcpp.lane` (chapter 5). What a lane names leaves the library's ordinary
-lanes, which build only its test and example directories' other programs.
-`b2 declared-lanes -d0` lists them, one line each, which ends with the
-lane's kind: `original` when one of the targets it names runs the original's
-language, the twins, cases, `node-modules` or `update-expected` of an
-oracle's rules (chapter 5) or a driven test (`webcpp.drive`), whose CI job
-then installs Node, and `programs` when it runs only what its toolset builds,
-such as wasi's served components, whose job installs no Node of its own. A
-lane's kind is computed once every Jamfile is loaded, so a lane may name a
-target its Jamfile declares after it, and it reads only the names the lane
-gives itself: a lane over an alias of the oracle's targets is of the kind
-`programs`, so a lane names them directly.
+**Own lanes.** A library may also declare lanes of its own with `webcpp.lane`
+(`CODING-GUIDELINES.md` chapter 12). What a lane names leaves the library's
+ordinary lanes, which build only its test and example directories' other
+programs. `b2 declared-lanes -d0` lists them, one line each, which ends with
+the lane's kind: `original` when one of the targets it names runs the
+original's language, the twins, cases, `node-modules` or `update-expected` of
+an oracle's rules (`CODING-GUIDELINES.md` chapter 12) or a driven test
+(`webcpp.drive`), whose CI job then installs Node, and `programs` when it runs
+only what its toolset builds, such as wasi's served components, whose job
+installs no Node of its own. A lane's kind is computed once every Jamfile is
+loaded, so a lane may name a target its Jamfile declares after it, and it
+reads only the names the lane gives itself: a lane over an alias of the
+oracle's targets is of the kind `programs`, so a lane names them directly.
 
 - **An own lane that names no target,** such as xstate's oracle lane, which
   needs Node where a toolset lane does not, is the line `<library> <lane>
@@ -2022,30 +1330,32 @@ jobs:
   **External libraries.** A library may need libraries webcpp does not build
   yet: `EXTERNAL_DEPENDENCIES` in `tools/ci/matrix.py` names them, trystero's
   `secp256k1`, `libdatachannel` and `openssl`, each the CI's action of that
-  name, until webcpp builds them from `third_party/` (chapter 13). A lane
-  that builds such a library, or one that uses it, has `external` in its
-  entry, and so does an own lane of it; such a job runs the actions after the lane's own setup, by
-  their YAML anchors in both jobs: `openssl`, then `secp256k1`, with
-  `emscripten: true` on an entry that has emsdk, then `libdatachannel`,
-  built with the lane's compilers, its entry's `cc` and `cxx` (`gcc-14` and
-  `g++-14`; Visual Studio for MSVC, CMake's own choice there). An entry on
-  emscripten has neither OpenSSL nor libdatachannel, which only the native
-  backend needs. Its b2 command, the lane's or the own lane's, then has
-  `webcpp-require-external=on`, so that a library not found stops it rather
-  than leave the library out, and `-s<VARIABLE>=<dir>` for each variable the
-  actions exported (`EXTERNAL_VARIABLES`), on the command line, where a
-  library's `build.jam` reads them; the docs job gives its b2 the same when
-  the plan's `external` is `true`. A container lane passes no variable of
-  the environment into its container.
+  name, until webcpp builds them from `third_party/` (`CODING-GUIDELINES.md`
+  chapter 16). A lane that builds such a library, or one that uses it, has
+  `external` in its entry, and so does an own lane of it; such a job runs the
+  actions after the lane's own setup, by their YAML anchors in both jobs:
+  `openssl`, then `secp256k1`, with `emscripten: true` on an entry that has
+  emsdk, then `libdatachannel`, built with the lane's compilers, its entry's
+  `cc` and `cxx` (`gcc-14` and `g++-14`; Visual Studio for MSVC, CMake's own
+  choice there). An entry on emscripten has neither OpenSSL nor
+  libdatachannel, which only the native backend needs. Its b2 command, the
+  lane's or the own lane's, then has `webcpp-require-external=on`, so that a
+  library not found stops it rather than leave the library out, and
+  `-s<VARIABLE>=<dir>` for each variable the actions exported
+  (`EXTERNAL_VARIABLES`), on the command line, where a library's `build.jam`
+  reads them; the docs job gives its b2 the same when the plan's `external` is
+  `true`. A container lane passes no variable of the environment into its
+  container.
 - **own lanes,** one job per entry, named and placed as the entry says
   (`name`, `os`), which runs `matrix.py own-lane <entry>`: it registers the
   lane's toolset, prints its b2 command and runs it, on the lane in each of
   its directories. A library that declares no own lane, as xactor, has no
   such job.
-  - One that names no target, `Own lane (<library>, <lane>)`, on Linux
-    x86-64 (ubuntu-24.04): the Boost action, the Node action, and
-    `b2 -a toolset=clang-18 <directory>//<lane> ...` (an oracle lane checks
-    Boost, chapter 5), whose exit status is the lane's verdict.
+  - One that names no target, `Own lane (<library>, <lane>)`, on Linux x86-64
+    (ubuntu-24.04): the Boost action, the Node action, and `b2 -a
+    toolset=clang-18 <directory>//<lane> ...` (an oracle lane checks Boost,
+    `CODING-GUIDELINES.md` chapter 12), whose exit status is the lane's
+    verdict.
   - One that names a target, `Own lane (<library>, <lane>, <target>)`, on its
     entry's image: the Boost action and what the target's lane installs, the
     same steps by their YAML anchors (`&wasi-sdk`, `&wasmtime`,
@@ -2075,7 +1385,7 @@ jobs:
   with the sysroot in its cache and without its system libraries
   (`libraries: 'false'`), whose `em++` and `clang++` read for Emscripten's
   target the reference of a library with a header built for emscripten
-  alone (`/webcpp//emscripten-reference`, chapter 7); and, when the plan's
+  alone (`/webcpp//emscripten-reference`, chapter 2); and, when the plan's
   `external` is `true`, the
   external libraries, built with Clang 18, whose headers the reference of
   the library, or of a library it uses, parses.
@@ -2197,7 +1507,7 @@ wrapper each quoted as one word of Jam.
   `tools/ci/emsdk.jam`, which `matrix.py register emscripten` writes with
   `.local/emsdk` in place of `/path/to/emsdk` and `$(emsdk)`, and
   `.local/emscripten/node` in place of `/path/to/node` and `$(node)`, and
-  which a page includes as wasi's does those of `wasi-sdk.jam` (chapter 8):
+  which a page includes as wasi's does those of `wasi-sdk.jam` (chapter 3):
 
   ```
   local emsdk = /path/to/emsdk ;
@@ -2219,7 +1529,7 @@ wrapper each quoted as one word of Jam.
     configuration, `opensslconf.h` and `configuration.h`, in the
     architecture's `/usr/include/<multiarch>/openssl`, which
     `dpkg-architecture` names, and which a parse for another target, as
-    trystero's reference is (chapter 7), does not search: there
+    trystero's reference is (chapter 2), does not search: there
     `include/openssl` is a directory of links to each header of both, and a
     layout without `opensslconf.h` fails the action; on Windows, copies of the headers and of the import
     libraries `libssl.lib` and `libcrypto.lib` of the image's installation in
@@ -2345,136 +1655,7 @@ there is fixed with a test, in the library or in the superproject, by more
 commits on `main`; then each library's CI runs again, against the
 superproject's new `main`. `main` is the only branch.
 
-## 10. Process
-
-- **The specification before the code, a failing test before the
-  implementation.** A behaviour is written down (in the page, or in the
-  library's `AGENTS.md` for what is internal) before it is built, and a test
-  is seen failing before the code that makes it pass.
-- **A defect is first reproduced the way a user meets it:** the command a
-  user runs, the page a reader opens, the lane CI runs. Then it is fixed, and
-  the reproduction becomes a test.
-- **Only a build from scratch counts as evidence:** `b2 -a`. b2 compares
-  timestamps, and an incremental build can leave a stale result in place. An
-  incremental build is for iterating.
-- **Green, before any merge,** means all of these, run and read, not assumed:
-  - every declared lane from scratch: `b2 -a libs/<name>/test
-    libs/<name>/example` natively, and with `toolset=clang-wasip2
-    testing.launcher=wasmtime` and `toolset=clang-wasip3
-    testing.launcher=wasmtime` where declared, and every own lane the
-    library declares, `b2 -a libs/<name>/test/oracle//oracle` for an oracle
-    and, on each target it names, `b2 -a toolset=clang-wasip2
-    testing.launcher=wasmtime libs/wasi/test//http` for one on wasip2;
-  - `b2 -a doc`;
-  - the lint: `lint: clean`;
-  - the tests of the build and of the tools, when they or what they test
-    changed: `tools/test/jamroot_test.py`, `tools/test/webcpp_jam_test.py`,
-    `tools/test/oracle_jam_test.py`, `tools/test/generated_jam_test.py`,
-    `tools/test/component_jam_test.py`, `tools/generated/generated_test.py`,
-    `tools/test/emscripten_test.py`, `tools/test/external_test.py`,
-    `tools/test/doc_test.py`,
-    `tools/test/harness_test.py`, `tools/test/third_party_test.py`,
-    `tools/test/boost_libraries_test.py`,
-    `tools/lint/lint_test.py`, `tools/report/report_test.py`,
-    `tools/doc/doc_check_test.py`, `tools/doc/doc_comments_test.py`,
-    `tools/doc/extensions_test.py`, `tools/doc/counts_test.py`,
-    `tools/oracle/twins_test.py`, `tools/oracle/compare_test.py`,
-    `tools/example/run_example_test.py`, `tools/component/serve_test.py`,
-    `tools/drive/drive_test.py`, `tools/node/install_test.py`,
-    `tools/ci/matrix_test.py`, `tools/ci/assemble_test.py`,
-    `tools/ci/actions_test.py`, `tools/release/changelog_test.py` and
-    `tools/release/release_test.py`: every `tools/**/*_test.py`, as the CI
-    runs them, each as `python3 <path>`. They
-    build in scratch copies under `$TMPDIR`, whose path holds a space, so they
-    run beside a build of the tree;
-  - CI green, the library's and the superproject's.
-- **Fix the lint, the failures and the flakiness you meet,** even when they
-  are not yours; report what you cannot fix.
-- **A change of the build or of a tool** has a test that fails without it:
-  the tests of `tools/` pin every behaviour this file states. A change to
-  b2's `--out-xml` format shows as a red `report_test.py`, whose samples are
-  recorded, never edited by hand (`python3 tools/report/record_samples.py`).
-
-### Porting a library, step by step
-
-1. Choose it, check its licence, and pin its version (chapter 2).
-2. Make `libs/<name>` with its checklist files (chapter 2), and see `b2
-   libs/<name>/test` build the headers-alone tests of an empty convenience
-   header.
-3. Port the original's tests as cases, and the oracle that writes their
-   expected results from the pinned original (chapter 5); see them fail.
-4. Port the code, header by header, with its Doc Comments (chapter 7), until
-   the cases pass natively, then on every declared target.
-5. Write the page: the guide with its examples and twins, the guarantees,
-   the testing chapter, the reference and the differences (chapters 4, 8).
-6. Run the definition of green above, from scratch.
-
-## 11. Commits and text
-
-- **Identity.** Every contributor, human or agent, maintainer or external,
-  commits under their own git identity: a name and an e-mail address they
-  control, of which a GitHub noreply address
-  (`<id>+<login>@users.noreply.github.com`) is one. An agent commits under
-  the identity of the account it acts for or of its own account, never under
-  another person's; these rules fix no address. Either way, with no trailer
-  of any kind (no `Co-authored-by`, no `Signed-off-by`, no agent name):
-
-  ```
-  git -c user.name=<name> -c user.email=<address> commit -- <paths>
-  ```
-
-  Stage and commit with explicit paths, never `git add -A`. A subject is
-  plain: what the change does, prefixed by the part it touches
-  (`tools/doc: ...`, `xactor: ...`).
-- **No accidental trailer.** git reads a last body paragraph that starts with
-  `word:` as a trailer (`std::` does). Start such a paragraph otherwise.
-- **English** in everything written to a file: code, comments, documents,
-  commit messages.
-- **No em dash** (U+2014) anywhere; use a plain dash.
-- **The banned word.** No file, file name or commit mentions the word that
-  `veru[s]` matches, in any case: `git grep -I -i -e 'veru[s]'` prints
-  nothing in any repository, and the lint checks every commit's author,
-  committer and message too.
-- **The licence notice.** Every source file (`.hpp`, `.cpp`, `.py`, `.mjs`,
-  `.js`, `.sh`, `.jam`, `Jamroot`, `Jamfile`, `build.jam`, `.yml`, `.adoc`,
-  `.html`) opens with it: with `//` for C++, JavaScript and AsciiDoc, with
-  `#` for Jam, Python, shell and YAML; a `#!` line stays first:
-
-  ```
-  // Copyright (c) 2026 WebCpp.org
-  //
-  // Distributed under the Boost Software License, Version 1.0. (See
-  // accompanying file LICENSE_1_0.txt or copy at
-  // https://www.boost.org/LICENSE_1_0.txt)
-  ```
-
-  An HTML file opens with a comment whose first line is `<!--` alone and
-  whose next lines are the notice as it is, the comment going on with what
-  the file is, as `tools/doc/docinfo.html` does:
-
-  ```
-  <!--
-  Copyright (c) 2026 WebCpp.org
-
-  Distributed under the Boost Software License, Version 1.0. (See
-  accompanying file LICENSE_1_0.txt or copy at
-  https://www.boost.org/LICENSE_1_0.txt)
-
-  The style every page adds to Asciidoctor's, in its head (docinfo=shared).
-  -->
-  ```
-
-  The lint checks each of these. Markdown files, including `SKILL.md`, do
-  not need this source-file notice; upstream licence and attribution
-  notices are preserved.
-- **History.** A repository whose code was moved from elsewhere starts from one
-  import commit; the history of the code it was moved from is not carried
-  over.
-- **Outward actions** belong to the owner: no push to a webcpporg
-  repository, no merge, no remote repository created, no GitHub setting
-  changed, no SSH key or credential touched by an agent. An external
-  contributor proposes a change by a pull request from a fork
-  (CONTRIBUTING.md).
+## 5. Changelogs and releases
 
 ### The changelog
 
@@ -2539,12 +1720,12 @@ targets, which run only when named:
 
 `dist` also bundles the tracked sources and upstream licences of the root
 source submodules `site` and `third_party/libs/<name>`, at their recorded
-commits, with no dot files. Each must be checked out at that commit and
-hold no uncommitted changes. It never initializes submodules. The unused
-upstream nested submodules of `third_party/libs/nativejson-benchmark` are
-omitted, as chapter 2 requires; its own sources, benchmark data and licence
-are bundled. Every other unsupported root or nested submodule is refused
-by name, so required sources are never silently omitted.
+commits, with no dot files. Each must be checked out at that commit and hold
+no uncommitted changes. It never initializes submodules. The unused upstream
+nested submodules of `third_party/libs/nativejson-benchmark` are omitted, as
+`CODING-GUIDELINES.md` chapter 10 requires; its own sources, benchmark data
+and licence are bundled. Every other unsupported root or nested submodule is
+refused by name, so required sources are never silently omitted.
 
 Nothing is released until the owner asks. Then:
 
@@ -2569,7 +1750,7 @@ Nothing is released until the owner asks. Then:
    opened from `tools/release/template.adoc` (`sed -e 's/@VERSION@/<next>/g'
    -e 's/@ANCHOR@/<next with dashes>/g'`) and included first by the index.
 
-## 12. b2 facts
+## 6. b2 facts
 
 Each of these was measured; each has cost time.
 
@@ -2633,82 +1814,3 @@ Each of these was measured; each has cost time.
   variant `release` with a subfeature and stops before it builds anything
   (`"release-check" is not a known value of feature <variant>`); `debug-`
   and `profile-` likewise. The release check is `check-release`.
-
-## 13. Roadmap
-
-What webcpp does not have yet, and the chapters that mention it:
-
-- **Every variant tested, in three levels of CI.** The lint and the CI test
-  every variant a library supports: with exceptions on and off (the whole
-  suites, not only a compile, chapter 6) and each library's own
-  configurations. The CI runs in three levels: fast on every push and pull
-  request (the changed library and its dependents, one native compiler and
-  wasip2 in the default variant, one native lane without exceptions, the
-  lint, the docs); nightly on main (every target and compiler, the suites
-  without exceptions natively, sanitizers, the heavy own lanes, the
-  container lanes); and release, when the whole of webcpp is released (every
-  target times every variant). `tools/ci/matrix.py` takes the level, and
-  the fast set runs locally as one command (chapter 9).
-- **The review of the existing libraries.** Once the pending work is done,
-  every library is brought to the rules of exceptions, variants,
-  allocators, the order of what a library builds on, written for the web, the newest Boost
-  library of a kind, wrapped outside libraries, and fixed-width types
-  (chapter 6); the lint then checks the last (no plain `int`, `long`,
-  `short` or `unsigned` in a public header where no interface asks for it).
-- **Asynchronous libraries on xactor with Boost.Asio and Boost.Cobalt.** An
-  example library shows how a library built on xactor's scheduler meets
-  Boost.Asio and Boost.Cobalt, so that asynchronous libraries are easy to
-  write and are all driven from the browser's event loop (chapter 6); its
-  design is still to be done.
-- **webcpp::asio, webcpp::beast, webcpp::webrtc, webcpp::crypto.** Boost.Asio
-  and Boost.Beast natively, and their interfaces over the browser's event
-  loop, `WebSocket` and `fetch` on emscripten; WebRTC peer connections and
-  data channels on both; authenticated encryption and randomness in C++ on
-  every target. trystero then holds only its protocol. Their specifications
-  are in review.
-- **The libraries web developers use most,** brought to C++: a JavaScript
-  interpreter (QuickJS), libp2p, HTTP fetch.
-- **The site, increments 2 to 8.** Increment 1 is done: the site's
-  repository and `b2 site`, the landing, the list of libraries and the three
-  doors (C++, JavaScript, AI), the libraries' pages and the report under the
-  site's theme, `robots.txt`, `llms.txt` and `libraries.json`, published at
-  https://webcpporg.github.io/, the preview, with the redirect from
-  `/webcpp/` (chapter 9). To come, in this order:
-
-  2. xstate for emscripten (its machine layer), and the site's wasm running
-     its own machines, the player's and the install's: the PWA;
-  3. the bridge visualizer and the calculator example;
-  4. trystero's JavaScript API and the collaborative cursors;
-  5. the examples of a state machine, of C++ calling the browser, and of
-     C++ on the server;
-  6. file transfer and video chat, as trystero's roadmap delivers them;
-  7. Google search, for webcpp.org: the Programmable Search engine and the
-     Search Console property are made for the release site; the preview,
-     the development version, gets neither and is never indexed;
-  8. the release channel at https://webcpp.org/, at the first release, with
-     the move of the domain's DNS.
-- **Documentation for web developers and for AI developers,** beside the
-  documentation for C++ developers every library has today, and webcpp's
-  integrations with the AIs.
-- **External libraries built from `third_party/`.** trystero needs
-  libsecp256k1, libdatachannel and OpenSSL, which webcpp does not build: a
-  machine installs them by hand and the CI's actions build them, each found
-  where a variable names it, else in `.local/` (chapters 1 and 9), until
-  webcpp builds them from `third_party/`, each pinned there by a commit or a
-  SHA-256.
-- **Every library on `<webcpp/config.hpp>`.** Each library's `config.hpp`
-  includes it first: trystero (held with config's publication), and wasi with
-  its redesign, which brings Boost into it.
-- **Allocators.** The rule of chapter 6, shareable data structures with an
-  `Allocator` template parameter and every other allocation through the
-  user's allocator, applied first to xactor, xstate and wasi, whose response
-  holds its body as a `std::string`; pratt is born with the rule, and
-  trystero through `std::pmr` (chapter 6).
-- **Compiled Boost libraries.** Boost.URL, Boost.Charconv, Boost.Locale and
-  Boost.Cobalt are built from Boost's sources (`/webcpp//boost_url`,
-  `/webcpp//boost_charconv`, `/webcpp//boost_locale`, `/webcpp//boost_cobalt`).
-  Boost.Locale and Boost.Cobalt have no build without exceptions, and it is not yet measured on Windows. A
-  Boost.Test suite still compiles the framework's header-only form (chapters
-  2 and 9).
-- **Bundled toolchains.** Each toolchain is installed by hand and configured
-  in `user-config.jam` (chapter 1), until webcpp bundles them.
