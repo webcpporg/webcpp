@@ -191,7 +191,9 @@ CONTAINER_IMAGE = container_tag()
 # its pinned chrome-headless-shell, as CHROME: trystero's interop, natively and on emscripten, and
 # document's js, whose examples Playwright runs in Chrome, and the browser and
 # chat applications whose fixture connects Chrome to native or WASI servers.
-CHROME_LANES = {('asio', 'browser'), ('beast', 'browser'), ('beast', 'applications-browser'),
+CHROME_LANES = {('asio', 'browser'), ('asio', 'browser-workers'),
+                ('asio', 'browser-worker-exceptions'),
+                ('beast', 'browser'), ('beast', 'applications-browser'),
                 ('beast', 'applications-chat'), ('document', 'js'), ('trystero', 'interop')}
 
 # MSVC's lanes build 64-bit programs, embed their manifest with the linker and abbreviate b2's
@@ -512,8 +514,14 @@ KINDS = ('original', 'programs')
 OWN_LANE_BASES = {None: 'clang-18', 'native': 'clang-18', 'emscripten': 'emscripten',
                   'wasip2': 'wasip2', 'wasip3': 'wasip3'}
 
-# Suspension variants expand inside B2; these lanes also exercise both policy and EH modes.
+# Own lanes select their supported suspension, exception and library policy modes.
+# Manifest-based browser lanes already expand suspension variants inside B2.
 OWN_LANE_OPTIONS = {
+    ('asio', 'browser-workers', 'emscripten'):
+        ('webcpp-suspend=jspi,asyncify', 'exception-handling=on,off'),
+    ('asio', 'browser-worker-exceptions', 'emscripten'):
+        ('webcpp-suspend=jspi,asyncify', 'exception-handling=on'),
+    ('asio', 'wasip2-tls', 'wasip2'): ('exception-handling=on,off',),
     ('beast', 'browser', 'emscripten'):
         ('exception-handling=on,off', 'webcpp-beast-unsupported=error,ignore'),
     ('beast', 'browser-node', 'emscripten'):

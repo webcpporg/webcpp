@@ -543,6 +543,40 @@ def test_beast_browser_lanes_cover_policies_and_exception_modes(root):
         assert all(option not in command for option in options), command
 
 
+def test_asio_capability_lanes_cover_suspension_and_exception_modes(root):
+    # These direct-source drivers need the CI request to expand their profiles.
+    harness.add_library(root, 'asio',
+                        'import webcpp ;\nwebcpp.targets emscripten wasip2 ;\n'
+                        'webcpp.original python3 ;\n'
+                        'webcpp.drive worker : pass.cpp : : driver.py : : emscripten ;\n'
+                        'webcpp.drive exception : pass.cpp : <exception-handling>on\n'
+                        '  : driver.py : : emscripten ;\n'
+                        'webcpp.drive tls : pass.cpp : : driver.py : : wasip2 ;\n'
+                        'webcpp.lane browser-workers : worker : emscripten ;\n'
+                        'webcpp.lane browser-worker-exceptions : exception : emscripten ;\n'
+                        'webcpp.lane wasip2-tls : tls : wasip2 ;\n',
+                        {'pass.cpp': 'int main() {}\n', 'driver.py': '',
+                         'package.json': '{}\n', 'package-lock.json': '{}\n'})
+    entries = own_lanes(root, '--library', 'asio')
+    assert {entry['id'] for entry in entries} == {
+        'emscripten.asio.browser-workers', 'emscripten.asio.browser-worker-exceptions',
+        'wasip2.asio.wasip2-tls'}, entries
+    expected = {
+        'browser-workers': ['toolset=emscripten', 'webcpp-suspend=jspi,asyncify',
+                            'exception-handling=on,off'],
+        'browser-worker-exceptions': ['toolset=emscripten', 'webcpp-suspend=jspi,asyncify',
+                                      'exception-handling=on'],
+        'wasip2-tls': ['toolset=clang-wasip2',
+                       'testing.launcher=tools/boost/asio-wasip2/run.sh',
+                       'exception-handling=on,off'],
+    }
+    for entry in entries:
+        own = matrix.parsed_own_lane(json.dumps(entry))
+        command = matrix.own_lane_command(own, root / 'config.jam', root / 'lane.xml', [])
+        assert command[5:] == [*expected[own.lane],
+                               f'libs/asio/test//{own.lane}'], command
+
+
 def test_openssl_upstream_lanes_use_the_windows_builds(root):
     # Exercise the public planner and command builder. A native-only lane used
     # to select Linux even when its purpose was to validate the MSVC recipe.
@@ -1174,10 +1208,18 @@ def test_a_container_lane_has_its_image_from_the_cache(_):
 
 def test_asio_browser_lane_receives_chrome(root):
     # The browser driver needs Chrome when the lane is scheduled, on emscripten alone.
-    own = matrix.OwnLane('asio', 'browser', ('libs/asio/test/browser',),
-                         'emscripten', 'original')
-    entry = own_lane_entry_of(own)
-    assert entry['chrome'] is True, entry
+    harness.add_library(root, 'asio',
+                        'import webcpp ;\nwebcpp.targets emscripten ;\n'
+                        'webcpp.original python3 ;\n'
+                        'webcpp.drive page : pass.cpp : : driver.py ;\n'
+                        'webcpp.lane browser : page : emscripten ;\n'
+                        'webcpp.lane browser-workers : page : emscripten ;\n'
+                        'webcpp.lane browser-worker-exceptions : page : emscripten ;\n',
+                        {'pass.cpp': 'int main() {}\n', 'driver.py': '',
+                         'package.json': '{}\n', 'package-lock.json': '{}\n'})
+    entries = own_lanes(root, '--library', 'asio')
+    assert {entry['lane']: entry['chrome'] for entry in entries} == {
+        'browser': True, 'browser-workers': True, 'browser-worker-exceptions': True}, entries
 
     for lane, platform in (('browser', 'emscripten'),
                            ('applications-browser', 'emscripten'),
@@ -1194,7 +1236,8 @@ def test_a_browser_lane_has_the_pinned_chrome(root):
     # chrome-headless-shell, which gives CHROME; no other own lane does, and no job names the
     # image's Chrome.
     assert matrix.CHROME_LANES == {
-        ('asio', 'browser'), ('beast', 'browser'), ('beast', 'applications-browser'),
+        ('asio', 'browser'), ('asio', 'browser-workers'), ('asio', 'browser-worker-exceptions'),
+        ('beast', 'browser'), ('beast', 'applications-browser'),
         ('beast', 'applications-chat'), ('document', 'js'),
         ('trystero', 'interop')}, matrix.CHROME_LANES
     boost_only(root)
@@ -1418,6 +1461,7 @@ CASES = [
     test_own_lanes_on_targets,
     test_an_own_lanes_command,
     test_beast_browser_lanes_cover_policies_and_exception_modes,
+    test_asio_capability_lanes_cover_suspension_and_exception_modes,
     test_openssl_upstream_lanes_use_the_windows_builds,
     test_a_wasip3_lane_can_bind_a_loopback_socket,
     test_a_lane_is_named_by_the_compiler_version,
