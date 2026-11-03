@@ -400,12 +400,14 @@ self_returns="$(on_files "${work_directory}/sources" awk '
         marked = 0
     }
     pending && code ~ /\{[ ]*$/ { pending = 0; exempt = 1 }
+    pending && code ~ /\{.*\}[ ]*$/ { pending = 0; exempt = 1; inline_body = 1 }
     pending && code ~ /[;}][ ]*$/ { pending = 0 }
     /return \*this;/ {
         if (!exempt && !spared_head(signature)) {
             printf "%s:%d: %s\n", FILENAME, FNR, $0
         }
-    }' || true)"
+    }
+    inline_body { exempt = 0; inline_body = 0 }' || true)"
 if [ -n "${self_returns}" ]; then
     printf '%s\n' "${self_returns}"
     fail 'a function returns *this outside an assignment, a prefix ++ or --, or lint-std'

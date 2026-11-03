@@ -1327,6 +1327,11 @@ def test_returns_this_spares_what_the_standard_specifies(root):
           '        return *this;  // after a marked function\n'
           '    }\n'
           '\n'
+          '    // lint-std: std::basic_regex::assign returns *this\n'
+          '    stepper& assign() noexcept { return *this; }  // compact marked\n'
+          '\n'
+          '    stepper& after_compact() { return *this; }  // after compact marked\n'
+          '\n'
           '    // lint-std:\n'
           '    stepper& unexplained() {\n'
           '        advance();\n'
@@ -1341,9 +1346,11 @@ def test_returns_this_spares_what_the_standard_specifies(root):
           '};\n')
     expect_alone(lint(root), 'returns *this',
                  [at(root, path, '// postfix'), at(root, path, '// after a marked function'),
+                  at(root, path, '// after compact marked'),
                   at(root, path, '// marked without a reason')],
                  spared=(at(root, path, '// prefix increment'),
                          at(root, path, '// prefix decrement'),
+                         at(root, path, '// compact marked'),
                          at(root, path, '// marked, with a reason')))
 
 
