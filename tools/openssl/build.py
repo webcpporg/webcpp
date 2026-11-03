@@ -25,6 +25,8 @@ import sys
 import tempfile
 import time
 
+from source import check_checkout, stage_source
+
 HERE = Path(__file__).resolve().parent
 
 
@@ -68,13 +70,7 @@ def main() -> None:
     source, output = args.source.resolve(), args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     pin = json.loads((HERE / 'pin.json').read_text())
-    revision = subprocess.check_output(['git', '-C', str(source), 'rev-parse', 'HEAD'],
-                                       text=True).strip()
-    if revision != pin['commit']:
-        raise RuntimeError('OpenSSL checkout differs from tools/openssl/pin.json; '
-                           'update the submodule')
-    subprocess.run(['git', '-C', str(source), 'diff', '--exit-code', 'HEAD', '--'],
-                   check=True, stdout=subprocess.DEVNULL)
+    check_checkout(source, pin)
     compiler = c_driver(args.cc)
     flags = args.flags[1:] if args.flags[:1] == ['--'] else args.flags
     flags += ['-ffunction-sections', '-fdata-sections']
@@ -84,8 +80,7 @@ def main() -> None:
                      'CFLAGS', 'CXXFLAGS', 'LDFLAGS', 'LD_LIBRARY_PATH',
                      'OPENSSL_CONF', 'OPENSSL_MODULES', 'CROSS_COMPILE'):
         env.pop(variable, None)
-    env.setdefault('SOURCE_DATE_EPOCH', subprocess.check_output(
-        ['git', '-C', str(source), 'show', '-s', '--format=%ct', 'HEAD'], text=True).strip())
+    env.setdefault('SOURCE_DATE_EPOCH', str(pin['source_date_epoch']))
     options = ['--openssldir=/etc/ssl', 'no-shared', 'no-tests', 'no-apps', 'no-docs', 'no-module',
                '--libdir=lib', 'threads' if args.threading == 'multi' else 'no-threads']
     if args.platform == 'wasi':
@@ -143,8 +138,7 @@ def main() -> None:
         scratch = Path(temporary)
         # Configure canonicalizes source symlinks. A real, unmodified copy is
         # needed to keep spaces in the user's checkout out of its Makefiles.
-        shutil.copytree(source, scratch / 'source', symlinks=True,
-                        ignore=shutil.ignore_patterns('.git'))
+        stage_source(source, scratch / 'source', pin)
         build = scratch / 'build'
         build.mkdir()
         install = scratch / 'install'

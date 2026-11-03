@@ -37,8 +37,8 @@ cobalt::main co_main(int argc, char** argv) {
                         ? webcpp::asio::make_tls_client_context()
                         : webcpp::asio::make_tls_client_context(argv[3]);
     if (!prepared) {
-        static_cast<void>(
-            std::fprintf(stderr, "CA preparation: %s\n", prepared.error().message().c_str()));
+        const auto message = prepared.error().message();
+        static_cast<void>(std::fprintf(stderr, "CA preparation: %s\n", message.c_str()));
         co_return 1;
     }
     auto& context = *prepared;

@@ -686,7 +686,7 @@ else
 fi
 
 # 18. A library's changelog and a version's release notes keep the form of AGENTS.md chapter
-#     11: their sections and regions, and every line a bullet, read as Asciidoctor reads a
+#     5: their sections and regions, and every line a bullet, read as Asciidoctor reads a
 #     list, that starts with a verb of the list, or with *Breaking change:* and then one, holds
 #     at most 30 words and no cross-reference, at most ten per library and version
 #     (tools/release/changelog.py, through tools/lint/rules.py). What a line says, internal
@@ -696,7 +696,7 @@ rule 'changelog form'
 if python3 tools/lint/rules.py changelog < "${work_directory}/files"; then
     printf 'every changelog keeps its form\n'
 else
-    fail 'a changelog breaks its form (AGENTS.md chapter 11)'
+    fail 'a changelog breaks its form (AGENTS.md chapter 5)'
 fi
 
 printf '\n'

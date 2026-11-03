@@ -7,9 +7,14 @@
 """Exercise the source-built OpenSSL dependency through real B2 consumers."""
 from pathlib import Path
 import sys
+import io
 import json
 import subprocess
+import tarfile
 import harness
+
+sys.path.insert(0, str(harness.ROOT / 'tools/release'))
+import release
 
 JAM = '''import webcpp ;
 webcpp.run uses_openssl : uses_openssl.cpp
@@ -102,8 +107,71 @@ def test_source_checkout_with_spaces(root: Path) -> None:
     harness.expect(result, True, '**passed**')
 
 
+def archived_source(root: Path) -> Path:
+    """Extract the same committed OpenSSL blobs and modes as the source distribution."""
+    destination = harness.third_party_of_its_own(root, 'openssl', checked_out=False)
+    source = harness.ROOT / 'third_party/libs/openssl'
+    files = [entry for entry in release.blobs(source)[0] if not release.hidden(entry[0])]
+    data = release.contents(source, [oid for _, _, oid in files])
+    members = {path: (0o755 if mode == '100755' else 0o644, data[oid], False)
+               for path, mode, oid in files}
+    archive = release.tar_bytes('openssl', 0, members)
+    with tarfile.open(fileobj=io.BytesIO(archive)) as packed:
+        packed.extractall(destination.parent)
+    assert not (destination / '.git').exists()
+    return destination
+
+
+def test_source_archive_without_git_and_inside_parent_checkout(root: Path) -> None:
+    archived_source(root)
+    harness.add_library(root, 'openssl_user', JAM, {'uses_openssl.cpp': SOURCE})
+    for parent_checkout in (False, True):
+        if parent_checkout:
+            subprocess.run(['git', 'init', '--quiet', str(root)], check=True)
+        result = harness.run_b2(root, '-a', 'toolset=clang', 'variant=release',
+                                'threading=single', 'libs/openssl_user/test')
+        if result.returncode:
+            print(result.stdout, flush=True)
+        harness.expect(result, True, 'webcpp-openssl.build', '**passed**')
+
+
+def test_source_archive_tampering_fails_before_configuration(root: Path) -> None:
+    source = archived_source(root)
+    original = source / 'Configure'
+    content, mode = original.read_bytes(), original.stat().st_mode
+    platform = 'darwin' if sys.platform == 'darwin' else 'linux'
+    changes = ('changed', 'missing', 'added', 'mode', 'symlink')
+    for change in changes:
+        if change == 'changed':
+            original.write_bytes(content + b'\n# changed\n')
+        elif change == 'missing':
+            original.unlink()
+        elif change == 'added':
+            (source / 'unexpected.pm').write_text('unexpected input\n')
+        elif change == 'mode':
+            original.chmod(0o644)
+        else:
+            original.unlink()
+            original.symlink_to(harness.ROOT / 'third_party/libs/openssl/Configure')
+        result = subprocess.run(
+            [sys.executable, str(root / 'tools/openssl/build.py'), '--source', str(source),
+             '--output', str(root / 'rejected'), '--platform', platform,
+             '--threading', 'single', '--cc', 'clang++'],
+            capture_output=True, text=True, timeout=60)
+        assert result.returncode != 0, change
+        assert 'source tree differs' in result.stderr, result.stderr
+        assert not (root / 'rejected/configure.log').exists(), change
+        if original.is_symlink():
+            original.unlink()
+        original.write_bytes(content)
+        original.chmod(mode)
+        (source / 'unexpected.pm').unlink(missing_ok=True)
+
+
 CASES = [test_native_source_dependency, test_missing_checkout_is_lazy_and_actionable,
          test_unsupported_target_is_rejected, test_pin_mismatch_fails_before_compilation,
-         test_source_checkout_with_spaces]
+         test_source_checkout_with_spaces,
+         test_source_archive_without_git_and_inside_parent_checkout,
+         test_source_archive_tampering_fails_before_configuration]
 if __name__ == '__main__':
     sys.exit(harness.run_cases('openssl_test', CASES, sys.argv[1:]))

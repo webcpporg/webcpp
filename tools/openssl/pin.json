@@ -1,5 +1,20 @@
 {
   "version": "3.5.9",
   "commit": "45e844fa2a14ec92d146bd8f5778ac130b6625fb",
-  "repository": "https://github.com/openssl/openssl.git"
+  "repository": "https://github.com/openssl/openssl.git",
+  "source_sha256": "e19b5d894fb5389a1bbbdb185e83dcf8d6ccf7da23c0bde4d65ba18bd334d961",
+  "source_date_epoch": 1790690700,
+  "omitted_submodules": {
+    "cloudflare-quiche": "7ab6a55cfe471267d61e4d28ba43d41defcd87e0",
+    "fuzz/corpora": "ce771805c094d098c25a218bc8e9f7344eccbc5a",
+    "gost-engine": "74b1f4fddbc2d6de969815b1992ddc1ae7c643fe",
+    "krb5": "784c38f50e70a739400cdd3f2620bac2e2788e6c",
+    "oqs-provider": "7bc597c04b534ddea9b6654481deb31ded8e1bbc",
+    "pkcs11-provider": "64fc325ac0f91d03d76b3546df2998d3a38c525b",
+    "pyca-cryptography": "7e33b0e7739d633c77b8c478620167f693ed13f4",
+    "python-ecdsa": "4096fa01715929e08b97e73f3173aee9d57f2a3f",
+    "tlsfuzzer": "61f45d9701294fd87ef92d2a7e3dfb076653a562",
+    "tlslite-ng": "77ef321dde1a9e6bcf94d73c80f8789a770d8031",
+    "wycheproof": "2196000605e45d91097147c9c71f26b72af58003"
+  }
 }

@@ -7,7 +7,7 @@
 
 """Scratch superprojects for the tests of tools/release: git repositories under a directory
 whose path holds a space, with libs/config, whose version.hpp names the version, libraries whose
-changelogs keep AGENTS.md chapter 11's form, the index's section Releases, the notes of the
+changelogs keep AGENTS.md chapter 5's form, the index's section Releases, the notes of the
 version in preparation, and built pages, which git ignores. The files are no source of the
 project, and carry no notice."""
 

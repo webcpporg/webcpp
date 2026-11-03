@@ -5,7 +5,7 @@
 # accompanying file LICENSE_1_0.txt or copy at
 # https://www.boost.org/LICENSE_1_0.txt)
 
-"""webcpp's release tooling (AGENTS.md chapter 11), which the Jamroot's explicit targets run.
+"""webcpp's release tooling (AGENTS.md chapter 5), which the Jamroot's explicit targets run.
 
 Usage: release.py check --root <superproject> --version <a.b.c>
        release.py whats-new --root <superproject> --version <a.b.c>
@@ -25,8 +25,8 @@ check names every fault that keeps the tree from being tagged webcpp-<a.b.c>:
 - notes in preparation include a library's region other than tag=unreleased, or a changelog has
   the version's section already; frozen notes include a region other than tag=<a.b.c>, an
   Unreleased holds lines, Compilers tested is None., or a tag webcpp-<a.b.c> is not at HEAD;
-  Compilers tested lists other lanes than the CI's, tools/ci/matrix.py's LANES, as the notes
-  write them;
+  Compilers tested is not a nonempty ordered unique subset of tools/ci/matrix.py's LANES,
+  as the notes write them;
 - a library is no git checkout of its own, is no submodule at HEAD, is not checked out, or is
   checked out at another commit than the superproject records;
 - New Libraries or Removed Libraries is not exactly the libraries new or gone since the newest
@@ -52,12 +52,14 @@ left out.
 
 dist writes webcpp-<a.b.c>.tar.gz into the directory --out names, and webcpp-<a.b.c>.tar.gz.txt, its
 sha256sum line: the files the superproject's HEAD records and those each library's HEAD records,
+and the pinned source submodules site and third_party/libs/<name>, with their upstream licences,
 read from git's objects and never from the working tree, and the pages the doc build writes,
 doc/html/index.html for the index and for each library, all under webcpp-<a.b.c>/, no path with a
 part that starts with a dot. It refuses, naming each fault, a change HEAD does not record (named
 alone, as check names it), a version other than version.hpp's, a library that is no checkout of its
-own, not checked out, no submodule at HEAD or at another commit than HEAD records, a submodule other
-than the libraries' own, libs/<name>, a link whose target is not UTF-8, absolute, outside its
+own, not checked out, no submodule at HEAD or at another commit than HEAD records, a source
+submodule not checked out at its recorded commit or holding uncommitted changes, an unsupported
+submodule, a link whose target is not UTF-8, absolute, outside its
 repository or a dot file, a page not built, and any other file under a doc/html. The archive is the
 same bytes from the same commits and pages wherever, whenever, by whomever and under whatever time
 zone, locale and umask it is written, with any CPython of 3.9 or later linked to zlib: its members
@@ -68,7 +70,11 @@ system unknown, its deflate zlib's at level 9. A Python whose zlib deflates othe
 them, is refused before anything is read. No tar or gzip program is run. The archive and its
 checksum are written to temporaries first, then each renamed over its file, the archive first: a
 fault while writing, or renaming the archive, leaves both files as they were; one renaming the
-checksum leaves the new archive beside the old checksum, and says so.
+checksum leaves the new archive beside the old checksum, and says so. The unused upstream nested
+submodules of third_party/libs/nativejson-benchmark are omitted, never checked out; its own
+tracked sources, benchmark data and licence are included. OpenSSL's unused nested repositories
+are omitted only at the paths and commits its matching source pin records in omitted_submodules.
+All other nested submodules are refused.
 
 Exit 0 when nothing is wrong; 1 with each fault on a line of its own, `<command>: <fault>`; 2 on a
 usage error, when a file it reads is not there, cannot be read or is not UTF-8, when a path git
@@ -81,6 +87,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import io
+import json
 import posixpath
 import re
 import subprocess
@@ -301,7 +308,11 @@ def region_of(version: Version, notes: changelog.Notes) -> tuple[str, str]:
 def is_checkout(root: Path, library: str) -> bool:
     """Whether libs/<library> is a git checkout of its own, rather than a directory whose git
     commands would reach the superproject's."""
-    directory = root / 'libs' / library
+    return repository_checkout(root / 'libs' / library)
+
+
+def repository_checkout(directory: Path) -> bool:
+    """Whether directory is a Git checkout of its own, including an initialized submodule."""
     completed = subprocess.run(['git', '-C', str(directory), 'rev-parse', '--show-toplevel'],
                                capture_output=True, text=True, check=False)
     return completed.returncode == 0 and \
@@ -380,9 +391,11 @@ def state_findings(root: Path, version: Version, notes: changelog.Notes,
     if notes.compilers is None:
         if not notes.preparing:
             findings.append(f'{relative}: Compilers tested is None., and the version is frozen')
-    elif notes.compilers != lanes:
+    elif not notes.compilers or notes.compilers != [lane for lane in lanes
+                                                    if lane in notes.compilers]:
         findings.append(f'{relative}: Compilers tested lists {", ".join(notes.compilers)}, and '
-                        f'the CI\'s lanes are {", ".join(lanes)}')
+                        f'must list a nonempty ordered subset of the CI\'s lanes: '
+                        f'{", ".join(lanes)}')
     if not notes.preparing:
         tagged = subprocess.run(['git', '-C', str(root), 'rev-parse', '-q', '--verify',
                                  f'refs/tags/{version.tag}^{{commit}}'], capture_output=True,
@@ -738,16 +751,18 @@ def check_deflate() -> None:
                      "webcpp's archives are: run dist with a Python linked to zlib")
 
 
-def blobs(directory: Path) -> tuple[list[tuple[str, str, str]], list[str]]:
+def blobs(directory: Path, *paths: str) -> tuple[list[tuple[str, str, str]], dict[str, str]]:
     """The tree at HEAD of the repository directory: each blob's path, git mode and object, and
-    each gitlink's path. A path that is not UTF-8 is Broken, named."""
-    listed = subprocess.run(['git', '-C', str(directory), 'ls-tree', '-r', '-z', 'HEAD'],
+    each gitlink's path and pinned commit, optionally limited to paths. A path that is not UTF-8
+    is Broken, named."""
+    listed = subprocess.run(['git', '-C', str(directory), 'ls-tree', '-r', '-z', 'HEAD', '--',
+                             *paths],
                             capture_output=True, check=False)
     if listed.returncode != 0:
         error = listed.stderr.decode(errors='replace').strip()
         raise Broken(f'git ls-tree in {directory}: {error}')
     found = []
-    links = []
+    links = {}
     for entry in listed.stdout.split(b'\0'):
         if not entry:
             continue
@@ -760,7 +775,7 @@ def blobs(directory: Path) -> tuple[list[tuple[str, str, str]], list[str]]:
         if kind == 'blob':
             found.append((path, mode, name))
         elif kind == 'commit':
-            links.append(path)
+            links[path] = name
     return found, links
 
 
@@ -800,9 +815,33 @@ def pages(current: list[str]) -> list[str]:
 
 
 def repositories(root: Path, names: list[str]) -> list[tuple[str, Path]]:
-    """The superproject and the libraries names, each with the prefix of its paths in the
-    superproject."""
-    return [('', root)] + [(f'libs/{name}/', root / 'libs' / name) for name in names]
+    """The superproject, libraries and checked-out source submodules, with their path prefixes.
+    dist validates every checkout and pin before reading any submodule's blobs."""
+    return ([('', root)] + [(f'libs/{name}/', root / 'libs' / name) for name in names] +
+            [(f'{path}/', root / path) for path in source_submodules(root)
+             if repository_checkout(root / path)])
+
+
+def source_submodules(root: Path) -> dict[str, str]:
+    """Supported root source submodules and their pinned commits: site and direct dependencies
+    under third_party/libs. Other gitlinks must be refused, never silently omitted."""
+    recorded = blobs(root, 'site', 'third_party/libs/')[1]
+    return {path: commit for path, commit in recorded.items() if not hidden(path) and
+            (path == 'site' or PurePosixPath(path).parent == PurePosixPath('third_party/libs'))}
+
+
+def source_checkout_findings(root: Path, sources: dict[str, str]) -> list[str]:
+    """A source dependency must be checked out at the exact commit recorded by the root."""
+    findings = []
+    for path, recorded in sources.items():
+        if not repository_checkout(root / path):
+            findings.append(f'{path} is not checked out: git submodule update --init {path}')
+        else:
+            checked_out = git(root / path, 'rev-parse', 'HEAD').strip()
+            if checked_out != recorded:
+                findings.append(f'{path} is at {checked_out}, and the superproject records '
+                                f'{recorded}')
+    return findings
 
 
 def utf8(data: bytes) -> bool:
@@ -830,15 +869,47 @@ def link_refusal(path: str, target: bytes) -> str | None:
     return None
 
 
+def omitted_openssl_submodules(root: Path, sources: dict[str, str]) -> dict[str, str]:
+    """The unused upstream gitlinks reviewed for exactly the recorded OpenSSL source pin."""
+    recorded = sources.get('third_party/libs/openssl')
+    if recorded is None:
+        return {}
+    relative = 'tools/openssl/pin.json'
+    try:
+        pin = json.loads(read(root, relative))
+    except json.JSONDecodeError as error:
+        raise Broken(f'{relative} is not valid JSON: {error}') from error
+    if not isinstance(pin, dict):
+        raise Broken(f'{relative} must hold an object')
+    if pin.get('commit') != recorded:
+        return {}
+    omitted = pin.get('omitted_submodules', {})
+    if not isinstance(omitted, dict) or any(
+            not isinstance(path, str) or not isinstance(commit, str) or
+            re.fullmatch(r'[0-9a-f]{40}', commit) is None
+            for path, commit in omitted.items()):
+        raise Broken(f'{relative}: omitted_submodules must map paths to commit hashes')
+    return omitted
+
+
 def repository_refusals(root: Path, names: list[str]) -> list[str]:
     """What the superproject's tree and those of the libraries names hold that the archive cannot:
-    a submodule other than the libraries' own, libs/<name>, which it does not archive; a link
-    that link_refusal refuses."""
+    an unsupported root or nested submodule; a link that link_refusal refuses. The unused nested
+    dependencies of nativejson-benchmark and those reviewed for OpenSSL's exact source pin are
+    intentionally omitted (CODING-GUIDELINES.md chapter 10)."""
     refusals = []
+    sources = source_submodules(root)
+    openssl_omissions = omitted_openssl_submodules(root, sources)
     for base, directory in repositories(root, names):
         files, submodules = blobs(directory)
         for path in submodules:
             if not base and PurePosixPath(path).parent == PurePosixPath('libs'):
+                continue
+            if (not base and path in sources) or base == \
+                    'third_party/libs/nativejson-benchmark/':
+                continue
+            if base == 'third_party/libs/openssl/' and \
+                    openssl_omissions.get(path) == submodules[path]:
                 continue
             owner = base.rstrip('/') or 'the superproject outside libs/'
             refusals.append(f'{base}{path} is a submodule of {owner}, which dist does not archive')
@@ -873,11 +944,19 @@ def dist_refusals(root: Path, version: Version) -> list[str]:
     superproject records; a submodule or a link the archive cannot hold; a page not built, or a
     file beside the pages."""
     current = libraries(root)
-    uncommitted = uncommitted_findings(root, current)
-    if uncommitted:
-        return uncommitted
+    sources = source_submodules(root)
+    dirty = uncommitted_findings(root, current)
+    for path in sources:
+        if repository_checkout(root / path):
+            dirty += [f'{path}/{changed} is not committed: a tag carries only what HEAD '
+                      'records' for changed in uncommitted(root / path)]
+    if dirty:
+        return sorted(dirty)
     refusals = version_findings(root, version)
     refusals += checkout_findings(root, current, gitlinks(root, 'HEAD'))
+    refusals += source_checkout_findings(root, sources)
+    if refusals:
+        return refusals
     refusals += repository_refusals(root, [name for name in current if is_checkout(root, name)])
     refusals += page_refusals(root, current)
     return refusals

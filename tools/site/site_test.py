@@ -330,6 +330,22 @@ def test_the_release_channel_needs_its_version(scratch: Path) -> None:
     assert not (root / 'bin/site').exists()
 
 
+def test_release_sources_build_the_site_without_dotfiles(scratch: Path) -> None:
+    # dist excludes every tracked path with a dot-prefixed component. The site's HTML
+    # validation must remain runnable from those sources, with dependencies installed normally.
+    root = superproject(scratch)
+    files = subprocess.run(['git', 'ls-files', '-z', '--', 'site'], cwd=root,
+                           capture_output=True, text=True, check=True).stdout.split('\0')
+    for name in filter(None, files):
+        if any(part.startswith('.') for part in Path(name).parts):
+            (root / name).unlink()
+    docs = docs_fixture(scratch, root)
+    result = b2(root, '-a', 'site', f'-sWEBCPP_SITE_DOCS={docs}')
+    assert result.returncode == 0, (result.returncode, result.stdout[-6000:], result.stderr[-3000:])
+    assert (root / 'bin/site/index.html').is_file()
+    assert (root / 'bin/site/docs/index.html').is_file()
+
+
 def test_valid_html_fails_the_build_naming_the_file(scratch: Path) -> None:
     # /webcpp/site//valid-html (site/Jamfile), b2 site's last step, runs html-validate over every
     # page of bin/site/: a page that is not valid HTML fails the build, naming the file and the
@@ -364,7 +380,7 @@ TRAILING_PAGE = '\n'.join([
 
 
 def test_valid_html_allows_trailing_whitespace_inside_a_librarys_pre(scratch: Path) -> None:
-    # The relaxed pass (.htmlvalidate.docs.json), for docs/ and libs/ alone, turns
+    # The relaxed pass (htmlvalidate.docs.json), for docs/ and libs/ alone, turns
     # no-trailing-whitespace off: a listing of a library's guide may show it as content.
     root = superproject(scratch)
     docs = docs_fixture(scratch, root)
@@ -378,7 +394,7 @@ def test_valid_html_allows_trailing_whitespace_inside_a_librarys_pre(scratch: Pa
 
 
 def test_valid_html_still_fails_on_the_sites_own_trailing_whitespace(scratch: Path) -> None:
-    # The strict pass (.htmlvalidate.json), for every page outside docs/ and libs/, keeps
+    # The strict pass (htmlvalidate.json), for every page outside docs/ and libs/, keeps
     # no-trailing-whitespace on: the site's own pages are React's, which writes no such line on
     # its own, so one that holds any is a fault of the page's text, never formatting to allow.
     root = superproject(scratch)
@@ -440,6 +456,7 @@ CASES: list[Callable[[Path], None]] = [
     test_the_release_is_indexed_with_its_sitemap,
     test_a_failed_build_leaves_the_previous_bin_site_or_none,
     test_a_server_on_bin_site_answers_every_request_of_a_rebuild,
+    test_release_sources_build_the_site_without_dotfiles,
     test_valid_html_fails_the_build_naming_the_file,
     test_valid_html_allows_trailing_whitespace_inside_a_librarys_pre,
     test_valid_html_still_fails_on_the_sites_own_trailing_whitespace,

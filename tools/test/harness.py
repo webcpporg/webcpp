@@ -269,10 +269,10 @@ def copy_tree(src: Path) -> Path:
     it.
 
     The copy holds what git tracks, plus what it would track (untracked, not ignored), as the
-    lint reads a repository (chapter 6): never what a build or a run wrote, nor what one
-    machine's .gitignore keeps out of the tree, at any depth, so a build in src before or during
-    the copy (doc/html/, bin/, and the rest .gitignore lists) cannot change what a test builds
-    from. third_party/libs is a link to src's, which a case makes its own with
+    lint reads a repository (CODING-GUIDELINES.md chapter 9): never what a build or a run wrote,
+    nor what one machine's .gitignore keeps out of the tree, at any depth, so a build in src
+    before or during the copy (doc/html/, bin/, and the rest .gitignore lists) cannot change what
+    a test builds from. third_party/libs is a link to src's, which a case makes its own with
     third_party_of_its_own before it changes anything there. Only src's user-config.jam comes
     from its .local/, and a link to its .local/boost-source when it has one, so that the copy
     builds with the same toolsets and Boost sources without copying them.

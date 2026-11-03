@@ -372,6 +372,28 @@ def test_compile_database_lists_what_b2_builds(root):
 WORLD = 'libs/component_demo/include/webcpp/component_demo/world.hpp'
 
 
+def test_compile_database_prepares_generated_header_dependencies(root):
+    # A clean checkout must analyse headers that depend on generated data.
+    # A dry run alone lists the include path but never creates its header.
+    harness.replace(root / 'libs/demo/build.jam', '<include>include ;',
+                    '<include>include <library>/webcpp/third_party//ca_certificates ;')
+    append(root, 'libs/demo/include/webcpp/demo.hpp',
+           '\n#include <webcpp_ca_certificates.hpp>\n'
+           'static_assert(webcpp::detail::ca_certificates::count > 0);\n')
+    assert not list((root / 'bin').rglob('webcpp_ca_certificates.hpp'))
+    completed = compile_database(root)
+    assert completed.returncode == 0, completed.stdout[-6000:]
+    entries = json.loads((root / 'compile database/compile_commands.json').read_text())
+    aggregate = root / 'bin/aggregate/demo.cpp'
+    commands = [entry['arguments'] for entry in entries if Path(entry['file']) == aggregate]
+    assert len(commands) == 2, commands
+    for command in commands:
+        said = compile_commands.compiles_aggregate(str(root), command, str(aggregate))
+        assert not said, said
+    # Preparing compilation inputs must not execute the library's programs.
+    assert not list((root / 'bin').rglob('*.run'))
+
+
 def test_compile_database_reads_what_only_wasi_builds(root):
     add_component_demo(root)
     completed = compile_database(root)
@@ -1863,7 +1885,7 @@ CHANGELOG = (CPP + '\n[appendix]\n[#demo-changelog]\n== Changelog\n\nWhat change
 
 def test_changelog(root):
     prepare(root)
-    # A library's changelog keeps AGENTS.md chapter 11's form: a wrapped line is one line; one
+    # A library's changelog keeps AGENTS.md chapter 5's form: a wrapped line is one line; one
     # that starts with no verb of the list fails, at its line.
     write(root, 'libs/demo/doc/changelog.adoc', CHANGELOG.format(line='* Fixed a crash.'))
     commit(root / 'libs/demo', 'A changelog')
@@ -2057,6 +2079,7 @@ CASES = [
     test_no_library_passes,
     test_a_user_config_the_environment_names_is_read,
     test_compile_database_lists_what_b2_builds,
+    test_compile_database_prepares_generated_header_dependencies,
     test_compile_database_reads_what_only_wasi_builds,
     test_an_aggregate_no_units_options_compile_names_each,
     test_wasi_sdk_is_told_by_the_compiler_itself,

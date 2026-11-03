@@ -6,7 +6,7 @@
 # https://www.boost.org/LICENSE_1_0.txt)
 
 """Checks tools/release/changelog.py: a library's changelog and a version's release notes in
-AGENTS.md chapter 11's form pass, wrapped lines included; a line with no verb of the list, a
+AGENTS.md chapter 5's form pass, wrapped lines included; a line with no verb of the list, a
 cross-reference, an eleventh line, text outside a bullet, a section out of order or without its
 region, and notes out of form each fail, at their line. The reader reads a list as the doc
 build's Asciidoctor.js renders it, which tools/node/install.py installs when it is not there.

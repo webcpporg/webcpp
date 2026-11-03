@@ -39,7 +39,7 @@ NOT_BUILT = ("Not built in this lane, as when it does not declare the lane's tar
 OUTSIDE = 'outside failure'
 
 # The longest title the site's valid-html accepts on a page of the report: html-validate's
-# long-title, which site/.htmlvalidate.json leaves at its default.
+# long-title, which site/htmlvalidate.json leaves at its default.
 LONGEST_TITLE = 70
 
 # html-validate's directive, before a matrix inside its .scroll: no-redundant-role is off from

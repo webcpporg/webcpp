@@ -96,6 +96,11 @@ database prints each such header. A twin that holds every header of its aggregat
 translation unit; one that holds fewer is a translation unit of its own,
 <aggregate>-exception-handling-off.cpp beside it; one left with no header is no entry.
 
+Before selecting each aggregate command, its compile-only headers-alone targets are built
+through B2. This materializes generated dependencies, including OpenSSL configuration and CA
+data, on a clean checkout. The corresponding exception-free units are prepared too. No test
+program is executed by this preparation.
+
 b2 runs with root/.local/user-config.jam when it exists, else with $WEBCPP_USER_CONFIG when it
 is set, else with its own search; and without CPATH, CPLUS_INCLUDE_PATH and C_INCLUDE_PATH,
 which the Jamroot refuses.
@@ -476,10 +481,26 @@ def compiles_aggregate(root: str, command: list[str], source: str) -> str:
     return '' if completed.returncode == 0 else completed.stdout or 'the compiler failed'
 
 
+def prepare_header_units(root: str, library: str, target: str, units: list[list[str]]) -> None:
+    """Materialize the inputs of header analysis using B2's compile-only targets."""
+    # A dry run records include paths but does not materialize generated inputs,
+    # such as the configured OpenSSL headers and embedded trust data. Compile
+    # the declared header units through B2 first, preserving dependency order.
+    # These are compile-only targets: no library test program is executed.
+    requested = sorted({target_of_unit(command) for command in units})
+    without = [WITHOUT_EXCEPTIONS] if all(NO_EXCEPTIONS in unit for unit in units) else []
+    command, completed = run_b2(root, ['-d0', 'webcpp-require-external=on',
+                                      *TARGETS[target], *without, *requested])
+    if completed.returncode != 0:
+        raise Failure(f'{completed.stdout}{" ".join(command)} exited {completed.returncode} '
+                      f'while preparing the header dependencies of libs/{library}')
+
+
 def aggregate_command(root: str, library: str, target: str, units: list[list[str]],
                       source: str) -> list[str]:
     """The command of the library's aggregate on target: that of its headers-alone units, or, when
     they are compiled with different options, the first of theirs with which it compiles."""
+    prepare_header_units(root, library, target, units)
     distinct: dict[tuple[str, ...], list[str]] = {}
     for command in units:
         distinct.setdefault(options_of(command), command)
@@ -715,6 +736,7 @@ def twins(root: str, target: str, chosen: dict[str, list[Aggregate]], units: Uni
         if not headers:
             continue
         if headers == aggregate.headers:
+            prepare_header_units(root, library, target, unit_commands(theirs_without, headers))
             # The same translation unit, with the twin of the unit its command is taken from.
             unit = ALONE.match(aggregate.command[-1])
             assert unit is not None, aggregate

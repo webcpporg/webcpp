@@ -12,7 +12,7 @@ same path at the new address, its query and its fragment kept, the prefix itself
 root; and --to without https://, or a --prefix that is not a path between slashes, fails and
 writes nothing. The script's target(location) is cut from each page between its markers and run
 with node on objects shaped like window.location. Both pages are valid HTML by the rules the
-site's own pages are checked with, site/.htmlvalidate.json, run with the site's html-validate,
+site's own pages are checked with, site/htmlvalidate.json, run with the site's html-validate,
 installed as b2 installs it (tools/node/install.py); without the site checked out at site/ there
 is no html-validate to run, which that case says, and passes. Run with the names of some cases to
 run only those."""
@@ -131,7 +131,7 @@ def test_both_pages_are_valid_html(root: Path) -> None:
     assert install.returncode == 0, (install.returncode, install.stdout, install.stderr)
     out = written(root)
     result = subprocess.run([str(SITE / 'node_modules/.bin/html-validate'),
-                             '--config', str(SITE / '.htmlvalidate.json'),
+                             '--config', str(SITE / 'htmlvalidate.json'),
                              *(str(out / name) for name in PAGES)],
                             capture_output=True, text=True, check=False, timeout=120,
                             env={**os.environ, 'FORCE_COLOR': '0'})

@@ -37,3 +37,6 @@
 [submodule "third_party/libs/openssl"]
 	path = third_party/libs/openssl
 	url = https://github.com/openssl/openssl.git
+[submodule "libs/asio"]
+	path = libs/asio
+	url = ../asio.git

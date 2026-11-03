@@ -7,6 +7,7 @@
 """Check that preparing a private Boost overlay is exact and non-destructive."""
 from pathlib import Path
 import hashlib
+import importlib.machinery
 import importlib.util
 import json
 import tempfile
@@ -14,7 +15,7 @@ import unittest
 
 HERE = Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location('prepare', HERE / 'prepare.py')
-assert spec is not None and spec.loader is not None
+assert spec is not None and isinstance(spec.loader, importlib.machinery.SourceFileLoader)
 prepare = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(prepare)
 

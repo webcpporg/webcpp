@@ -30,7 +30,8 @@ int main(int argc, char** argv) {
                         ? webcpp::asio::make_tls_client_context()
                         : webcpp::asio::make_tls_client_context(argv[3]);
     if (!prepared) {
-        std::fprintf(stderr, "CA preparation: %s\n", prepared.error().message().c_str());
+        const auto message = prepared.error().message();
+        std::fprintf(stderr, "CA preparation: %s\n", message.c_str());
         return 1;
     }
     auto tls = std::move(*prepared);

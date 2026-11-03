@@ -18,7 +18,8 @@ not Boost submission requirements or a replacement for the project's toolchain.
 
 Locate the superproject by `Jamroot` and `tools/doc/`, then identify the library
 repository under `libs/<name>`. Read the superproject `AGENTS.md`, especially
-chapters 7 and 8, and the library's own instructions. Inspect its `doc/Jamfile`,
+chapters 2 and 3, `CODING-GUIDELINES.md` chapter 7, and the library's
+own instructions. Inspect its `doc/Jamfile`,
 guide, public headers, examples, and relevant tests. Those files determine the
 pinned tools, supported targets, contracts, and validation commands. Do not
 assume another library supports Asio's browser or coroutine configurations.

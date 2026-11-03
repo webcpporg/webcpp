@@ -945,9 +945,9 @@ def test_a_lane_of_a_library_with_external_dependencies_says_so(root):
     # the CI's actions of their names, on a lane or an own lane that builds trystero: its entry
     # says external, and no other does.
     assert matrix.EXTERNAL_DEPENDENCIES == {
-        'asio': ('openssl',),
         'trystero': ('secp256k1', 'libdatachannel', 'openssl')}, matrix.EXTERNAL_DEPENDENCIES
-    assert matrix.needs_external('asio')
+    # Asio builds the pinned OpenSSL sources through its B2 dependency.
+    assert not matrix.needs_external('asio')
     for dependencies in matrix.EXTERNAL_DEPENDENCIES.values():
         for dependency in dependencies:
             assert (matrix.ROOT / 'tools/ci/actions' / dependency / 'action.yml').is_file(), (

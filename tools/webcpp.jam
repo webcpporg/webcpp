@@ -126,7 +126,7 @@ feature.feature webcpp-require-external : on : optional incidental propagated ;
 feature.feature webcpp-data : : free incidental ;
 toolset.flags testing.capture-output LAUNCHER : <webcpp-data> : unchecked ;
 
-# The suspension variant of a program on emscripten (AGENTS.md chapter 9):
+# The suspension variant of a program on emscripten (AGENTS.md chapter 4):
 # jspi, JavaScript Promise Integration, the default, with WebAssembly
 # exceptions; or asyncify, Emscripten's Asyncify, which traps with
 # WebAssembly exceptions and so composes JavaScript-based ones.

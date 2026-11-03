@@ -7,4 +7,6 @@
 // Compile the checked private source copy with the consumer's configuration.
 #define BOOST_COBALT_SOURCE 1
 #define BOOST_COBALT_IO_SOURCE 1
+// This wrapper intentionally compiles the verified upstream implementation.
+// NOLINTNEXTLINE(bugprone-suspicious-include)
 #include <libs/cobalt/src/io/endpoint.cpp>
