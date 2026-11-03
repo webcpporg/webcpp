@@ -90,12 +90,15 @@ They do not include every separate own lane and do not claim all-platform CI.
 - Focused clang-tidy passed task-owned code and 16 parent-owned configurations.
   Owned Python checks, text/format rules and Node syntax checks passed. This is not
   a claim that the complete repository lint printed `lint: clean`.
+- Complete lint database generation passed with 1,451 commands, including the
+  explicit browser pthread header units. Database generation is not a full tidy
+  run. The local `check-release` target also passed.
 - MrDocs and rendered guide link/code checks passed after the final public comment
   changes. Desktop/narrow screenshot inspection remains unverified: local Chrome
   screenshots were blank and the in-app browser refused file URLs. No bypass was
   attempted.
 - Proposal checking and 17 tool tests passed. OpenSpec 1.10.0 strict validation
-  passed in all 15 proposal roots before the final committed snapshot refresh.
+  passed in all 15 proposal roots after exporting the 206-file candidate snapshot.
 
 ## Review and regression record
 
@@ -119,7 +122,32 @@ approved re-review. The original UDP feature test had a weaker chronology: its
 first run failed on sandbox networking, and the valid pristine-overlay failure
 was replayed after implementation. It is not described as strict test-first TDD.
 
-The final whole-candidate review is recorded separately after candidate commits.
+The final whole-candidate review covered root `15e2f44..0da952f` and Asio
+`dad1aef..a8d0f17`. It found no additional backend/lifetime defect, but requested
+two important recurring-lane fixes: Chrome provisioning for the new browser lanes
+and persisted EH/suspension coverage. It also identified stale P2 TLS guide
+commands and a stale single-thread Cobalt DNS refusal statement. These findings
+were resolved in one scoped fix wave, root `008a47b` and Asio `9455076`.
+The complete matrix suite passed 41/41 cases. Local B2 XML confirmed 34 driver
+configurations: four profiles for each of four worker drivers, two EH-on
+suspension profiles for the exception fixture and two EH profiles for each of
+eight P2 TLS drivers. Documentation generation and focused static checks passed.
+An initial matrix test could not bind loopback in the sandbox; the same case and
+the complete suite passed with local socket permission, without changing tests.
+
+The scoped re-review approved every finding with no new breakage and no
+out-of-scope observations. Reports are preserved in
+`../reviews/2026-11-03-asio-capability-review.md` and
+`../reviews/2026-11-03-asio-capability-fix-review.md`. Local raw reports, logs and
+review packages are retained in `.local/asio-capability-evidence-2026-11-03.tar.gz`.
+The completed branch and worktree are kept for the separately authorized
+publication closure; nothing here asserts fresh remote CI or a merge.
+
+The reviewer explicitly left broader external DNS/IPv6/multicast/native-device
+validation, general Cobalt compositions and upstream issue 287, other host OSes
+and engines, pixel-level documentation inspection and publication outside the
+verdict. These remain the documented validation/external boundaries; none is
+silently promoted to tested support by this review.
 
 ## Controller decisions
 
