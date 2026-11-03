@@ -638,11 +638,17 @@ def prepare_openssl_headers(root: str, request: list[str], commands: list[list[s
                 headers.add(str(directory / 'openssl/configuration.h'))
     if not headers:
         return
-    # Keep the original request so B2 constructs the exact consumer variants.
-    # Explicit output filenames restrict execution to these dependencies, even
-    # though the request includes run targets. Never execute a dry-run shell line.
-    command, completed = run_b2(root, ['-d0', 'webcpp-require-external=on',
-                                      *request, *sorted(headers)])
+    # Resolve the original consumers inside a dedicated B2 preparation target.
+    # Its result contains only provider headers, even when those files exist.
+    # Existing filenames on B2's command line would instead become input files
+    # and let B2 execute all the consumers. Never execute a dry-run shell line.
+    properties = ['webcpp-require-external=on',
+                  *(argument for argument in request if '=' in argument)]
+    original = [f'--webcpp-lint-property={argument}' for argument in properties]
+    sources = [f'--webcpp-lint-source={argument}' for argument in request if '=' not in argument]
+    requested = [f'--webcpp-lint-header={header}' for header in sorted(headers)]
+    command, completed = run_b2(root, ['-d0', *properties, *original, *sources, *requested,
+                                      'lint-openssl-headers'])
     if completed.returncode != 0 or any(not Path(header).is_file() for header in headers):
         raise Failure(f'{completed.stdout}{" ".join(command)} exited {completed.returncode} '
                       'while preparing program OpenSSL headers')

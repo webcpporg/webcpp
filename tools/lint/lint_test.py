@@ -425,23 +425,56 @@ def test_compile_database_prepares_program_openssl_variants(root):
     output.mkdir()
     (root / 'bin').symlink_to(output, target_is_directory=True)
     harness.add_library(root, 'tls_user', HASH + '\nimport webcpp ;\n'
-                        'webcpp.targets native ;\n'
-                        'webcpp.run tls_program : tls_program.cpp\n'
-                        '  : <library>/webcpp/third_party//openssl\n'
-                        '    <define>WEBCPP_TEST_TLS_PROGRAM ;\n',
-                        {'tls_program.cpp': CPP + '\n#include <openssl/ssl.h>\n'
-                         'int main() { return SSL_ERROR_NONE; }\n'})
+                        'webcpp.targets native ;\n', {})
+    lane = root / 'libs/tls_user/test/release'
+    lane.mkdir()
+    (lane / 'Jamfile').write_text(HASH + '\nimport webcpp ;\n'
+                                 'project : default-build <variant>release ;\n'
+                                 'webcpp.targets native ;\n'
+                                 'webcpp.run tls_program : tls_program.cpp\n'
+                                 '  : <library>/webcpp/third_party//openssl\n'
+                                 '    <define>WEBCPP_TEST_TLS_PROGRAM ;\n'
+                                 'webcpp.lane tls-variant : tls_program : native ;\n')
+    source = lane / 'tls_program.cpp'
+    source.write_text(CPP + '\n#include <openssl/ssl.h>\n'
+                      'int main() { return SSL_ERROR_NONE; }\n')
     completed = compile_database(root)
     assert completed.returncode == 0, completed.stdout[-6000:]
-    source = root / 'libs/tls_user/test/tls_program.cpp'
     entries = json.loads((root / 'compile database/compile_commands.json').read_text())
     commands = [entry['arguments'] for entry in entries if Path(entry['file']) == source]
     assert len(commands) == 2, commands
     for command in commands:
+        # The preparation target must preserve the own lane's release default,
+        # rather than propagate its own debug default into the consumer.
+        assert any('/release/' in word for word in command), command
         said = compile_commands.compiles_aggregate(str(root), command, str(source))
         assert not said, said
     # Preparation may build dependencies, but must not execute consumer programs.
     assert not list((root / 'bin').rglob('*.run'))
+    # Existing generated headers must not turn an incremental analysis into
+    # an execution of the consumer targets used to discover their variants.
+    repeated = compile_database(root)
+    assert repeated.returncode == 0, repeated.stdout[-6000:]
+    assert not list((root / 'bin').rglob('*.run'))
+    # A missing header and an existing, stale variant must both be updated.
+    # Inspect B2's actual actions without rebuilding OpenSSL a third time.
+    # B2 roots output paths at its actual cwd. Preserve the bin symlink while
+    # resolving the parent's /var alias on macOS, just as its dry run does.
+    headers = sorted(root.resolve() / header.relative_to(root)
+                     for header in (root / 'bin/third_party').rglob('configuration.h'))
+    assert len(headers) == 2, headers
+    changed = max(header.stat().st_mtime for header in headers) + 1
+    os.utime(root / 'tools/openssl/build.py', (changed, changed))
+    headers[0].unlink()
+    pending = harness.run_b2(
+        root, '-n', '--webcpp-lint-source=libs/tls_user/test/release//tls-variant',
+        '--webcpp-lint-property=exception-handling=on,off',
+        *(f'--webcpp-lint-header={header}' for header in headers), 'lint-openssl-headers')
+    assert pending.returncode == 0, pending.stdout[-6000:]
+    assert len(re.findall(r'^webcpp-openssl\.build ', pending.stdout, re.MULTILINE)) == 2, (
+        pending.stdout[-6000:])
+    assert 'testing.capture-output' not in pending.stdout, pending.stdout[-6000:]
+    assert not re.search(r'^\S+\.compile', pending.stdout, re.MULTILINE), pending.stdout[-6000:]
 
 
 def test_compile_database_reads_what_only_wasi_builds(root):

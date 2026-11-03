@@ -618,8 +618,10 @@ out of clang-tidy only; every other rule reads them.
 The compilation database prepares generated inputs before analysis. Public
 header units prepare their dependencies; programs that select another OpenSSL
 configuration prepare that exact configuration through B2 as well, including
-their exception-off twins. B2 builds only the requested header artifacts and
-their dependencies during this preparation, never the consumer's run target.
+their exception-off twins. A dedicated preparation target resolves each original
+request with its own defaults and returns only the requested provider headers.
+B2 updates those artifacts and their dependencies even when headers already
+exist, without compiling or running the consumers used to discover the variants.
 
 **A library's include boundaries.** Every header compiles alone, so only a
 boundary check sees a part of a library start to depend on another. A
