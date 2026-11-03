@@ -779,6 +779,39 @@ def test_a_compiled_boost_library_s_sources_are_not_analysed(root):
     expect_clean(lint(root))
 
 
+def test_clang_tidy_prepares_cobalt_wrappers_on_a_clean_tree(root):
+    # The library's aggregate is native, but a WASIp3-only program also compiles
+    # webcpp's Cobalt wrappers. Their checked source overlay must exist before
+    # clang-tidy reads them, even when no public header needs that overlay.
+    prepare(root)
+    append(root, 'libs/demo/test/Jamfile',
+           'webcpp.run cobalt : cobalt.cpp : <library>/webcpp//boost_cobalt : wasip3 ;\n')
+    write(root, 'libs/demo/test/cobalt.cpp', CPP + '\n'
+          'int main() {\n'
+          '    return 1;\n'
+          '}\n')
+    overlay = root / 'bin/boost-cobalt-wasip3/include/libs/cobalt/src/io'
+    assert not overlay.exists(), overlay
+    completed = compile_database(root)
+    assert completed.returncode == 0, completed.stdout[-6000:]
+    entries = json.loads((root / 'compile database/compile_commands.json').read_text())
+    wrappers = [entry for entry in entries
+                if '/tools/boost/cobalt-wasip3/' in entry['file']]
+    assert len(wrappers) == 4, wrappers
+    for entry in wrappers:
+        for marker in ('-DBOOST_COBALT_SOURCE=1', '-DBOOST_COBALT_IO_SOURCE=1'):
+            assert marker in entry['arguments'], entry
+    expect_clean(lint(root))
+    for name in ('acceptor', 'endpoint'):
+        assert (overlay / f'{name}.cpp').is_file(), name
+    result = harness.run_b2(root, '-a', 'toolset=clang-wasip3',
+                            'tools/boost/cobalt-wasip3//acceptor',
+                            'tools/boost/cobalt-wasip3//endpoint')
+    harness.expect(result, True)
+    # Preparing lint inputs must not execute the deliberately failing program.
+    assert not list((root / 'bin/libs/demo/test').rglob('cobalt.run'))
+
+
 def test_clang_tidy_refuses_a_throw_on_each_target_without_exceptions(root):
     prepare(root)
     add_browser_demo(root)
@@ -1409,8 +1442,10 @@ def test_world_rule(root):
 def test_bare_throw(root):
     prepare(root)
     # A library header raises through boost::throw_exception alone. A throw in a template that
-    # nothing instantiates, which no build compiles, fails, and so does a rethrow inside the
-    # region a build with exceptions compiles; what only reads as a throw does not: the
+    # nothing instantiates fails, as does a rethrow. Both sit behind the exceptions guard:
+    # Clang 18 diagnoses an unguarded nondependent throw even without instantiating its template.
+    # The separate clang-tidy case proves an unguarded throw fails compilation too.
+    # What only reads as a throw does not: the
     # function, a string, a comment, a Doc Comment, a raw string, noexcept(false), a name
     # that holds the word, and JavaScript's throw in an EM_JS body, after which C++ is read
     # again. A test or an example may throw: catches.cpp does.
@@ -1443,6 +1478,8 @@ def test_bare_throw(root):
           '\n'
           'namespace webcpp::demo {\n'
           '\n'
+          '#ifndef WEBCPP_DEMO_NO_EXCEPTIONS\n'
+          '\n'
           '/** Returns the count it is given, refusing a negative one.\n'
           '\n'
           '    @tparam Count A signed type.\n'
@@ -1456,8 +1493,6 @@ def test_bare_throw(root):
           '    }\n'
           '    return count;\n'
           '}\n'
-          '\n'
-          '#ifndef WEBCPP_DEMO_NO_EXCEPTIONS\n'
           '\n'
           '/** Runs the work it is given, and lets what it throws go on.\n'
           '\n'
@@ -2096,6 +2131,7 @@ CASES = [
     test_clang_tidy_reads_a_program_of_javascript_exceptions,
     test_a_dependency_s_warnings_are_not_ours,
     test_a_compiled_boost_library_s_sources_are_not_analysed,
+    test_clang_tidy_prepares_cobalt_wrappers_on_a_clean_tree,
     test_clang_tidy_refuses_a_throw_on_each_target_without_exceptions,
     test_a_native_header_that_needs_no_exceptions_has_its_twin,
     test_a_library_webcpp_does_not_build_missing_is_named,

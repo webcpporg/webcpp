@@ -98,8 +98,10 @@ translation unit; one that holds fewer is a translation unit of its own,
 
 Before selecting each aggregate command, its compile-only headers-alone targets are built
 through B2. This materializes generated dependencies, including OpenSSL configuration and CA
-data, on a clean checkout. The corresponding exception-free units are prepared too. No test
-program is executed by this preparation.
+data, on a clean checkout. The corresponding exception-free units are prepared too. Selected
+program commands may also need checked Boost overlays on a target no aggregate uses; their
+include paths select the overlays' B2 preparation targets before analysis. Neither preparation
+executes a test program.
 
 b2 runs with root/.local/user-config.jam when it exists, else with $WEBCPP_USER_CONFIG when it
 is set, else with its own search; and without CPATH, CPLUS_INCLUDE_PATH and C_INCLUDE_PATH,
@@ -134,6 +136,13 @@ TARGETS = {
     'wasip2': ['toolset=clang-wasip2'],
     'wasip3': ['toolset=clang-wasip3'],
     'emscripten': ['toolset=emscripten'],
+}
+
+# Checked overlays owned by tools/boost: each include directory's B2 preparation target.
+# A program can need one on a target that the library's native aggregate never prepares.
+BOOST_OVERLAYS = {
+    f'bin/boost-{name}/include': f'tools/boost/{name}//prepared.stamp'
+    for name in ('asio-wasip3', 'cobalt-common', 'cobalt-wasip3', 'cobalt-ssl')
 }
 
 # The property of the request that builds a program without exceptions as a user asks b2 for one,
@@ -576,6 +585,28 @@ def of_the_tree(root: str, source: str) -> bool:
 Units = dict[str, dict[str, list[list[str]]]]
 
 
+def prepare_boost_overlays(root: str, target: str, commands: list[list[str]]) -> None:
+    """Build the checked Boost overlays selected commands include, without compiling programs."""
+    includes: set[Path] = set()
+    for words in commands:
+        for index, word in enumerate(words):
+            if word in ('-I', '-isystem') and index + 1 < len(words):
+                directory = words[index + 1]
+            elif word.startswith('-I'):
+                directory = word[2:]
+            else:
+                continue
+            includes.add(Path(root, directory).resolve())
+    requested = sorted(preparation for directory, preparation in BOOST_OVERLAYS.items()
+                       if Path(root, directory).resolve() in includes)
+    if not requested:
+        return
+    command, completed = run_b2(root, ['-d0', *TARGETS[target], *requested])
+    if completed.returncode != 0:
+        raise Failure(f'{completed.stdout}{" ".join(command)} exited {completed.returncode} '
+                      'while preparing checked Boost overlays')
+
+
 def read(root: str, target: str, commands: list[list[str]], entries: list[dict[str, object]],
          seen: set[tuple[str, ...]], earlier: set[str],
          wasi_clang: str | None) -> tuple[Units, set[str]]:
@@ -587,6 +618,7 @@ def read(root: str, target: str, commands: list[list[str]], entries: list[dict[s
     commands compile."""
     units: Units = {}
     sources: set[str] = set()
+    selected: list[list[str]] = []
     for words in commands:
         source = words[-1]
         unit = ALONE.match(source)
@@ -599,8 +631,10 @@ def read(root: str, target: str, commands: list[list[str]], entries: list[dict[s
         if source in earlier or key in seen:
             continue
         seen.add(key)
+        selected.append(words)
         entries.append({'directory': root, 'file': os.path.join(root, source),
                         'arguments': analysed(target, source, words, wasi_clang)})
+    prepare_boost_overlays(root, target, selected)
     return units, sources
 
 
@@ -698,6 +732,7 @@ def twins(root: str, target: str, chosen: dict[str, list[Aggregate]], units: Uni
     without: Units = {}
     kept: set[str] = set()
     compiled: set[str] = set()
+    selected: list[list[str]] = []
     for words in compiles(dry_run(root, [*TARGETS[target], WITHOUT_EXCEPTIONS, *PROGRAMS, *lanes,
                                          *handler, *requested])):
         source = words[-1]
@@ -715,8 +750,10 @@ def twins(root: str, target: str, chosen: dict[str, list[Aggregate]], units: Uni
         if key in seen:
             continue
         seen.add(key)
+        selected.append(words)
         entries.append({'directory': root, 'file': os.path.join(root, source),
                         'arguments': analysed(target, source, words, wasi_clang)})
+    prepare_boost_overlays(root, target, selected)
     twinned.programs |= kept - compiled
     for library, theirs in aggregates.items():
         index = next(index for index, aggregate in enumerate(theirs)

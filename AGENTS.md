@@ -221,7 +221,7 @@ Jamroot is its build configuration, and `libs/<name>` is its repository.
 - b2 (B2 5.5.3 measured);
 - a C++20 compiler;
 - Python 3.9 or newer;
-- for WebAssembly: wasi-sdk 34 and wasmtime 47 (47.0.3 measured);
+- for WebAssembly: wasi-sdk 34 and wasmtime 50.0.1;
 - for WebAssembly components, such as wasi's: wit-bindgen 0.62.0, which
   generates a world's C bindings, and the `wasi:http` WIT of WASI 0.2.12 and
   0.3.0, the `wit/deps` directories of the Rust crates `wasip2` 1.0.4 and
@@ -443,7 +443,8 @@ told: `b2 --user-config=.local/user-config.jam ...`.
 | `b2 libs/<name>/test` | one library's tests; `libs/<name>/example` and `libs/<name>/doc` likewise |
 | `b2 libs/<name>/test//<test>` | one test, while working on it (`scheduler`) |
 | `b2 libs/<name>/doc//reference` | one library's API reference alone, MrDocs strict |
-| `b2 toolset=clang-wasip2 testing.launcher=wasmtime libs/<name>/test libs/<name>/example` | the same for wasm32-wasip2; `clang-wasip3` for wasm32-wasip3; one toolset per command |
+| `b2 toolset=clang-wasip2 testing.launcher=wasmtime libs/<name>/test libs/<name>/example` | the same for wasm32-wasip2; one toolset per command |
+| `b2 toolset=clang-wasip3 testing.launcher=tools/boost/asio-wasip3/run.sh libs/<name>/test libs/<name>/example` | wasm32-wasip3 with the test networking capabilities |
 | `b2 toolset=emscripten libs/<name>/test libs/<name>/example` | the same for emscripten, whose programs b2's toolset runs with node itself: never with a `testing.launcher` (chapter 4) |
 | `b2 install --prefix=<dir>` | copies every library's headers to `<dir>/include/webcpp/`, and its licence files, `LICENSE_1_0.txt` and a port's `LICENSE-<ORIGIN>.txt`, beside them in `<dir>/include/webcpp/<name>/` |
 | `b2 declared-targets -d0` | prints each `<library> <target>` pair the libraries declare: the CI's lanes |
@@ -850,7 +851,7 @@ A target is what a program is built for:
 | `native` | any toolset not below: gcc, clang, msvc, darwin | the host |
 | `emscripten` | b2's `emscripten`, wasm32, single-threaded, static | node, run by the toolset itself; no `testing.launcher` |
 | `wasip2` | `clang-wasip2`, a clang registered against wasi-sdk with version `wasip2` | `testing.launcher=wasmtime`; a component, `wasmtime serve` (below) |
-| `wasip3` | `clang-wasip3`, likewise | `testing.launcher=wasmtime`; a component, `wasmtime serve` (below) |
+| `wasip3` | `clang-wasip3`, likewise | `testing.launcher=tools/boost/asio-wasip3/run.sh`; a component, `wasmtime serve` (below) |
 
 A Jamfile declares its default with `webcpp.targets`, a program can override
 it with its own targets, and with no declaration a program is built for
@@ -1237,7 +1238,8 @@ scratch, and records what it built and ran:
 b2 -a --dump-tests --out-xml=<lane>.xml toolset=<toolset> libs/<library>/test libs/<library>/example
 ```
 
-A wasip2 or wasip3 lane adds `testing.launcher=wasmtime`, which applies to
+A wasip2 lane adds `testing.launcher=wasmtime`; a wasip3 lane adds
+`testing.launcher=tools/boost/asio-wasip3/run.sh` for network-capable tests. Both apply to
 every toolset of one b2 request, so a lane is always one toolset. An
 emscripten lane adds nothing: b2's toolset runs its programs with node. The lane
 runs from the superproject's root. `--dump-tests` is required: it lists every
@@ -1503,7 +1505,7 @@ jobs:
   | `msvc-14.3` | windows-2022 | Visual Studio 2022 |
   | `msvc-14.5` | windows-2025 | Visual Studio 2026 |
   | `emscripten` | ubuntu-24.04 | `emscripten`: Emscripten 6.0.11 from emsdk, its system libraries built in the cache the action restores, and Node 26.7.0 through the wrapper of the emsdk action (its entry's `node`) |
-  | `wasip2`, `wasip3` | ubuntu-24.04 | `clang-wasip2`, `clang-wasip3`: wasi-sdk 34, wasmtime 47.0.3, wit-bindgen 0.62.0 and the WASI WIT, for every library |
+  | `wasip2`, `wasip3` | ubuntu-24.04 | `clang-wasip2`, `clang-wasip3`: wasi-sdk 34, wasmtime 50.0.1, wit-bindgen 0.62.0 and the WASI WIT, for every library |
 
   The Clang lanes on libstdc++ stay: a regression of xactor's guarantee 28 is
   caught only there. The MSVC lanes add `address-model=64
@@ -1511,13 +1513,17 @@ jobs:
   a toolset directory, and `msvc-14.3` and `msvc-14.5` are their own
   abbreviations, which `tools/ci/matrix_test.py` checks with b2's own rule.
 
+  The WASIp3 lane uses `tools/boost/asio-wasip3/run.sh`, which grants network
+  and name lookup for the loopback tests and enables the pinned runtime
+  component features. WASIp2 retains the plain `wasmtime` launcher.
+
   **The container lanes,** `gcc-14` and `clang-linux-18` (their entries'
   `container`), run the lane's b2 in a Linux container with no network but
   the loopback, so that a test that reaches beyond the machine fails there:
   every library's tests hold it, and trystero's guarantee 6 rests on it.
   The image is `tools/ci/container/Dockerfile`'s: Ubuntu 24.04, the
   runner's release, pinned by the digest of its image index, with `g++-14`,
-  `clang-18`, OpenSSL's development files and Python, every package,
+  `clang-18`, OpenSSL's development files, Python, Git, Make and Perl, every package,
   `ca-certificates` included, from Ubuntu's snapshot of the archive at the
   date its `ARG SNAPSHOT` names (`Snapshot: yes` on the sources, `apt-get
   --snapshot`), so that one Dockerfile is one set of packages. The snapshot
@@ -1672,7 +1678,7 @@ wrapper each quoted as one word of Jam.
   an empty `--prefix` installs into `/usr/local`. `install.sh source <dir>`
   fills such a tree alone, for a machine whose Boost comes from elsewhere.
 - `wasi-sdk` installs wasi-sdk 34 into `.local/wasi-sdk`, `wasmtime`
-  installs wasmtime 47.0.3 on `PATH`, `mrdocs` installs MrDocs 2026.9.29 into
+  installs wasmtime 50.0.1 on `PATH`, `mrdocs` installs MrDocs 2026.9.29 into
   `.local/mrdocs`, and `node` sets up Node 26.7.0, with npm's cache keyed on
   the lock files of `tools/doc`, `tools/lint`, every library's
   `test/oracle` and the site's, `site/`.

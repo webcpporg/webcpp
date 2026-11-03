@@ -49,6 +49,11 @@ None.
 [#webcpp-0-1-0-tools-and-build]
 == Tools and build
 
+* Updated Wasmtime to 50.0.1 for every library's WASI targets.
+* Fixed WASIp3 network tests lacking the required runtime capabilities.
+* Fixed OpenSSL source builds with symlinked compilers and Windows checkouts.
+* Added native MSVC OpenSSL build recipes with B2 runtime settings.
+* Fixed Cobalt lint builds requiring pre-existing generated Boost overlays.
 * Fixed source distributions rejecting pinned site and third-party dependencies.
 * Changed release checks to accept the tested compiler subset.
 * Added agent skills with validated metadata for common contributor workflows.

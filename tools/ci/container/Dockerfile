@@ -8,7 +8,8 @@
 # 24.04, the release of their runner, pinned by the digest of its image index (docker-library's
 # repo-info, repos/ubuntu/remote/24.04.md), with the two compilers, the development files of the
 # OpenSSL 3 that trystero's native backend is built against, as on the runner, and Python, which
-# runs the examples. b2, Boost's headers, the superproject and the libraries the CI's actions build
+# runs the examples. Git applies the checked Boost and OpenSSL patches; Make and Perl build
+# OpenSSL from its pinned source. b2, Boost's headers and the libraries the CI's actions build
 # are the runner's, mounted at their own paths; the lane runs in it with no network but the
 # loopback, which the packages are installed before.
 #
@@ -45,5 +46,6 @@ RUN sed -i 's/^Signed-By: .*/&\nSnapshot: yes/' /etc/apt/sources.list.d/ubuntu.s
     && apt-get -o Acquire::Retries=5 -o APT::Update::Error-Mode=any update \
         --snapshot "${SNAPSHOT}" \
     && DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 install --yes \
-        --no-install-recommends --snapshot "${SNAPSHOT}" g++-14 clang-18 libssl-dev python3 \
+        --no-install-recommends --snapshot "${SNAPSHOT}" \
+        g++-14 clang-18 libssl-dev python3 git make perl \
     && rm -rf /var/lib/apt/lists/*

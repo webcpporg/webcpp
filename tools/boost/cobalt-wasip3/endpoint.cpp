@@ -4,9 +4,7 @@
 // accompanying file LICENSE_1_0.txt or copy at
 // https://www.boost.org/LICENSE_1_0.txt)
 
-// Compile the checked private source copy with the consumer's configuration.
-#define BOOST_COBALT_SOURCE 1
-#define BOOST_COBALT_IO_SOURCE 1
+// The object target supplies Boost's source markers and the consumer's configuration.
 // This wrapper intentionally compiles the verified upstream implementation.
 // NOLINTNEXTLINE(bugprone-suspicious-include)
 #include <libs/cobalt/src/io/endpoint.cpp>

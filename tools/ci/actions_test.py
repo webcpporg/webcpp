@@ -20,8 +20,11 @@ other directory before it downloads anything, and leaves the tree as it was and 
 when it fails. The wit-bindgen action
 installs the build of the runner's system and processor, the program alone, in .local/wit-bindgen,
 where the build looks for it, in place of what was there, and refuses a runner it pins no build
-for before it downloads anything; the wasi-wit action installs the wit/deps directory of each
-crate, wasip2's and wasip3's, in .local/wasi-wit/p2 and .local/wasi-wit/p3, in place of what was
+for before it downloads anything; the wasmtime action installs the pinned build for each runner
+in RUNNER_TEMP/wasmtime, replaces an earlier install, exports its directory through GITHUB_PATH,
+and refuses an unsupported runner before downloading; the wasi-wit action installs the wit/deps
+directory of each crate, wasip2's and wasip3's, in .local/wasi-wit/p2 and .local/wasi-wit/p3,
+in place of what was
 there, and fails, naming the crate, on one that holds no WIT. The emsdk action installs the emsdk
 repository at its pinned commit, fetched with git, in .local/emsdk, in place of what was there,
 and fails when another commit is checked out; every archive emsdk installs is downloaded and
@@ -72,6 +75,7 @@ CI = Path(__file__).resolve().parent
 DOWNLOAD = CI / 'download.sh'
 BOOST = CI / 'actions/boost/install.sh'
 WIT_BINDGEN = CI / 'actions/wit-bindgen/install.sh'
+WASMTIME = CI / 'actions/wasmtime/install.sh'
 WASI_WIT = CI / 'actions/wasi-wit/install.sh'
 EMSDK = CI / 'actions/emsdk/install.sh'
 HELPERS = CI / 'helpers.sh'
@@ -565,6 +569,78 @@ def test_wit_bindgen_refuses_a_runner_it_pins_no_build_for(scratch: Path) -> Non
                 in result.stderr), result.stderr
     assert downloads(scratch) == []
     assert not (scratch / '.local').exists()
+
+
+WASMTIME_RELEASE = 'https://github.com/bytecodealliance/wasmtime/releases/download/v50.0.1'
+
+# Official release asset digests, also verified against the four downloaded archives.
+WASMTIME_BUILDS = {
+    ('Linux', 'X64'): (
+        'x86_64-linux', '685466455dd42a14774a86c36c8f2e45cbb9bd6d92a850139315df60a75498a5'),
+    ('Linux', 'ARM64'): (
+        'aarch64-linux', 'd737e077416d78fbfb0a008229ec27d6a0fd5a4924874b8c38b293c850cf4094'),
+    ('macOS', 'ARM64'): (
+        'aarch64-macos', '960e5216c7ebd7e9b45e6561d15821b8b801b7d54aee28c7b91921aeb30c65c8'),
+    ('macOS', 'X64'): (
+        'x86_64-macos', 'ea1818fa8cbb51524847ab2ad22197e0051594fdc96cbd0cc2afb65832e11925'),
+}
+
+
+def wasmtime_archive(scratch: Path, build: str) -> Path:
+    """The release's layout, with an executable identifying the selected build."""
+    top = f'wasmtime-v50.0.1-{build}'
+    tree = scratch / 'archive'
+    tree.mkdir()
+    program = tree / 'wasmtime'
+    program.write_text(f'#!/bin/sh\necho "wasmtime 50.0.1 (stand-in {build})"\n')
+    program.chmod(0o755)
+    (tree / 'LICENSE').write_text('licence\n')
+    archive = scratch / f'{top}.tar.xz'
+    with tarfile.open(archive, 'w:xz') as tar:
+        tar.add(tree, arcname=top)
+    return archive
+
+
+def test_wasmtime_installs_the_pinned_runners_build(scratch: Path) -> None:
+    for (system, processor), (build, digest) in WASMTIME_BUILDS.items():
+        root = scratch / build
+        root.mkdir()
+        asset = f'wasmtime-v50.0.1-{build}.tar.xz'
+        url = f'{WASMTIME_RELEASE}/{asset}'
+        script = serving_tree(root, 'wasmtime', WASMTIME,
+                              {url: wasmtime_archive(root, build)})
+        installed = root / 'temp/wasmtime'
+        installed.mkdir()
+        (installed / 'stale').write_text('stale\n')
+        unrelated = root / 'temp/keep'
+        unrelated.write_text('keep\n')
+        github_path = root / 'github-path'
+        github_path.write_text('/earlier/path\n')
+        result = run(script, env={'RUNNER_OS': system, 'RUNNER_ARCH': processor,
+                                 'RUNNER_TEMP': str(root / 'temp'),
+                                 'GITHUB_PATH': str(github_path)})
+        assert result.returncode == 0, (build, result.returncode, result.stderr)
+        assert f'wasmtime 50.0.1 (stand-in {build})' in result.stdout, (build, result.stdout)
+        assert sorted(path.name for path in installed.iterdir()) == ['LICENSE', 'wasmtime']
+        assert os.access(installed / 'wasmtime', os.X_OK), build
+        assert github_path.read_text() == f'/earlier/path\n{installed}\n', build
+        assert downloads(root) == [(url, digest)], (build, downloads(root))
+        assert unrelated.read_text() == 'keep\n', build
+        assert not (root / 'temp' / asset).exists(), build
+
+
+def test_wasmtime_refuses_a_runner_it_pins_no_build_for(scratch: Path) -> None:
+    script = serving_tree(scratch, 'wasmtime', WASMTIME, {})
+    github_path = scratch / 'github-path'
+    for system, processor in (('Windows', 'X64'), ('Linux', 'ARM'), ('', '')):
+        result = run(script, env={'RUNNER_OS': system, 'RUNNER_ARCH': processor,
+                                 'RUNNER_TEMP': str(scratch / 'temp'),
+                                 'GITHUB_PATH': str(github_path)})
+        assert result.returncode == 1, (system, processor, result.returncode, result.stderr)
+        assert f'no wasmtime 50.0.1 is pinned for {system} on {processor}' in result.stderr
+    assert downloads(scratch) == []
+    assert not github_path.exists()
+    assert not (scratch / 'temp/wasmtime').exists()
 
 
 # Each version's crate, the URL it is downloaded from, and its top directory.
@@ -1784,6 +1860,8 @@ CASES: list[Callable[[Path], None]] = [
     test_boost_source_that_fails_leaves_the_tree_and_no_files,
     test_wit_bindgen_installs_the_runners_build_alone,
     test_wit_bindgen_refuses_a_runner_it_pins_no_build_for,
+    test_wasmtime_installs_the_pinned_runners_build,
+    test_wasmtime_refuses_a_runner_it_pins_no_build_for,
     test_wasi_wit_installs_each_crates_wit_deps,
     test_wasi_wit_fails_on_a_crate_without_its_wit,
     test_emsdk_installs_the_pinned_emsdk_into_local_emsdk,

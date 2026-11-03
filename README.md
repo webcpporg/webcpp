@@ -45,7 +45,7 @@ library on every target are published at <https://webcpporg.github.io/>.
 - Python 3.9 or newer, which compares the examples with their expected output
   and runs the tests of the build itself;
 - for WebAssembly, wasi-sdk 34, whose clang builds for wasm32-wasip2 and
-  wasm32-wasip3, and wasmtime 47, which runs what it builds;
+  wasm32-wasip3, and wasmtime 50.0.1, which runs what it builds;
 - for emscripten, Emscripten 6.0.11 from emsdk, and Node, which runs what it
   builds;
 - for trystero, libsecp256k1 0.8.0, natively and built with Emscripten, and,
@@ -159,7 +159,7 @@ wasi-sdk 34 in `~/user-config.jam`:
 and run the tests and the examples with wasmtime, one toolset per command:
 
     b2 toolset=clang-wasip2 testing.launcher=wasmtime test example
-    b2 toolset=clang-wasip3 testing.launcher=wasmtime test example
+    b2 toolset=clang-wasip3 testing.launcher=tools/boost/asio-wasip3/run.sh test example
 
 Every target builds with exceptions: whether a program uses them is the
 choice of whoever builds it, every library supports a build without them,

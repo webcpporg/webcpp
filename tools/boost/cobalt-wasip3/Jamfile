@@ -34,9 +34,11 @@ alias headers : : : : <dependency>prepared.stamp
 explicit headers ;
 
 # These objects are built separately from boost_cobalt. Its free include flags
-# do not reach them, so they must explicitly share the composition fix.
+# and source markers do not reach them, so they explicitly share both.
 obj endpoint : endpoint.cpp : <library>headers <library>/webcpp/cobalt-common//headers
+    <define>BOOST_COBALT_SOURCE=1 <define>BOOST_COBALT_IO_SOURCE=1
     <warnings>off <warnings-as-errors>off ;
 obj acceptor : acceptor.cpp : <library>headers <library>/webcpp/cobalt-common//headers
+    <define>BOOST_COBALT_SOURCE=1 <define>BOOST_COBALT_IO_SOURCE=1
     <warnings>off <warnings-as-errors>off ;
 explicit endpoint acceptor ;

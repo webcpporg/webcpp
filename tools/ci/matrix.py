@@ -320,9 +320,12 @@ EMSCRIPTEN_TOOLSET = '{emsdk.jam}'
 
 
 def wasm_lane(target: str) -> Lane:
-    return Lane(id=target, name=f'wasm32-{target} (wasi-sdk 34, wasmtime 47.0.3)',
+    # WASIp3 programs exercise Asio sockets on loopback; Wasmtime needs explicit network
+    # capabilities even there. Reuse the bounded launcher used by the library's own tests.
+    launcher = 'tools/boost/asio-wasip3/run.sh' if target == 'wasip3' else 'wasmtime'
+    return Lane(id=target, name=f'wasm32-{target} (wasi-sdk 34, wasmtime 50.0.1)',
                 os='ubuntu-24.04', target=target, lane=target, toolset=f'clang-{target}',
-                using=WASI_TOOLSET, options=('testing.launcher=wasmtime',), wasm=True)
+                using=WASI_TOOLSET, options=(f'testing.launcher={launcher}',), wasm=True)
 
 
 # Every lane the CI knows, by target. GCC and Clang on Linux build with libstdc++, the system's

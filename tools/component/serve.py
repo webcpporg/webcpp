@@ -71,7 +71,7 @@ import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 
-# The headers wasmtime 47.0.3 adds to a response, whatever the component sets, measured with
+# The headers wasmtime 50.0.1 adds to a response, whatever the component sets, measured with
 # `wasmtime serve` on a component whose answers carry content-type and x-method only: date on
 # every response, and transfer-encoding: chunked on every response that has a body (all but the
 # answer to HEAD).
@@ -80,7 +80,7 @@ HOST_HEADERS = frozenset({'date', 'transfer-encoding'})
 # What a transcript says the server is: one host and port on every machine.
 SHOWN_ORIGIN = 'http://localhost:8080'
 
-# The line in which wasmtime 47.0.3 says it listens, on its standard error:
+# The line in which wasmtime 50.0.1 says it listens, on its standard error:
 # `Serving HTTP on http://127.0.0.1:53187/`.
 SERVING = re.compile(r'Serving HTTP on http://([0-9.]+):([0-9]+)/')
 
@@ -375,7 +375,7 @@ def find_wasmtime(given: str | None, program: str) -> str:
     found = shutil.which('wasmtime')
     if found is None:
         raise UsageError(f'{what} no -sWASMTIME=<path> was given, and there is none on PATH. '
-                         'Install wasmtime 47.0.3 on PATH, or give its path with '
+                         'Install wasmtime 50.0.1 on PATH, or give its path with '
                          '-sWASMTIME=<path>.')
     return found
 

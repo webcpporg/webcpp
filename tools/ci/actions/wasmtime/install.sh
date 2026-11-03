@@ -5,35 +5,35 @@
 # accompanying file LICENSE_1_0.txt or copy at
 # https://www.boost.org/LICENSE_1_0.txt)
 
-# The step of tools/ci/actions/wasmtime: wasmtime 47.0.3 in RUNNER_TEMP/wasmtime, put on PATH
+# The step of tools/ci/actions/wasmtime: wasmtime 50.0.1 in RUNNER_TEMP/wasmtime, put on PATH
 # (GITHUB_PATH), for the runner's system and processor (RUNNER_OS, RUNNER_ARCH). It runs the
-# programs of the wasip2 and wasip3 lanes, as testing.launcher=wasmtime, and serves the HTTP
-# components of the own lanes on those targets and of the tests of the tools, as
+# programs of the wasip2 lane directly and wasip3 through its launcher with network access, and
+# serves the HTTP components of the own lanes on those targets and of the tests of the tools, as
 # tools/component/serve.py's `wasmtime serve`.
 #
 # Usage: install.sh
 set -euo pipefail
 
-base=https://github.com/bytecodealliance/wasmtime/releases/download/v47.0.3
+base=https://github.com/bytecodealliance/wasmtime/releases/download/v50.0.1
 case "${RUNNER_OS}-${RUNNER_ARCH}" in
     Linux-X64)
-        asset=wasmtime-v47.0.3-x86_64-linux.tar.xz
-        sha256=ca1fc56d1afc40c8782e96c297fd182a0da162f9a8f52a1e7b094e1dd648e178
+        asset=wasmtime-v50.0.1-x86_64-linux.tar.xz
+        sha256=685466455dd42a14774a86c36c8f2e45cbb9bd6d92a850139315df60a75498a5
         ;;
     Linux-ARM64)
-        asset=wasmtime-v47.0.3-aarch64-linux.tar.xz
-        sha256=497b518db00ae585f04390758eaa99ad555bee50612dce7d102602778fb46ff0
+        asset=wasmtime-v50.0.1-aarch64-linux.tar.xz
+        sha256=d737e077416d78fbfb0a008229ec27d6a0fd5a4924874b8c38b293c850cf4094
         ;;
     macOS-ARM64)
-        asset=wasmtime-v47.0.3-aarch64-macos.tar.xz
-        sha256=c2684249e5d9ef9351942cf2d315982cf201fe0300f05d63bc1527446f0cd37f
+        asset=wasmtime-v50.0.1-aarch64-macos.tar.xz
+        sha256=960e5216c7ebd7e9b45e6561d15821b8b801b7d54aee28c7b91921aeb30c65c8
         ;;
     macOS-X64)
-        asset=wasmtime-v47.0.3-x86_64-macos.tar.xz
-        sha256=424a50f76a9dcf4d02dab326b2374be1ad404030576ee915866e4af106058b35
+        asset=wasmtime-v50.0.1-x86_64-macos.tar.xz
+        sha256=ea1818fa8cbb51524847ab2ad22197e0051594fdc96cbd0cc2afb65832e11925
         ;;
     *)
-        printf 'install.sh: no wasmtime 47.0.3 is pinned for %s on %s\n' "${RUNNER_OS}" \
+        printf 'install.sh: no wasmtime 50.0.1 is pinned for %s on %s\n' "${RUNNER_OS}" \
             "${RUNNER_ARCH}" >&2
         exit 1
         ;;

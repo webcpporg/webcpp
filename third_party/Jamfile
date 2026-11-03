@@ -87,6 +87,7 @@ import webcpp-openssl ;
 webcpp-openssl.declare $(WEBCPP_ROOT)
     : $(.openssl-headers:B).h $(.openssl-templates:B)
     : ../tools/openssl/build.py ../tools/openssl/source.py ../tools/openssl/wasip3.conf
+    ../tools/openssl/msvc.conf
     ../tools/openssl/pin.json [ glob-tree-ex libs/openssl : *.c *.h *.in *.pl *.pm *.S *.s
         *.conf *.num build.info Configure VERSION.dat *.tmpl : .git ] ;
 explicit openssl ;

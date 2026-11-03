@@ -90,7 +90,7 @@ Not built yet:
   - every declared lane from scratch: `b2 -a libs/<name>/test
     libs/<name>/example` natively, and with `toolset=clang-wasip2
     testing.launcher=wasmtime` and `toolset=clang-wasip3
-    testing.launcher=wasmtime` where declared, and every own lane the
+    testing.launcher=tools/boost/asio-wasip3/run.sh` where declared, and every own lane the
     library declares, `b2 -a libs/<name>/test/oracle//oracle` for an oracle
     and, on each target it names, `b2 -a toolset=clang-wasip2
     testing.launcher=wasmtime libs/wasi/test//http` for one on wasip2;
@@ -367,7 +367,11 @@ exactly its authors' and the program carries only what it calls.
    with another OpenSSL copy. The Asio alias links this dependency explicitly.
    Its headers are upstream's, so this adapter uses B2 dependency ordering and
    exact archive paths instead of injecting canary calls into upstream APIs.
-   Native Clang/GCC recipes cover macOS/Linux; MSVC/nmake is not implemented.
+   Native Clang/GCC recipes cover macOS/Linux. MSVC uses upstream Configure
+   with nmake, explicit B2 runtime/debug flags and static `.lib` outputs;
+   its initial profile uses portable C (`no-asm`) without a NASM dependency.
+   Recipe/staging tests run locally; real Windows compilation remains a
+   separate CI validation, not inferred from a dry run.
    WASIp3 single and cooperative profiles must agree with the consumer's
    threading choice. Keep explicit host entropy seeding and fail-closed tests.
    Other libraries with external dependencies still use `webcpp.external`.
@@ -871,7 +875,7 @@ update --init third_party/libs/<name>`; a build that needs none never looks.
 | Target | What it is | Licence |
 | --- | --- | --- |
 | `ca_certificates` | Dated Mozilla/curl CA data snapshot under `third_party/ca_certificates`, verified against its manifest and embedded by a build-generated header; updated explicitly by `tools/ca_certificates/update.py` | MPL-2.0 |
-| `openssl` | OpenSSL 3.5.9 at `45e844fa2a14ec92d146bd8f5778ac130b6625fb`; static libssl/libcrypto and matching generated headers, built by upstream Configure/Make through B2 for native Clang/GCC and WASIp3 | Apache-2.0 |
+| `openssl` | OpenSSL 3.5.9 at `45e844fa2a14ec92d146bd8f5778ac130b6625fb`; static libssl/libcrypto and matching generated headers, built by upstream Configure/Make through B2 for native Clang/GCC/MSVC and WASIp3 | Apache-2.0 |
 | `json-schema-test-suite` | the JSON Schema Test Suite at `5b0ee16` (2026-09-21), test data: a test that names it reads the suite at run time from the directory its define `WEBCPP_TEST_JSON_SCHEMA_TEST_SUITE` gives, on every target (wasmtime is given it, `webcpp.data`), and runs again when a file of the suite changes | MIT |
 | `nativejson-benchmark` | Milo Yip's nativejson-benchmark at `478d572` (2022-10-28), test data: document's benchmarks (`libs/document/bench`) read its `data/canada.json`, `data/citm_catalog.json` and `data/twitter.json` at run time under the directory its define `WEBCPP_TEST_NATIVEJSON_BENCHMARK` gives, on every target (wasmtime is given it, `webcpp.data`), and run again when one of them changes; its own submodules are never checked out | MIT |
 
@@ -1219,7 +1223,7 @@ site's own decisions follow in the next sections.
   `organization/openspec/changes/archive/2026-10-07-genesis/design.md`
   (proposals).
 - **Every tool has one pinned version: Boost 1.92.0 and the b2 it bootstraps
-  (B2 5.5.3), wasi-sdk 34, wasmtime 47.0.3, wit-bindgen 0.62.0 with the WASI
+  (B2 5.5.3), wasi-sdk 34, wasmtime 50.0.1, wit-bindgen 0.62.0 with the WASI
   WIT of the crates `wasip2` 1.0.4 and `wasip3` 0.9.0, Emscripten 6.0.11,
   MrDocs 2026.9.29 and Node 26.7.0.** The lint takes clang-format and
   clang-tidy from the pinned wasi-sdk so that every machine and the CI lint
@@ -3259,7 +3263,7 @@ built, is recorded apart.
   recorded)
   Source: `doc/build.adoc` (libs/wasi).
 - **wasi targets `wasi:http` 0.2.12 and 0.3.0 alone, as measured with
-  wasi-sdk 34, wit-bindgen 0.62.0 and wasmtime 47.0.3, and the page names
+  wasi-sdk 34, wit-bindgen 0.62.0 and wasmtime 50.0.1, and the page names
   each version as measured.** WASI 0.3 is young: a toolchain update may move
   the names the bindings' glue calls.
   Source:
@@ -3337,8 +3341,8 @@ built, is recorded apart.
   the version is not recorded.
   Source: `include/webcpp/wasi/http/entrypoint.hpp` (libs/wasi).
 - **A component is linked as a reactor, `-mexec-model=reactor`.** It exports
-  a handler and has no C `main`; wasmtime 47 also serves it linked as a
-  command, but webcpp builds and tests reactors.
+  a handler and has no C `main`. Historical tests with wasmtime 47 also
+  served it linked as a command; current webcpp builds and tests reactors.
   Source: `doc/build.adoc` (libs/wasi).
 - **b2 looks for wit-bindgen, the `wasi:http` WIT and wasmtime only when a
   target needs them, each at its `-s` variable first, then under `.local/`
@@ -3382,8 +3386,9 @@ built, is recorded apart.
   Source: `include/webcpp/wasi/http/entrypoint.hpp` (libs/wasi).
 - **On wasip3 the handler returns the response, then writes to the body's
   stream until the stream has taken every byte, then resolves the trailers
-  future.** wasmtime 47 takes a whole body, 1 MiB too, in one write; the loop
-  stands for a host that takes less per write.
+  future.** Historical tests with wasmtime 47 took a whole body, 1 MiB too,
+  in one write; the loop stands for a host that takes less per write. The
+  50.0.1 regression verifies delivery, not a particular number of writes.
   Source: `doc/guarantees.adoc` (libs/wasi).
 - **On wasip3 the future of whether the host sent the response is dropped
   unread.** The guest could change nothing about a response already sent.
@@ -3407,7 +3412,7 @@ built, is recorded apart.
 **Exceptions and configuration.**
 
 - **The handler throws, tries and catches nothing: an exception that escapes
-  the main traps the instance, and wasmtime 47 answers its own HTML 500 and
+  the main traps the instance, and wasmtime 50.0.1 answers its own HTML 500 and
   keeps serving.** The owner decided it on 2026-10-08, settling the open
   item of catching `std::exception` in the handler to print its `what()`:
   the host answers, and wasi needs neither exceptions nor RTTI and imposes
@@ -3418,11 +3423,13 @@ built, is recorded apart.
 - **wasi's programs, and the by-hand commands its page shows, build wasip2
   with exceptions as wasip3: `-fwasm-exceptions -mllvm
   -wasm-use-legacy-eh=false`, linked with `-fwasm-exceptions -lunwind`.**
-  Measured for wasi: wasmtime 47 runs the exnref encoding with its default
-  flags and refuses the legacy one wasi-sdk 34 emits by default, and
-  exceptions cost about 20% of a stripped component and nothing at a warm
-  start, while their absence cost Boost.Locale, a second Boost configuration
-  and a wasip2-only path in every header.
+  Wasmtime 50.0.1 runs the exnref encoding with its default flags. Historical
+  measurements with wasmtime 47 showed rejection of the legacy encoding
+  wasi-sdk 34 emits by default, about 20% extra stripped component size
+  with exceptions and no measured warm-start cost. Those measurements were
+  not repeated for the runtime upgrade. The absence of exceptions cost
+  Boost.Locale, a second Boost configuration and a wasip2-only path in
+  every header.
   Source:
   `libraries/wasi/openspec/changes/archive/2026-10-08-genesis/reference/research/WASIP2_EXCEPTIONS_SPIKE.md`
   (proposals).
@@ -3481,7 +3488,7 @@ built, is recorded apart.
   pass only on the guard's own error (`expected-error` of clang's
   `-verify`).** A compile that fails for another reason fails the test.
   Source: `libraries/wasi/openspec/specs/wasi/spec.md` (proposals).
-- **`http_bad_status` and `http_bad_content_type` hold wasmtime 47's HTML
+- **`http_bad_status` and `http_bad_content_type` hold wasmtime 50.0.1's HTML
   500 verbatim.** They fail when wasmtime changes how it answers an internal
   error, and are regenerated knowingly.
   Source:
@@ -6566,7 +6573,7 @@ The original proposal has not been amended and no CI ran.
   exception runtime.
   Source: `docs/superpowers/specs/2026-10-15-asio-wasip3.md`,
   `tools/webcpp-wasi.jam` (superproject, uncommitted).
-- **The WASIp3 tests run under Wasmtime 49.0.3 through the launcher
+- **The WASIp3 tests use the project-pinned Wasmtime 50.0.1 through the launcher
   `tools/boost/asio-wasip3/run.sh`, which grants network and name lookup and
   bounds a run to 15 s.** Wasmtime 47.0.3 cannot load the cooperative
   component, and the loopback tests need the network; the launcher is no
@@ -8061,92 +8068,32 @@ The proposals not yet decided, each briefly, with the questions they leave
 for the owner. A draft decides nothing: it is here so that a contributor sees
 what is coming, and its proposal holds it in full.
 
-### beast (draft, not decided)
+### beast (implementation started locally)
 
-webcpp::beast would be a header-only C++20 wrapper over Boost.Beast and
-webcpp::asio, for native and Emscripten only: Boost.Beast itself natively, and
-in the browser the same names and layered code driving `WebSocket`
-(increment 1) and `fetch` (increment 2). What exists is the draft
-specification of 2026-10-10 (`reference/spec.md`) with four decisions of the
-owner of that day; there is no plan and no reference code, and both are
-required before the proposal can be accepted.
+The owner authorized implementation on 2026-11-02 after expanding the proposal
+in `libraries/beast/openspec/changes/genesis` to WASIp2, WASIp3, Emscripten and all
+53 upstream executable examples. That proposal governs over the older
+2026-10-10 baseline. Upstream Beast data types are reused; host transports do not
+need upstream network/protocol execution. The library currently exists as a local
+repository at `libs/beast`, with no organization repository or release yet.
 
-- **webcpp::beast is a library of its own on webcpp::asio, not a part of it:
-  the WebSocket client first, then the HTTP client in the browser.** Beast is
-  a library on Asio, so webcpp::beast is a library on webcpp::asio (the
-  owner's decision 1 of 2026-10-10).
-  Source: `libraries/beast/openspec/changes/genesis/design.md` D1 (proposals).
-- **Natively it is Boost.Beast (aliases of Beast's types, and a
-  `websocket::stream` derived from Beast's that adds an allocator
-  constructor); the browser classes exist only on Emscripten; every name that
-  touches no network is Beast's own on both targets.** Natively there is no
-  cost and no difference: Beast's own types, one derived class and two
-  functions; the derived stream gives the two targets one constructor set.
-  Source: `libraries/beast/openspec/changes/genesis/design.md` D2 (proposals).
-- **What the browser cannot honour fails as a value,
-  `boost::asio::error::operation_not_supported` at the operation that depends
-  on it, under the default `WEBCPP_BEAST_UNSUPPORTED_ERROR`;
-  `WEBCPP_BEAST_UNSUPPORTED_IGNORE` ignores it; every setting is classified
-  honoured, unsupported, or ignored with its reason.** Silent divergence was
-  rejected: a program that asks for a client certificate or a ping must learn
-  so (the owner's decision 2).
-  Source: `libraries/beast/openspec/changes/genesis/design.md` D3 (proposals).
-- **On Emscripten the resolver is webcpp::asio's: it completes with one entry
-  that carries the host and the service and an unspecified endpoint, which
-  only webcpp::beast's browser streams accept.** A resolver of webcpp::beast's
-  own, with webcpp::asio's failing like its sockets, was rejected: every Beast
-  client would change a line (the owner's decision 4).
-  Source: `libraries/beast/openspec/changes/genesis/design.md` D4 (proposals).
-- **The layers record and the last one opens: `async_connect` records the host
-  and service, the TLS handshake judges the recorded settings, and
-  `async_handshake(host, target)` calls `new WebSocket(url, subprotocols)`.**
-  It is the only way to keep Beast's code shape, because the browser has one
-  call that does resolution, connection, TLS and the upgrade together.
-  Source: `libraries/beast/openspec/changes/genesis/design.md` D5 (proposals).
-- **Back-pressure is the library's: a bound on `bufferedAmount` (default 4
-  MiB) fails a write with `error::send_limit`, and a bounded receive queue in
-  the stream's allocator closes the stream past its bound, the next read
-  completing with `error::receive_limit`.** The browser's `send` never blocks
-  and messages arrive whether a read is pending or not, and the goal is
-  bounded memory in the browser; `WebSocketStream`, which would pause
-  receiving, exists in Chromium only and doubles the surface, so it is a later
-  increment.
-  Source: `libraries/beast/openspec/changes/genesis/design.md` D7 (proposals).
-- **The HTTP client reuses Beast's algorithms by making the browser
-  `tcp_stream` a byte stream: the bytes Beast's serializer writes are parsed
-  back, sent as one `fetch` per whole request, and the response is serialized
-  into the bytes the reads yield.** webcpp::beast then overloads no HTTP
-  algorithm; the cost is one parse and one serialization per message, for
-  Beast's code unchanged.
-  Source: `libraries/beast/openspec/changes/genesis/design.md` D8 (proposals).
-- **The unsupported setting is read once, in `<webcpp/beast/config.hpp>`, both
-  macros defined is an `#error`, a propagated b2 feature
-  `webcpp-beast-unsupported` sets it for a whole program, and the browser
-  classes live in an inline namespace named after the setting.** The two
-  macros change inline code, so translation units that disagree would break
-  the one definition rule; in the inline namespace they name different types
-  and fail at link, never silently.
-  Source: `libraries/beast/openspec/changes/genesis/reference/spec.md` section
-  7 (proposals).
+The first increment separates portable messages/parsers/serializers from explicit
+socket algorithm headers and optional TLS. Native and WASIp3 use the existing
+Asio socket backend; browser WebSocket/fetch and WASI host HTTP remain subsequent
+work, with application adaptation distinguished from exact transport parity.
+The feature matrix is in the library guide; only recorded build/runtime evidence
+establishes a supported profile. The remaining proposal must not be marked complete
+from this initial backend.
 
-**Open questions for the owner.**
+The unsupported-setting policy is a propagated B2 feature, default error. Native
+WebSocket state keeps upstream allocation while accepting the portable allocator
+constructor syntax. `set_server_name` configures guest TLS SNI only and rejects
+empty, overlong and embedded-NUL names; it does not perform certificate verification.
 
-- O1, the header layout: the public headers and the convenience header, and
-  whether `<webcpp/beast.hpp>` leaves `ssl` out natively, as webcpp::asio's
-  convenience header does because it brings OpenSSL.
-- O2, the default bound of the receive queue (the send bound is 4 MiB) and the
-  names of the two options, to measure and decide in the plan.
-- O3, how the decorator is called on an empty `websocket::request_type`:
-  whether any field other than `User-Agent` can be told apart by name alone,
-  or every field but the subprotocols is unsupported, as the specification
-  says (to confirm with a test).
-- O4, streaming request bodies: the specification buffers a body whole before
-  the `fetch`; a streaming upload (Chromium only) belongs to a later change.
-- O5, the proposal to Boost, made when both webcpp::asio and webcpp::beast
-  have run in real programs, trystero first.
-
-Source: `libraries/beast/openspec/changes/genesis/design.md` Open Questions
-(proposals).
+The implementation plan and current decisions are in the proposal's
+`reference/plan.md` and `design.md`. No change adds guest OpenSSL or a missing
+Asio WASIp2 reactor as a prerequisite to host HTTP. Missing Unix socket facilities
+receive explicit host-stream counterparts where meaningful.
 
 ### webrtc (draft, not decided)
 
@@ -8663,11 +8610,6 @@ tasks 22/23 or approve the remaining conformance departures.
   implementation, local tests, and an AsciiDoc feature matrix"
   (`docs/superpowers/specs/2026-10-15-asio-wasip3.md`); no proposal amends
   D16.
-- **The WASI runtime and launcher.** `AGENTS.md` chapter 1: "wasi-sdk 34 and
-  wasmtime 47 (47.0.3 measured)"; `AGENTS.md` chapter 4: a WASI lane "adds
-  `testing.launcher=wasmtime`". The WASIp3 tests need Wasmtime 49.0.3 and
-  `testing.launcher=tools/boost/asio-wasip3/run.sh`, which grants network
-  access. Not approved beyond the plan's record of the tested configuration.
 - **Tests run on every declared target.** Chapter 8: "Every test runs on every
   target its Jamfile declares." `cobalt_thread` and `wasi_core_threads` (asio,
   uncommitted) are explicit, in no lane, so only a request by name runs them.

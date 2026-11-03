@@ -94,7 +94,8 @@ def test_plan_of_one_library(root):
         'msvc-14.3', 'msvc-14.5'], lanes
     assert by_id['apple-clang']['detect'] == 'clang++', by_id['apple-clang']
     assert by_id['wasip2']['toolset'] == 'clang-wasip2', by_id['wasip2']
-    assert by_id['wasip3']['options'] == ['testing.launcher=wasmtime'], by_id['wasip3']
+    assert by_id['wasip3']['options'] == [
+        'testing.launcher=tools/boost/asio-wasip3/run.sh'], by_id['wasip3']
     assert by_id['wasip3']['wasm'] and not by_id['gcc-14']['wasm'], lanes
     assert by_id['msvc-14.5']['os'] == 'windows-2025', by_id['msvc-14.5']
     assert by_id['clang-22']['os'] == 'ubuntu-26.04', by_id['clang-22']
@@ -518,6 +519,44 @@ def test_an_own_lanes_command(root):
         assert (lane.id, lane.os) == (lane_id, 'ubuntu-24.04'), lane
 
 
+def test_a_wasip3_lane_can_bind_a_loopback_socket(root):
+    # Run the planned lane, including its launcher: Wasmtime refuses even a loopback bind
+    # without an explicit network grant, which a successful compile cannot establish.
+    harness.add_library(root, 'network',
+                        'import webcpp ;\nwebcpp.targets wasip3 ;\n'
+                        'webcpp.run loopback : loopback.cpp ;\n', {
+                            'loopback.cpp': r'''#include <arpa/inet.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
+int main() {
+    int const descriptor = socket(AF_INET, SOCK_STREAM, 0);
+    if (descriptor < 0) return 1;
+    sockaddr_in address{};
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    int const result = bind(descriptor, reinterpret_cast<sockaddr*>(&address), sizeof(address));
+    close(descriptor);
+    return result == 0 ? 0 : 1;
+}
+'''})
+    (root / 'libs/network/example').mkdir()
+    (root / 'libs/network/example/Jamfile').write_text(
+        'import webcpp ;\nwebcpp.targets wasip3 ;\n')
+    boost_only(root)
+    (root / '.local/wasi-sdk').symlink_to((matrix.ROOT / '.local/wasi-sdk').resolve())
+    entries = planned(root, '--library', 'network')
+    assert len(entries) == 1 and entries[0]['id'] == 'wasip3', entries
+    result = run(root, 'lane', json.dumps(entries[0]))
+    assert result.returncode == 0, (result.stdout[-4000:], result.stderr)
+    # --out-xml makes b2 return success on a test failure: read the verdict as CI does.
+    result = subprocess.run([
+        sys.executable, str(root / 'tools/report/report.py'), '--lane',
+        f'wasip3={root / "bin/ci/wasip3.xml"}', '--out', str(root / 'report')],
+        capture_output=True, text=True, check=False)
+    assert result.returncode == 0, (result.stdout, result.stderr)
+
+
 def test_an_own_lane_on_a_target_writes_its_xml_and_the_report_merges_it(root):
     jamfile = root / 'libs/demo/test/Jamfile'
     jamfile.write_text(jamfile.read_text() + 'webcpp.lane served : pass : wasip2 ;\n')
@@ -906,7 +945,7 @@ def test_the_report_names_a_planned_lane_that_wrote_nothing(root):
     report = run(root, 'report', '--plan', json.dumps({'include': entries}), '--lanes',
                  str(lanes), '--out', str(root / 'report'))
     assert report.returncode == 2, (report.returncode, report.stdout, report.stderr)
-    assert 'the lane wasip3 (wasm32-wasip3 (wasi-sdk 34, wasmtime 47.0.3)) wrote no XML' in (
+    assert 'the lane wasip3 (wasm32-wasip3 (wasi-sdk 34, wasmtime 50.0.1)) wrote no XML' in (
         report.stderr), report.stderr
     # The lanes that did write are still reported.
     assert 'data-lane="wasip2"' in (root / 'report/index.html').read_text()
@@ -1191,8 +1230,9 @@ def test_a_container_lane_runs_b2_with_no_network(root):
     assert re.search(r'install[^&]*--snapshot "\$\{SNAPSHOT\}" ca-certificates', code), code
     digest = hashlib.sha256(dockerfile.encode()).hexdigest()
     assert matrix.CONTAINER_IMAGE == f'webcpp-lane:{digest[:16]}', matrix.CONTAINER_IMAGE
-    for package in ('g++-14', 'clang-18', 'libssl-dev', 'python3'):
-        assert f' {package}' in dockerfile, (package, dockerfile)
+    for package in ('g++-14', 'clang-18', 'libssl-dev', 'python3', 'git', 'make', 'perl'):
+        assert re.search(r'install\b[^&]*\s' + re.escape(package) + r'(?=\s|$)', code), (
+            package, code)
     entry = host_lane(root)
     entry['container'] = True
     # A lane of a library that needs external libraries: the build requires them, and is given
@@ -1302,6 +1342,7 @@ CASES = [
     test_own_lanes_of_every_library_and_of_one,
     test_own_lanes_on_targets,
     test_an_own_lanes_command,
+    test_a_wasip3_lane_can_bind_a_loopback_socket,
     test_a_lane_is_named_by_the_compiler_version,
     test_abbreviated_paths_keep_the_lane_name,
     test_register_writes_the_lanes_toolsets_in_order,

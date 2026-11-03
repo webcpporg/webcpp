@@ -36,8 +36,8 @@ missing constants globally or implement UDP sequences as multiple sends.
 
 The tested SDK is wasi-sdk 34.0 (wasi-libc
 `2e6fb9d8ee0cdf9e431fbcabe8af3115de000a13`). The cooperative C++ sysroot currently
-contains the no-exceptions runtime only. Wasmtime 49.0.3 runs both profiles;
-47.0.3 could not load the cooperative component. `run.sh` is a bounded local-test
+contains the no-exceptions runtime only. The project selects Wasmtime 50.0.1 for both profiles. Earlier tests found that
+47.0.3 could not load the cooperative component, while 49.0.3 could. `run.sh` is a bounded local-test
 launcher, using `wasmtime` on `PATH` and granting network/name-lookup access.
 It is not a production capability policy.
 

@@ -9,6 +9,7 @@ from pathlib import Path
 import sys
 import io
 import json
+import shutil
 import subprocess
 import tarfile
 import harness
@@ -66,6 +67,65 @@ def test_native_source_dependency(root: Path) -> None:
     result = harness.run_b2(root, 'toolset=clang', 'variant=release',
                             'threading=single', 'libs/openssl_user/test')
     harness.expect(result, True, 'webcpp-openssl.build', '**passed**')
+
+
+def test_symlinked_compiler_without_c_sibling(root: Path) -> None:
+    compiler = shutil.which('clang++')
+    assert compiler
+    alias = root / 'toolchain/bin/clang++'
+    alias.parent.mkdir(parents=True)
+    alias.symlink_to(compiler)
+    config = harness.user_config(root).read_text()
+    harness.configure(root, config + f'\nusing clang : alias : "{alias.as_posix()}" ;\n')
+    harness.add_library(root, 'openssl_user', JAM, {'uses_openssl.cpp': SOURCE})
+    result = harness.run_b2(root, '-a', 'toolset=clang-alias', 'variant=release',
+                            'threading=single', 'libs/openssl_user/test')
+    harness.expect(result, True, '**passed**')
+
+
+def test_msvc_build_commands_preserve_the_consumers_configuration(root: Path) -> None:
+    # Dry-run the real B2 toolset on any host. The Windows lanes run these
+    # commands with MSVC; this checks the adapter's configuration boundary.
+    compiler = root / 'Visual Studio/bin/cl.exe'
+    compiler.parent.mkdir(parents=True)
+    compiler.write_text('')
+    setup = compiler.parent / 'vcvarsall.bat'
+    setup.write_text('')
+    harness.configure(root, f'using msvc : 14.3 : "{compiler.as_posix()}"\n'
+                      f'  : <setup>"{setup.as_posix()}" <rewrite-setup-scripts>off ;\n')
+    (root / 'Jamroot').write_text(
+        'import webcpp-openssl ;\n'
+        'project : build-dir bin ;\n'
+        f'webcpp-openssl.declare "{root.as_posix()}" : ssl.h configuration.h\n'
+        '  : tools/openssl/build.py ;\n'
+        'exe consumer : uses_openssl.cpp openssl ;\n')
+    (root / 'uses_openssl.cpp').write_text(SOURCE)
+    for variant, runtime, flag in (('debug', 'shared', '/MDd'), ('debug', 'static', '/MTd'),
+                                   ('release', 'shared', '/MD'), ('release', 'static', '/MT')):
+        result = harness.run_b2(
+            root, '-n', '-a', 'consumer', 'toolset=msvc-14.3', 'target-os=windows',
+            'architecture=x86', 'address-model=64', 'threading=multi', f'variant={variant}',
+            f'runtime-link={runtime}', 'cflags=/DWEBCPP_TEST_OPENSSL_CONFIGURATION=17',
+            env_extra={'BOOST_BUILD_PATH': str(root / 'tools')})
+        harness.expect(result, True, 'webcpp-openssl.build', 'libssl.lib', 'libcrypto.lib',
+                       flag, '--platform "windows"', 'vcvarsall.bat',
+                       '--cc "cl"', '/DWEBCPP_TEST_OPENSSL_CONFIGURATION=17',
+                       'ws2_32.lib', 'crypt32.lib', '/OPT:REF')
+        assert 'libssl.a' not in result.stdout, result.stdout
+        command = next(line for line in result.stdout.splitlines() if ' python3 "' in line)
+        assert command.count('vcvarsall.bat') == 1, command
+    # Windows normally asks MSVC to generate a reusable setup script. Exercise
+    # that path too, even though B2 uses direct setup calls on Unix hosts.
+    harness.configure(root, 'import modules ;\nimport os ;\n'
+                      'local host = [ os.name ] ;\nmodules.poke os : .name : NT ;\n'
+                      f'using msvc : 14.3 : "{compiler.as_posix()}"\n'
+                      f'  : <setup>"{setup.as_posix()}" ;\n'
+                      'modules.poke os : .name : $(host) ;\n')
+    result = harness.run_b2(
+        root, '-n', '-a', '-d2', '-d+6', 'consumer', 'toolset=msvc-14.3', 'target-os=windows',
+        'architecture=x86', 'address-model=64', 'debug-store=database',
+        env_extra={'BOOST_BUILD_PATH': str(root / 'tools')})
+    harness.expect(result, True, 'msvc-setup.bat', '--cc "cl"', '/Zi', 'ossl_static.pdb')
 
 
 def test_pin_mismatch_fails_before_compilation(root: Path) -> None:
@@ -156,7 +216,7 @@ def test_source_archive_tampering_fails_before_configuration(root: Path) -> None
         result = subprocess.run(
             [sys.executable, str(root / 'tools/openssl/build.py'), '--source', str(source),
              '--output', str(root / 'rejected'), '--platform', platform,
-             '--threading', 'single', '--cc', 'clang++'],
+             '--threading', 'single', '--cc', str(root / 'missing-clang++')],
             capture_output=True, text=True, timeout=60)
         assert result.returncode != 0, change
         assert 'source tree differs' in result.stderr, result.stderr
@@ -168,7 +228,9 @@ def test_source_archive_tampering_fails_before_configuration(root: Path) -> None
         (source / 'unexpected.pm').unlink(missing_ok=True)
 
 
-CASES = [test_native_source_dependency, test_missing_checkout_is_lazy_and_actionable,
+CASES = [test_native_source_dependency, test_symlinked_compiler_without_c_sibling,
+         test_msvc_build_commands_preserve_the_consumers_configuration,
+         test_missing_checkout_is_lazy_and_actionable,
          test_unsupported_target_is_rejected, test_pin_mismatch_fails_before_compilation,
          test_source_checkout_with_spaces,
          test_source_archive_without_git_and_inside_parent_checkout,

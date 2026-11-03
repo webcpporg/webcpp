@@ -5,7 +5,8 @@
 # accompanying file LICENSE_1_0.txt or copy at
 # https://www.boost.org/LICENSE_1_0.txt)
 
-# Local test launcher for both WASIp3 profiles, tested with Wasmtime 49.0.3.
+# Test launcher for local builds and CI using the project-pinned Wasmtime 50.0.1.
+# Both single and cooperative thread profiles use the same runtime.
 # Enabling the runtime's threading feature does not create application threads.
 # Tests use loopback sockets and localhost resolution. Production applications
 # should grant only the network capabilities they need.
