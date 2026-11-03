@@ -1,0 +1,143 @@
+# Copyright (c) 2026 WebCpp.org
+#
+# Distributed under the Boost Software License, Version 1.0. (See
+# accompanying file LICENSE_1_0.txt or copy at
+# https://www.boost.org/LICENSE_1_0.txt)
+
+import "class" : new ;
+import errors ;
+import feature ;
+import path ;
+import project ;
+import property-set ;
+import targets ;
+import toolset ;
+import virtual-target ;
+import webcpp-wasi ;
+
+class openssl-target : basic-target
+{
+    import "class" : new ;
+    import errors ;
+    import path ;
+    import modules ;
+    import property-set ;
+    import regex ;
+    import toolset ;
+    import virtual-target ;
+    rule __init__ ( name : project : sources * : requirements *
+        : default-build * : usage-requirements * )
+    {
+        basic-target.__init__ $(name) : $(project) : $(sources) :
+            $(requirements) : $(default-build) : $(usage-requirements) ;
+    }
+
+    rule construct ( name : source-targets * : properties )
+    {
+        local root = [ modules.peek webcpp-openssl : .root ] ;
+        if ! [ path.exists [ path.native $(root)/third_party/libs/openssl/Configure ] ]
+        {
+            errors.user-error "OpenSSL sources are missing. Run: git submodule update --init third_party/libs/openssl" ;
+        }
+        local os = [ $(properties).get <target-os> ] ;
+        local tool = [ $(properties).get <toolset> ] ;
+        local version = [ $(properties).get <toolset-clang:version> ] ;
+        if ! $(tool) in clang gcc || ! $(os) in darwin linux wasi
+            || ( $(os) = wasi && $(version) != wasip3 )
+        {
+            errors.user-error "Source-built OpenSSL supports native Clang/GCC on macOS/Linux and clang-wasip3."
+                "WASIp2, browser targets, and the MSVC/nmake build are not supported by this recipe." ;
+        }
+        # B2's normal directory omits free flags. Add the effective compiler
+        # configuration so changing cflags or a user-config tool cannot reuse
+        # archives or headers from the previous configuration.
+        local relevant = [ toolset.relevant webcpp-openssl.build ] ;
+        properties = [ $(properties).add $(relevant) ] ;
+        local fingerprint = [ modules.call-in webcpp-openssl : fingerprint $(properties) ] ;
+        local action = [ new action $(source-targets) : webcpp-openssl.build : $(properties) ] ;
+        local ssl = [ new file-target libssl.a exact : STATIC_LIB : $(self.project) : $(action) ] ;
+        local directory = [ path.root [ path.make [ $(ssl).path ] ] [ path.pwd ] ] ;
+        directory = $(directory)/config-$(fingerprint) ;
+        $(ssl).set-path $(directory) ;
+        ssl = [ virtual-target.register $(ssl) ] ;
+        local crypto = [ new file-target libcrypto.a exact : STATIC_LIB : $(self.project) : $(action) ] ;
+        $(crypto).set-path $(directory) ;
+        crypto = [ virtual-target.register $(crypto) ] ;
+        local headers ;
+        for local header in [ modules.peek webcpp-openssl : .headers ]
+        {
+            local generated = [ new file-target include/openssl/$(header) exact
+                : H : $(self.project) : $(action) ] ;
+            $(generated).set-path $(directory) ;
+            headers += [ virtual-target.register $(generated) ] ;
+        }
+        return [ property-set.create [ $(relevant).raw ] <include>$(directory)/include
+            <dependency>$(headers) ] $(ssl) $(crypto) ;
+    }
+}
+
+rule declare ( root : headers * : sources * )
+{
+    .root = $(root) ;
+    .headers = $(headers) ;
+    targets.create-metatarget openssl-target : [ project.current ] : openssl
+        : $(sources) : <link>static <warnings>off <warnings-as-errors>off
+            <conditional>@webcpp-openssl.configuration
+        : : <target-os>darwin:<linkflags>-Wl,-dead_strip
+            <target-os>linux:<linkflags>-Wl,--gc-sections
+            <target-os>linux:<linkflags>-ldl
+            <conditional>@webcpp-openssl.configuration
+            <target-os>wasi:<linkflags>"-lwasi-emulated-getpid -lwasi-emulated-signal -lwasi-emulated-process-clocks -lwasi-emulated-mman" ;
+}
+
+toolset.uses-features webcpp-openssl.build : <toolset> <target-os> <architecture> <address-model> <variant> <threading> <optimization> <debug-symbols> <inlining> <runtime-link> <cflags> <define> <linkflags> <exception-handling> <lto> <lto-mode> ;
+
+rule configuration ( properties * )
+{
+    if <target-os>wasi in $(properties) && <threading>multi in $(properties)
+    {
+        return [ webcpp-wasi.cooperative $(.root) : $(properties) ] ;
+    }
+}
+
+rule fingerprint ( ps )
+{
+    # Toolset variables append to their target. Cache by immutable property set
+    # to avoid accumulating flags or building duplicate archives on each visit.
+    if $(.fingerprint.$(ps))
+    {
+        return $(.fingerprint.$(ps)) ;
+    }
+    local settings = openssl-settings-$(ps) ;
+    compiler-settings $(settings) : $(ps) ;
+    local values = [ on $(settings) return $(CONFIG_COMMAND) $(OPTIONS) $(USER_OPTIONS) $(DEFINES) $(.AR) ] ;
+    .fingerprint.$(ps) = [ MD5 "$(values:J=|)" ] ;
+    return $(.fingerprint.$(ps)) ;
+}
+
+rule compiler-settings ( outputs * : ps )
+{
+    local compiler = [ $(ps).get <toolset> ] ;
+    if $(compiler) = clang
+    {
+        local platform = [ $(ps).get <toolset-clang:platform> ] ;
+        compiler = clang-$(platform) ;
+    }
+    toolset.set-target-variables $(compiler).compile.c $(outputs) : $(ps) ;
+    toolset.set-target-variables $(compiler).archive $(outputs) : $(ps) ;
+}
+
+rule build ( outputs * : inputs * : properties * )
+{
+    local ps = [ property-set.create $(properties) ] ;
+    compiler-settings $(outputs) : $(ps) ;
+    SCRIPT on $(outputs) = $(.root)/tools/openssl/build.py ;
+    SOURCE on $(outputs) = $(.root)/third_party/libs/openssl ;
+    PLATFORM on $(outputs) = [ $(ps).get <target-os> ] ;
+    THREADING on $(outputs) = [ $(ps).get <threading> ] ;
+}
+
+actions build
+{
+    python3 "$(SCRIPT)" "@($(<[1]).rsp:E=--source "$(SOURCE)" --output "$(<[1]:D)" --platform "$(PLATFORM)" --threading "$(THREADING)" --cc "$(CONFIG_COMMAND[1])" --ar "$(.AR:E=ar)" -- $(OPTIONS) $(USER_OPTIONS) -D$(DEFINES))"
+}

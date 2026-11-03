@@ -200,7 +200,10 @@ def test_install_copies_headers_to_prefix(root):
                        if path.is_file() and not path.name.startswith('.'))
         installed = sorted(path.relative_to(prefix / 'include')
                            for path in (prefix / 'include').rglob('*') if path.is_file())
-        expected = sorted([*files, *(Path('webcpp/demo') / name for name in licences)])
+        ca_files = [Path('webcpp_ca_certificates.hpp'),
+                    *(Path('webcpp/ca_certificates') / name for name in
+                      ('LICENSE-MPL-2.0.txt', 'README.md', 'cacert.pem', 'manifest.json'))]
+        expected = sorted([*files, *(Path('webcpp/demo') / name for name in licences), *ca_files])
         assert installed == expected, (installed, expected)
         for name, text in licences.items():
             assert (prefix / 'include/webcpp/demo' / name).read_text() == text, name

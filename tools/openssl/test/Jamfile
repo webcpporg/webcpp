@@ -1,0 +1,35 @@
+# Copyright (c) 2026 WebCpp.org
+#
+# Distributed under the Boost Software License, Version 1.0. (See
+# accompanying file LICENSE_1_0.txt or copy at
+# https://www.boost.org/LICENSE_1_0.txt)
+
+exe tls_client : tls_client.cpp /webcpp/asio//asio /webcpp/asio//openssl
+    : <exception-handling>off:<source>/webcpp//throw_exception ;
+exe entropy : entropy.c /webcpp/third_party//openssl
+    : <toolset>clang-wasip3 <linkflags>-Wl,--wrap=getentropy ;
+exe threads : threads.cpp /webcpp/third_party//openssl : <threading>multi ;
+explicit tls_client entropy threads ;
+
+exe tls_client_embedded : tls_client.cpp /webcpp/asio//tls
+    : <define>WEBCPP_TEST_EMBEDDED_CA
+      <exception-handling>off:<source>/webcpp//throw_exception ;
+explicit tls_client_embedded ;
+
+exe cobalt_tls_client : cobalt_tls_client.cpp /webcpp/asio//cobalt /webcpp/asio//tls
+    : <exception-handling>off:<source>/webcpp//throw_exception ;
+explicit cobalt_tls_client ;
+
+exe cobalt_ssl_client : cobalt_ssl_client.cpp /webcpp/asio//cobalt_ssl
+    : <exception-handling>off:<source>/webcpp//throw_exception ;
+explicit cobalt_ssl_client ;
+
+exe cobalt_ssl_state : cobalt_ssl_state.cpp /webcpp/asio//cobalt_ssl
+    : <include>../../node-test/include
+      <exception-handling>off:<source>/webcpp//throw_exception ;
+explicit cobalt_ssl_state ;
+
+exe cobalt_ssl_cancel : cobalt_ssl_cancel.cpp /webcpp/asio//cobalt_ssl
+    : <include>../../node-test/include
+      <exception-handling>off:<source>/webcpp//throw_exception ;
+explicit cobalt_ssl_cancel ;

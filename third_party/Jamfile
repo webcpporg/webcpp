@@ -78,3 +78,21 @@ alias nativejson-benchmark : : <conditional>@nativejson-checked-out : :
     <dependency>$(.nativejson-files) ;
 
 explicit nativejson-benchmark ;
+
+# OpenSSL uses its upstream Configure/Make source manifest. The bridge emits
+# static archives and matching generated headers in B2's variant directory.
+import webcpp-openssl ;
+.openssl-headers = [ glob libs/openssl/include/openssl/*.h ] ;
+.openssl-templates = [ glob libs/openssl/include/openssl/*.h.in ] ;
+webcpp-openssl.declare $(WEBCPP_ROOT)
+    : $(.openssl-headers:B).h $(.openssl-templates:B)
+    : ../tools/openssl/build.py ../tools/openssl/wasip3.conf
+    ../tools/openssl/pin.json [ glob-tree-ex libs/openssl : *.c *.h *.in *.pl *.pm *.S *.s
+        *.conf *.num build.info Configure VERSION.dat *.tmpl : .git ] ;
+explicit openssl ;
+
+# A dated, digest-pinned Mozilla/curl data export, not third-party source code.
+import webcpp-ca-certificates ;
+webcpp-ca-certificates.declare ca_certificates/cacert.pem ca_certificates/manifest.json
+    ../tools/ca_certificates/generate.py ../tools/ca_certificates/bundle.py ;
+explicit ca_certificates ca_certificates-header ;

@@ -1,0 +1,50 @@
+# Copyright (c) 2026 WebCpp.org
+#
+# Distributed under the Boost Software License, Version 1.0. (See
+# accompanying file LICENSE_1_0.txt or copy at
+# https://www.boost.org/LICENSE_1_0.txt)
+import errors ;
+import modules ;
+import path ;
+
+rule cooperative ( root : properties * )
+{
+    # A user-config modules.poke can overwrite -s in the global module.
+    # Read ARGV first so an explicit command-line SDK always wins.
+    local sdk previous ;
+    for local word in [ modules.peek : ARGV ]
+    {
+        sdk += [ MATCH "^-sWASI_SDK=(.+)$" : $(word) ] ;
+        if $(previous) = -s
+        {
+            sdk += [ MATCH "^WASI_SDK=(.+)$" : $(word) ] ;
+        }
+        previous = $(word) ;
+    }
+    if $(sdk)
+    {
+        sdk = $(sdk[-1]) ;
+    }
+    else
+    {
+        sdk = [ modules.peek : WASI_SDK ] ;
+        sdk = $(sdk:J=" ") ;
+    }
+    sdk ?= $(root)/.local/wasi-sdk ;
+    sdk = [ path.root [ path.make $(sdk) ] [ path.pwd ] ] ;
+    local coop = $(sdk)/share/wasi-sysroot/experimental-coop-threads ;
+    if ! [ path.exists [ path.native $(coop)/lib/wasm32-wasip3/libc.a ] ]
+    {
+        errors.user-error "WASIp3 threading=multi requires wasi-sdk's experimental-coop-threads sysroot."
+            "Set WASI_SDK to the SDK directory, or select threading=single." ;
+    }
+    if <exception-handling>on in $(properties)
+        && ! [ path.exists [ path.native $(coop)/lib/wasm32-wasip3/eh/libc++.a ] ]
+    {
+        errors.user-error "This SDK has no cooperative WASIp3 C++ exception runtime."
+            "Use threading=multi exception-handling=off, or threading=single." ;
+    }
+    return <cflags>"--sysroot=\"$(coop)\" -pthread"
+        <cxxflags>"--sysroot=\"$(coop)\" -pthread -isystem \"$(sdk)/share/wasi-sysroot/include/c++/v1\""
+        <linkflags>"--sysroot=\"$(coop)\" -pthread" ;
+}

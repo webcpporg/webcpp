@@ -1,0 +1,52 @@
+# Copyright (c) 2026 WebCpp.org
+#
+# Distributed under the Boost Software License, Version 1.0. (See
+# accompanying file LICENSE_1_0.txt or copy at
+# https://www.boost.org/LICENSE_1_0.txt)
+import "class" : new ;
+import project ;
+import targets ;
+
+class ca-certificates-target : basic-target
+{
+    import "class" : new ;
+    import path ;
+    import property-set ;
+    import virtual-target ;
+
+    rule __init__ ( name : project : sources * : requirements *
+        : default-build * : usage-requirements * )
+    {
+        basic-target.__init__ $(name) : $(project) : $(sources) : $(requirements)
+            : $(default-build) : $(usage-requirements) ;
+    }
+
+    rule construct ( name : sources * : properties )
+    {
+        local action = [ new action $(sources) : webcpp-ca-certificates.generate : $(properties) ] ;
+        local header = [ new file-target webcpp_ca_certificates.hpp exact : H
+            : $(self.project) : $(action) ] ;
+        local directory = [ path.root [ path.make [ $(header).path ] ] [ path.pwd ] ] ;
+        header = [ virtual-target.register $(header) ] ;
+        if $(name) = ca_certificates-header
+        {
+            return [ property-set.create ] $(header) ;
+        }
+        return [ property-set.create <include>$(directory) <dependency>$(header) ] ;
+    }
+}
+
+rule declare ( sources * )
+{
+    targets.create-metatarget ca-certificates-target : [ project.current ]
+        : ca_certificates : $(sources) ;
+    # Installation needs the artifact itself; library consumers only need its
+    # include directory and generation dependency, never a header as link input.
+    targets.create-metatarget ca-certificates-target : [ project.current ]
+        : ca_certificates-header : $(sources) ;
+}
+
+actions generate
+{
+    python3 "$(>[3])" "$(>[1])" "$(>[2])" "$(<)"
+}

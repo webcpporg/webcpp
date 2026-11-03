@@ -550,6 +550,7 @@ COBALT_SOURCE = r'''#if defined(__EMSCRIPTEN__) && !defined(BOOST_ASIO_DISABLE_T
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/post.hpp>
 #include <boost/asio/steady_timer.hpp>
+#include <boost/cobalt/composition.hpp>
 #include <boost/cobalt/io/steady_timer.hpp>
 #include <boost/cobalt/op.hpp>
 #include <boost/cobalt/result.hpp>
@@ -562,6 +563,20 @@ COBALT_SOURCE = r'''#if defined(__EMSCRIPTEN__) && !defined(BOOST_ASIO_DISABLE_T
 
 boost::cobalt::promise<int> answer() {
     co_return 42;
+}
+
+struct composed_wait : boost::cobalt::op<boost::system::error_code> {
+    boost::asio::steady_timer& timer;
+    explicit composed_wait(boost::asio::steady_timer& timer) : timer(timer) {}
+    void initiate(boost::cobalt::completion_handler<boost::system::error_code>) override {
+        co_return co_await timer.async_wait(boost::asio::deferred);
+    }
+};
+
+boost::cobalt::promise<boost::system::error_code> wait_composed(boost::asio::steady_timer& timer) {
+    composed_wait operation(timer);
+    auto [error] = co_await boost::cobalt::as_tuple(operation);
+    co_return error;
 }
 
 boost::cobalt::promise<int> exercise(boost::asio::io_context& ctx) {
@@ -579,7 +594,13 @@ boost::cobalt::promise<int> exercise(boost::asio::io_context& ctx) {
     boost::asio::post(ctx, [&timer] { timer.cancel(); });
     auto [error] = co_await boost::cobalt::as_tuple(
         timer.async_wait(boost::cobalt::use_op));
-    co_return error == boost::asio::error::operation_aborted ? 42 : 2;
+    if (error != boost::asio::error::operation_aborted)
+        co_return 2;
+    timer.expires_after(std::chrono::hours(1));
+    auto pending = wait_composed(timer);
+    boost::asio::post(ctx, [&pending] { pending.cancel(); });
+    auto composed_error = co_await pending;
+    co_return composed_error == boost::asio::error::operation_aborted ? 42 : 4;
 }
 
 int main() {

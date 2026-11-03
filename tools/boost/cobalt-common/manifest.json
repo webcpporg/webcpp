@@ -1,0 +1,9 @@
+{
+  "boost_version": 109200,
+  "files": {
+    "boost/cobalt/composition.hpp": {
+      "before": "4f89225430772cc39a82e37ec1b67069b342fa77423b3f6ad74edc3d8d1a77c5",
+      "after": "a4d22f4619cad58063473d0e86a31dfbbfd4856b57d59c22e1c18ec0ccfabe1b"
+    }
+  }
+}

@@ -23,6 +23,9 @@ import type ;
 # The rules the libraries' test and example Jamfiles declare their programs
 # with, which import it as webcpp.
 import tools/webcpp ;
+import tools/webcpp-wasi ;
+import tools/webcpp-openssl ;
+import tools/webcpp-ca-certificates ;
 
 # A shell with CPATH (Homebrew sets it) puts its headers before the
 # configured Boost, and the compiler would use them without a word.
@@ -69,6 +72,10 @@ rule boost-include ( )
 }
 
 .boost-include = [ boost-include ] ;
+if $(.boost-include)
+{
+    path-constant WEBCPP_BOOST_HEADERS : $(.boost-include) ;
+}
 
 # The lines of the file header that define macro, `#define <macro> <value>`,
 # one text without its last end of line, then the search's exit status: 0
@@ -416,7 +423,7 @@ use-project /webcpp/boost-libraries : tools/boost ;
 # Boost.JSON does with boost_json. Each alias checks the sources before anything
 # is built; what Boost.Locale gives on each target is AGENTS.md chapter 2's
 # table.
-for local name in boost_url boost_charconv boost_locale boost_cobalt
+for local name in boost_url boost_charconv boost_locale boost_cobalt boost_cobalt_io_ssl
 {
     alias $(name) : tools/boost//$(name) : <conditional>@boost-source-usable ;
 }
@@ -555,6 +562,17 @@ for local build in [ glob libs/*/build.jam ]
       : <location>$(.includedir)/webcpp/$(name) ;
     .install += install-$(name) install-$(name)-licences ;
 }
+
+# Keep the generated trust header usable outside this source checkout, along
+# with the exact certificate source and notices of the embedded snapshot.
+install install-ca-certificates : third_party//ca_certificates-header
+    : <location>$(.includedir) ;
+install install-ca-certificates-notices
+    : third_party/ca_certificates/LICENSE-MPL-2.0.txt
+      third_party/ca_certificates/README.md third_party/ca_certificates/cacert.pem
+      third_party/ca_certificates/manifest.json
+    : <location>$(.includedir)/webcpp/ca_certificates ;
+.install += install-ca-certificates install-ca-certificates-notices ;
 
 # The site, site/ (webcpporg/webcpporg.github.io), when it is checked out:
 # a project like a user's, whose pages b2 site renders with the site's npm
@@ -759,7 +777,7 @@ actions dist
 notfile dist : @dist : : <dependency>doc <webcpp-boost-check>off ;
 
 explicit boost_version throw_exception boost_json boost_url boost_charconv
-    boost_locale boost_cobalt node-test emscripten-reference test example doc install $(.install)
+    boost_locale boost_cobalt boost_cobalt_io_ssl node-test emscripten-reference test example doc install $(.install)
     declared-targets declared-lanes site site-serve check-release whats-new
     dist ;
 if [ glob site/Jamfile ]
