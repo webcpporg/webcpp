@@ -34,3 +34,6 @@
 [submodule "libs/lexical"]
 	path = libs/lexical
 	url = ../lexical.git
+[submodule "third_party/libs/openssl"]
+	path = third_party/libs/openssl
+	url = https://github.com/openssl/openssl.git
