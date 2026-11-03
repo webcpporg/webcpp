@@ -65,14 +65,21 @@ def test_changed_ssl_source_is_refused(root: Path) -> None:
 
 
 def test_ssl_is_optional_and_unsupported_targets_are_refused(root: Path) -> None:
+    # P2 Cobalt uses Asio's pollable backend and its Config dependency.
+    for name in ('config', 'asio'):
+        source = harness.ROOT / 'libs' / name
+        target = root / 'libs' / name
+        shutil.copytree(source / 'include', target / 'include')
+        shutil.copyfile(source / 'build.jam', target / 'build.jam')
     harness.third_party_of_its_own(root, 'openssl', checked_out=False)
     harness.expect(harness.run_b2(root, '-n', '/webcpp//boost_cobalt'), True)
-    harness.expect(harness.run_b2(root, '/webcpp//boost_cobalt_io_ssl'), False,
-                   'OpenSSL sources are missing')
-    for target in ('emscripten', 'clang-wasip2'):
+    for target in ('clang', 'clang-wasip2', 'clang-wasip3'):
         harness.expect(harness.run_b2(root, 'toolset=' + target,
                                       '/webcpp//boost_cobalt_io_ssl'), False,
-                       'Cobalt SSL requires native or WASIp3')
+                       'OpenSSL sources are missing')
+    harness.expect(harness.run_b2(root, 'toolset=emscripten',
+                                  '/webcpp//boost_cobalt_io_ssl'), False,
+                   'Cobalt SSL requires native, WASIp2 or WASIp3 with source-built OpenSSL.')
 
 
 CASES = [test_transitive_openssl_is_unique, test_public_archive_in_a_path_with_spaces,
