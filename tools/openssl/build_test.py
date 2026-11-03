@@ -21,6 +21,25 @@ import build
 from source import inventory_digest
 
 
+class UpstreamResultsTest(unittest.TestCase):
+    def test_skipped_preparation_does_not_hide_the_full_suite_summary(self) -> None:
+        log = ('00-prep_fipsmodule_cnf.t .. skipped: FIPS is disabled\n'
+               'Files=1, Tests=0, 0 wallclock secs\nResult: NOTESTS\n'
+               '01-test_sanity.t .. ok\n02-test_errstr.t .. ok\n'
+               'All tests successful.\nFiles=2, Tests=21, 1 wallclock secs\nResult: PASS\n')
+        proof = build.suite_result(log, ['00-prep_fipsmodule_cnf.t', '01-test_sanity.t',
+                                         '02-test_errstr.t'])
+        self.assertEqual(proof['files'], 2)
+        self.assertEqual(proof['tests'], 21)
+        self.assertEqual(proof['recipes'], 3)
+
+    def test_a_successful_subset_is_not_a_successful_suite(self) -> None:
+        log = ('01-test_sanity.t .. ok\nAll tests successful.\n'
+               'Files=1, Tests=6, 1 wallclock secs\nResult: PASS\n')
+        with self.assertRaisesRegex(RuntimeError, 'missing recipes.*02-test_errstr.t'):
+            build.suite_result(log, ['01-test_sanity.t', '02-test_errstr.t'])
+
+
 class WindowsBuildTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory(prefix='openssl windows ')
@@ -103,6 +122,34 @@ class WindowsBuildTest(unittest.TestCase):
                        'import time; print("last compiler output"); time.sleep(10)'],
                       cwd=self.root, env=os.environ.copy(), log=log, timeout=2)
         self.assertEqual(log.read_text(), 'last compiler output\n')
+
+    def test_windows_suite_failure_does_not_publish_libraries(self) -> None:
+        output = self.root / 'failed-suite'
+
+        def command(command: list[str], *, cwd: Path, env: dict, log: Path,
+                    timeout: float = 600) -> None:
+            log.write_text('completed\n')
+            if command[-1] == 'build_libs':
+                (cwd / 'include/openssl').mkdir(parents=True)
+                (cwd / 'include/openssl/configuration.h').write_text('matching headers\n')
+                (cwd / 'libssl.lib').write_bytes(b'ssl')
+                (cwd / 'libcrypto.lib').write_bytes(b'crypto')
+            if 'test' in command:
+                self.assertEqual(command, ['nmake', '/nologo', 'test', 'TESTS=alltests'])
+                self.assertEqual(env['HARNESS_JOBS'], '2')
+                raise RuntimeError('upstream Windows test failed')
+
+        args = ['build.py', '--source', str(self.source), '--output', str(output),
+                '--platform', 'windows', '--threading', 'multi', '--cc', str(self.compiler),
+                '--test']
+        with patch.object(build, 'HERE', self.root), patch.object(sys, 'argv', args), \
+                patch.object(build, 'run', side_effect=command), \
+                patch.object(build, 'windows_target', return_value='VC-WIN64A'), \
+                patch.object(build, 'windows_perl', return_value='native-perl.exe'):
+            with self.assertRaisesRegex(RuntimeError, 'upstream Windows test failed'):
+                build.main()
+        for name in ('libssl.lib', 'libcrypto.lib', 'build.json', 'upstream-tests.json'):
+            self.assertFalse((output / name).exists(), name)
 
     def test_windows_target_uses_the_configured_compilers_architecture(self) -> None:
         for output, target in (('WEBCPP_OPENSSL_X86', 'VC-WIN32'),

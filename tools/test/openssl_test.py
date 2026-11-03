@@ -8,7 +8,9 @@
 from pathlib import Path
 import sys
 import io
+import hashlib
 import json
+import os
 import shutil
 import subprocess
 import tarfile
@@ -37,6 +39,80 @@ int main() {
     std::puts("source-built OpenSSL: random and TLS ready");
 }
 '''
+
+
+def test_native_upstream_suite_checks_the_consumed_archives(root: Path) -> None:
+    # Disabling the harness, selecting only one recipe, or publishing different
+    # archives must fail this consumer-level proof of the opt-in upstream suite.
+    harness.add_library(root, 'openssl_user', JAM, {'uses_openssl.cpp': SOURCE})
+    for threads in ('single', 'multi'):
+        result = harness.run_b2(
+            root, '-a', '-j2', 'toolset=clang', 'variant=release', f'threading={threads}',
+            'webcpp-openssl-tests=on', 'libs/openssl_user/test', timeout=2400,
+            env_extra={'TESTS': 'test_this_does_not_exist', 'HARNESS_JOBS': '999'})
+        harness.expect(result, True, 'upstream suite passed', '**passed**')
+    records = list((root / 'bin/third_party').rglob('upstream-tests.json'))
+    assert len(records) == 2, records
+    for path in records:
+        proof = json.loads(path.read_text())
+        config = json.loads((path.parent / 'build.json').read_text())
+        log = (path.parent / 'upstream-tests.log').read_text()
+        assert proof['result'] == 'passed', proof
+        assert proof['selection'] == 'alltests', proof
+        assert 'no-tests' not in config['configure'], config
+        assert 'no-apps' not in config['configure'], config
+        assert 'All tests successful.' in log, log[-3000:]
+        for recipe in (root / 'third_party/libs/openssl/test/recipes').glob('*.t'):
+            assert recipe.name in log, recipe.name
+        assert proof['sha256'] == config['sha256'], proof
+        for name, digest in proof['sha256'].items():
+            assert hashlib.sha256((path.parent / name).read_bytes()).hexdigest() == digest
+        print(f'OpenSSL upstream {config["threading"]}: {proof["files"]} files, '
+              f'{proof["tests"]} tests, consumed archive hashes verified', flush=True)
+    result = harness.run_b2(root, '-j2', 'toolset=clang', 'variant=release', 'threading=multi',
+                            'webcpp-openssl-tests=on', 'libs/openssl_user/test')
+    harness.expect(result, True)
+    assert 'webcpp-openssl.build ' not in result.stdout, result.stdout
+
+
+def test_upstream_suite_rejects_wasi_by_name(root: Path) -> None:
+    result = harness.run_b2(root, 'third_party//openssl', 'toolset=clang-wasip3',
+                            'webcpp-openssl-tests=on')
+    harness.expect(result, False, 'upstream test harness requires native executables')
+
+
+def test_upstream_failure_prevents_archive_publication(root: Path) -> None:
+    # Plant a fault in an executable after the real upstream build. The pinned
+    # source remains unchanged, and the real, unfiltered harness must reject it.
+    make = shutil.which('make')
+    assert make
+    wrappers = root / 'tool wrappers'
+    wrappers.mkdir()
+    wrapper = wrappers / 'make'
+    wrapper.write_text('#!/usr/bin/env python3\n'
+                       'import os, pathlib, subprocess, sys\n'
+                       f'make = {make!r}\n'
+                       'if "test" in sys.argv[1:]:\n'
+                       '    subprocess.run([make, "-j2", "build_tests"], check=True)\n'
+                       '    executable = pathlib.Path("test/evp_test")\n'
+                       '    assert executable.is_file()\n'
+                       '    executable.write_text("#!/bin/sh\\n"'
+                       '"echo planted EVP executable failure >&2\\nexit 1\\n")\n'
+                       '    print("planted EVP executable failure", flush=True)\n'
+                       'os.execv(make, [make, *sys.argv[1:]])\n')
+    wrapper.chmod(0o755)
+    result = harness.run_b2(
+        root, '-a', '-j2', 'third_party//openssl', 'toolset=clang', 'variant=release',
+        'threading=single', 'webcpp-openssl-tests=on', timeout=2400,
+        env_extra={'PATH': str(wrappers) + os.pathsep + os.environ['PATH']})
+    harness.expect(result, False, 'command failed')
+    logs = list((root / 'bin/third_party').rglob('upstream-tests.log'))
+    assert len(logs) == 1, result.stdout
+    log = logs[0].read_text()
+    assert 'planted EVP executable failure' in log, log[-4000:]
+    assert 'Result: FAIL' in log, log[-4000:]
+    for name in ('libssl.a', 'libcrypto.a', 'build.json', 'upstream-tests.json'):
+        assert not (logs[0].parent / name).exists(), name
 
 
 def test_native_source_dependency(root: Path) -> None:
@@ -228,7 +304,10 @@ def test_source_archive_tampering_fails_before_configuration(root: Path) -> None
         (source / 'unexpected.pm').unlink(missing_ok=True)
 
 
-CASES = [test_native_source_dependency, test_symlinked_compiler_without_c_sibling,
+CASES = [test_native_upstream_suite_checks_the_consumed_archives,
+         test_upstream_suite_rejects_wasi_by_name,
+         test_upstream_failure_prevents_archive_publication,
+         test_native_source_dependency, test_symlinked_compiler_without_c_sibling,
          test_msvc_build_commands_preserve_the_consumers_configuration,
          test_missing_checkout_is_lazy_and_actionable,
          test_unsupported_target_is_rejected, test_pin_mismatch_fails_before_compilation,

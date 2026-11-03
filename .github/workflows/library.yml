@@ -25,8 +25,8 @@
 #               runs b2 declared-lanes and writes the matrix of own lanes, those a library
 #               declares with webcpp.lane, such as its oracle's, and says whether a library
 #               needs libraries that webcpp does not build yet (external), trystero's
-#               libsecp256k1, libdatachannel and OpenSSL, which the CI's actions of those names
-#               install, until webcpp builds them from third_party/.
+#               libsecp256k1, installed by its action. B2 builds OpenSSL and
+#               libdatachannel from pinned sources with one provider per program.
 #   lanes       one job per lane, which runs the lane command, b2 -a --dump-tests
 #               --out-xml=<lane>.xml for one toolset, and uploads the XML. With --out-xml, b2
 #               exits 0 even when a test fails: the report gives the verdict. A wasip2 or
@@ -145,6 +145,15 @@ jobs:
           persist-credentials: false
           path: libs/${{ inputs.library }}
 
+      # Only these pinned nested sources are needed. Do not fetch the unused
+      # JSON fixtures or the benchmark repository's unrelated submodules.
+      - &transport-sources
+        name: Check out the transport source dependencies
+        shell: bash
+        run: |
+          git -C third_party/libs/libdatachannel submodule update --init \
+            deps/libjuice deps/libsrtp deps/plog deps/usrsctp
+
       - &boost
         uses: ./tools/ci/actions/boost
 
@@ -216,6 +225,7 @@ jobs:
       - *superproject-for-library
       - *make-room
       - *library
+      - *transport-sources
       - *boost
 
       # What a WASI lane installs, which the own-lanes job installs too, by these anchors, for an
@@ -252,29 +262,14 @@ jobs:
         if: matrix.node
         uses: ./tools/ci/actions/node
 
-      # The libraries a library of the lane needs and webcpp does not build yet, for an entry
-      # that says external, which the own-lanes job installs too, by these anchors: OpenSSL
-      # first, which libdatachannel is built against; libsecp256k1, for emscripten too, after
-      # emsdk, on an entry that has it; and libdatachannel, with the lane's compilers, since a
-      # program shares the types of its C++ API. Only the native backend needs OpenSSL and
-      # libdatachannel, so an entry on emscripten has neither.
-      - &openssl
-        if: matrix.external && !matrix.emsdk
-        uses: ./tools/ci/actions/openssl
-
+      # libsecp256k1 remains external. OpenSSL and libdatachannel are source-built
+      # by B2 with the consuming target's toolchain and threading properties.
       - &secp256k1
         if: matrix.external
         uses: ./tools/ci/actions/secp256k1
         with:
           cc: ${{ matrix.cc }}
           emscripten: ${{ matrix.emsdk }}
-
-      - &libdatachannel
-        if: matrix.external && !matrix.emsdk
-        uses: ./tools/ci/actions/libdatachannel
-        with:
-          cc: ${{ matrix.cc }}
-          cxx: ${{ matrix.cxx }}
 
       # The image a container lane runs b2 in (its entry's container), which the container job
       # built and cached, restored from the cache, so that the lane builds none.
@@ -326,6 +321,7 @@ jobs:
       - *superproject-for-library
       - *make-room
       - *library
+      - *transport-sources
       - *boost
       - *wasi-sdk
       - *wasmtime
@@ -333,9 +329,7 @@ jobs:
       - *wasi-wit
       - *emsdk
       - *node
-      - *openssl
       - *secp256k1
-      - *libdatachannel
 
       # The pinned chrome-headless-shell, as CHROME, for a lane whose driver meets a browser
       # (its entry's chrome), as trystero's interop does.
@@ -411,6 +405,18 @@ jobs:
           path: bin/**/*.sizes.md
           if-no-files-found: ignore
 
+      - name: Upload OpenSSL upstream test evidence
+        if: always() && matrix.library == 'asio' && startsWith(matrix.lane, 'openssl-upstream')
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: openssl-upstream-${{ matrix.id }}
+          path: |
+            bin/**/upstream-tests.log
+            bin/**/upstream-tests.json
+            bin/**/build.json
+          if-no-files-found: warn
+          retention-days: 7
+
   docs:
     name: Documentation
     needs: plan
@@ -423,6 +429,7 @@ jobs:
       - *superproject-for-library
       - *make-room
       - *library
+      - *transport-sources
       - *boost
 
       - uses: ./tools/ci/actions/node
@@ -447,18 +454,9 @@ jobs:
       # plan's external), whose headers its reference parses with the native backend's: with Clang 18,
       # the compiler that parses them.
       - if: needs.plan.outputs.external == 'true'
-        uses: ./tools/ci/actions/openssl
-
-      - if: needs.plan.outputs.external == 'true'
         uses: ./tools/ci/actions/secp256k1
         with:
           cc: clang-18
-
-      - if: needs.plan.outputs.external == 'true'
-        uses: ./tools/ci/actions/libdatachannel
-        with:
-          cc: clang-18
-          cxx: clang++-18
 
       # clang++ reads the headers for tools/doc/doc_comments.py; the Boost check compiles with
       # the same Clang. The index links each library's page where the site serves it.
@@ -476,8 +474,7 @@ jobs:
           fi
           if [ "$EXTERNAL" = true ]; then
             request=(webcpp-require-external=on "${request[@]}")
-            for variable in SECP256K1_ROOT SECP256K1_EMSCRIPTEN_ROOT LIBDATACHANNEL_ROOT \
-                OPENSSL_ROOT; do
+            for variable in SECP256K1_ROOT SECP256K1_EMSCRIPTEN_ROOT; do
               if [ -n "${!variable-}" ]; then
                 request=("-s$variable=${!variable}" "${request[@]}")
               fi
@@ -548,6 +545,7 @@ jobs:
           persist-credentials: false
           path: libs/${{ inputs.library }}
           fetch-depth: 0
+      - *transport-sources
       - *boost
 
       - uses: ./tools/ci/actions/wasi-sdk
@@ -571,19 +569,10 @@ jobs:
       # libsecp256k1's emscripten build too when a library declares emscripten, for the commands
       # of that target.
       - if: needs.plan.outputs.lint-external == 'true'
-        uses: ./tools/ci/actions/openssl
-
-      - if: needs.plan.outputs.lint-external == 'true'
         uses: ./tools/ci/actions/secp256k1
         with:
           cc: clang-18
           emscripten: ${{ needs.plan.outputs.has-emscripten }}
-
-      - if: needs.plan.outputs.lint-external == 'true'
-        uses: ./tools/ci/actions/libdatachannel
-        with:
-          cc: clang-18
-          cxx: clang++-18
 
       # The compilation database is what b2 compiles with its default toolset, the first that
       # user-config.jam registers, Clang 18, and, for what only a WASI target or emscripten
@@ -614,6 +603,7 @@ jobs:
         shard: [1, 2, 3, 4, 5, 6, 7, 8]
     steps:
       - *superproject
+      - *transport-sources
       - *boost
 
       - uses: ./tools/ci/actions/wasi-sdk

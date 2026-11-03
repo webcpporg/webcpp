@@ -28,6 +28,7 @@ import types
 import zlib
 from collections.abc import Callable, Iterator
 from pathlib import Path
+from typing import TypedDict
 
 import changelog
 import release
@@ -1370,6 +1371,74 @@ def test_dist_refuses_unreviewed_openssl_nested_dependencies(directory: Path) ->
         assert f'third_party/libs/openssl/{path} is a submodule' in output, output
 
 
+class TransportPin(TypedDict):
+    commit: str
+    required_submodules: dict[str, str]
+    omitted_submodules: dict[str, str]
+
+
+def libdatachannel_source_submodule(tree: scratch.Tree) -> tuple[Path, Path, TransportPin]:
+    """A source-built transport with one required and one unused nested repository."""
+    checkout = source_submodule(tree, 'third_party/libs/libdatachannel')
+    origin = tree.root.parent / 'transport-dependency'
+    scratch.write(origin / 'LICENSE', 'Nested upstream licence\n')
+    scratch.write(origin / 'source.c', 'int transport_dependency(void) { return 7; }\n')
+    scratch.git(origin, 'init', '-q')
+    scratch.git(origin, 'add', '.')
+    scratch.git(origin, 'commit', '-q', '-m', 'The required transport dependency')
+    scratch.git(checkout, 'submodule', 'add', '-q', str(origin), 'deps/libjuice')
+    revision = scratch.git(origin, 'rev-parse', 'HEAD').strip()
+    scratch.git(checkout, 'update-index', '--add', '--cacheinfo',
+                f'160000,{revision},deps/json')
+    scratch.git(checkout, 'commit', '-q', '-m', 'Pinned transport dependencies')
+    scratch.git(tree.root, 'add', 'third_party/libs/libdatachannel')
+    pin: TransportPin = {'commit': scratch.git(checkout, 'rev-parse', 'HEAD').strip(),
+           'required_submodules': {'deps/libjuice': revision},
+           'omitted_submodules': {'deps/json': revision}}
+    tree.commit_file('tools/libdatachannel/pin.json', json.dumps(pin))
+    return checkout, checkout / 'deps/libjuice', pin
+
+
+def test_dist_bundles_required_transport_sources(directory: Path) -> None:
+    tree = scratch.make_tree(directory)
+    _, nested, _ = libdatachannel_source_submodule(tree)
+    out = directory / 'out'
+    completed = dist_cli(tree.root, out)
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    with tarfile.open(out / 'webcpp-0.1.0.tar.gz') as archive:
+        prefix = 'webcpp-0.1.0/third_party/libs/libdatachannel/deps/'
+        for name in ('LICENSE', 'source.c'):
+            assert member_bytes(archive, archive.getmember(prefix + 'libjuice/' + name)) == \
+                (nested / name).read_bytes()
+        assert not any(name.startswith(prefix + 'json/') for name in archive.getnames())
+
+
+def test_dist_refuses_unverified_transport_dependencies(directory: Path) -> None:
+    for number, change in enumerate(('missing', 'dirty', 'moved', 'unlisted', 'wrong-pin')):
+        case = directory / str(number)
+        case.mkdir()
+        tree = scratch.make_tree(case)
+        _, nested, pin = libdatachannel_source_submodule(tree)
+        if change == 'missing':
+            shutil.rmtree(nested)
+        elif change == 'dirty':
+            scratch.write(nested / 'source.c', 'uncommitted dependency change\n')
+        elif change == 'moved':
+            scratch.git(nested, 'commit', '-q', '--allow-empty', '-m', 'Unrecorded change')
+        else:
+            if change == 'unlisted':
+                pin['required_submodules'] = {}
+            else:
+                pin['required_submodules'] = {'deps/libjuice': pin['commit']}
+            tree.commit_file('tools/libdatachannel/pin.json', json.dumps(pin))
+        out = case / 'out'
+        completed = dist_cli(tree.root, out)
+        assert completed.returncode == 1 and not out.exists(), \
+            (change, completed.stdout + completed.stderr)
+        assert 'libdatachannel/deps/libjuice' in completed.stdout + completed.stderr, \
+            (change, completed.stdout + completed.stderr)
+
+
 def test_dist_names_source_paths_that_are_not_utf8(directory: Path) -> None:
     tree = scratch.make_tree(directory)
     commit = scratch.git(tree.library('alpha'), 'rev-parse', 'HEAD').strip().encode()
@@ -1983,6 +2052,8 @@ CASES: list[Callable[[Path], None]] = [
     test_dist_refuses_nested_source_submodules,
     test_dist_bundles_openssl_without_reviewed_unused_dependencies,
     test_dist_refuses_unreviewed_openssl_nested_dependencies,
+    test_dist_bundles_required_transport_sources,
+    test_dist_refuses_unverified_transport_dependencies,
     test_dist_names_source_paths_that_are_not_utf8,
     test_dist_is_reproducible,
     test_dist_leaves_out_dot_files_and_what_git_does_not_track,

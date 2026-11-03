@@ -540,6 +540,25 @@ def test_beast_browser_lanes_cover_policies_and_exception_modes(root):
         assert all(option not in command for option in options), command
 
 
+def test_openssl_upstream_lanes_use_the_windows_builds(root):
+    # Exercise the public planner and command builder. A native-only lane used
+    # to select Linux even when its purpose was to validate the MSVC recipe.
+    for version in ('14.3', '14.5'):
+        name = f'openssl-upstream-msvc-{version}'
+        own = matrix.parsed_own_lanes(
+            f'asio {name} libs/asio/test/tls native original')[0]
+        entry = own_lane_entry_of(own)
+        base = next(lane for lane in matrix.LANES if lane.id == f'msvc-{version}')
+        assert entry['os'] == base.os, entry
+        command = matrix.own_lane_command(own, root / 'config.jam', root / 'test.xml', [])
+        assert f'toolset={base.toolset}' in command, command
+        assert all(option in command for option in matrix.MSVC_OPTIONS), command
+        assert matrix.parsed_own_lane(json.dumps(entry)) == own
+    ordinary = matrix.parsed_own_lanes(
+        'asio openssl-upstream libs/asio/test/tls native original')[0]
+    assert own_lane_entry_of(ordinary)['os'] == 'ubuntu-24.04'
+
+
 def test_a_wasip3_lane_can_bind_a_loopback_socket(root):
     # Run the planned lane, including its launcher: Wasmtime refuses even a loopback bind
     # without an explicit network grant, which a successful compile cannot establish.
@@ -1005,7 +1024,7 @@ def test_a_lane_of_a_library_with_external_dependencies_says_so(root):
     # the CI's actions of their names, on a lane or an own lane that builds trystero: its entry
     # says external, and no other does.
     assert matrix.EXTERNAL_DEPENDENCIES == {
-        'trystero': ('secp256k1', 'libdatachannel', 'openssl')}, matrix.EXTERNAL_DEPENDENCIES
+        'trystero': ('secp256k1',)}, matrix.EXTERNAL_DEPENDENCIES
     # Asio builds the pinned OpenSSL sources through its B2 dependency.
     assert not matrix.needs_external('asio')
     for dependencies in matrix.EXTERNAL_DEPENDENCIES.values():
@@ -1080,19 +1099,18 @@ def job_steps(job: str) -> list[str]:
 
 
 def test_the_jobs_install_the_external_dependencies(_):
-    # The lanes and the own lanes run the dependency actions for an entry that says external,
-    # OpenSSL first, which libdatachannel builds against, and secp256k1 for emscripten too after
-    # emsdk on an entry that has it; libdatachannel and OpenSSL, which only the native backend
-    # needs, not on emscripten. The docs and lint jobs run them when the plan's external is true,
-    # with Clang 18, the toolset they parse with, and the lint, which analyses emscripten's
-    # commands, with secp256k1's emscripten build when a library declares emscripten.
+    # Only secp256k1 remains external. B2 builds transport and TLS from source,
+    # so independent binary-install actions must not inject a second provider.
     jobs = workflow_jobs()
+    for job in jobs.values():
+        assert 'uses: ./tools/ci/actions/openssl' not in job
+        assert 'uses: ./tools/ci/actions/libdatachannel' not in job
     plan = jobs['plan']
     assert 'external: ${{ steps.plan.outputs.external }}' in plan, plan
     assert 'lint-external: ${{ steps.plan.outputs.lint-external }}' in plan, plan
     assert 'python3 tools/ci/matrix.py external "${arguments[@]}"' in plan, plan
     assert 'lint_external="$(python3 tools/ci/matrix.py external)"' in plan, plan
-    actions = ('emsdk', 'openssl', 'secp256k1', 'libdatachannel')
+    actions = ('emsdk', 'secp256k1')
     steps = job_steps(jobs['lanes'])
     uses = [next((action for action in actions if f'./tools/ci/actions/{action}' in step), None)
             for step in steps]
@@ -1100,24 +1118,20 @@ def test_the_jobs_install_the_external_dependencies(_):
     by_action = {action: step for action, step in zip(uses, steps) if action}
     for action in actions:
         assert by_action[action].lstrip().startswith(f'- &{action}\n'), by_action[action]
-    assert 'if: matrix.external && !matrix.emsdk' in by_action['openssl'], by_action
     assert 'if: matrix.external\n' in by_action['secp256k1'], by_action
     assert 'emscripten: ${{ matrix.emsdk }}' in by_action['secp256k1'], by_action
     assert 'cc: ${{ matrix.cc }}' in by_action['secp256k1'], by_action
-    assert 'if: matrix.external && !matrix.emsdk' in by_action['libdatachannel'], by_action
-    assert 'cxx: ${{ matrix.cxx }}' in by_action['libdatachannel'], by_action
     # The own lanes install them by the same anchors, in the same order.
     firsts = [step.strip().splitlines()[0] for step in job_steps(jobs['own-lanes'])]
     aliases = [first for first in firsts if first in {f'- *{action}' for action in actions}]
     assert aliases == [f'- *{action}' for action in actions], aliases
     for name, output in (('docs', 'external'), ('lint', 'lint-external')):
         steps = job_steps(jobs[name])
-        for action in ('openssl', 'secp256k1', 'libdatachannel'):
+        for action in ('secp256k1',):
             found = [step for step in steps if f'uses: ./tools/ci/actions/{action}' in step]
             assert len(found) == 1, (name, action, found)
             assert f"if: needs.plan.outputs.{output} == 'true'" in found[0], (name, found)
-            if action != 'openssl':
-                assert 'cc: clang-18' in found[0], (name, found)
+            assert 'cc: clang-18' in found[0], (name, found)
         emsdk = next(index for index, step in enumerate(steps) if 'actions/emsdk' in step)
         secp256k1 = next(index for index, step in enumerate(steps) if 'actions/secp256k1' in step)
         assert emsdk < secp256k1, name
@@ -1287,7 +1301,7 @@ def test_a_container_lane_runs_b2_with_no_network(root):
     assert re.search(r'install[^&]*--snapshot "\$\{SNAPSHOT\}" ca-certificates', code), code
     digest = hashlib.sha256(dockerfile.encode()).hexdigest()
     assert matrix.CONTAINER_IMAGE == f'webcpp-lane:{digest[:16]}', matrix.CONTAINER_IMAGE
-    for package in ('g++-14', 'clang-18', 'libssl-dev', 'python3', 'git', 'make', 'perl'):
+    for package in ('g++-14', 'clang-18', 'python3', 'git', 'make', 'perl', 'cmake', 'pkg-config'):
         assert re.search(r'install\b[^&]*\s' + re.escape(package) + r'(?=\s|$)', code), (
             package, code)
     entry = host_lane(root)
@@ -1307,7 +1321,7 @@ def test_a_container_lane_runs_b2_with_no_network(root):
     for name in matrix.EXTERNAL_VARIABLES:
         environment.pop(name, None)
     environment.update(PATH=f'{tools}:{environment["PATH"]}', STAND_IN_DOCKER_LOG=str(log),
-                       STAND_IN_IMAGE=matrix.CONTAINER_IMAGE, LIBDATACHANNEL_ROOT='/somewhere')
+                       STAND_IN_IMAGE=matrix.CONTAINER_IMAGE, SECP256K1_ROOT='/somewhere')
     result = subprocess.run([sys.executable, str(root / 'tools/ci/matrix.py'), 'lane',
                              json.dumps(entry), '--', '--build-dir=bin/lane'], cwd=root,
                             env=environment, capture_output=True, text=True, check=False,
@@ -1337,8 +1351,8 @@ def test_a_container_lane_runs_b2_with_no_network(root):
     assert command[1:4] == [f'--user-config={config.resolve()}', '-a', '--dump-tests'], command
     toolset = command.index(next(word for word in command if word.startswith('toolset=')))
     assert command[toolset + 1:toolset + 3] == ['webcpp-require-external=on',
-                                                '-sLIBDATACHANNEL_ROOT=/somewhere'], command
-    assert not any(word.startswith('-sSECP256K1_ROOT') for word in command), command
+                                                '-sSECP256K1_ROOT=/somewhere'], command
+    assert not any(word.startswith('-sLIBDATACHANNEL_ROOT') for word in command), command
     version = matrix.major_version('clang++')
     system = 'darwin' if sys.platform == 'darwin' else 'linux'
     assert (resolved / f'bin/ci/clang-{system}-{version}.xml').is_file()
@@ -1400,6 +1414,7 @@ CASES = [
     test_own_lanes_on_targets,
     test_an_own_lanes_command,
     test_beast_browser_lanes_cover_policies_and_exception_modes,
+    test_openssl_upstream_lanes_use_the_windows_builds,
     test_a_wasip3_lane_can_bind_a_loopback_socket,
     test_a_lane_is_named_by_the_compiler_version,
     test_abbreviated_paths_keep_the_lane_name,

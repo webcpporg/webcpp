@@ -46,3 +46,22 @@
  #endif
      void return_value(int res = 0)
      {
+--- a/boost/cobalt/detail/thread.hpp
++++ b/boost/cobalt/detail/thread.hpp
+@@ -17,6 +17,7 @@
+ 
+ #include <boost/asio/cancellation_signal.hpp>
+ 
++#include <exception>
+ #include <thread>
+ 
+ namespace boost::cobalt
+@@ -84,6 +85,8 @@
+ 
+ #if !defined(BOOST_NO_EXCEPTIONS)
+   void unhandled_exception() { throw; }
++#else
++  void unhandled_exception() noexcept { std::terminate(); }
+ #endif
+   void return_void() { }
+ 

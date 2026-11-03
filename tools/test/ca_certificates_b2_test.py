@@ -18,13 +18,13 @@ import harness
 JAM = '''import webcpp ;
 webcpp.run roots : roots.cpp : <library>/webcpp/third_party//ca_certificates ;
 '''
-SOURCE = '''#include <webcpp_ca_certificates.hpp>
+SOURCE = '''#include <webcpp/asio/detail/ca_certificates.hpp>
 #include <cstdio>
 #include <string_view>
 int main() {
-    std::string_view pem = webcpp::detail::ca_certificates::pem;
+    std::string_view pem = webcpp::asio::detail::ca_certificates::pem;
     if (!pem.starts_with("-----BEGIN CERTIFICATE-----")) return 1;
-    std::printf("%zu\\n", webcpp::detail::ca_certificates::count);
+    std::printf("%zu\\n", webcpp::asio::detail::ca_certificates::count);
 }
 '''
 

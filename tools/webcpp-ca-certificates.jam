@@ -24,7 +24,7 @@ class ca-certificates-target : basic-target
     rule construct ( name : sources * : properties )
     {
         local action = [ new action $(sources) : webcpp-ca-certificates.generate : $(properties) ] ;
-        local header = [ new file-target webcpp_ca_certificates.hpp exact : H
+        local header = [ new file-target webcpp/asio/detail/ca_certificates.hpp exact : H
             : $(self.project) : $(action) ] ;
         local directory = [ path.root [ path.make [ $(header).path ] ] [ path.pwd ] ] ;
         header = [ virtual-target.register $(header) ] ;

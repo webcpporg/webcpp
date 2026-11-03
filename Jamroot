@@ -25,6 +25,7 @@ import type ;
 import tools/webcpp ;
 import tools/webcpp-wasi ;
 import tools/webcpp-openssl ;
+import tools/webcpp-libdatachannel ;
 import tools/webcpp-ca-certificates ;
 
 # A shell with CPATH (Homebrew sets it) puts its headers before the
@@ -569,7 +570,7 @@ for local build in [ glob libs/*/build.jam ]
 # Keep the generated trust header usable outside this source checkout, along
 # with the exact certificate source and notices of the embedded snapshot.
 install install-ca-certificates : third_party//ca_certificates-header
-    : <location>$(.includedir) ;
+    : <location>$(.includedir)/webcpp/asio/detail ;
 install install-ca-certificates-notices
     : third_party/ca_certificates/LICENSE-MPL-2.0.txt
       third_party/ca_certificates/README.md third_party/ca_certificates/cacert.pem

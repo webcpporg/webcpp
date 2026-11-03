@@ -778,6 +778,41 @@ def test_msvc_overlays_win_actual_header_lookup(root: Path) -> None:
         assert '/external:anglebrackets' not in words, command
 
 
+def test_boost_cobalt_thread_joins_without_exceptions(root: Path) -> None:
+    # Omitting thread_promise's exception-disabled hook makes a real coroutine
+    # fail to compile. Exercise the compiled thread implementation and its executor.
+    source = r'''#include <boost/asio/post.hpp>
+#include <boost/cobalt/op.hpp>
+#include <boost/cobalt/this_coro.hpp>
+#include <boost/cobalt/thread.hpp>
+#include <atomic>
+#include <cstdio>
+
+boost::cobalt::thread worker(std::atomic<int>& completed) {
+    auto executor = co_await boost::cobalt::this_coro::executor;
+    co_await boost::asio::post(executor, boost::cobalt::use_op);
+    completed.store(42);
+}
+
+int main() {
+    std::atomic<int> completed{0};
+    auto operation = worker(completed);
+    operation.join();
+    if (completed.load() != 42) return 1;
+    std::puts("thread coroutine completed and joined");
+}
+'''
+    harness.add_library(root, 'thread_probe',
+                        'import webcpp ;\nwebcpp.targets native ;\n'
+                        'webcpp.run thread : thread.cpp : <threading>multi '
+                        '<library>/webcpp//boost_cobalt ;\n', {'thread.cpp': source})
+    for exceptions in ('off', 'on'):
+        result = harness.run_b2(root, '-a', '-j4', '--verbose-test',
+                               f'exception-handling={exceptions}', 'libs/thread_probe/test')
+        harness.expect(result, True, 'thread coroutine completed and joined')
+        assert passed(result) == {'thread'}, result.stdout[-4000:]
+
+
 def test_boost_cobalt_preserves_exception_setting(root: Path) -> None:
     # A blanket exception requirement would reject a valid result-based consumer.
     # Build the real archive and execute eager promises and cancellation in each mode.
@@ -855,6 +890,7 @@ CASES = [
     test_boost_cobalt_names_missing_or_mismatched_sources,
     test_boost_cobalt_omits_main_and_ssl_from_supplied_sources,
     test_boost_cobalt_warns_only_for_disabled_exceptions,
+    test_boost_cobalt_thread_joins_without_exceptions,
     test_boost_cobalt_preserves_exception_setting,
     test_asio_windows_allocator_overlay_reaches_sources_and_consumers,
     test_msvc_overlays_win_actual_header_lookup,

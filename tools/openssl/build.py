@@ -18,6 +18,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shlex
 import shutil
 import subprocess
@@ -96,6 +97,21 @@ def windows_perl(env: dict[str, str]) -> str:
                        'on PATH; a Git Bash or MSYS Perl cannot generate nmake files')
 
 
+def suite_result(log: str, recipes: list[str]) -> dict:
+    """Reject empty or partial TAP runs, retaining upstream's configuration skips."""
+    # Upstream runs preparation recipes first, with a separate TAP summary.
+    # A non-FIPS build legitimately skips that phase with Tests=0.
+    summaries = list(re.finditer(r'Files=(\d+), Tests=(\d+)', log))
+    summary = summaries[-1] if summaries else None
+    missing = [name for name in recipes if name not in log]
+    if ('All tests successful.' not in log or not summary or int(summary[2]) == 0
+            or not recipes or missing):
+        raise RuntimeError('upstream suite did not report a complete passing run; '
+                           f'missing recipes: {missing}')
+    return {'result': 'passed', 'selection': 'alltests', 'recipes': len(recipes),
+            'files': int(summary[1]), 'tests': int(summary[2])}
+
+
 def main() -> None:
     arguments = sys.argv[1:]
     if len(arguments) == 1:
@@ -108,10 +124,17 @@ def main() -> None:
     parser.add_argument('--cc', required=True)
     parser.add_argument('--ar', default='')
     parser.add_argument('--variant', default='release')
+    parser.add_argument('--test', action='store_true',
+                        help='run the complete native upstream suite before publishing libraries')
     parser.add_argument('flags', nargs=argparse.REMAINDER)
     args = parser.parse_args(arguments)
+    if args.test and args.platform == 'wasi':
+        raise RuntimeError('the OpenSSL upstream test harness requires native executables; '
+                           'WASIp3 uses the separately declared TLS integration tests')
     source, output = args.source.resolve(), args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
+    for name in ('build.json', 'upstream-tests.json'):
+        (output / name).unlink(missing_ok=True)
     pin = json.loads((HERE / 'pin.json').read_text())
     check_checkout(source, pin)
     # Verify the source before probing or invoking any configured build tool.
@@ -137,10 +160,17 @@ def build_source(args: argparse.Namespace, output: Path, pin: dict, scratch: Pat
     env = os.environ.copy()
     for variable in ('CPATH', 'CPLUS_INCLUDE_PATH', 'C_INCLUDE_PATH', 'CPPFLAGS',
                      'CFLAGS', 'CXXFLAGS', 'LDFLAGS', 'LD_LIBRARY_PATH',
-                     'OPENSSL_CONF', 'OPENSSL_MODULES', 'CROSS_COMPILE', 'CL', '_CL_'):
+                     'OPENSSL_CONF', 'OPENSSL_MODULES', 'CROSS_COMPILE', 'CL', '_CL_',
+                     'MAKEFLAGS', 'MFLAGS', 'TESTS', 'EXE_SHELL', 'TOP', 'SRCTOP', 'BLDTOP',
+                     'BIN_D', 'TEST_D', 'RESULT_D', 'STOPTEST', 'FIPS_MODE'):
         env.pop(variable, None)
+    for variable in list(env):
+        if variable.startswith(('HARNESS_', 'OPENSSL_TEST_')):
+            env.pop(variable)
     env.setdefault('SOURCE_DATE_EPOCH', str(pin['source_date_epoch']))
-    options = ['no-shared', 'no-tests', 'no-apps', 'no-docs', 'no-module',
+    # Native ordinary and tested builds use the same library configuration.
+    # Only the opt-in action builds the upstream apps and test executables.
+    options = ['no-shared', 'no-docs', 'no-module',
                '--libdir=lib', 'threads' if args.threading == 'multi' else 'no-threads']
     # MSVC's /MDd and /MTd define _DEBUG themselves. Upstream --debug would
     # force it even when the user explicitly selects runtime-debugging=off.
@@ -149,6 +179,7 @@ def build_source(args: argparse.Namespace, output: Path, pin: dict, scratch: Pat
     if not windows:
         options += ['--openssldir=/etc/ssl']
     if args.platform == 'wasi':
+        options += ['no-tests', 'no-apps']
         if '--target=wasm32-wasip3' not in flags:
             raise RuntimeError('WASIp3 OpenSSL requires --target=wasm32-wasip3 '
                                'in the configured C flags')
@@ -224,12 +255,23 @@ def build_source(args: argparse.Namespace, output: Path, pin: dict, scratch: Pat
     run([perl, str(scratch / 'source/Configure'), *actual_target, *options,
          '--prefix=' + str(install)], cwd=build, env=env, log=output / 'configure.log')
     make = ['nmake', '/nologo'] if windows else ['make']
-    jobs = [] if windows else ['-j' + str(min(8, os.cpu_count() or 1))]
+    jobs = [] if windows else ['-j2']
     # nmake builds one translation unit at a time. Windows CI exceeded ten
     # minutes while still compiling normally; retain a bounded thirty-minute
     # budget for this phase. Parallel Make retains the shorter budget.
     run([*make, *jobs, 'build_libs'], cwd=build, env=env, log=output / 'build.log',
         timeout=1800 if windows else 600)
+    suite = None
+    if args.test:
+        env['HARNESS_JOBS'] = '2'
+        run([*make, *jobs, 'test', 'TESTS=alltests'], cwd=build, env=env,
+            log=output / 'upstream-tests.log', timeout=2400)
+        log = (output / 'upstream-tests.log').read_text(errors='replace')
+        recipes = sorted(path.name for path in (scratch / 'source/test/recipes').glob('*.t'))
+        try:
+            suite = suite_result(log, recipes)
+        except RuntimeError as error:
+            raise RuntimeError(f'{error}; full log: {output / "upstream-tests.log"}') from error
     if windows:
         # Upstream install_dev requires an external PDB even with B2's /Z7
         # embedded symbols or debug-symbols=off. Stage exactly its public and
@@ -261,6 +303,11 @@ def build_source(args: argparse.Namespace, output: Path, pin: dict, scratch: Pat
     record['sha256'] = {name: hashlib.sha256((output / name).read_bytes()).hexdigest()
                         for name in names}
     (output / 'build.json').write_text(json.dumps(record, indent=2) + '\n')
+    if suite:
+        suite.update(pin=pin['commit'], configure=record['configure'], sha256=record['sha256'])
+        (output / 'upstream-tests.json').write_text(json.dumps(suite, indent=2) + '\n')
+        print(f'OpenSSL upstream suite passed: {suite["files"]} recipes, '
+              f'{suite["tests"]} tests', flush=True)
     print(f'OpenSSL {pin["version"]}: {args.platform}/{args.threading} built from source '
           f'in {record["seconds"]:.1f}s', flush=True)
 

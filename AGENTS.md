@@ -161,7 +161,7 @@ webcpp/
                       and emsdk.jam (the lines that register the WASI and emscripten
                       toolsets), container/Dockerfile (the image of the container lanes),
                       and actions/{boost,wasi-sdk,wasmtime,wit-bindgen,wasi-wit,emsdk,
-                      secp256k1,libdatachannel,openssl,chrome,container,mrdocs,node}/
+                      secp256k1,chrome,container,mrdocs,node}/
                       (chapter 4)
     site/             site.jam, the rules of b2 site and b2 site-serve, catalogue.py (the
                       site's libraries.json), redirect.py (the old address's two pages) and
@@ -240,26 +240,28 @@ Jamroot is its build configuration, and `libs/<name>` is its repository.
   toolsets compile;
 - for emscripten: Emscripten 6.0.11, from emsdk, and Node, which runs its
   programs; the tests of the build need it too;
-- for trystero, until webcpp builds them from `third_party/`
-  (`CODING-GUIDELINES.md` chapter 16): libsecp256k1 0.8.0, static, with its
-  `schnorrsig` and `extrakeys` modules, natively and, for emscripten, built
-  with Emscripten; and, for its native backend, libdatachannel 0.24.6, built
-  with the compiler and the standard library that build the programs, and
-  OpenSSL 3. Each is found in the directory of its `include/` and `lib/` that
-  `-sSECP256K1_ROOT=<dir>`, `-sSECP256K1_EMSCRIPTEN_ROOT=<dir>`,
-  `-sLIBDATACHANNEL_ROOT=<dir>` and `-sOPENSSL_ROOT=<dir>` on b2's command
-  line name, never the environment, else in `.local/secp256k1-native`,
-  `.local/secp256k1-emscripten`, `.local/libdatachannel` and `.local/openssl`
-  when it holds the library's header (below), else, natively outside Windows,
-  in `/usr/include` or `/usr/local/include`, where a system install is
-  legitimate; a relative `-s` is read from b2's working directory. When none
-  holds a library's header, trystero is left out, its programs skipped, with
-  one line that names the library and every place it looked, so that `b2 test`
-  builds every other library, and the index names trystero without a link to
-  its page; with `webcpp-require-external=on` on b2's command line, as the CI
-  and the lint build, the build stops instead, naming both libraries
-  (`webcpp.external` and its kin, chapter 4). trystero's page says how each is
-  built. The CI's actions build them so (chapter 4).
+- for trystero: libsecp256k1 0.8.0, static, with `schnorrsig` and
+  `extrakeys`, built natively and, for browser programs, with Emscripten.
+  Only this dependency remains externally provisioned. B2 reads
+  `-sSECP256K1_ROOT=<dir>` and `-sSECP256K1_EMSCRIPTEN_ROOT=<dir>` from its
+  command line, never the environment; otherwise it searches
+  `.local/secp256k1-native` and `.local/secp256k1-emscripten`, then the native
+  system include paths outside Windows. A missing dependency leaves trystero
+  out with a diagnostic, or fails when `webcpp-require-external=on`, as in CI;
+- for native Trystero: CMake and Make (nmake on Windows), and the pinned
+  `third_party/libs/libdatachannel` checkout with its required nested sources.
+  Initialize it with `git submodule update --init --recursive
+  third_party/libs/libdatachannel`. B2 builds static libdatachannel and its
+  nested dependencies with the consumer's compiler and runtime settings.
+  Native Trystero requires `threading=multi` and exceptions; a single-thread
+  request is refused because this backend uses worker threads;
+- for native or WASIp3 guest TLS: Python 3, Perl, Make (nmake on Windows),
+  the selected compiler and `third_party/libs/openssl`, initialized with
+  `git submodule update --init third_party/libs/openssl`. B2 builds the pinned
+  OpenSSL sources and matching generated headers. Native Trystero's
+  libdatachannel uses that same provider. Neither `OPENSSL_ROOT` nor
+  `LIBDATACHANNEL_ROOT` selects a separate installed copy. Source archives
+  contain the required sources and do not require Git for these builds.
 
 Each toolchain is installed by hand and configured in `user-config.jam`, until
 webcpp bundles the toolchains (`CODING-GUIDELINES.md` chapter 16). b2 reads
@@ -352,6 +354,9 @@ Boost headers and sources remain untouched. Every Cobalt target also uses the
 checked `tools/boost/cobalt-common` header overlay: Boost 1.92's composition
 promise must connect its cancellation source to the received completion handler.
 Both compiled operations and application-defined compositions receive this fix.
+The common overlay also supplies `unhandled_exception` for main and thread
+promises in no-exceptions builds; the thread coroutine is exercised by Asio's
+`threads` own lane, natively and on cooperative WASIp3.
 Rebase and verify the common patch before using a different Boost version.
 TLS consumers combine the Cobalt target with `/webcpp/asio//tls` and await
 Asio SSL operations with Cobalt tokens. `/webcpp//boost_cobalt_io_ssl` optionally
@@ -361,14 +366,29 @@ associations, fixes handshake state and callback constraints, and exposes a
 borrowed `native_ssl_handle()` for SNI. `/webcpp/asio//cobalt_ssl` adds the
 runner and CA factory. Native and WASIp3 consumers share these SSL corrections;
 browser/WASIp2 are refused. Plain Cobalt does not acquire an OpenSSL dependency.
-Run `cobalt_ssl_cancel` through `tools/openssl/test/tls.py --state-test` for
-primitive/composed TLS transfer cancellation, truncated shutdown and cancelled
-shutdown. Require actual pending operations and transport/protocol observations,
+Asio's `tls-integration` own lane drives the real OpenSSL/Cobalt fixtures on
+native and WASIp3 profiles, including primitive/composed transfer cancellation,
+truncated shutdown and cancelled shutdown. Its native `openssl-upstream` lane
+requests `webcpp-openssl-tests=on`: the exact archives pass upstream's full
+`alltests` suite before the TLS consumer links. The upstream harness cannot run
+on WASIp3; its separate TLS/entropy integration tests do not substitute for it.
+The `openssl-upstream-msvc-14.3` and `openssl-upstream-msvc-14.5` aliases
+select their matching Windows runners/toolsets; the default native upstream
+lane uses Linux. CI uploads upstream logs, proof and build manifests even on
+failure. Lane declarations describe recurring coverage, not a successful CI run. Require actual pending operations and transport/protocol observations,
 not guessed sleeps. Terminal transfer cancellation does not promise safe reuse.
 Its sources define `BOOST_COBALT_SOURCE=1` and `BOOST_COBALT_IO_SOURCE=1`, while
 consumers receive `BOOST_COBALT_NO_LIB=1`. On Emscripten, both sources and
 consumers define `BOOST_ASIO_DISABLE_THREADS`; native thread support is unchanged.
 Use the shared `BOOST_SOURCE` setup above, not a separate Cobalt source tree.
+
+**Windows Asio allocator overlay.** `tools/boost/asio-windows` passes the
+context allocator into Boost 1.92's existing `win_thread` constructor for the
+IOCP worker and timer thread. Asio and compiled Cobalt use the same checked
+private headers on Windows only. The manifest verifies the original and patched
+hashes, without modifying installed Boost. Native allocation tests construct the
+context and its first timer inside the counted window. A prepared overlay or a
+dry run alone is not evidence that a Windows program ran.
 
 **Cobalt without exceptions.** A build that uses `/webcpp//boost_cobalt` with
 `exception-handling=off` emits a non-fatal configuration warning with
@@ -387,16 +407,13 @@ verified, rather than assuming a newer Boost release fixes the issue.
 needs: `.local/user-config.jam`, `.local/wasi-sdk/`, `.local/mrdocs/`,
 `.local/wit-bindgen/` and `.local/wasi-wit/p2` and `p3`, `.local/emsdk` (an
 install of emsdk, or a link to one) with Emscripten's cache in
-`.local/emscripten-cache`, and trystero's libraries in
-`.local/secp256k1-native`, `.local/secp256k1-emscripten`,
-`.local/libdatachannel` and `.local/openssl` (`include/openssl` and the two
-libraries of the system's OpenSSL 3, linked, as the CI's `openssl` action
-lays them out), where the CI's actions install them too (chapter 4). The
-build finds each of them there with no `-s`: `b2 -a doc`, whose reference
-parses trystero's native backend, runs as it is. Another directory is named
-with `-sSECP256K1_ROOT=<dir>` and its kin on b2's command line, never with
-the environment, as for the emsdk below: a variable a shell keeps from
-another day would replace `.local/` without a word. A tool the build looks up itself is
+`.local/emscripten-cache`, and trystero's external libsecp256k1 installs in
+`.local/secp256k1-native` and `.local/secp256k1-emscripten`. The CI action
+uses those same paths. B2 finds them without `-s`; another prefix is named
+with `-sSECP256K1_ROOT=<dir>` or `-sSECP256K1_EMSCRIPTEN_ROOT=<dir>` on its
+command line. Source-built OpenSSL and libdatachannel instead live under the
+B2 build directory, separated by the effective compiler configuration.
+A tool the build looks up itself is
 taken from the path its `-s` option gives, else from `.local/`, else from
 `PATH`: MrDocs (`-sMRDOCS`), wit-bindgen and the WIT (above); wasi-sdk is
 where the `using clang` lines of `user-config.jam` name it, and, for a
@@ -1160,7 +1177,7 @@ too, and `.local/` found, the environment never read, a wrong `-s`
 refused, a missing library left out once while another library builds, the
 index's row without a link, and the stop under
 `webcpp-require-external=on`; `tools/lint/lint_test.py` that the lint's dry
-runs require them and name the two libraries.
+runs require the declared external dependencies and name any that are missing.
 
 **Generated files** (`tools/generated/generated.jam`). A file that a script
 writes from inputs it pins, such as a table of Unicode data, is committed and
@@ -1222,10 +1239,9 @@ webcpp.example xactor_drivers.cpp ;
 webcpp.example xactor_testing.cpp ;
 # A static actor, whose behaviour is a Boost.MSM state machine.
 webcpp.example xactor_msm.cpp ;
-# Native only: Boost.Asio 1.92 does not compile for wasm32-wasip2 or
-# wasm32-wasip3 with wasi-sdk 34 (no ESHUTDOWN, no ::pause, and a signal.h
-# that stops with #error), so drivers.hpp declares asio_driver only outside
-# WASI.
+# Native only: xactor's Asio driver has not adopted webcpp::asio's checked
+# WASIp3 integration. That separate adaptation is not implied by Asio's
+# WASIp3 support.
 webcpp.example xactor_asio.cpp : : native ;
 ```
 
@@ -1244,8 +1260,13 @@ b2 -a --dump-tests --out-xml=<lane>.xml toolset=<toolset> libs/<library>/test li
 ```
 
 A wasip2 lane adds `testing.launcher=wasmtime`; a wasip3 lane adds
-`testing.launcher=tools/boost/asio-wasip3/run.sh` for network-capable tests. Both apply to
-every toolset of one b2 request, so a lane is always one toolset. An
+`testing.launcher=tools/boost/asio-wasip3/run.sh`. The latter is the global
+WASIp3 test launcher: it grants inherited network and IP name lookup, enables
+component async/threading support, and defaults to 600 seconds per process.
+`WEBCPP_WASIP3_TEST_TIMEOUT` overrides that finite bound with a positive integer.
+These are test-harness settings, not production permissions or a guarantee that
+tests never contact an external host. Both launchers apply to every toolset of
+one b2 request, so a lane is always one toolset. An
 emscripten lane adds nothing: b2's toolset runs its programs with node. The lane
 runs from the superproject's root. `--dump-tests` is required: it lists every
 test, those the lane skips included, and the report refuses a file without
@@ -1528,7 +1549,7 @@ jobs:
   every library's tests hold it, and trystero's guarantee 6 rests on it.
   The image is `tools/ci/container/Dockerfile`'s: Ubuntu 24.04, the
   runner's release, pinned by the digest of its image index, with `g++-14`,
-  `clang-18`, OpenSSL's development files, Python, Git, Make and Perl, every package,
+  `clang-18`, Python, Git, Make, Perl and CMake, every package,
   `ca-certificates` included, from Ubuntu's snapshot of the archive at the
   date its `ARG SNAPSHOT` names (`Snapshot: yes` on the sources, `apt-get
   --snapshot`), so that one Dockerfile is one set of packages. The snapshot
@@ -1536,9 +1557,9 @@ jobs:
   reaches it once without verifying the server's certificate, to install
   `ca-certificates` from the snapshot, and verifies it from then on; apt
   checks the signed `InRelease` and every index and package against it
-  whatever the transport. A `ca-certificates` from the live archive would
-  pull `libssl3t64` forward, and the snapshot's `libssl-dev`, which depends
-  on its own, would no longer install once Ubuntu updates OpenSSL (measured).
+  whatever the transport. Mixing a live `ca-certificates` package with snapshot dependencies previously
+  produced incompatible OpenSSL package versions; the image keeps all packages
+  on the same snapshot. Consumer OpenSSL is now built from the pinned sources.
   Ubuntu keeps no snapshot of `ports.ubuntu.com`, so the image builds for
   x86-64 alone (measured: apt 2.8.3 refuses arm64's sources). It is tagged
   `webcpp-lane:<the first 16 hex digits of the Dockerfile's SHA-256>`. The
@@ -1554,25 +1575,16 @@ jobs:
   docker; the external libraries it runs against are built before, on the
   runner, with the same compilers.
 
-  **External libraries.** A library may need libraries webcpp does not build
-  yet: `EXTERNAL_DEPENDENCIES` in `tools/ci/matrix.py` names them, trystero's
-  `secp256k1`, `libdatachannel` and `openssl`, each the CI's action of that
-  name, until webcpp builds them from `third_party/` (`CODING-GUIDELINES.md`
-  chapter 16). A lane that builds such a library, or one that uses it, has
-  `external` in its entry, and so does an own lane of it; such a job runs the
-  actions after the lane's own setup, by their YAML anchors in both jobs:
-  `openssl`, then `secp256k1`, with `emscripten: true` on an entry that has
-  emsdk, then `libdatachannel`, built with the lane's compilers, its entry's
-  `cc` and `cxx` (`gcc-14` and `g++-14`; Visual Studio for MSVC, CMake's own
-  choice there). An entry on emscripten has neither OpenSSL nor
-  libdatachannel, which only the native backend needs. Its b2 command, the
-  lane's or the own lane's, then has `webcpp-require-external=on`, so that a
-  library not found stops it rather than leave the library out, and
-  `-s<VARIABLE>=<dir>` for each variable the actions exported
-  (`EXTERNAL_VARIABLES`), on the command line, where a library's `build.jam`
-  reads them; the docs job gives its b2 the same when the plan's `external` is
-  `true`. A container lane passes no variable of the environment into its
-  container.
+  **External libraries.** `EXTERNAL_DEPENDENCIES` in `tools/ci/matrix.py`
+  currently names only trystero's `secp256k1`. A lane that needs it has
+  `external` in its entry, including own lanes. Its job runs that action after
+  toolchain setup, with `emscripten: true` when applicable and the lane's
+  compiler settings. B2 receives `webcpp-require-external=on` and explicit
+  `-sSECP256K1_ROOT` / `-sSECP256K1_EMSCRIPTEN_ROOT` arguments from the action's
+  outputs (`EXTERNAL_VARIABLES`); docs use the same setup when required.
+  OpenSSL and libdatachannel have no provisioning actions: their pinned source
+  targets build in the consumer's B2 variant, including inside container lanes.
+  A container lane passes no variable of the environment into its container.
 - **own lanes,** one job per entry, named and placed as the entry says
   (`name`, `os`), which runs `matrix.py own-lane <entry>`: it registers the
   lane's toolset, prints its b2 command and runs it, on the lane in each of
@@ -1747,65 +1759,20 @@ wrapper each quoted as one word of Jam.
   local node = /path/to/node ;
   using emscripten : : $(emsdk)/upstream/emscripten/em++ : <nodejs>$(node) ;
   ```
-- `openssl`, `secp256k1` and `libdatachannel` install trystero's external
-  libraries where its `build.jam` looks for them, in `.local/`, and give the
-  later steps their variables (`$GITHUB_ENV`), on Linux and macOS, x86-64
-  and arm64, and on Windows x86-64:
-  - `openssl` lays out the runner's own OpenSSL 3 in `.local/openssl` and
-    exports `OPENSSL_ROOT`: on Linux the system's, which `pkg-config` names,
-    and on macOS Homebrew's `openssl@3`, each as links to its
-    `include/openssl` and its two libraries, so that a compiler is given a
-    directory of its own, never `/usr/include` (GCC 14 and Clang 18 given
-    `-isystem /usr/include` no longer find the C library's headers through
-    libstdc++'s `#include_next`, as a reference parses its dependencies'
-    directories); Debian and Ubuntu keep the headers of OpenSSL's build
-    configuration, `opensslconf.h` and `configuration.h`, in the
-    architecture's `/usr/include/<multiarch>/openssl`, which
-    `dpkg-architecture` names, and which a parse for another target, as
-    trystero's reference is (chapter 2), does not search: there
-    `include/openssl` is a directory of links to each header of both, and a
-    layout without `opensslconf.h` fails the action; on Windows, copies of the headers and of the import
-    libraries `libssl.lib` and `libcrypto.lib` of the image's installation in
-    `%ProgramFiles%\OpenSSL` (from the first of `lib/VC/x64/MD`,
-    `lib/VC/x64/MDd` and `lib` that holds both), whose `bin`, with the DLLs,
-    it puts on `PATH`. The image's is always preferred; only an image without
-    one has the installer of Shining Light Productions, pinned by the SHA-256
-    that `slproweb/opensslhashes` records, which Shining Light removes once
-    superseded, so that fallback then fails at `download.sh`, naming the URL,
-    until the pin moves. On macOS, when the image lacks `openssl@3`, which it
-    has today only as a dependency of other formulae, the action installs it
-    with `brew`, which checks its bottle against its formula's SHA-256, and
-    says so in its log. It fails, naming it, on one that is not OpenSSL 3.
-  - `secp256k1` builds libsecp256k1 0.8.0 from GitHub's archive of its
-    commit `6e2c8bc`, checked against its SHA-256, with CMake, static, with
-    its `schnorrsig` and `extrakeys` modules and the small tables trystero's
-    page builds it with, into `.local/secp256k1-native`, with the input
-    `cc` (the lane's C compiler, else CMake's own), and with `emscripten:
-    true` also with Emscripten's `emcmake`, after the emsdk action, into
-    `.local/secp256k1-emscripten`; it exports `SECP256K1_ROOT` and
-    `SECP256K1_EMSCRIPTEN_ROOT`. The emscripten build's cache key names the
-    Emscripten version the emsdk action installs, read from its
-    `install.sh`, so that a bump of emsdk builds it again.
-  - `libdatachannel` clones the tag `v0.24.6`, fails unless `git rev-parse
-    HEAD` is the tag's commit `6b1e2e6`, read with `gh api`, and only then
-    fetches its submodules, at the commits that commit's gitlinks name, so a
-    tag that moved never has git fetch from the URLs its `.gitmodules` would
-    name; it builds it shared, `NO_WEBSOCKET`, `NO_EXAMPLES` and
-    `NO_TESTS` on and `NO_MEDIA` off, against the OpenSSL `OPENSSL_ROOT`
-    names (the `openssl` action runs first), with the inputs `cc` and `cxx`,
-    into `.local/libdatachannel`; it exports `LIBDATACHANNEL_ROOT`, and on
-    Windows puts its `bin`, with `datachannel.dll`, on `PATH`, where a test
-    b2 runs finds it.
-
-  The two that build are cached, keyed on the version, the runner, the
-  compilers' own `--version` (else the image), the emscripten build or
-  OpenSSL's version, and the action's files. On Windows they build CMake's
-  Debug configuration: b2's debug variant, the lanes', builds with `/MDd`,
-  whose standard types differ from `/MD`'s, and a DLL whose C++ API a
-  program shares must match it. CMake names libsecp256k1's library
-  `libsecp256k1.lib` there, and a program that links it statically defines
-  `SECP256K1_STATIC`, which trystero's `build.jam` does on `msvc`, with
-  OpenSSL's `libssl` and `libcrypto`.
+- `secp256k1` builds libsecp256k1 0.8.0 from GitHub's archive of commit
+  `6e2c8bc`, checked against its SHA-256, with CMake, static, with `schnorrsig`
+  and `extrakeys` and the small tables trystero's page specifies. It installs
+  in `.local/secp256k1-native`, using the lane's C compiler, and, when requested,
+  builds with Emscripten's `emcmake` into `.local/secp256k1-emscripten` after
+  emsdk setup. It exports `SECP256K1_ROOT` and `SECP256K1_EMSCRIPTEN_ROOT`.
+  The cache key includes its version, runner, compiler identity, action files
+  and the emsdk version for a browser build. Windows uses CMake's Debug
+  configuration for the CI's debug runtime and the static library name
+  `libsecp256k1.lib`; trystero defines `SECP256K1_STATIC` there.
+  OpenSSL and libdatachannel instead build from source through B2. The latter's
+  static datachannel, juice, usrsctp and srtp2 archives stay separate; it never
+  bundles another OpenSSL archive into them. Its CMake recipe uses the exact
+  OpenSSL headers and archive bytes selected by the B2 dependency.
 - `chrome` installs Chrome for Testing's `chrome-headless-shell`
   155.0.8059.39, the Stable channel of Google's
   `last-known-good-versions-with-downloads.json` when it was pinned, from
@@ -1855,18 +1822,15 @@ they leave out, and their refusals: a runner no build of wit-bindgen or
 emsdk is pinned for, a crate that holds no WIT, an emsdk at another commit,
 a release without its `node_modules`, an archive emsdk would download
 unpinned, and an emcc that is not 6.0.11; the emsdk action's node wrapper,
-`EM_CACHE`, warmed cache and system libraries; for the external
-libraries, the commands each action builds with, where it installs, what it
-exports and its cache key (the emscripten build's from the emsdk action's
-version), libdatachannel's submodules fetched only after its commit is
-checked, macOS's `openssl@3` installed with `brew` when absent, and the
-headers of Debian's `include/<multiarch>/openssl` linked beside the others; the
-chrome action's shell and its `--no-sandbox` wrapper; the container action's
-image, built and saved once, then loaded; and their refusals: an archive of libsecp256k1
-whose SHA-256 is not the pinned one, a libdatachannel at another commit,
-libdatachannel without `OPENSSL_ROOT`, an OpenSSL that is not 3, one
-whose headers hold no `opensslconf.h`, a chrome-headless-shell whose SHA-256 is not the pinned one, and a
-runner none of them builds for.
+`EM_CACHE`, warmed cache and system libraries; libsecp256k1's pinned archive,
+compiler settings, install prefixes, exports, cache key and Windows runtime;
+the chrome action's shell and its `--no-sandbox` wrapper; and the container
+image, built and saved once, then loaded. Their refusal tests cover bad hashes
+and unsupported runners. Source-provider tests live in
+`tools/openssl/build_test.py`, `tools/test/openssl_test.py` and
+`tools/test/libdatachannel_test.py`: they cover source pins, staged content,
+compiler variants and the single OpenSSL provider. They are separate from
+runtime evidence and the full upstream OpenSSL suite.
 
 **The site.** On every run of the superproject's CI, the job `site` runs
 `b2 site`, the preview ("The site", above), with the pages the docs job built
@@ -1956,14 +1920,22 @@ targets, which run only when named:
 --init` runs first: a submodule of HEAD not checked out fails it by name
 (`git submodule update --init libs/<name>`).
 
-`dist` also bundles the tracked sources and upstream licences of the root
-source submodules `site` and `third_party/libs/<name>`, at their recorded
-commits, with no dot files. Each must be checked out at that commit and hold
-no uncommitted changes. It never initializes submodules. The unused upstream
-nested submodules of `third_party/libs/nativejson-benchmark` are omitted, as
-`CODING-GUIDELINES.md` chapter 10 requires; its own sources, benchmark data
-and licence are bundled. Every other unsupported root or nested submodule is
-refused by name, so required sources are never silently omitted.
+`dist` also bundles the tracked sources and upstream licences of `site` and
+`third_party/libs/<name>` at their recorded commits, with no dot files. Required
+libdatachannel nested repositories (`libjuice`, `libsrtp`, `plog`, `usrsctp`)
+are included at the exact gitlinks recorded in `tools/libdatachannel/pin.json`.
+The policy applies only when its parent commit matches the root's source pin.
+Each included checkout must be clean and at its recorded commit; initialize
+libdatachannel recursively before packaging. `dist` never initializes sources.
+Unused nativejson-benchmark submodules and the exact optional OpenSSL and
+libdatachannel gitlinks listed in their pin files are omitted. A changed or
+unknown nested gitlink is refused, never silently skipped. Source builders
+validate the distributed paths, file modes and content hashes before executing
+upstream build code, so an unpacked archive needs no Git metadata.
+
+A successful release check or source archive is preparation evidence. It neither
+publishes 0.1.0 nor proves the final candidate's CI. Keep `In preparation` and
+`Unreleased` until the separately authorized release procedure below.
 
 Nothing is released until the owner asks. Then:
 

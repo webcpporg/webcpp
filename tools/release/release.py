@@ -823,11 +823,40 @@ def repositories(root: Path, names: list[str]) -> list[tuple[str, Path]]:
 
 
 def source_submodules(root: Path) -> dict[str, str]:
-    """Supported root source submodules and their pinned commits: site and direct dependencies
-    under third_party/libs. Other gitlinks must be refused, never silently omitted."""
+    """Recorded source dependencies, including explicitly pinned required nested sources."""
     recorded = blobs(root, 'site', 'third_party/libs/')[1]
-    return {path: commit for path, commit in recorded.items() if not hidden(path) and
-            (path == 'site' or PurePosixPath(path).parent == PurePosixPath('third_party/libs'))}
+    sources = {path: commit for path, commit in recorded.items() if not hidden(path) and
+               (path == 'site' or PurePosixPath(path).parent == PurePosixPath('third_party/libs'))}
+    required = nested_source_policy(root, sources, 'libdatachannel', 'required_submodules')
+    sources.update({f'third_party/libs/libdatachannel/{path}': commit
+                    for path, commit in required.items()})
+    return sources
+
+
+def nested_source_policy(root: Path, sources: dict[str, str], library: str,
+                         field: str) -> dict[str, str]:
+    """Read a reviewed dependency policy only when its enclosing source pin matches."""
+    recorded = sources.get(f'third_party/libs/{library}')
+    if recorded is None:
+        return {}
+    relative = f'tools/{library}/pin.json'
+    try:
+        pin = json.loads(read(root, relative))
+    except json.JSONDecodeError as error:
+        raise Broken(f'{relative} is not valid JSON: {error}') from error
+    if not isinstance(pin, dict):
+        raise Broken(f'{relative} must hold an object')
+    if pin.get('commit') != recorded:
+        return {}
+    dependencies = pin.get(field, {})
+    if not isinstance(dependencies, dict) or any(
+            not isinstance(path, str) or not path or hidden(path) or
+            PurePosixPath(path).is_absolute() or '..' in PurePosixPath(path).parts or
+            str(PurePosixPath(path)) != path or not isinstance(commit, str) or
+            re.fullmatch(r'[0-9a-f]{40}', commit) is None
+            for path, commit in dependencies.items()):
+        raise Broken(f'{relative}: {field} must map normalized relative paths to commit hashes')
+    return dependencies
 
 
 def source_checkout_findings(root: Path, sources: dict[str, str]) -> list[str]:
@@ -870,26 +899,8 @@ def link_refusal(path: str, target: bytes) -> str | None:
 
 
 def omitted_openssl_submodules(root: Path, sources: dict[str, str]) -> dict[str, str]:
-    """The unused upstream gitlinks reviewed for exactly the recorded OpenSSL source pin."""
-    recorded = sources.get('third_party/libs/openssl')
-    if recorded is None:
-        return {}
-    relative = 'tools/openssl/pin.json'
-    try:
-        pin = json.loads(read(root, relative))
-    except json.JSONDecodeError as error:
-        raise Broken(f'{relative} is not valid JSON: {error}') from error
-    if not isinstance(pin, dict):
-        raise Broken(f'{relative} must hold an object')
-    if pin.get('commit') != recorded:
-        return {}
-    omitted = pin.get('omitted_submodules', {})
-    if not isinstance(omitted, dict) or any(
-            not isinstance(path, str) or not isinstance(commit, str) or
-            re.fullmatch(r'[0-9a-f]{40}', commit) is None
-            for path, commit in omitted.items()):
-        raise Broken(f'{relative}: omitted_submodules must map paths to commit hashes')
-    return omitted
+    """Unused gitlinks reviewed for exactly the recorded OpenSSL source pin."""
+    return nested_source_policy(root, sources, 'openssl', 'omitted_submodules')
 
 
 def repository_refusals(root: Path, names: list[str]) -> list[str]:
@@ -900,6 +911,8 @@ def repository_refusals(root: Path, names: list[str]) -> list[str]:
     refusals = []
     sources = source_submodules(root)
     openssl_omissions = omitted_openssl_submodules(root, sources)
+    transport_omissions = nested_source_policy(
+        root, sources, 'libdatachannel', 'omitted_submodules')
     for base, directory in repositories(root, names):
         files, submodules = blobs(directory)
         for path in submodules:
@@ -907,6 +920,11 @@ def repository_refusals(root: Path, names: list[str]) -> list[str]:
                 continue
             if (not base and path in sources) or base == \
                     'third_party/libs/nativejson-benchmark/':
+                continue
+            if sources.get(base + path) == submodules[path]:
+                continue
+            if base == 'third_party/libs/libdatachannel/' and \
+                    transport_omissions.get(path) == submodules[path]:
                 continue
             if base == 'third_party/libs/openssl/' and \
                     openssl_omissions.get(path) == submodules[path]:

@@ -12,8 +12,12 @@ import project ;
 import property-set ;
 import targets ;
 import toolset ;
+import type ;
 import virtual-target ;
 import webcpp-wasi ;
+
+feature.feature webcpp-openssl-tests : on : optional propagated ;
+type.register WEBCPP_OPENSSL_TESTS ;
 
 class openssl-target : basic-target
 {
@@ -42,6 +46,11 @@ class openssl-target : basic-target
         local os = [ $(properties).get <target-os> ] ;
         local tool = [ $(properties).get <toolset> ] ;
         local version = [ $(properties).get <toolset-clang:version> ] ;
+        if $(os) = wasi && [ $(properties).get <webcpp-openssl-tests> ] = "on"
+        {
+            errors.user-error "The OpenSSL upstream test harness requires native executables."
+                "WASIp3 uses the separately declared TLS integration tests." ;
+        }
         if ! ( ( $(tool) in clang gcc && $(os) in darwin linux )
             || ( $(tool) = clang && $(os) = wasi && $(version) = wasip3 )
             || ( $(tool) = msvc && $(os) = windows ) )
@@ -74,6 +83,13 @@ class openssl-target : basic-target
             $(generated).set-path $(directory) ;
             headers += [ virtual-target.register $(generated) ] ;
         }
+        if [ $(properties).get <webcpp-openssl-tests> ] = "on"
+        {
+            local proof = [ new file-target upstream-tests.json exact
+                : WEBCPP_OPENSSL_TESTS : $(self.project) : $(action) ] ;
+            $(proof).set-path $(directory) ;
+            headers += [ virtual-target.register $(proof) ] ;
+        }
         if $(os) = windows && [ $(properties).get <debug-symbols> ] = "on"
             && [ $(properties).get <debug-store> ] = database
         {
@@ -102,7 +118,7 @@ rule declare ( root : headers * : sources * )
             <target-os>wasi:<linkflags>"-lwasi-emulated-getpid -lwasi-emulated-signal -lwasi-emulated-process-clocks -lwasi-emulated-mman" ;
 }
 
-toolset.uses-features webcpp-openssl.build : <toolset> <target-os> <architecture> <address-model> <variant> <threading> <optimization> <debug-symbols> <inlining> <runtime-link> <runtime-debugging> <cflags> <define> <linkflags> <exception-handling> <lto> <lto-mode> ;
+toolset.uses-features webcpp-openssl.build : <toolset> <target-os> <architecture> <address-model> <variant> <threading> <optimization> <debug-symbols> <inlining> <runtime-link> <runtime-debugging> <cflags> <define> <linkflags> <exception-handling> <lto> <lto-mode> <webcpp-openssl-tests> ;
 
 rule configuration ( properties * )
 {
@@ -168,9 +184,13 @@ rule build ( outputs * : inputs * : properties * )
     PLATFORM on $(outputs) = [ $(ps).get <target-os> ] ;
     THREADING on $(outputs) = [ $(ps).get <threading> ] ;
     VARIANT on $(outputs) = [ $(ps).get <variant> ] ;
+    if [ $(ps).get <webcpp-openssl-tests> ] = "on"
+    {
+        TEST on $(outputs) = --test ;
+    }
 }
 
 actions build
 {
-    $(.SETUP) python3 "$(SCRIPT)" "@($(<[1]:W).rsp:E=--source "$(SOURCE)" --output "$(<[1]:DW)" --platform "$(PLATFORM)" --threading "$(THREADING)" --variant "$(VARIANT)" --cc "$(DRIVER)" --ar "$(ARCHIVER)" -- $(C_OPTIONS) -D$(DEFINES))"
+    $(.SETUP) python3 "$(SCRIPT)" "@($(<[1]:W).rsp:E=--source "$(SOURCE)" --output "$(<[1]:DW)" --platform "$(PLATFORM)" --threading "$(THREADING)" --variant "$(VARIANT)" --cc "$(DRIVER)" --ar "$(ARCHIVER)" $(TEST) -- $(C_OPTIONS) -D$(DEFINES))"
 }
