@@ -323,10 +323,32 @@ add, and if it lacks the library's sources; a build that needs none never
 looks.
 
 **Cobalt source target.** `/webcpp//boost_cobalt` builds a static library from
-24 of Boost 1.92's 26 Cobalt sources: `src/*.cpp`, `src/detail/*.cpp` and
-`src/io/*.cpp`, excluding `src/main.cpp` and `src/io/ssl.cpp`. It supplies no
-OpenSSL integration or default `co_main` runner; the webcpp runner belongs to
-the subsequent Asio integration task. Ordinary `main` consumers can use it now.
+24 of Boost 1.92's 26 Cobalt sources on native/browser targets: `src/*.cpp`,
+`src/detail/*.cpp` and `src/io/*.cpp`, excluding `src/main.cpp` and
+`src/io/ssl.cpp`. It supplies no default `co_main` runner; `/webcpp/asio//cobalt`
+adds the webcpp runner. Ordinary `main` consumers can use the archive directly.
+On WASIp3, `tools/boost/cobalt-wasip3` verifies a Boost 1.92 compatibility patch
+and prepares private headers and endpoint/acceptor sources. The archive and
+consumers use the same Asio overlay and thread profile. Signal, serial-port
+and seqpacket sources are omitted, along with `thread.cpp` in single-thread
+builds. Cooperative builds include and test the thread coroutine. Installed
+Boost headers and sources remain untouched. Every Cobalt target also uses the
+checked `tools/boost/cobalt-common` header overlay: Boost 1.92's composition
+promise must connect its cancellation source to the received completion handler.
+Both compiled operations and application-defined compositions receive this fix.
+Rebase and verify the common patch before using a different Boost version.
+TLS consumers combine the Cobalt target with `/webcpp/asio//tls` and await
+Asio SSL operations with Cobalt tokens. `/webcpp//boost_cobalt_io_ssl` optionally
+compiles `io/ssl.cpp` with `BOOST_COBALT_SSL_SOURCE=1`, source-built OpenSSL and
+the checked shared patch in `tools/boost/cobalt-ssl`. It preserves handler
+associations, fixes handshake state and callback constraints, and exposes a
+borrowed `native_ssl_handle()` for SNI. `/webcpp/asio//cobalt_ssl` adds the
+runner and CA factory. Native and WASIp3 consumers share these SSL corrections;
+browser/WASIp2 are refused. Plain Cobalt does not acquire an OpenSSL dependency.
+Run `cobalt_ssl_cancel` through `tools/openssl/test/tls.py --state-test` for
+primitive/composed TLS transfer cancellation, truncated shutdown and cancelled
+shutdown. Require actual pending operations and transport/protocol observations,
+not guessed sleeps. Terminal transfer cancellation does not promise safe reuse.
 Its sources define `BOOST_COBALT_SOURCE=1` and `BOOST_COBALT_IO_SOURCE=1`, while
 consumers receive `BOOST_COBALT_NO_LIB=1`. On Emscripten, both sources and
 consumers define `BOOST_ASIO_DISABLE_THREADS`; native thread support is unchanged.
@@ -596,8 +618,23 @@ update --init third_party/libs/<name>`; a build that needs none never looks.
 
 | Target | What it is | Licence |
 | --- | --- | --- |
+| `ca_certificates` | Dated Mozilla/curl CA data snapshot under `third_party/ca_certificates`, verified against its manifest and embedded by a build-generated header; updated explicitly by `tools/ca_certificates/update.py` | MPL-2.0 |
+| `openssl` | OpenSSL 3.5.9 at `45e844fa2a14ec92d146bd8f5778ac130b6625fb`; static libssl/libcrypto and matching generated headers, built by upstream Configure/Make through B2 for native Clang/GCC and WASIp3 | Apache-2.0 |
 | `json-schema-test-suite` | the JSON Schema Test Suite at `5b0ee16` (2026-09-21), test data: a test that names it reads the suite at run time from the directory its define `WEBCPP_TEST_JSON_SCHEMA_TEST_SUITE` gives, on every target (wasmtime is given it, `webcpp.data`), and runs again when a file of the suite changes | MIT |
 | `nativejson-benchmark` | Milo Yip's nativejson-benchmark at `478d572` (2022-10-28), test data: document's benchmarks (`libs/document/bench`) read its `data/canada.json`, `data/citm_catalog.json` and `data/twitter.json` at run time under the directory its define `WEBCPP_TEST_NATIVEJSON_BENCHMARK` gives, on every target (wasmtime is given it, `webcpp.data`), and run again when one of them changes; its own submodules are never checked out | MIT |
+
+The CA bundle is an authorized exception to the source-submodule rule: curl
+publishes dated PEM artifacts, preserved byte-for-byte with source URL, SHA-256,
+certificate inventory and MPL notices. It is data, not copied implementation
+code. Normal builds verify and embed the pin without network access. Updating
+it is a reviewed trust-policy change, including removals. Preserve its license
+and corresponding PEM source when distributing binaries. Never manually edit
+its PEM, manifest or generated header; use the updater and generator.
+
+`b2 install` also generates and installs `webcpp_ca_certificates.hpp` at the
+include root, with the exact PEM, manifest, README and MPL license under
+`include/webcpp/ca_certificates`. Keep this independent of OpenSSL compilation.
+The installed data consumer test must compile without checkout include paths.
 
 ## 3. Names
 
@@ -862,13 +899,19 @@ exactly its authors' and the program carries only what it calls.
      fails to link with that name;
    - on MSVC, the header and the canary carry `#pragma
      detect_mismatch("webcpp_<lib>_backend_<name>", "<name>-<commit7>-<configuration>")`.
-7. A library webcpp does not build (OpenSSL) is found by `webcpp.external`,
-   linked shared or static by a propagated feature, refused on WebAssembly,
-   and announces itself by the same `HAS` define. When a program names it and
-   the machine lacks it, the build stops with the instruction (how to install
-   it, `-s<NAME>_ROOT=<dir>`, or another backend): it is never left out in
-   silence. Only webcpp's own tests and examples are left out, as chapter 9
-   says, and the CI requires them anyway.
+7. OpenSSL is source-built by `/webcpp/third_party//openssl`, using its
+   upstream Configure/Make manifests through `tools/webcpp-openssl.jam`.
+   This is a deliberate exception to spelling out its source list in B2:
+   upstream still compiles individual C/assembly files. Keep the generated
+   headers and static archives in the same B2 variant directory. Never patch
+   the upstream checkout, silently use a system OpenSSL, or mix the archives
+   with another OpenSSL copy. The Asio alias links this dependency explicitly.
+   Its headers are upstream's, so this adapter uses B2 dependency ordering and
+   exact archive paths instead of injecting canary calls into upstream APIs.
+   Native Clang/GCC recipes cover macOS/Linux; MSVC/nmake is not implemented.
+   WASIp3 single and cooperative profiles must agree with the consumer's
+   threading choice. Keep explicit host entropy seeding and fail-closed tests.
+   Other libraries with external dependencies still use `webcpp.external`.
 8. The webcpp library's `config.hpp` chooses the default backend from the
    target and the `HAS` defines, and refuses impossible combinations with
    `#error`. The backend is named after the C library (`backends::bearssl`),

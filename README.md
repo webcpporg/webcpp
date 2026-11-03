@@ -124,6 +124,13 @@ The other aggregates work the same way:
 A b2 project uses a library through `/webcpp/<name>//<name>`, which adds its
 headers and Boost's.
 
+The installation also includes `include/webcpp_ca_certificates.hpp` and the
+matching PEM source, manifest and MPL notices under
+`include/webcpp/ca_certificates/`. This keeps the embedded trust data usable by
+an installed TLS client header. External build systems must still configure
+Boost and link matching OpenSSL libraries; installation does not supply their
+compiled archives or the Cobalt runner.
+
 ### WebAssembly
 
 Each library declares the targets it is built for. To build them for
@@ -268,6 +275,18 @@ is made and accepted. [AGENTS.md](AGENTS.md) holds every rule a
 contributor, human or agent, needs to port a library or change one: the
 layout, the names, the build, the tests, the documentation, the evidence a
 port gives and how a change is made.
+
+## Related projects
+
+[Crossbind](https://github.com/crossbind/crossbind) is an independent project
+with a complementary goal: making C++ and Rust libraries accessible through
+WebAssembly and other runtimes. Its source-based build recipes and WASI ports
+are useful references when investigating how to bring low-level libraries to
+the web. In particular, its
+[OpenSSL recipe](https://github.com/crossbind/crossbind/tree/main/ports/openssl)
+demonstrates a WASIp3 build and records its target configuration. Consult those
+recipes as engineering references; validate the toolchain, entropy source and
+supported features for the WebCPP configuration being built.
 
 ## License
 
