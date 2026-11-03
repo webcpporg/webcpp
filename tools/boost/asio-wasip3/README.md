@@ -1,4 +1,4 @@
-# Boost.Asio WASIp3 compatibility patch
+# Boost.Asio WASI compatibility patch
 
 This bundle adapts Boost.Asio 1.92.0's platform layer, keeping its scheduler,
 select reactor, operation objects and associated allocators. The source headers
@@ -6,7 +6,7 @@ retain Christopher M. Kohlhoff's copyright and the Boost Software License 1.0.
 The upstream baseline is the Boost 1.92.0 distribution; `manifest.json` pins each
 input and patched header by SHA-256.
 
-`/webcpp/asio//asio` selects this bundle only for `clang-wasip3`. `prepare.py`
+`/webcpp/asio//asio` selects this bundle for `clang-wasip2` and `clang-wasip3`. `prepare.py`
 checks the version and every input hash before applying the patch in a temporary
 directory. It verifies every output hash before replacing private headers under
 `bin/boost-asio-wasip3/include`. It does not modify the source installation and
@@ -16,18 +16,18 @@ private directory and rebuild after changing the set of patched headers.
 Only patched headers are copied; other headers continue to come from Boost.
 
 `/webcpp/asio-wasip3//host-headers` exposes association and completion-token
-traits to the single-threaded WASIp2 host HTTP scheduler. The only platform
-change selected on WASIp2 is the signal-free wait in `null_event`: WASI uses
-`poll` instead of the unavailable POSIX `pause`. This does not enable the Asio
-socket reactor on WASIp2. Host operations supply their own executor and never
-fall back to `system_executor` or an operating-system thread pool.
+traits to the single-threaded WASIp2 host HTTP scheduler without selecting guest
+network capabilities. The full Asio P2 target also adds `asio-wasip2`'s compiled
+pollable descriptor bridge and asynchronous forward resolver. Its single-thread
+reactor needs no pipe interrupter; the P2 multi-thread profile is explicitly refused.
+Host operations continue to use their own executor.
 
 The changes address missing POSIX signals/interface names, no-thread waiting,
 thread-safe signal-blocker selection, shutdown error mapping, unavailable socket
 options, scalar socket I/O, and resolver thread-pool initiation without threads.
 WASI has no process signals, so the port does not add `MSG_NOSIGNAL`, which the
 current UDP libc implementation rejects. TCP sequences use partial transfers.
-For UDP `send_to`/`async_send_to`, the WASIp3-only service patch gathers the full
+For UDP `send_to`/`async_send_to`, the P2/P3 service patch gathers the full
 buffer sequence before iovec truncation, then sends one contiguous datagram.
 Multiple nonempty buffers require a copy, allocated through the context for
 synchronous sends and the handler's associated allocator for asynchronous sends.

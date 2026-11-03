@@ -3,47 +3,59 @@
   "files": {
     "boost/asio/detail/buffer_sequence_adapter.hpp": {
       "before": "fa90fb4211bd4463269d6a3f36b37cd8702ffc0260b35b27eca8627bfee2ee33",
-      "after": "16c3e0504b7e0275913e310c66c225294654802cd61d9f45183c006b66b29d99"
+      "after": "a9e9d5f90228d8360eb99a8c267b3ca902be4bd08de5dff7bcf25443b04fe08c"
     },
     "boost/asio/detail/config.hpp": {
       "before": "be2ff484edb3f0bc46b6874f8e9595b4802132c4c052ca675d3c7d4359da8352",
-      "after": "1fab22f6c04b81d0714a60278dfd2be8db8bc868ae81aad1bc9bee5b2d663815"
+      "after": "a3354e5be669ad04377a1b65dd4ab2706443ea1491d9cc6fa75fef83cb4a1580"
     },
     "boost/asio/detail/impl/null_event.ipp": {
       "before": "00b0ffc7de583ed07afe02ca249d630414c118ac2d68948cbc1a51d47c583617",
-      "after": "52999ae8533645b9d897df9cca045bccb132f57001494922443e1f50f2c5ad26"
+      "after": "f7aa930637aa0d4d466a7f6b078387620f50d28fa9b66059f19c10911e5499fa"
     },
     "boost/asio/detail/impl/resolver_thread_pool.ipp": {
       "before": "2c1488b04ea5cb139f0a632aa908b9ce7fe01e7c95464af2f9a16541cab31cb8",
-      "after": "e20a3df71d36846b422099d93c8200a014bd41a05b0af77aa76f5f1979d7d15f"
+      "after": "d173fc0fc5ab396b24c7d7b56832676c05ba2017a6dca9997338821dd23bb0dc"
     },
     "boost/asio/detail/impl/socket_ops.ipp": {
       "before": "fd5bae35b76c374174d4cd6613c420225c297ef01acafd0487fff4b8d9298529",
-      "after": "e7ee8cf75b602b0711ce172cb20c39f398cee2fc604574acbe7993c946f9af3e"
+      "after": "3f191e38e230f05b5f629325d027b8408b6c28b9116219e5c43aaf399cb2eaaf"
     },
     "boost/asio/detail/null_signal_blocker.hpp": {
       "before": "125601602bac1118debb090870c96757abf71818dda18299c560555940b550d8",
-      "after": "1abf63fc17a666ebb355f48e3f3c229f2af57f9faf643c1a3fe2f70c15f8aa0e"
+      "after": "13b78db25b3ff599d36fb0270109a0c077673f3de0d410d7e4392bd75110ef83"
     },
     "boost/asio/detail/reactive_socket_sendto_op.hpp": {
       "before": "1f8e02cf41fea19813b97ed8abdb77f64432b2168cd7cfcad86bea36aea1b4df",
-      "after": "c519375db39820b1b4d06f13c1f6fe6e9cfac9ddbe303b801b8917920069c5c6"
+      "after": "a64bdbab55fe71a178ded3fe1f81473e52a9adee6fba4509a1720de237a0732a"
     },
     "boost/asio/detail/reactive_socket_service.hpp": {
       "before": "5f68f1e43559adab6ec869f989a33c1295e0fafbb9ce7f27f4c0f205cfb0bbb2",
-      "after": "1089880b86ff8a2d2aa2983c486239cb0c520bf90efca6740601f2b85eb97656"
+      "after": "486d9c8d7962dd9313efaac40dcdf240901e64d1672e58ccd30c499db1f0fe16"
     },
     "boost/asio/detail/signal_blocker.hpp": {
       "before": "b46eb959862d0b1643f244a743a2366aff3f0acd7638a5c3cfa78dc826dd4df9",
-      "after": "2deaf6699a7a0d97ef8c4bc666b05b73a37914f2f15c4f42a903669cda8a6092"
+      "after": "24559dd6af26a5ba8ee466e15ab9efb560602ef2995361824bc2b09eda160daa"
     },
     "boost/asio/detail/socket_types.hpp": {
       "before": "c83d94ea136034fc3e89018d47b38afed40449250660cc2720cbc89441023551",
-      "after": "24b76bd98e3fdaf79f5e620be90fddd51f4b9ad82da6a7e018dc49d4c1ac5d2b"
+      "after": "52b404d0793e36afb0cdf3daf7b4d7713f40beaab9d2f09cab982c9f791985cb"
     },
     "boost/asio/error.hpp": {
       "before": "a836acf6bb58190eb3ae72d6795affb75d39876633c88c8343c61dfac67b0be2",
-      "after": "141c916e00a0db9e73aa7993ad89a7365d88d0ae002dd85f6973692fbb45be6c"
+      "after": "25e5d4ce36c513eed48c925d24cff62df0009469b73c6038c075939669cc2777"
+    },
+    "boost/asio/detail/impl/select_reactor.ipp": {
+      "before": "4e6df639193d0c93d2a9b3e2ead005824a6a3c921d1382c3ce72e5ce959e6a48",
+      "after": "f1a671b45aafe10afe156748b1a0c01d05dba9ded02b7baef57bd61d445202b2"
+    },
+    "boost/asio/detail/select_interrupter.hpp": {
+      "before": "debfbfa6e8915f7123229d2031b4704b1b95edcb4590f4d9a5b25c8cdd4105d5",
+      "after": "0f41bb2fb2190bbb23ab553c3bc0c52266f4685f2e400fd57f0b4fb987cdedbb"
+    },
+    "boost/asio/detail/resolver_service.hpp": {
+      "before": "8ec1a1f84c3de50a4bf85e9ae5f2247ceb10cb36970c2bcaa3598587fa3acb50",
+      "after": "206411e63f5e34f028bd9c7a09a2866c61b1f8d2c3d1f7dba39357ede2afc733"
     }
   }
 }

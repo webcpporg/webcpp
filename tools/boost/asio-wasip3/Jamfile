@@ -10,6 +10,7 @@ import make ;
 import modules ;
 import path ;
 import webcpp-wasi ;
+import webcpp-target ;
 
 project /webcpp/asio-wasip3 ;
 path-constant BUNDLE : . ;
@@ -34,6 +35,10 @@ actions prepare
 
 rule configuration ( properties * )
 {
+    if [ webcpp-target.target-of $(properties) ] = wasip2 && <threading>multi in $(properties)
+    {
+        errors.user-error "webcpp::asio: WASIp2 supports threading=single only; use WASIp3 for the cooperative thread profile." ;
+    }
     if <threading>single in $(properties)
     {
         return <define>BOOST_ASIO_DISABLE_THREADS ;

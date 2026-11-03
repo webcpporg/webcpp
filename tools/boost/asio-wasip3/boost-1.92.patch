@@ -8,7 +8,7 @@
 +    for (; iter != end && count_ < max_buffers; ++iter)
      {
        Buffer buffer(*iter);
-+#if defined(__wasip3__)
++#if (defined(__wasip2__) || defined(__wasip3__))
 +      if (buffer.size() == 0)
 +        continue;
 +#endif
@@ -22,7 +22,7 @@
    static bool all_empty(Iterator begin, Iterator end)
    {
      Iterator iter = begin;
-+#if defined(__wasip3__)
++#if (defined(__wasip2__) || defined(__wasip3__))
 +    for (; iter != end; ++iter)
 +#else
      std::size_t i = 0;
@@ -38,9 +38,9 @@
  # define BOOST_ASIO_HAS_BOOST_CONFIG 1
  #endif // defined(BOOST_ASIO_STANDALONE)
 +
-+// WASIp3 supplies sockets and cooperative threads, but no process signals,
++// WASIp2/P3 supply sockets (P3 also cooperative threads), but no process signals,
 +// interface enumeration, Unix domain sockets or serial devices.
-+#if defined(__wasip3__)
++#if (defined(__wasip2__) || defined(__wasip3__))
 +# if !defined(_REENTRANT) && !defined(BOOST_ASIO_DISABLE_THREADS)
 +#  define BOOST_ASIO_DISABLE_THREADS 1
 +# endif
@@ -65,27 +65,36 @@
  
  // Kernel support for MSG_NOSIGNAL.
 -#if !defined(BOOST_ASIO_HAS_MSG_NOSIGNAL)
-+#if !defined(BOOST_ASIO_HAS_MSG_NOSIGNAL) && !defined(__wasip3__)
++#if !defined(BOOST_ASIO_HAS_MSG_NOSIGNAL) && !(defined(__wasip2__) || defined(__wasip3__))
  # if defined(__linux__) || defined(__NetBSD__)
  #  define BOOST_ASIO_HAS_MSG_NOSIGNAL 1
  # elif defined(_POSIX_VERSION)
 --- a/boost/asio/detail/impl/null_event.ipp
 +++ b/boost/asio/detail/impl/null_event.ipp
-@@ -23,6 +23,9 @@
+@@ -23,6 +23,12 @@
  # include <boost/asio/detail/socket_types.hpp>
  #else
  # include <unistd.h>
 +# if defined(__wasip2__) || defined(__wasip3__)
 +#  include <poll.h>
 +# endif
++# if defined(__wasip2__)
++#  include <wasi/wasip2.h>
++# endif
  # if defined(__hpux)
  #  include <sys/time.h>
  # endif
-@@ -45,7 +48,12 @@
+@@ -45,7 +51,18 @@
  #elif defined(BOOST_ASIO_WINDOWS) || defined(BOOST_ASIO_CYGWIN_W32_SOCKETS)
    ::Sleep(INFINITE);
  #else
-+#if defined(__wasip2__) || defined(__wasip3__)
++#if defined(__wasip2__)
++  // P2 rejects an empty poll list. A clock resource permits an idle wait
++  // without repeatedly waking the single-thread scheduler.
++  poll_own_pollable_t idle = ::monotonic_clock_subscribe_instant(UINT64_MAX);
++  ::poll_method_pollable_block(::poll_borrow_pollable(idle));
++  ::poll_pollable_drop_own(idle);
++#elif defined(__wasip3__)
 +  // Wait through the Component Model rather than a nonexistent POSIX signal.
 +  ::poll(0, 0, -1);
 +#else
@@ -100,7 +109,7 @@
      shutdown_(false)
  {
    work_scheduler_.work_started();
-+#if !defined(__wasip3__) || defined(BOOST_ASIO_HAS_THREADS)
++#if !(defined(__wasip2__) || defined(__wasip3__)) || defined(BOOST_ASIO_HAS_THREADS)
    if (num_work_threads_ > 0)
      start_work_threads();
    else
@@ -113,7 +122,7 @@
  
  void resolver_thread_pool::start_resolve_op(resolve_op* op)
  {
-+#if !defined(__wasip3__) || defined(BOOST_ASIO_HAS_THREADS)
++#if !(defined(__wasip2__) || defined(__wasip3__)) || defined(BOOST_ASIO_HAS_THREADS)
    if (scheduler_locking_)
    {
      start_work_threads();
@@ -142,7 +151,7 @@
  {
 -#if defined(BOOST_ASIO_WINDOWS) || defined(BOOST_ASIO_CYGWIN_W32_SOCKETS)
 +#if defined(BOOST_ASIO_WINDOWS) || defined(BOOST_ASIO_CYGWIN_W32_SOCKETS) \
-+    || defined(__wasip3__)
++    || (defined(__wasip2__) || defined(__wasip3__))
    (void)(af);
    (void)(type);
    (void)(protocol);
@@ -151,7 +160,7 @@
    }
  
 -#if defined(SIOCATMARK)
-+#if defined(__wasip3__)
++#if (defined(__wasip2__) || defined(__wasip3__))
 +  ec = boost::asio::error::operation_not_supported;
 +  int value = 0;
 +#elif defined(SIOCATMARK)
@@ -164,7 +173,7 @@
  }
 +
 +#if !defined(BOOST_ASIO_WINDOWS) && !defined(BOOST_ASIO_CYGWIN_W32_SOCKETS)
-+#if defined(__wasip3__)
++#if (defined(__wasip2__) || defined(__wasip3__))
 +// WASI currently lacks sendmsg/recvmsg. Stream operations may complete after
 +// one nonempty buffer. Datagram operations must never split a message.
 +inline bool wasi_buffer(const msghdr* msg, void*& data, size_t& size, int s)
@@ -205,7 +214,7 @@
 +  size_t size;
 +  if (!wasi_buffer(msg, data, size, s))
 +    return -1;
-+#if defined(__wasip3__)
++#if (defined(__wasip2__) || defined(__wasip3__))
 +  char empty_buffer = 0;
 +  if (!data && !size)
 +    data = &empty_buffer;
@@ -224,7 +233,7 @@
 +  size_t size;
 +  if (!wasi_buffer(msg, data, size, s))
 +    return -1;
-+#if defined(__wasip3__)
++#if (defined(__wasip2__) || defined(__wasip3__))
 +  char empty_buffer = 0;
 +  if (!data && !size)
 +    data = &empty_buffer;
@@ -241,7 +250,7 @@
    msghdr msg = msghdr();
    msg.msg_iov = bufs;
    msg.msg_iovlen = static_cast<int>(count);
-+#if defined(__wasip3__)
++#if (defined(__wasip2__) || defined(__wasip3__))
 +  signed_size_type result = wasi_recvmsg(s, &msg, flags);
 +#else
    signed_size_type result = ::recvmsg(s, &msg, flags);
@@ -253,7 +262,7 @@
    boost::asio::error::clear(ec);
    return bytes_transferred;
  #else // defined(BOOST_ASIO_WINDOWS) || defined(BOOST_ASIO_CYGWIN_W32_SOCKETS)
-+#if defined(__wasip3__)
++#if (defined(__wasip2__) || defined(__wasip3__))
 +  char empty_buffer = 0;
 +  if (!data && !size)
 +    data = &empty_buffer;
@@ -265,7 +274,7 @@
    msg.msg_namelen = static_cast<int>(*addrlen);
    msg.msg_iov = bufs;
    msg.msg_iovlen = static_cast<int>(count);
-+#if defined(__wasip3__)
++#if (defined(__wasip2__) || defined(__wasip3__))
 +  signed_size_type result = wasi_recvmsg(s, &msg, flags);
 +#else
    signed_size_type result = ::recvmsg(s, &msg, flags);
@@ -277,7 +286,7 @@
  inline signed_size_type call_recvfrom(SockLenType msghdr::*, socket_type s,
      void* data, size_t size, int flags, void* addr, std::size_t* addrlen)
  {
-+#if defined(__wasip3__)
++#if (defined(__wasip2__) || defined(__wasip3__))
 +  char empty_buffer = 0;
 +  if (!data && !size)
 +    data = &empty_buffer;
@@ -289,7 +298,7 @@
    msghdr msg = msghdr();
    msg.msg_iov = bufs;
    msg.msg_iovlen = static_cast<int>(count);
-+#if defined(__wasip3__)
++#if (defined(__wasip2__) || defined(__wasip3__))
 +  signed_size_type result = wasi_recvmsg(s, &msg, in_flags);
 +#else
    signed_size_type result = ::recvmsg(s, &msg, in_flags);
@@ -301,7 +310,7 @@
  #if defined(BOOST_ASIO_HAS_MSG_NOSIGNAL)
    flags |= MSG_NOSIGNAL;
  #endif // defined(BOOST_ASIO_HAS_MSG_NOSIGNAL)
-+#if defined(__wasip3__)
++#if (defined(__wasip2__) || defined(__wasip3__))
 +  signed_size_type result = wasi_sendmsg(s, &msg, flags);
 +#else
    signed_size_type result = ::sendmsg(s, &msg, flags);
@@ -313,7 +322,7 @@
  #if defined(BOOST_ASIO_HAS_MSG_NOSIGNAL)
    flags |= MSG_NOSIGNAL;
  #endif // defined(BOOST_ASIO_HAS_MSG_NOSIGNAL)
-+#if defined(__wasip3__)
++#if (defined(__wasip2__) || defined(__wasip3__))
 +  char empty_buffer = 0;
 +  if (!data && !size)
 +    data = &empty_buffer;
@@ -325,7 +334,7 @@
  #if defined(BOOST_ASIO_HAS_MSG_NOSIGNAL)
    flags |= MSG_NOSIGNAL;
  #endif // defined(BOOST_ASIO_HAS_MSG_NOSIGNAL)
-+#if defined(__wasip3__)
++#if (defined(__wasip2__) || defined(__wasip3__))
 +  signed_size_type result = wasi_sendmsg(s, &msg, flags);
 +#else
    signed_size_type result = ::sendmsg(s, &msg, flags);
@@ -337,7 +346,7 @@
      socket_type s, const void* data, size_t size, int flags,
      const void* addr, std::size_t addrlen)
  {
-+#if defined(__wasip3__)
++#if (defined(__wasip2__) || defined(__wasip3__))
 +  char empty_buffer = 0;
 +  if (!data && !size)
 +    data = &empty_buffer;
@@ -349,7 +358,7 @@
      return socket_error_retval;
    }
  
-+#if defined(__wasip3__)
++#if (defined(__wasip2__) || defined(__wasip3__))
 +  if (level == SOL_SOCKET && optname < 0)
 +  {
 +    ec = boost::asio::error::operation_not_supported;
@@ -374,7 +383,7 @@
      return socket_error_retval;
    }
 +
-+#if defined(__wasip3__)
++#if (defined(__wasip2__) || defined(__wasip3__))
 +  if (level == SOL_SOCKET && optname < 0)
 +  {
 +    ec = boost::asio::error::operation_not_supported;
@@ -388,7 +397,7 @@
    if (result != 0 && af == BOOST_ASIO_OS_DEF(AF_INET6) && scope_id != 0)
    {
      using namespace std; // For strcat and sprintf.
-+#if defined(__wasip3__)
++#if (defined(__wasip2__) || defined(__wasip3__))
 +    char if_name[22] = "%";
 +#else
      char if_name[(IF_NAMESIZE > 21 ? IF_NAMESIZE : 21) + 1] = "%";
@@ -406,7 +415,7 @@
      *scope_id = 0;
      if (if_name != 0)
      {
-+#if defined(__wasip3__)
++#if (defined(__wasip2__) || defined(__wasip3__))
 +      // Reject names and malformed numeric scopes instead of silently using 0.
 +      const char* digit = if_name + 1;
 +      unsigned long value = 0;
@@ -445,7 +454,7 @@
    || defined(BOOST_ASIO_WINDOWS_RUNTIME) \
    || defined(BOOST_ASIO_CYGWIN_W32_SOCKETS) \
 -  || defined(__SYMBIAN32__)
-+  || defined(__SYMBIAN32__) || defined(__wasip3__)
++  || defined(__SYMBIAN32__) || (defined(__wasip2__) || defined(__wasip3__))
  
  #include <boost/asio/detail/noncopyable.hpp>
  
@@ -454,7 +463,7 @@
         // || defined(BOOST_ASIO_WINDOWS_RUNTIME)
         // || defined(BOOST_ASIO_CYGWIN_W32_SOCKETS)
 -       // || defined(__SYMBIAN32__)
-+       // || defined(__SYMBIAN32__) || defined(__wasip3__)
++       // || defined(__SYMBIAN32__) || (defined(__wasip2__) || defined(__wasip3__))
  
  #endif // BOOST_ASIO_DETAIL_NULL_SIGNAL_BLOCKER_HPP
 --- a/boost/asio/detail/reactive_socket_sendto_op.hpp
@@ -463,7 +472,7 @@
  #include <boost/asio/detail/reactor_op.hpp>
  #include <boost/asio/detail/socket_ops.hpp>
  
-+#if defined(__wasip3__)
++#if (defined(__wasip2__) || defined(__wasip3__))
 +# include <boost/asio/associated_allocator.hpp>
 +# include <boost/asio/detail/noncopyable.hpp>
 +# include <memory>
@@ -477,7 +486,7 @@
  BOOST_ASIO_INLINE_NAMESPACE_BEGIN
  namespace detail {
 +
-+#if defined(__wasip3__)
++#if (defined(__wasip2__) || defined(__wasip3__))
 +// wasi-sdk 34's wasi-libc has sendto but no sendmsg. Sending each buffer
 +// separately would turn one UDP datagram into several messages. Until libc
 +// supplies sendmsg, gather the complete sequence BEFORE the native iovec
@@ -537,7 +546,7 @@
 +  boost::asio::const_buffer buffer_;
 +  boost::system::error_code error_;
 +};
-+#endif // defined(__wasip3__)
++#endif // (defined(__wasip2__) || defined(__wasip3__))
  
  template <typename ConstBufferSequence, typename Endpoint>
  class reactive_socket_sendto_op_base : public reactor_op
@@ -545,7 +554,7 @@
        buffers_(buffers),
        destination_(endpoint),
        flags_(flags)
-+#if defined(__wasip3__)
++#if (defined(__wasip2__) || defined(__wasip3__))
 +      , wasi_datagram_(false), wasi_invalid_(false)
 +#endif
    {
@@ -555,7 +564,7 @@
          ConstBufferSequence> bufs_type;
  
      status result;
-+#if defined(__wasip3__)
++#if (defined(__wasip2__) || defined(__wasip3__))
 +    if (o->wasi_datagram_)
 +    {
 +      if (o->wasi_invalid_)
@@ -574,7 +583,7 @@
    ConstBufferSequence buffers_;
    Endpoint destination_;
    socket_base::message_flags flags_;
-+#if defined(__wasip3__)
++#if (defined(__wasip2__) || defined(__wasip3__))
 +protected:
 +  boost::asio::const_buffer wasi_buffer_;
 +  bool wasi_datagram_;
@@ -587,14 +596,14 @@
      : reactive_socket_sendto_op_base<ConstBufferSequence, Endpoint>(
          success_ec, socket, buffers, endpoint, flags,
          &reactive_socket_sendto_op::do_complete),
-+#if defined(__wasip3__)
++#if (defined(__wasip2__) || defined(__wasip3__))
 +      wasi_storage_(buffers, boost::asio::get_associated_allocator(handler),
 +        endpoint.protocol().type() == SOCK_DGRAM),
 +#endif
        handler_(static_cast<Handler&&>(handler)),
        work_(handler_, io_ex)
    {
-+#if defined(__wasip3__)
++#if (defined(__wasip2__) || defined(__wasip3__))
 +    this->wasi_datagram_ = endpoint.protocol().type() == SOCK_DGRAM;
 +    this->wasi_buffer_ = wasi_storage_.buffer();
 +    this->wasi_invalid_ = !!wasi_storage_.error();
@@ -608,7 +617,7 @@
    }
  
  private:
-+#if defined(__wasip3__)
++#if (defined(__wasip2__) || defined(__wasip3__))
 +  // Construct before moving the handler, and free before its upcall through
 +  // the existing operation destruction path, including cancellation/shutdown.
 +  wasi_datagram_buffer<associated_allocator_t<Handler>> wasi_storage_;
@@ -622,7 +631,7 @@
        const endpoint_type& destination, socket_base::message_flags flags,
        boost::system::error_code& ec)
    {
-+#if defined(__wasip3__)
++#if (defined(__wasip2__) || defined(__wasip3__))
 +    if (impl.protocol_.type() == SOCK_DGRAM)
 +    {
 +      if (impl.socket_ == invalid_socket)
@@ -652,7 +661,7 @@
  #if !defined(BOOST_ASIO_HAS_THREADS) || defined(BOOST_ASIO_WINDOWS) \
    || defined(BOOST_ASIO_WINDOWS_RUNTIME) \
 -  || defined(BOOST_ASIO_CYGWIN_W32_SOCKETS) || defined(__SYMBIAN32__)
-+  || defined(BOOST_ASIO_CYGWIN_W32_SOCKETS) || defined(__SYMBIAN32__) || defined(__wasip3__)
++  || defined(BOOST_ASIO_CYGWIN_W32_SOCKETS) || defined(__SYMBIAN32__) || (defined(__wasip2__) || defined(__wasip3__))
  # include <boost/asio/detail/null_signal_blocker.hpp>
  #elif defined(BOOST_ASIO_HAS_PTHREADS)
  # include <boost/asio/detail/posix_signal_blocker.hpp>
@@ -661,7 +670,7 @@
  #if !defined(BOOST_ASIO_HAS_THREADS) || defined(BOOST_ASIO_WINDOWS) \
    || defined(BOOST_ASIO_WINDOWS_RUNTIME) \
 -  || defined(BOOST_ASIO_CYGWIN_W32_SOCKETS) || defined(__SYMBIAN32__)
-+  || defined(BOOST_ASIO_CYGWIN_W32_SOCKETS) || defined(__SYMBIAN32__) || defined(__wasip3__)
++  || defined(BOOST_ASIO_CYGWIN_W32_SOCKETS) || defined(__SYMBIAN32__) || (defined(__wasip2__) || defined(__wasip3__))
  typedef null_signal_blocker signal_blocker;
  #elif defined(BOOST_ASIO_HAS_PTHREADS)
  typedef posix_signal_blocker signal_blocker;
@@ -672,7 +681,7 @@
     || defined(__FreeBSD__) || defined(__NetBSD__) \
     || defined(__OpenBSD__) || defined(__linux__) \
 -   || defined(__EMSCRIPTEN__)
-+   || defined(__EMSCRIPTEN__) || defined(__wasip3__)
++   || defined(__EMSCRIPTEN__) || (defined(__wasip2__) || defined(__wasip3__))
  #  include <poll.h>
  # elif !defined(__SYMBIAN32__)
  #  include <sys/poll.h>
@@ -681,7 +690,7 @@
  # include <arpa/inet.h>
  # include <netdb.h>
 -# include <net/if.h>
-+# if !defined(__wasip3__)
++# if !(defined(__wasip2__) || defined(__wasip3__))
 +#  include <net/if.h>
 +# endif
  # include <limits.h>
@@ -690,7 +699,7 @@
  #  include <sys/sockio.h>
  # endif
 -# include <signal.h>
-+# if !defined(__wasip3__)
++# if !(defined(__wasip2__) || defined(__wasip3__))
 +#  include <signal.h>
 +# endif
  #endif
@@ -701,14 +710,14 @@
  # define BOOST_ASIO_OS_DEF_FIONREAD FIONREAD
  # define BOOST_ASIO_OS_DEF_INADDR_ANY INADDR_ANY
 -# define BOOST_ASIO_OS_DEF_MSG_OOB MSG_OOB
-+# if defined(__wasip3__)
++# if (defined(__wasip2__) || defined(__wasip3__))
 +#  define BOOST_ASIO_OS_DEF_MSG_OOB 0x10000000
 +# else
 +#  define BOOST_ASIO_DISABLE_MSG_OOB 1
 +# endif
  # define BOOST_ASIO_OS_DEF_MSG_PEEK MSG_PEEK
 -# define BOOST_ASIO_OS_DEF_MSG_DONTROUTE MSG_DONTROUTE
-+# if defined(__wasip3__)
++# if (defined(__wasip2__) || defined(__wasip3__))
 +#  define BOOST_ASIO_OS_DEF_MSG_DONTROUTE 0x20000000
 +# else
 +#  define BOOST_ASIO_DISABLE_MSG_DONTROUTE 1
@@ -723,17 +732,17 @@
 -# define BOOST_ASIO_OS_DEF_SO_BROADCAST SO_BROADCAST
 -# define BOOST_ASIO_OS_DEF_SO_DEBUG SO_DEBUG
 -# define BOOST_ASIO_OS_DEF_SO_DONTROUTE SO_DONTROUTE
-+# if defined(__wasip3__)
++# if (defined(__wasip2__) || defined(__wasip3__))
 +#  define BOOST_ASIO_OS_DEF_SO_BROADCAST (-1)
 +# else
 +#  define BOOST_ASIO_DISABLE_SO_BROADCAST 1
 +# endif
-+# if defined(__wasip3__)
++# if (defined(__wasip2__) || defined(__wasip3__))
 +#  define BOOST_ASIO_OS_DEF_SO_DEBUG (-2)
 +# else
 +#  define BOOST_ASIO_DISABLE_SO_DEBUG 1
 +# endif
-+# if defined(__wasip3__)
++# if (defined(__wasip2__) || defined(__wasip3__))
 +#  define BOOST_ASIO_OS_DEF_SO_DONTROUTE (-3)
 +# else
 +#  define BOOST_ASIO_DISABLE_SO_DONTROUTE 1
@@ -741,12 +750,12 @@
  # define BOOST_ASIO_OS_DEF_SO_KEEPALIVE SO_KEEPALIVE
 -# define BOOST_ASIO_OS_DEF_SO_LINGER SO_LINGER
 -# define BOOST_ASIO_OS_DEF_SO_OOBINLINE SO_OOBINLINE
-+# if defined(__wasip3__)
++# if (defined(__wasip2__) || defined(__wasip3__))
 +#  define BOOST_ASIO_OS_DEF_SO_LINGER (-4)
 +# else
 +#  define BOOST_ASIO_DISABLE_SO_LINGER 1
 +# endif
-+# if defined(__wasip3__)
++# if (defined(__wasip2__) || defined(__wasip3__))
 +#  define BOOST_ASIO_OS_DEF_SO_OOBINLINE (-5)
 +# else
 +#  define BOOST_ASIO_DISABLE_SO_OOBINLINE 1
@@ -755,12 +764,12 @@
  # define BOOST_ASIO_OS_DEF_SO_RCVBUF SO_RCVBUF
 -# define BOOST_ASIO_OS_DEF_SO_SNDLOWAT SO_SNDLOWAT
 -# define BOOST_ASIO_OS_DEF_SO_RCVLOWAT SO_RCVLOWAT
-+# if defined(__wasip3__)
++# if (defined(__wasip2__) || defined(__wasip3__))
 +#  define BOOST_ASIO_OS_DEF_SO_SNDLOWAT (-6)
 +# else
 +#  define BOOST_ASIO_DISABLE_SO_SNDLOWAT 1
 +# endif
-+# if defined(__wasip3__)
++# if (defined(__wasip2__) || defined(__wasip3__))
 +#  define BOOST_ASIO_OS_DEF_SO_RCVLOWAT (-7)
 +# else
 +#  define BOOST_ASIO_DISABLE_SO_RCVLOWAT 1
@@ -772,7 +781,7 @@
  BOOST_ASIO_INLINE_VARIABLE const int max_addr_v4_str_len = INET_ADDRSTRLEN;
  #if defined(INET6_ADDRSTRLEN)
  BOOST_ASIO_INLINE_VARIABLE const int max_addr_v6_str_len =
-+#if defined(__wasip3__)
++#if (defined(__wasip2__) || defined(__wasip3__))
 +  INET6_ADDRSTRLEN + 1 + 10; // A decimal 32-bit numeric scope identifier.
 +#else
    INET6_ADDRSTRLEN + 1 + IF_NAMESIZE;
@@ -785,7 +794,7 @@
  # define BOOST_ASIO_OS_DEF_FIONREAD FIONREAD
  # define BOOST_ASIO_OS_DEF_INADDR_ANY INADDR_ANY
 -# define BOOST_ASIO_OS_DEF_MSG_OOB MSG_OOB
-+# if defined(__wasip3__)
++# if (defined(__wasip2__) || defined(__wasip3__))
 +#  define BOOST_ASIO_OS_DEF_MSG_OOB 0x10000000
 +# else
 +#  define BOOST_ASIO_DISABLE_MSG_OOB 1
@@ -793,12 +802,12 @@
  # define BOOST_ASIO_OS_DEF_MSG_PEEK MSG_PEEK
 -# define BOOST_ASIO_OS_DEF_MSG_DONTROUTE MSG_DONTROUTE
 -# define BOOST_ASIO_OS_DEF_MSG_EOR MSG_EOR
-+# if defined(__wasip3__)
++# if (defined(__wasip2__) || defined(__wasip3__))
 +#  define BOOST_ASIO_OS_DEF_MSG_DONTROUTE 0x20000000
 +# else
 +#  define BOOST_ASIO_DISABLE_MSG_DONTROUTE 1
 +# endif
-+# if defined(__wasip3__)
++# if (defined(__wasip2__) || defined(__wasip3__))
 +#  define BOOST_ASIO_OS_DEF_MSG_EOR 0x40000000
 +# else
 +#  define BOOST_ASIO_DISABLE_MSG_EOR 1
@@ -813,17 +822,17 @@
 -# define BOOST_ASIO_OS_DEF_SO_BROADCAST SO_BROADCAST
 -# define BOOST_ASIO_OS_DEF_SO_DEBUG SO_DEBUG
 -# define BOOST_ASIO_OS_DEF_SO_DONTROUTE SO_DONTROUTE
-+# if defined(__wasip3__)
++# if (defined(__wasip2__) || defined(__wasip3__))
 +#  define BOOST_ASIO_OS_DEF_SO_BROADCAST (-1)
 +# else
 +#  define BOOST_ASIO_DISABLE_SO_BROADCAST 1
 +# endif
-+# if defined(__wasip3__)
++# if (defined(__wasip2__) || defined(__wasip3__))
 +#  define BOOST_ASIO_OS_DEF_SO_DEBUG (-2)
 +# else
 +#  define BOOST_ASIO_DISABLE_SO_DEBUG 1
 +# endif
-+# if defined(__wasip3__)
++# if (defined(__wasip2__) || defined(__wasip3__))
 +#  define BOOST_ASIO_OS_DEF_SO_DONTROUTE (-3)
 +# else
 +#  define BOOST_ASIO_DISABLE_SO_DONTROUTE 1
@@ -831,12 +840,12 @@
  # define BOOST_ASIO_OS_DEF_SO_KEEPALIVE SO_KEEPALIVE
 -# define BOOST_ASIO_OS_DEF_SO_LINGER SO_LINGER
 -# define BOOST_ASIO_OS_DEF_SO_OOBINLINE SO_OOBINLINE
-+# if defined(__wasip3__)
++# if (defined(__wasip2__) || defined(__wasip3__))
 +#  define BOOST_ASIO_OS_DEF_SO_LINGER (-4)
 +# else
 +#  define BOOST_ASIO_DISABLE_SO_LINGER 1
 +# endif
-+# if defined(__wasip3__)
++# if (defined(__wasip2__) || defined(__wasip3__))
 +#  define BOOST_ASIO_OS_DEF_SO_OOBINLINE (-5)
 +# else
 +#  define BOOST_ASIO_DISABLE_SO_OOBINLINE 1
@@ -845,12 +854,12 @@
  # define BOOST_ASIO_OS_DEF_SO_RCVBUF SO_RCVBUF
 -# define BOOST_ASIO_OS_DEF_SO_SNDLOWAT SO_SNDLOWAT
 -# define BOOST_ASIO_OS_DEF_SO_RCVLOWAT SO_RCVLOWAT
-+# if defined(__wasip3__)
++# if (defined(__wasip2__) || defined(__wasip3__))
 +#  define BOOST_ASIO_OS_DEF_SO_SNDLOWAT (-6)
 +# else
 +#  define BOOST_ASIO_DISABLE_SO_SNDLOWAT 1
 +# endif
-+# if defined(__wasip3__)
++# if (defined(__wasip2__) || defined(__wasip3__))
 +#  define BOOST_ASIO_OS_DEF_SO_RCVLOWAT (-7)
 +# else
 +#  define BOOST_ASIO_DISABLE_SO_RCVLOWAT 1
@@ -864,7 +873,7 @@
    operation_not_supported = BOOST_ASIO_SOCKET_ERROR(EOPNOTSUPP),
  
    /// Cannot send after transport endpoint shutdown.
-+#if defined(__wasip3__)
++#if (defined(__wasip2__) || defined(__wasip3__))
 +  // wasi-libc reports EPIPE for a write after shutdown; it has no ESHUTDOWN.
 +  shut_down = BOOST_ASIO_SOCKET_ERROR(EPIPE),
 +#else
@@ -873,3 +882,112 @@
  
    /// Connection timed out.
    timed_out = BOOST_ASIO_SOCKET_ERROR(ETIMEDOUT),
+--- a/boost/asio/detail/impl/select_reactor.ipp
++++ b/boost/asio/detail/impl/select_reactor.ipp
+@@ -228,7 +228,9 @@
+   // Set up the descriptor sets.
+   for (int i = 0; i < max_select_ops; ++i)
+     fd_sets_[i].reset();
++#if !defined(__wasip2__)
+   fd_sets_[read_op].set(interrupter_.read_descriptor());
++#endif
+   socket_type max_fd = 0;
+   bool have_work_to_do = !timer_queues_.all_empty();
+   for (int i = 0; i < max_select_ops; ++i)
+@@ -267,6 +269,7 @@
+       fd_sets_[read_op], fd_sets_[write_op], fd_sets_[except_op], tv, ec);
+ 
+   // Reset the interrupter.
++#if !defined(__wasip2__)
+   if (retval > 0 && fd_sets_[read_op].is_set(interrupter_.read_descriptor()))
+   {
+     if (!interrupter_.reset())
+@@ -281,6 +284,7 @@
+     }
+     --retval;
+   }
++#endif
+ 
+   lock.lock();
+ 
+--- a/boost/asio/detail/select_interrupter.hpp
++++ b/boost/asio/detail/select_interrupter.hpp
+@@ -19,7 +19,9 @@
+ 
+ #if !defined(BOOST_ASIO_WINDOWS_RUNTIME)
+ 
+-#if defined(BOOST_ASIO_WINDOWS) \
++#if defined(__wasip2__)
++// P2 has one application thread and no pipe-based cross-thread wakeup.
++#elif defined(BOOST_ASIO_WINDOWS) \
+   || defined(BOOST_ASIO_CYGWIN_W32_SOCKETS) || defined(__SYMBIAN32__)
+ # include <boost/asio/detail/socket_select_interrupter.hpp>
+ #elif defined(BOOST_ASIO_HAS_EVENTFD)
+@@ -33,7 +35,16 @@
+ BOOST_ASIO_INLINE_NAMESPACE_BEGIN
+ namespace detail {
+ 
+-#if defined(BOOST_ASIO_WINDOWS) \
++#if defined(__wasip2__)
++class select_interrupter
++{
++public:
++  void recreate() {}
++  void interrupt() {}
++  bool reset() { return true; }
++  int read_descriptor() const { return -1; }
++};
++#elif defined(BOOST_ASIO_WINDOWS) \
+   || defined(BOOST_ASIO_CYGWIN_W32_SOCKETS) || defined(__SYMBIAN32__)
+ typedef socket_select_interrupter select_interrupter;
+ #elif defined(BOOST_ASIO_HAS_EVENTFD)
+--- a/boost/asio/detail/resolver_service.hpp
++++ b/boost/asio/detail/resolver_service.hpp
+@@ -25,6 +25,10 @@
+ #include <boost/asio/detail/resolve_endpoint_op.hpp>
+ #include <boost/asio/detail/resolve_query_op.hpp>
+ #include <boost/asio/detail/resolver_service_base.hpp>
++
++#if defined(__wasip2__)
++# include <boost/asio/detail/wasi_resolver.hpp>
++#endif
+ 
+ #include <boost/asio/detail/push_options.hpp>
+ 
+@@ -64,6 +68,18 @@
+   {
+   }
+ 
++#if defined(__wasip2__)
++  void construct(implementation_type& impl)
++  {
++    wasi_resolver_construct(impl, thread_pool_.context());
++  }
++
++  void cancel(implementation_type& impl)
++  {
++    wasi_resolver_cancel(impl);
++  }
++#endif
++
+   // Resolve a query to a list of entries.
+   results_type resolve(implementation_type&, const query_type& qry,
+       boost::system::error_code& ec)
+@@ -84,6 +100,9 @@
+   void async_resolve(implementation_type& impl, const query_type& qry,
+       Handler& handler, const IoExecutor& io_ex)
+   {
++#if defined(__wasip2__)
++    wasi_async_resolve<Protocol>(impl, thread_pool_.context(), qry, handler, io_ex);
++#else
+     // Allocate and construct an operation to wrap the handler.
+     typedef resolve_query_op<Protocol, Handler, IoExecutor> op;
+     typename op::ptr p = { boost::asio::detail::addressof(handler),
+@@ -95,6 +114,7 @@
+ 
+     thread_pool_.start_resolve_op(p.p);
+     p.v = p.p = 0;
++#endif
+   }
+ 
+   // Resolve an endpoint to a list of entries.

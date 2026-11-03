@@ -94,6 +94,8 @@ def test_plan_of_one_library(root):
         'msvc-14.3', 'msvc-14.5'], lanes
     assert by_id['apple-clang']['detect'] == 'clang++', by_id['apple-clang']
     assert by_id['wasip2']['toolset'] == 'clang-wasip2', by_id['wasip2']
+    assert by_id['wasip2']['options'] == [
+        'testing.launcher=tools/boost/asio-wasip2/run.sh'], by_id['wasip2']
     assert by_id['wasip3']['options'] == [
         'testing.launcher=tools/boost/asio-wasip3/run.sh'], by_id['wasip3']
     assert by_id['wasip3']['wasm'] and not by_id['gcc-14']['wasm'], lanes
@@ -497,7 +499,8 @@ def test_an_own_lanes_command(root):
     xml = Path('bin/ci/wasip2.alpha.http.xml')
     assert matrix.own_lane_command(served[0], config, xml, []) == [
         'b2', f'--user-config={config}', '-a', '--dump-tests', f'--out-xml={xml}',
-        'toolset=clang-wasip2', 'testing.launcher=wasmtime', 'libs/alpha/example//http',
+        'toolset=clang-wasip2', 'testing.launcher=tools/boost/asio-wasip2/run.sh',
+        'libs/alpha/example//http',
         'libs/alpha/test//http']
     # On emscripten, as the emscripten lane runs: its toolset, and no launcher.
     driven = matrix.parsed_own_lanes('alpha driver libs/alpha/test/driver emscripten original')
@@ -614,7 +617,8 @@ def test_an_own_lane_on_a_target_writes_its_xml_and_the_report_merges_it(root):
     printed = (f'own lane wasip2.demo.served: b2 '
                f'{shlex.quote(f"--user-config={config.resolve()}")} -a --dump-tests '
                f'{shlex.quote(f"--out-xml={xml}")} toolset=clang-wasip2 '
-               'testing.launcher=wasmtime --build-dir=bin/own libs/demo/test//served\n')
+               'testing.launcher=tools/boost/asio-wasip2/run.sh '
+               '--build-dir=bin/own libs/demo/test//served\n')
     assert result.stdout.startswith(printed), (printed, result.stdout[:2000])
     assert output.read_text().splitlines() == ['lane=wasip2.demo.served',
                                                f'xml={xml.as_posix()}'], output.read_text()

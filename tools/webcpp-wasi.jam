@@ -7,7 +7,7 @@ import errors ;
 import modules ;
 import path ;
 
-rule cooperative ( root : properties * )
+rule sdk ( root )
 {
     # A user-config modules.poke can overwrite -s in the global module.
     # Read ARGV first so an explicit command-line SDK always wins.
@@ -32,6 +32,12 @@ rule cooperative ( root : properties * )
     }
     sdk ?= $(root)/.local/wasi-sdk ;
     sdk = [ path.root [ path.make $(sdk) ] [ path.pwd ] ] ;
+    return $(sdk) ;
+}
+
+rule cooperative ( root : properties * )
+{
+    local sdk = [ sdk $(root) ] ;
     local coop = $(sdk)/share/wasi-sysroot/experimental-coop-threads ;
     if ! [ path.exists [ path.native $(coop)/lib/wasm32-wasip3/libc.a ] ]
     {

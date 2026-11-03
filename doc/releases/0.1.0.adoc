@@ -7,13 +7,11 @@
 [#webcpp-0-1-0]
 = webcpp 0.1.0
 
-// Frozen candidate only; publishing the release and tag is a separate owner action.
-
 [#webcpp-0-1-0-new-libraries]
 == New Libraries
 
 * link:{library-pages}asio/{library-page}[asio]: Boost.Asio and Cobalt with
-browser event-loop suspension, WASIp3 networking and optional source-built TLS,
+browser event-loop suspension, WASIp2/P3 networking and optional source-built TLS,
 from R.
 * link:{library-pages}beast/{library-page}[beast]: HTTP messages and WebSocket
 applications for native, WASI and browser targets, with socket transports,

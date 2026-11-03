@@ -146,6 +146,17 @@ if [ -d libs/beast/example/upstream ]; then
     fi
 fi
 
+# Private libc declarations keep upstream text only after their pinned hashes match.
+wasi_abi_verified=false
+if [ -d tools/boost/asio-wasip2/wasi-libc ]; then
+    rule 'WASI ABI declaration integrity'
+    if python3 tools/boost/asio-wasip2/verify.py; then
+        wasi_abi_verified=true
+    else
+        fail 'the pinned wasi-libc declaration snapshot failed its integrity check'
+    fi
+fi
+
 # Every file of the repositories that is there, relative to the root, sorted, NUL-separated.
 # The index can name a path a move has not been staged for yet, and a submodule is listed as a
 # directory; neither is a file. A symbolic link is not read either: its text is a path.
@@ -158,6 +169,8 @@ for repository in "${repositories[@]}"; do
               fi
               case "${path}" in
                   third_party/libs/*) continue ;;
+                  tools/boost/asio-wasip2/wasi-libc/*)
+                      if [ "${wasi_abi_verified}" = true ]; then continue; fi ;;
                   libs/beast/example/upstream/*)
                       if [ "${beast_corpus_verified}" = true ]; then continue; fi ;;
               esac
