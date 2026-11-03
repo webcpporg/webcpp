@@ -519,6 +519,27 @@ def test_an_own_lanes_command(root):
         assert (lane.id, lane.os) == (lane_id, 'ubuntu-24.04'), lane
 
 
+def test_beast_browser_lanes_cover_policies_and_exception_modes(root):
+    config = root / 'config.jam'
+    options = ['exception-handling=on,off', 'webcpp-beast-unsupported=error,ignore']
+    for name in ('browser', 'browser-node'):
+        own = matrix.parsed_own_lanes(
+            f'beast {name} libs/beast/test/browser emscripten original')[0]
+        xml = root / f'{own.id}.xml'
+        command = matrix.own_lane_command(own, config, xml, ['-j2'])
+        assert command == [
+            'b2', f'--user-config={config}', '-a', '--dump-tests', f'--out-xml={xml}',
+            'toolset=emscripten', *options, '-j2', f'libs/beast/test/browser//{name}'], command
+    # The policy is Beast-specific; application lanes select their own exception mode.
+    for declaration in ('asio browser libs/asio/test/browser emscripten original',
+                        'beast applications-browser libs/beast/test/applications/browser '
+                        'emscripten original',
+                        'beast browser libs/beast/test/browser native original'):
+        own = matrix.parsed_own_lanes(declaration)[0]
+        command = matrix.own_lane_command(own, config, root / 'other.xml', [])
+        assert all(option not in command for option in options), command
+
+
 def test_a_wasip3_lane_can_bind_a_loopback_socket(root):
     # Run the planned lane, including its launcher: Wasmtime refuses even a loopback bind
     # without an explicit network grant, which a successful compile cannot establish.
@@ -1378,6 +1399,7 @@ CASES = [
     test_own_lanes_of_every_library_and_of_one,
     test_own_lanes_on_targets,
     test_an_own_lanes_command,
+    test_beast_browser_lanes_cover_policies_and_exception_modes,
     test_a_wasip3_lane_can_bind_a_loopback_socket,
     test_a_lane_is_named_by_the_compiler_version,
     test_abbreviated_paths_keep_the_lane_name,

@@ -380,6 +380,12 @@ jobs:
           path: .local/beast-host-tls
           key: ${{ steps.host-tls-cache.outputs.cache-primary-key }}
 
+      - name: Verify Beast application inventory and HTTP fixtures
+        if: matrix.library == 'beast' && matrix.lane == 'applications-host-clients' && matrix.platform == 'wasip2'
+        run: |
+          python3 libs/beast/test/applications/inventory_test.py
+          python3 libs/beast/test/applications/driver_test.py
+
       # It registers its toolset in .local/user-config.jam, prints its b2 command and runs it.
       - name: Own lane
         id: lane

@@ -513,6 +513,14 @@ KINDS = ('original', 'programs')
 OWN_LANE_BASES = {None: 'clang-18', 'native': 'clang-18', 'emscripten': 'emscripten',
                   'wasip2': 'wasip2', 'wasip3': 'wasip3'}
 
+# Suspension variants expand inside B2; these lanes also exercise both policy and EH modes.
+OWN_LANE_OPTIONS = {
+    ('beast', 'browser', 'emscripten'):
+        ('exception-handling=on,off', 'webcpp-beast-unsupported=error,ignore'),
+    ('beast', 'browser-node', 'emscripten'):
+        ('exception-handling=on,off', 'webcpp-beast-unsupported=error,ignore'),
+}
+
 
 @dataclass(frozen=True)
 class OwnLane:
@@ -755,14 +763,15 @@ def own_lane_command(own: OwnLane, user_config: Path, xml: Path | None,
                      extra: list[str]) -> list[str]:
     """The own lane's command: b2, from scratch, on <directory>//<lane> for each of its
     directories; with Clang 18 when it names no target, and otherwise with the toolset and the
-    options of the lane it shares, writing xml, as that lane does."""
+    options of the lane it shares plus its own mode coverage, writing xml, as that lane does."""
     base = own_lane_base(own.target)
     external = external_arguments(needs_external(own.library))
     if own.target is None:
         return ['b2', f'--user-config={user_config}', '-a', f'toolset={base.toolset}', *external,
                 *extra, *own.requests]
+    options = OWN_LANE_OPTIONS.get((own.library, own.lane, own.target), ())
     return ['b2', f'--user-config={user_config}', '-a', '--dump-tests', f'--out-xml={xml}',
-            f'toolset={base.toolset}', *external, *base.options, *extra, *own.requests]
+            f'toolset={base.toolset}', *external, *base.options, *options, *extra, *own.requests]
 
 
 def run_b2(label: str, command: list[str]) -> int:
