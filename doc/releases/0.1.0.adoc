@@ -55,6 +55,8 @@ None.
 [#webcpp-0-1-0-tools-and-build]
 == Tools and build
 
+* Fixed driven-test execution and descendant cleanup on Windows.
+* Fixed driven-test executable reuse for Windows and WASI builds.
 * Fixed Chrome provisioning and browser/TLS profile coverage in Asio CI lanes.
 * Added source-built OpenSSL and Cobalt SSL targets for WASIp2.
 * Added explicit browser pthread profiles with main-thread handoff tests.

@@ -1335,6 +1335,19 @@ site's own decisions follow in the next sections.
   Source:
   `organization/openspec/changes/archive/2026-10-07-genesis/reference/research/BOOST_REGRESSION_MATRIX.md`
   (proposals).
+- **A driven test contains its descendants before starting its driver.**
+  The shared keeper uses a POSIX process group or a Windows Job Object with
+  kill-on-close. The owner holds its lifetime pipe; timeout, driver exit and
+  owner termination stop the entire tree. Windows assigns the keeper before
+  spawning children and keeps its job handle non-inheritable. Failure to establish
+  containment fails closed. This avoids POSIX-only signal and process-group APIs
+  in the Windows runner while preserving bounded cleanup. The Windows compiler
+  jobs run the real process-tree regressions, including nested jobs.
+  The build reuses an existing executable with its object dependencies when the
+  producer also returns symbols or component metadata. Extra outputs must not
+  cause the test generator to link a new executable without its fixture code.
+  Source: `tools/component/process_tree.py`, `tools/drive/drive_test.py`,
+  `tools/drive/drive.jam` (webcpp).
 - **What an ordinary lane must not run is an own lane of its library
   (`webcpp.lane`): an oracle, a served component, a driven test or the check
   of generated files; a lane-only program in no lane stops the CI's plan.** An

@@ -37,6 +37,7 @@
 # `where` finds it (found): the project, its directory absolute in b2's
 # form, that directory relative to the superproject, the Jamfile relative to
 # the superproject, and the superproject's directory, absolute.
+import "class" : new ;
 import errors ;
 import feature ;
 import generators ;
@@ -56,7 +57,27 @@ import type ;
 # into <name>.test when it was written.
 type.register DRIVEN : driven ;
 type.register DRIVE : : TEST ;
-generators.register-standard webcpp-drive.drive-and-check : EXE : DRIVEN ;
+# A reused executable may also yield symbols, such as MSVC's debug PDB.
+# Prefer that executable to converting the whole set into another EXE.
+class drive-generator : generator
+{
+    import type ;
+
+    rule run ( project name ? : property-set : sources + )
+    {
+        local executables ;
+        for local source in $(sources)
+        {
+            if [ type.is-derived [ $(source).type ] EXE ]
+            {
+                executables += $(source) ;
+            }
+        }
+        if $(executables) { sources = $(executables) ; }
+        return [ generator.run $(project) $(name) : $(property-set) : $(sources) ] ;
+    }
+}
+generators.register [ new drive-generator webcpp-drive.drive-and-check : EXE : DRIVEN ] ;
 generators.register-standard testing.expect-success : DRIVEN : DRIVE ;
 
 # A driven test's script, a file beside its Jamfile, bound in the action as

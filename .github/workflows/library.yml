@@ -225,6 +225,10 @@ jobs:
       - *superproject-for-library
       - *make-room
       - *library
+      - name: Verify Windows driven-test process cleanup
+        if: runner.os == 'Windows'
+        timeout-minutes: 5
+        run: python tools/drive/drive_test.py
       - *transport-sources
       - *boost
 

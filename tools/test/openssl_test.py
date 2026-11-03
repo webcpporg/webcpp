@@ -11,6 +11,7 @@ import io
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import tarfile
@@ -224,6 +225,120 @@ def test_msvc_build_commands_preserve_the_consumers_configuration(root: Path) ->
     harness.expect(result, True, 'msvc-setup.bat', '--cc "cl"', '/Zi', 'ossl_static.pdb')
 
 
+def test_msvc_tls_lanes_keep_distinct_openssl_thread_profiles(root: Path) -> None:
+    # Use the actual lane declarations and provider with B2's MSVC toolset.
+    # Its shared CRT forces threading=multi even for a target named single.
+    harness.add_library(root, 'asio',
+                        'import webcpp ;\nwebcpp.targets native wasip3 ;\n', {})
+    original = harness.ROOT / 'libs/asio'
+    shutil.copyfile(original / 'build.jam', root / 'libs/asio/build.jam')
+    for name in ('include', 'src', 'test/tls'):
+        shutil.copytree(original / name, root / 'libs/asio' / name)
+    config_library = root / 'libs/config'
+    config_library.mkdir()
+    shutil.copyfile(harness.ROOT / 'libs/config/build.jam', config_library / 'build.jam')
+    shutil.copytree(harness.ROOT / 'libs/config/include', config_library / 'include')
+    config = harness.user_config(root).read_text()
+    for version in ('14.3', '14.5'):
+        config += f'\nusing msvc : {version} : "{sys.executable}"' \
+                  ' : <setup> <rewrite-setup-scripts>off ;\n'
+    harness.configure(root, config)
+    jamroot = root / 'Jamroot'
+    # A foreign dry run cannot execute cmd.exe for Boost configuration checks.
+    jamroot.write_text(jamroot.read_text().replace('<conditional>@boost-check',
+                                                 '<webcpp-boost-check>off'))
+    for version in ('14.3', '14.5'):
+        for lane, variant in ((f'openssl-upstream-msvc-{version}', 'release'),
+                              ('tls-integration', 'debug')):
+            result = harness.run_b2(
+                root, '-a', '-n', '-d+2', f'toolset=msvc-{version}',
+                'target-os=windows', 'architecture=x86', 'address-model=64',
+                f'libs/asio/test/tls//{lane}')
+            harness.expect(result, True, 'webcpp-openssl.build')
+            commands = [line for line in result.stdout.splitlines()
+                        if '--source "' in line and '--threading "' in line]
+            assert commands, result.stdout[-4000:]
+            profiles: dict[str, set[str]] = {}
+            for command in commands:
+                options = dict(re.findall(r'--(threading|output|variant) "([^"]+)"', command))
+                threads = options['threading']
+                assert options['variant'] == variant, command
+                runtime = '/MT' if threads == 'single' else '/MD'
+                if variant == 'debug':
+                    runtime += 'd'
+                assert re.search(r'(?<!\S)' + runtime + r'(?!\S)', command), command
+                if lane.startswith('openssl-upstream'):
+                    assert '--test' in command, command
+                profiles.setdefault(threads, set()).add(options['output'])
+            assert set(profiles) == {'single', 'multi'}, (version, lane, profiles)
+            assert profiles['single'].isdisjoint(profiles['multi']), profiles
+            sources = ['tls_client.cpp']
+            if lane == 'tls-integration':
+                sources += ['tls_client_embedded.cpp', 'cobalt_ssl_client.cpp',
+                            'cobalt_ssl_state.cpp', 'cobalt_ssl_cancel.cpp']
+            lines = [line.replace('\\', '/') for line in result.stdout.splitlines()]
+            drivers = [line.strip() for line in lines if '/tools/drive/drive.py"' in line]
+            for source in sources:
+                compiles = [line for line in lines
+                            if ' -c ' in line and f'/test/{source}"' in line]
+                for runtime in ('/MT', '/MD'):
+                    if variant == 'debug':
+                        runtime += 'd'
+                    selected = [line for line in compiles
+                                if re.search(r'(?<!\S)' + runtime + r'(?!\S)', line)]
+                    expected = 2 if lane == 'tls-integration' else 1
+                    assert len(selected) == expected, (source, runtime, compiles)
+                    for command in selected:
+                        threads = 'single' if runtime.startswith('/MT') else 'multi'
+                        assert any(path.replace('\\', '/') + '/include' in command
+                                   for path in profiles[threads]), \
+                            (source, threads, command)
+                        object_file = re.search(r'-Fo"([^"]+)"', command)
+                        assert object_file, command
+                        object_path = object_file.group(1)
+                        links = [line for line in lines
+                                 if ' link ' in line and f'"{object_path}"' in line]
+                        assert len(links) == 1, (object_path, links)
+                        executable = object_path.removesuffix('.obj') + '.exe'
+                        assert any(line.endswith(f'"{executable}"') for line in drivers), drivers
+            print(f'MSVC {version} {lane}: distinct S/M providers and fixture links verified')
+
+
+def test_wasip3_prebuilt_component_keeps_its_main(root: Path) -> None:
+    # A provider may return an executable with auxiliary archives. Re-linking
+    # only those archives can produce a valid component with a trapping main.
+    harness.link_wasi_tools(root)
+    harness.add_library(root, 'prebuilt',
+                        'import webcpp ;\nwebcpp.targets wasip3 ;\n'
+                        'webcpp.original python3 ;\n'
+                        'webcpp.drive consumer : ../producer//bundle : : driver.py ;\n'
+                        'webcpp.lane components : consumer : wasip3 ;\n',
+                        {'driver.py': 'import os, subprocess, sys\n'
+                         'subprocess.run([os.environ.get("WASMTIME", "wasmtime"), "run",\n'
+                         '    "-S", "p3", "-W", "component-model-async=y",\n'
+                         '    "-W", "timeout=10s", sys.argv[-1]], check=True, timeout=20)\n'})
+    for name in ('package.json', 'package-lock.json'):
+        shutil.copyfile(harness.FIXTURES / 'browser_demo/test/driver' / name,
+                        root / 'libs/prebuilt/test' / name)
+    producer = root / 'libs/prebuilt/producer'
+    producer.mkdir()
+    (producer / 'Jamfile').write_text('lib helper : helper.cpp : <link>static ;\n'
+                                     'exe program : program.cpp helper ;\n'
+                                     'alias bundle : program helper ;\n')
+    (producer / 'helper.cpp').write_text('int fixture_value() { return 42; }\n')
+    (producer / 'program.cpp').write_text(
+        '#include <cstdio>\nint fixture_value();\n'
+        'int main() {\n'
+        '    if (fixture_value() != 42) return 1;\n'
+        '    std::puts("prebuilt WASIp3 main: 42");\n'
+        '}\n')
+    result = harness.run_b2(root, '-a', '-d+2', 'toolset=clang-wasip3',
+                            'exception-handling=on,off',
+                            'libs/prebuilt/test//components')
+    harness.expect(result, True, '**passed**', 'prebuilt WASIp3 main: 42')
+    assert result.stdout.count('prebuilt WASIp3 main: 42') == 2, result.stdout[-4000:]
+
+
 def test_pin_mismatch_fails_before_compilation(root: Path) -> None:
     pin = root / 'tools/openssl/pin.json'
     data = json.loads(pin.read_text())
@@ -329,6 +444,8 @@ CASES = [test_native_upstream_suite_checks_the_consumed_archives,
          test_native_source_dependency, test_wasip2_source_dependency,
          test_symlinked_compiler_without_c_sibling,
          test_msvc_build_commands_preserve_the_consumers_configuration,
+         test_msvc_tls_lanes_keep_distinct_openssl_thread_profiles,
+         test_wasip3_prebuilt_component_keeps_its_main,
          test_missing_checkout_is_lazy_and_actionable,
          test_unsupported_target_is_rejected, test_pin_mismatch_fails_before_compilation,
          test_source_checkout_with_spaces,

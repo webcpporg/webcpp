@@ -3,7 +3,7 @@
 **Goal:** Close the approved Asio and Beast integration together, including the owner's
 2026-11-03 scope decisions and the independently verified findings in the Claude audit.
 
-**Architecture:** Keep native and WASIp3 socket/TLS transport in Asio. Beast's socket
+**Architecture:** Keep native and WASIp2/P3 socket/TLS transport in Asio. Beast's socket
 profiles follow Asio's supported targets; portable messages, host HTTP and supplied
 streams remain independent. Preserve the browser's native WebSocket and fetch adapters.
 
@@ -33,10 +33,12 @@ the owner's later approvals. The sibling proposals checkout is an independent re
 ### 1. Verify and reconcile Beast scope
 
 - [x] Compare the actual Claude artifact, code, requirements and test evidence.
-- [ ] Remove the P2 socket prerequisite tasks and amend the normative requirement.
-- [x] Generate the application matrix: 567 passed, 122 blocked, 530 unavailable.
+- [x] Remove the original P2 socket prerequisite tasks and amend the normative requirement.
+  Later owner-approved P2 Asio work provides guest sockets/TLS; Beast application
+  counterparts still require separate integration and runtime evidence.
+- [x] Generate the application matrix: 571 passed, 216 blocked, 432 unavailable.
 - [x] Preserve P2 host HTTP/messages/streams and explain every remaining blocked cell.
-- [ ] Validate generators and OpenSpec; submit the proposal as proposed, not accepted.
+- [x] Validate generators and OpenSpec; submit the proposal as proposed, not accepted.
 
 Produces: Beast source and proposal changes. Its source reference snapshot is refreshed
 only after the library changes are committed, preserving exact blobs and modes.
@@ -71,9 +73,9 @@ conflict by banning useful library combinations or silently selecting system lib
 
 - [x] Disposition every current chapter 19 item and each additional audit claim using
   code changes, existing approved decisions or an explicit documented departure.
-- [ ] Amend Asio targets, default turn limit 100, source-built OpenSSL and Diataxis order.
+- [x] Amend Asio targets, default turn limit 100, source-built OpenSSL and Diataxis order.
 - [x] Add Asio's maintained AsciiDoc changelog and New Libraries entry.
-- [ ] Reconcile preparation metadata without claiming a published release.
+- [x] Reconcile preparation metadata without claiming a published release.
 - [ ] Update gates, dates and status with actual repository, integration and CI evidence.
 - [ ] Run release checks and every strict OpenSpec root plus proposal tooling tests.
 

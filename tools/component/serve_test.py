@@ -288,7 +288,8 @@ def test_transcript_format(scratch: Path) -> None:
         ('OPTIONS', '*'), ('PATCH', '/items/7?x=1&y=%2F')], shell.recorded()
     commands = [line.removeprefix('$ ') for line in (SHELL_TRANSCRIPT + TRANSCRIPT).splitlines()
                 if line.startswith('$ ')]
-    for command, words in zip(commands, CURL_WORDS, strict=True):
+    assert len(commands) == len(CURL_WORDS)
+    for command, words in zip(commands, CURL_WORDS):
         split = subprocess.run(['sh', '-c', 'curl() { printf "%s\\n" "$@"; }; ' + command],
                                capture_output=True, text=True, check=True, timeout=30)
         assert split.stdout.splitlines() == words, (command, split.stdout)
