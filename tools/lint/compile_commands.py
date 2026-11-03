@@ -607,6 +607,47 @@ def prepare_boost_overlays(root: str, target: str, commands: list[list[str]]) ->
                       'while preparing checked Boost overlays')
 
 
+def prepare_openssl_headers(root: str, request: list[str], commands: list[list[str]]) -> None:
+    """Build each program's configured OpenSSL headers without executing its test target."""
+    includes: set[Path] = set()
+    for words in commands:
+        for index, word in enumerate(words):
+            if word in ('-I', '-isystem') and index + 1 < len(words):
+                include = words[index + 1]
+            elif word.startswith('-I'):
+                include = word[2:]
+            else:
+                continue
+            directory = Path(root, include).resolve()
+            if (directory.is_relative_to(Path(root, BUILD_DIR, 'third_party').resolve())
+                    and directory.name == 'include'
+                    and directory.parent.name.startswith('config-')):
+                includes.add(directory)
+    if not includes:
+        return
+    # libdatachannel also publishes config-*/include. Identify the provider from
+    # its actual B2 action, rather than assuming every configured directory is TLS.
+    headers: set[str] = set()
+    for line in dry_run(root, request):
+        built = re.fullmatch(r'webcpp-openssl\.build (.+[/\\])libssl\.(?:a|lib)', line)
+        if built:
+            directory = Path(root, built.group(1), 'include')
+            # B2 aliases explicit outputs by their original spelling, even when
+            # the build directory is a symlink. Canonicalize only comparisons.
+            if directory.resolve() in includes:
+                headers.add(str(directory / 'openssl/configuration.h'))
+    if not headers:
+        return
+    # Keep the original request so B2 constructs the exact consumer variants.
+    # Explicit output filenames restrict execution to these dependencies, even
+    # though the request includes run targets. Never execute a dry-run shell line.
+    command, completed = run_b2(root, ['-d0', 'webcpp-require-external=on',
+                                      *request, *sorted(headers)])
+    if completed.returncode != 0 or any(not Path(header).is_file() for header in headers):
+        raise Failure(f'{completed.stdout}{" ".join(command)} exited {completed.returncode} '
+                      'while preparing program OpenSSL headers')
+
+
 def source_path(root: str, source: str) -> str:
     """The physical source's path relative to root, independent of its Jamfile's spelling."""
     return os.path.relpath(os.path.realpath(os.path.join(root, source)), os.path.realpath(root))
@@ -614,7 +655,7 @@ def source_path(root: str, source: str) -> str:
 
 def read(root: str, target: str, commands: list[list[str]], entries: list[dict[str, object]],
          seen: set[tuple[str, ...]], earlier: set[str],
-         wasi_clang: str | None) -> tuple[Units, set[str]]:
+         wasi_clang: str | None, request: list[str]) -> tuple[Units, set[str]]:
     """Adds to entries each command of commands, compiled for target, that compiles a .cpp file of
     the source tree that is not in earlier, a source an earlier target compiles, and that is not
     in seen, as the lint analyses it (analysed); a WebAssembly command of a compiler other than
@@ -642,6 +683,7 @@ def read(root: str, target: str, commands: list[list[str]], entries: list[dict[s
         entries.append({'directory': root, 'file': os.path.join(root, source),
                         'arguments': analysed(target, source, words, wasi_clang)})
     prepare_boost_overlays(root, target, selected)
+    prepare_openssl_headers(root, request, selected)
     return units, sources
 
 
@@ -740,8 +782,8 @@ def twins(root: str, target: str, chosen: dict[str, list[Aggregate]], units: Uni
     kept: set[str] = set()
     compiled: set[str] = set()
     selected: list[list[str]] = []
-    for words in compiles(dry_run(root, [*TARGETS[target], WITHOUT_EXCEPTIONS, *PROGRAMS, *lanes,
-                                         *handler, *requested])):
+    request = [*TARGETS[target], WITHOUT_EXCEPTIONS, *PROGRAMS, *lanes, *handler, *requested]
+    for words in compiles(dry_run(root, request)):
         source = words[-1]
         unit = ALONE.match(source)
         if unit:
@@ -764,6 +806,7 @@ def twins(root: str, target: str, chosen: dict[str, list[Aggregate]], units: Uni
         entries.append({'directory': root, 'file': os.path.join(root, source),
                         'arguments': analysed(target, source, words, wasi_clang)})
     prepare_boost_overlays(root, target, selected)
+    prepare_openssl_headers(root, request, selected)
     twinned.programs |= kept - compiled
     for library, theirs in aggregates.items():
         index = next(index for index, aggregate in enumerate(theirs)
@@ -818,7 +861,8 @@ def database(root: str, wasi_clang: str | None = None) -> list[dict[str, object]
             continue
         units[target], sources = read(root, target,
                                       target_run(root, target, declaring, lanes.get(target, [])),
-                                      entries, seen, set(first), wasi_clang)
+                                      entries, seen, set(first), wasi_clang,
+                                      [*TARGETS[target], *PROGRAMS, *lanes.get(target, [])])
         for source in sources:
             first.setdefault(source, target)
 

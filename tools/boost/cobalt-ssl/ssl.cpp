@@ -4,4 +4,5 @@
 // accompanying file LICENSE_1_0.txt or copy at
 // https://www.boost.org/LICENSE_1_0.txt)
 
-#include <libs/cobalt/src/io/ssl.cpp>
+// Compile the checked, patched upstream implementation through its selected include directory.
+#include <libs/cobalt/src/io/ssl.cpp>  // NOLINT(bugprone-suspicious-include)

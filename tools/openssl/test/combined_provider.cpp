@@ -15,18 +15,19 @@
 
 int main() {
     if (OpenSSL_version_num() != OPENSSL_VERSION_NUMBER) {
-        std::fprintf(stderr, "OpenSSL headers and implementation differ: %s / %s\n",
-                     OPENSSL_VERSION_TEXT, OpenSSL_version(OPENSSL_VERSION));
+        static_cast<void>(std::fprintf(stderr,
+                                       "OpenSSL headers and implementation differ: %s / %s\n",
+                                       OPENSSL_VERSION_TEXT, OpenSSL_version(OPENSSL_VERSION)));
         return 1;
     }
     boost::asio::io_context context;
     boost::asio::ssl::context tls(boost::asio::ssl::context::tls_client);
-    boost::beast::tcp_stream stream(context);
-    webcpp::trystero::native::backend backend(context.get_executor());
+    const boost::beast::tcp_stream stream(context);
+    const webcpp::trystero::native::backend backend(context.get_executor());
     rtc::PeerConnection peer(rtc::Configuration{});
-    auto channel = peer.createDataChannel("combined-provider");
+    const auto channel = peer.createDataChannel("combined-provider");
     peer.close();
-    if (!channel || !tls.native_handle()) {
+    if (!channel || tls.native_handle() == nullptr) {
         return 2;
     }
     std::puts("Asio, Beast and Trystero share the pinned OpenSSL provider");

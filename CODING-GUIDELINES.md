@@ -615,6 +615,12 @@ A source b2 expects not to compile (`webcpp.compile-fail`), and one that
 must stop with the error it states (`webcpp.compile-diagnostic`), are left
 out of clang-tidy only; every other rule reads them.
 
+The compilation database prepares generated inputs before analysis. Public
+header units prepare their dependencies; programs that select another OpenSSL
+configuration prepare that exact configuration through B2 as well, including
+their exception-off twins. B2 builds only the requested header artifacts and
+their dependencies during this preparation, never the consumer's run target.
+
 **A library's include boundaries.** Every header compiles alone, so only a
 boundary check sees a part of a library start to depend on another. A
 library declares its boundaries in `meta/include-boundaries.json`, each a set
@@ -6117,7 +6123,7 @@ which includes the change `shared-connection` (trystero `2e2dcd4`, webcpp
   example needs the public relays or a browser.
   Source: `doc/differences.adoc` (libs/trystero).
 
-### asio (Boost.Asio and Cobalt on native, Emscripten and WASIp3; implemented for 0.1.0 in preparation)
+### asio (Boost.Asio and Cobalt on native, Emscripten and WASIp2/P3; implemented for 0.1.0 in preparation)
 
 webcpp::asio is a C++20 wrapper over Boost.Asio: natively it is
 Boost.Asio itself, and on Emscripten it is Boost's own `io_context`, whose run
@@ -8646,7 +8652,7 @@ compatibility departure belongs with its rationale in chapter 15.
 ### Asio/Beast closure: remaining gates and limits
 
 Chapter 15 now records the implemented configuration, allocator and private-header
-corrections, native/Emscripten/WASIp3 target contract, default turn limit 100,
+corrections, native/Emscripten/WASIp2/P3 target contract, default turn limit 100,
 Diataxis guide, source-built OpenSSL, checked Boost overlays and recurring thread
 and TLS lanes. Chapter 4's executor contract and compiled-unit exceptions and
 chapter 6's SDK-limited exception profiles reflect the existing approvals.

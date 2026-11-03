@@ -401,9 +401,9 @@ def test_compile_database_prepares_generated_header_dependencies(root):
     harness.replace(root / 'libs/demo/build.jam', '<include>include ;',
                     '<include>include <library>/webcpp/third_party//ca_certificates ;')
     append(root, 'libs/demo/include/webcpp/demo.hpp',
-           '\n#include <webcpp_ca_certificates.hpp>\n'
-           'static_assert(webcpp::detail::ca_certificates::count > 0);\n')
-    assert not list((root / 'bin').rglob('webcpp_ca_certificates.hpp'))
+           '\n#include <webcpp/asio/detail/ca_certificates.hpp>\n'
+           'static_assert(webcpp::asio::detail::ca_certificates::count > 0);\n')
+    assert not list((root / 'bin').rglob('ca_certificates.hpp'))
     completed = compile_database(root)
     assert completed.returncode == 0, completed.stdout[-6000:]
     entries = json.loads((root / 'compile database/compile_commands.json').read_text())
@@ -414,6 +414,33 @@ def test_compile_database_prepares_generated_header_dependencies(root):
         said = compile_commands.compiles_aggregate(str(root), command, str(aggregate))
         assert not said, said
     # Preparing compilation inputs must not execute the library's programs.
+    assert not list((root / 'bin').rglob('*.run'))
+
+
+def test_compile_database_prepares_program_openssl_variants(root):
+    # A program-only define selects a different OpenSSL configuration than any
+    # public header unit. Both exception modes must be analysable on a clean tree.
+    # A relocated build tree must retain B2's output spelling during preparation.
+    output = root / 'build outputs'
+    output.mkdir()
+    (root / 'bin').symlink_to(output, target_is_directory=True)
+    harness.add_library(root, 'tls_user', HASH + '\nimport webcpp ;\n'
+                        'webcpp.targets native ;\n'
+                        'webcpp.run tls_program : tls_program.cpp\n'
+                        '  : <library>/webcpp/third_party//openssl\n'
+                        '    <define>WEBCPP_TEST_TLS_PROGRAM ;\n',
+                        {'tls_program.cpp': CPP + '\n#include <openssl/ssl.h>\n'
+                         'int main() { return SSL_ERROR_NONE; }\n'})
+    completed = compile_database(root)
+    assert completed.returncode == 0, completed.stdout[-6000:]
+    source = root / 'libs/tls_user/test/tls_program.cpp'
+    entries = json.loads((root / 'compile database/compile_commands.json').read_text())
+    commands = [entry['arguments'] for entry in entries if Path(entry['file']) == source]
+    assert len(commands) == 2, commands
+    for command in commands:
+        said = compile_commands.compiles_aggregate(str(root), command, str(source))
+        assert not said, said
+    # Preparation may build dependencies, but must not execute consumer programs.
     assert not list((root / 'bin').rglob('*.run'))
 
 
@@ -2197,6 +2224,7 @@ CASES = [
     test_a_user_config_the_environment_names_is_read,
     test_compile_database_lists_what_b2_builds,
     test_compile_database_prepares_generated_header_dependencies,
+    test_compile_database_prepares_program_openssl_variants,
     test_compile_database_reads_what_only_wasi_builds,
     test_an_aggregate_no_units_options_compile_names_each,
     test_wasi_sdk_is_told_by_the_compiler_itself,
