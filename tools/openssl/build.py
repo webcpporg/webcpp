@@ -130,7 +130,7 @@ def main() -> None:
     args = parser.parse_args(arguments)
     if args.test and args.platform == 'wasi':
         raise RuntimeError('the OpenSSL upstream test harness requires native executables; '
-                           'WASIp3 uses the separately declared TLS integration tests')
+                           'WASI uses the separately declared TLS integration tests')
     source, output = args.source.resolve(), args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     for name in ('build.json', 'upstream-tests.json'):
@@ -180,9 +180,15 @@ def build_source(args: argparse.Namespace, output: Path, pin: dict, scratch: Pat
         options += ['--openssldir=/etc/ssl']
     if args.platform == 'wasi':
         options += ['no-tests', 'no-apps']
-        if '--target=wasm32-wasip3' not in flags:
-            raise RuntimeError('WASIp3 OpenSSL requires --target=wasm32-wasip3 '
-                               'in the configured C flags')
+        wasi_targets = [target for target in ('wasip2', 'wasip3')
+                        if f'--target=wasm32-{target}' in flags]
+        if len(wasi_targets) != 1:
+            raise RuntimeError('WASI OpenSSL requires exactly one --target=wasm32-wasip2 '
+                               'or --target=wasm32-wasip3 in the configured C flags')
+        wasi_target = wasi_targets[0]
+        if wasi_target == 'wasip2' and args.threading != 'single':
+            raise RuntimeError('WASIp2 OpenSSL requires threading=single; '
+                               'the pinned SDK has no WASIp2 thread backend')
         sdk = compiler.parent.parent
         if args.threading == 'multi':
             sysroots = [flag.split('=', 1)[1] for flag in flags if flag.startswith('--sysroot=')]
@@ -197,7 +203,7 @@ def build_source(args: argparse.Namespace, output: Path, pin: dict, scratch: Pat
                   ('SIGNAL', 'PROCESS_CLOCKS', 'MMAN', 'GETPID')]
         options += ['--with-rand-seed=getrandom', 'no-asm', 'no-dso', 'no-ui-console',
                     'no-afalgeng', 'no-quic', '-DOPENSSL_NO_UNIX_SOCK']
-        target = ['--config=' + str(HERE / 'wasip3.conf'), 'webcpp-wasip3']
+        target = ['--config=' + str(HERE / 'wasip3.conf'), 'webcpp-' + wasi_target]
     elif windows:
         native = windows_target(compiler, flags, scratch, env)
         target = ['--config=' + str(HERE / 'msvc.conf'), native + '-webcpp']
@@ -247,7 +253,7 @@ def build_source(args: argparse.Namespace, output: Path, pin: dict, scratch: Pat
     if args.platform == 'wasi':
         # Copying also works when symlink creation needs Windows privileges.
         shutil.copyfile(HERE / 'wasip3.conf', scratch / 'wasip3.conf')
-        actual_target = ['--config=' + str(scratch / 'wasip3.conf'), 'webcpp-wasip3']
+        actual_target = ['--config=' + str(scratch / 'wasip3.conf'), target[-1]]
     elif windows:
         shutil.copyfile(HERE / 'msvc.conf', scratch / 'msvc.conf')
         actual_target = ['--config=' + str(scratch / 'msvc.conf'), target[-1]]

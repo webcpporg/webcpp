@@ -267,11 +267,11 @@ project /webcpp
       <target-os>wasi:<link>static
       # end::wasi-target[]
       # b2's emscripten builds wasm32 (browsers do not all run memory64, and
-      # an address-model=64 request would add -sMEMORY64=1), without pthreads
-      # (they need cross-origin isolation in a page), and static.
+      # an address-model=64 request would add -sMEMORY64=1), and static.
+      # Keep b2's single-thread default, but honor an explicit threading=multi.
+      # Pthreads require a cross-origin isolated page and a compatible library.
       # tag::emscripten-target[]
       <toolset>emscripten:<address-model>32
-      <toolset>emscripten:<threading>single
       <toolset>emscripten:<link>static
       # end::emscripten-target[]
       # Every WASI target builds with exceptions, as native does: whether a

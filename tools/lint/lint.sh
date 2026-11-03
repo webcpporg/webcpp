@@ -147,15 +147,21 @@ if [ -d libs/beast/example/upstream ]; then
 fi
 
 # Private libc declarations keep upstream text only after their pinned hashes match.
-wasi_abi_verified=false
-if [ -d tools/boost/asio-wasip2/wasi-libc ]; then
+verify_wasi_abi() {
+    local profile="$1"
+    [ -d "tools/boost/asio-${profile}/wasi-libc" ] || return 1
     rule 'WASI ABI declaration integrity'
-    if python3 tools/boost/asio-wasip2/verify.py; then
-        wasi_abi_verified=true
+    if python3 "tools/boost/asio-${profile}/verify.py"; then
+        return 0
     else
         fail 'the pinned wasi-libc declaration snapshot failed its integrity check'
+        return 1
     fi
-fi
+}
+wasi_abi_verified=false
+wasi_p3_abi_verified=false
+if verify_wasi_abi wasip2; then wasi_abi_verified=true; fi
+if verify_wasi_abi wasip3; then wasi_p3_abi_verified=true; fi
 
 # Every file of the repositories that is there, relative to the root, sorted, NUL-separated.
 # The index can name a path a move has not been staged for yet, and a submodule is listed as a
@@ -171,6 +177,8 @@ for repository in "${repositories[@]}"; do
                   third_party/libs/*) continue ;;
                   tools/boost/asio-wasip2/wasi-libc/*)
                       if [ "${wasi_abi_verified}" = true ]; then continue; fi ;;
+                  tools/boost/asio-wasip3/wasi-libc/*)
+                      if [ "${wasi_p3_abi_verified}" = true ]; then continue; fi ;;
                   libs/beast/example/upstream/*)
                       if [ "${beast_corpus_verified}" = true ]; then continue; fi ;;
               esac

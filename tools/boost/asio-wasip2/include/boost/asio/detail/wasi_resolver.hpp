@@ -19,6 +19,7 @@
 #include <boost/asio/ip/address.hpp>
 #include <boost/asio/ip/basic_resolver_query.hpp>
 #include <boost/asio/ip/basic_resolver_results.hpp>
+#include <boost/asio/ip/detail/endpoint.hpp>
 #include <cstring>
 #include <memory>
 #include <string>
@@ -172,6 +173,15 @@ class wasi_resolve_op : public reactor_op, public wasi_resolver_node {
         }
     }
 
+    void append_endpoint(const ip::detail::endpoint& source) {
+        endpoint_type endpoint;
+        if (source.size() <= endpoint.capacity()) {
+            std::memcpy(endpoint.data(), source.data(), source.size());
+            endpoint.resize(source.size());
+            endpoints_.push_back(endpoint);
+        }
+    }
+
     bool begin() {
         started_ = true;
         if (cancelled_) {
@@ -198,13 +208,15 @@ class wasi_resolve_op : public reactor_op, public wasi_resolver_node {
         numeric("127.0.0.1", local_hints, endpoints_, v4_error);
         allow_v4_ = !v4_error && hints_.ai_family != AF_INET6;
         if (!endpoints_.empty())
-            port_ = endpoints_.front().port();
+            port_ = socket_ops::network_to_host_short(
+                reinterpret_cast<const sockaddr_in*>(endpoints_.front().data())->sin_port);
         endpoints_.clear();
         local_hints.ai_family = AF_INET6;
         numeric("::1", local_hints, endpoints_, v6_error);
         allow_v6_ = !v6_error && hints_.ai_family != AF_INET;
         if (!endpoints_.empty())
-            port_ = endpoints_.front().port();
+            port_ = socket_ops::network_to_host_short(
+                reinterpret_cast<const sockaddr_in*>(endpoints_.front().data())->sin_port);
         endpoints_.clear();
         if (!allow_v4_ && !allow_v6_) {
             ec_ = hints_.ai_family == AF_INET6 ? v6_error : v4_error;
@@ -301,7 +313,8 @@ public:
             }
             if (address.val.tag == NETWORK_IP_ADDRESS_IPV4 && self.allow_v4_) {
                 auto const& a = address.val.val.ipv4;
-                self.endpoints_.emplace_back(ip::address_v4({a.f0, a.f1, a.f2, a.f3}), self.port_);
+                self.append_endpoint(
+                    ip::detail::endpoint(ip::address_v4({a.f0, a.f1, a.f2, a.f3}), self.port_));
             } else if (address.val.tag == NETWORK_IP_ADDRESS_IPV6 && self.allow_v6_) {
                 auto const& a = address.val.val.ipv6;
                 std::uint16_t const words[] = {a.f0, a.f1, a.f2, a.f3, a.f4, a.f5, a.f6, a.f7};
@@ -310,7 +323,7 @@ public:
                     bytes[2 * i] = static_cast<unsigned char>(words[i] >> 8);
                     bytes[2 * i + 1] = static_cast<unsigned char>(words[i]);
                 }
-                self.endpoints_.emplace_back(ip::address_v6(bytes), self.port_);
+                self.append_endpoint(ip::detail::endpoint(ip::address_v6(bytes), self.port_));
             }
         }
         return not_done;

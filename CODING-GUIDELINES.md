@@ -1165,7 +1165,7 @@ site's own decisions follow in the next sections.
   Boost.Locale without ICU and Boost.Cobalt, are built by webcpp from Boost's
   own source archive for their supported targets, as `/webcpp//boost_url` and
   its kin.** Each archive follows its consumer's target, macros and compiler
-  configuration; Cobalt is unavailable on WASIp2. Checked Asio/Cobalt overlays
+  configuration; Cobalt supports the validated P2/P3 WASI profiles. Checked Asio/Cobalt overlays
   apply only to private copies, with original and patched hashes and an exact
   Boost-version check (AGENTS.md chapter 1). An installed Boost cannot be
   relied on for sources (Homebrew's has no `libs/url/src`), and the sources'
@@ -6179,15 +6179,16 @@ Asio's first library-main CI and the final joint candidate remain separate gates
   Throwing APIs stay guarded and raise through `boost::throw_exception`.
   Source: `genesis/specs/asio/spec.md`, Library: Configuration header
   (proposals).
-- **On Emscripten `/webcpp/asio//asio` gives every translation unit,
-  `browser-src` included, `BOOST_ASIO_DISABLE_THREADS`, and links embind,
-  `browser-src`, the variant's link flags and the tag rule.** Without the
-  define Asio decides it has threads and stops at "Only Windows and POSIX are
-  supported!"; its inline namespace differs with and without threads, so a
-  unit that missed it fails at link, never silently.
+- **On single-thread Emscripten `/webcpp/asio//asio` gives every translation
+  unit, `browser-src` included, `BOOST_ASIO_DISABLE_THREADS`; explicit pthread
+  builds retain Boost's POSIX thread configuration.** Both link embind,
+  `browser-src`, the variant's link flags and the tag rule. Boost's inline
+  namespace differs with and without threads, so every compiled dependency
+  must use the consumer's profile. A silent switch from multi to single is
+  forbidden. Browser runtime isolation remains a host requirement.
   Source: `genesis/specs/asio/spec.md`, Build (proposals).
-- **The library supports native, Emscripten and WASIp3 through the checked
-  Boost 1.92 overlay; guest sockets on WASIp2 remain unavailable.** A library
+- **The library supports native, Emscripten and WASIp2/P3 through the checked
+  Boost 1.92 overlay; WASI supports guest TCP/UDP and optional source-built TLS.** A library
   may declare only the targets its actual APIs support. Beast's portable
   messages and WASI host HTTP do not require guest sockets. xactor's existing
   Asio driver stays native until separately adapted; Asio's port does not
@@ -6201,6 +6202,15 @@ Asio's first library-main CI and the final joint candidate remain separate gates
   user of asio, not a dependency.
   Source: `genesis/specs/asio/spec.md`, Run, and `genesis/proposal.md`
   (proposals).
+
+- **Asio capabilities are read-only 0/1 macros in `config.hpp`; optional
+  dependency selection is separate from target availability.** Explicit
+  `WEBCPP_ASIO_REQUIRE_*` switches reject compiler-visible unsupported needs;
+  feature headers diagnose wrong targets. Network grants, trust roots, actual
+  browser isolation and blocking host imports remain runtime conditions.
+  The owner approved implementation completion and external-boundary guards on
+  2026-11-03. Do not reclassify missing WebCPP code as a platform limitation.
+  Source: `docs/superpowers/specs/2026-11-03-asio-capability-completion-design.md`.
 
 **The run family and the turn limit.**
 
@@ -6489,12 +6499,12 @@ Asio's first library-main CI and the final joint candidate remain separate gates
   entry, so Beast's layered client code runs unchanged; a resolver that failed
   like the sockets would change a line of every Beast client.
   Source: `genesis/design.md`, D14 (proposals).
-- **`<webcpp/asio/ssl.hpp>` is Boost's `ssl` on native and WASIp3; on
+- **`<webcpp/asio/ssl.hpp>` is Boost's `ssl` on native and WASI; on
   Emscripten it records TLS settings and a host name in `std::pmr` storage
   for webcpp::beast's browser streams.** Guest TLS explicitly names
-  `/webcpp/asio//openssl` on native or WASIp3. Naming that source provider for
-  Emscripten or WASIp2 fails with an instruction; the browser owns TLS in its
-  profile, and WASIp2 host HTTP uses the host's independent TLS implementation.
+  `/webcpp/asio//openssl` on native or WASI. Naming that source provider for
+  Emscripten fails with an instruction; the browser owns TLS in its profile.
+  WASI host HTTP continues to use the host's independent TLS implementation.
   Source: `genesis/design.md`, D15 (proposals); `include/webcpp/asio/ssl.hpp`
   (asio).
 
@@ -6504,7 +6514,7 @@ Asio's first library-main CI and the final joint candidate remain separate gates
   (`src/cobalt_main.cpp`, `/webcpp/asio//cobalt`), with Cobalt's steps over a
   `webcpp::asio::io_context{BOOST_ASIO_CONCURRENCY_HINT_1}`, and
   `/webcpp//boost_cobalt` excludes `main.cpp` and the optional `io/ssl.cpp`,
-  with additional unsupported sources omitted for WASIp3 as listed below.**
+  with additional unsupported sources omitted for WASI as listed below.**
   `co_main` cannot be replaced from a header: `main` is a hidden friend that
   calls `run_main`, compiled in Cobalt's `src/main.cpp`, which calls Boost's
   `run`; compiling against the pinned Boost probes the private members it
@@ -6625,28 +6635,29 @@ The closure record distinguishes the baseline CI from validation of later change
   cooperative component. These grants and limits are test-harness settings;
   they neither configure production capabilities nor enforce network isolation.
   Source: `tools/boost/asio-wasip3/README.md` (superproject).
-- **UDP `send_to` and `async_send_to` gather several nonempty buffers into one
-  datagram, in storage from the context's allocator (synchronous) or the
-  handler's (asynchronous), released before the handler runs; a receive or a
-  connected send of several nonempty buffers fails with
-  `operation_not_supported`.** wasi-libc has no `sendmsg`, datagram boundaries
-  never change to make a buffer sequence compile, and no hidden allocation
-  emulates scatter/gather.
+- **WASI UDP sends gather several nonempty buffers into one datagram,
+  connected or unconnected; receives scatter one datagram into the destination
+  sequence.** Temporary storage uses the context allocator synchronously or
+  the handler's allocator asynchronously and is released before completion.
+  Truncation, empty datagrams and cancellation preserve datagram boundaries.
+  The pinned libc lacks `sendmsg`/`recvmsg`; this adaptation belongs to the
+  checked Boost overlay, not the installed SDK.
   Source: `docs/superpowers/specs/2026-10-15-asio-wasip3.md` (superproject); `AGENTS.md` (asio).
 - **What WASI lacks is explicit: Asio's `shut_down` error maps to `EPIPE`,
   interface-name scopes are refused, a missing socket option reports
-  `operation_not_supported`, and an asynchronous resolve without threads posts
-  `operation_not_supported`.** WASI has no `ESHUTDOWN`, no interface names
-  and, in the single profile, no thread for Boost's resolver; the port does
-  not pretend those entry points exist.
+  `operation_not_supported`, and reverse/canonical lookup policies remain
+  unsupported.** Forward asynchronous resolution uses native P2 pollables or
+  P3 async subtasks/waitables in both supported thread profiles. It never
+  blocks initiation, starts a hidden worker or scans DNS with periodic timers.
+  Private libc descriptor APIs require the checked SDK/revision/hash manifest.
   Source: `doc/capabilities.adoc` (asio).
-- **The library's test and example Jamfiles declare `wasip3` beside native and
-  Emscripten, Cobalt and OpenSSL refuse WASIp2 by name, and
+- **The library's applicable test and example Jamfiles declare WASIp2/P3
+  beside native and Emscripten; Cobalt and OpenSSL support WASIp2 S, and
   `doc/capabilities.adoc` with `doc/feature-matrix.adoc` is kept current for
   every feature, target and variant, telling unavailable from unverified.**
   The owner approved an AsciiDoc feature matrix that links its evidence.
   Source: `docs/superpowers/specs/2026-10-15-asio-wasip3.md` (superproject); `AGENTS.md` (asio).
-- **`/webcpp/asio//cobalt` builds on WASIp3 from a checked patch of private
+- **`/webcpp/asio//cobalt` builds on WASIp2/P3 from a checked patch of private
   copies of Cobalt's headers and sources (`tools/boost/cobalt-wasip3`): its
   signal, serial-port and seqpacket sources are left out, `thread.cpp` comes
   only with threads, and the archive and its consumers share the Asio overlay
@@ -6655,9 +6666,9 @@ The closure record distinguishes the baseline CI from validation of later change
   about headers, threads and exceptions.
   Source: `docs/superpowers/plans/2026-10-16-cobalt-wasip3.md`,
   `tools/boost/Jamfile` (superproject).
-- **On WASIp3 `run_main` sets the promise's `signal_set` to null and includes
+- **On WASIp2/P3 `run_main` sets the promise's `signal_set` to null and includes
   no POSIX signal service, keeping the executor, the initial post, the status
-  and Cobalt's internal cancellation.** WASIp3 delivers no process signal; a
+  and Cobalt's internal cancellation.** WASI delivers no process signal; a
   host's graceful shutdown needs a protocol of the program's.
   Source: `src/cobalt_main.cpp`, `AGENTS.md` (asio).
 - **On WASIp3 the Cobalt status driver expects host exit status 1 for a
@@ -6675,21 +6686,22 @@ The closure record distinguishes the baseline CI from validation of later change
   Source: `docs/superpowers/plans/2026-10-16-openssl-source-build.md`,
   `tools/webcpp-openssl.jam` (superproject).
 - **The OpenSSL recipe covers native Clang and GCC on macOS and Linux and
-  WASIp3, single and cooperative, plus native MSVC using Configure/nmake;
-  WASIp2 and Emscripten stop the build, and a host OpenSSL is never a fallback.**
+  WASIp2 single, WASIp3 single/cooperative, and native MSVC using Configure/nmake;
+  Emscripten stops the build, and a host OpenSSL is never a fallback.**
   Windows recipes preserve B2 runtime settings. Windows runtime results must
   be tied to their tested candidate, not inferred from recipe tests or older
   CI. A silent system fallback could link a second copy.
   Source: `docs/superpowers/plans/2026-10-16-openssl-source-build.md`
   (superproject).
-- **On WASIp3 OpenSSL uses the external Configure target `webcpp-wasip3` (no
+- **On WASIp2/P3 OpenSSL uses the external Configure targets `webcpp-wasip2`
+  and `webcpp-wasip3` (no
   assembly, no DSO, no QUIC, `getrandom` seeding) and fails closed when host
   entropy fails.** wasi-libc's `getentropy` reaches `wasi:random`; the tests
   show entropy is requested and that its failure stops key generation, not its
   quality.
   Source: `tools/openssl/wasip3.conf`, `tools/openssl/build.py` (superproject); `doc/building.adoc` (asio).
 - **`/webcpp/asio//openssl` forwards `/webcpp/third_party//openssl` with
-  `WEBCPP_ASIO_HAS_OPENSSL` natively and on WASIp3, Emscripten keeps the
+  `WEBCPP_ASIO_HAS_OPENSSL` natively and on WASIp2/P3, Emscripten keeps the
   forced-include refusal, and asio's tests that need OpenSSL fail rather than
   being left out.** A missing checkout is named
   (`git submodule update --init third_party/libs/openssl`), never skipped.
@@ -6846,8 +6858,10 @@ facilities separately; a successful compile never proves runtime parity.
   scheduling, resolver, transport or error-handling adaptation explicitly.
 - Feature and application matrices in the guide keep compilation and execution
   separate for every target, exception mode and supported threading profile.
-  Unavailable stackful Wasm coroutines, browser listeners, WASIp2 guest sockets
-  and cooperative WASIp3 exceptions remain unavailable, never counted as passes.
+  Unavailable stackful Wasm coroutines, browser listeners and cooperative
+  WASIp3 exceptions remain unavailable, never counted as passes. WASIp2 guest
+  socket examples remain application-integration work in Beast; Asio now provides
+  that backend, so they are not a platform impossibility.
 - Native upstream programs are the oracle. Browser validation runs in real
   Chrome with a disposable CA profile, independently of Node. WASI host HTTPS
   uses a pinned Wasmtime host fixture with normal trust and hostname checks;

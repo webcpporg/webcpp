@@ -157,7 +157,22 @@ cobalt::task<bool> cancel_write(tls_pair& pair, bool composed) {
             require(ready >= 0 &&
                     (static_cast<unsigned>(descriptor.revents) & failure_events) == 0);
             if (ready == 0 && receiving.ready() && (composed || total != 0)) {
-                break;
+                // WASIp2 may already have a successful SSL completion queued while
+                // libc reports no current write permit. Let the reactor progress,
+                // then require that the same operation is still blocked before
+                // cancelling it. This timer is an event-loop barrier, not evidence
+                // of backpressure; the second poll and promise state provide that.
+                asio::steady_timer barrier(pair.exec, std::chrono::milliseconds(1));
+                const auto [barrier_error] =
+                    co_await cobalt::as_tuple(barrier.async_wait(cobalt::use_op));
+                require(!barrier_error);
+                descriptor.revents = 0;
+                ready = ::poll(&descriptor, 1, 0);
+                require(ready >= 0 &&
+                        (static_cast<unsigned>(descriptor.revents) & failure_events) == 0);
+                if (ready == 0 && !writing.ready()) {
+                    break;
+                }
             }
         }
         const bool cancel = !writing.ready();

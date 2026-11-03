@@ -2159,13 +2159,13 @@ def test_beast_corpus_is_verified_before_excluding_upstream_style(root):
     expect_alone(lint(root), 'em dash', [adapted + ':1:'])
 
 
-def test_wasi_abi_snapshot_requires_integrity_before_style_exemption(root):
+def check_wasi_abi_style_exemption(root, profile):
     prepare(root)
-    snapshot = 'tools/boost/asio-wasip2/wasi-libc/descriptor.h'
-    verifier = 'tools/boost/asio-wasip2/verify.py'
+    snapshot = f'tools/boost/asio-{profile}/wasi-libc/descriptor.h'
+    verifier = f'tools/boost/asio-{profile}/verify.py'
     # This test replaces the verifier with a controlled executable. Its unit
     # tests import the real implementation, which is absent in this fixture.
-    (root / 'tools/boost/asio-wasip2/verify_test.py').unlink(missing_ok=True)
+    (root / f'tools/boost/asio-{profile}/verify_test.py').unlink(missing_ok=True)
     write(root, snapshot, '// upstream text ' + EM_DASH + '\n')
     write(root, verifier, HASH + '\nimport sys\n\nsys.exit(0)\n')
     expect_clean(lint(root))
@@ -2174,12 +2174,21 @@ def test_wasi_abi_snapshot_requires_integrity_before_style_exemption(root):
     assert result.returncode != 0, result.stdout
     assert 'WASI ABI declaration integrity' in FAILED.findall(result.stdout), result.stdout
     write(root, verifier, HASH + '\nimport sys\n\nsys.exit(0)\n')
-    bridge = 'tools/boost/asio-wasip2/notes.txt'
+    bridge = f'tools/boost/asio-{profile}/notes.txt'
     write(root, bridge, EM_DASH + '\n')
     expect_alone(lint(root), 'em dash', [bridge + ':1:'])
 
 
+def test_wasi_abi_snapshot_requires_integrity_before_style_exemption(root):
+    check_wasi_abi_style_exemption(root, 'wasip2')
+
+
+def test_wasip3_abi_snapshot_requires_integrity_before_style_exemption(root):
+    check_wasi_abi_style_exemption(root, 'wasip3')
+
+
 CASES = [
+    test_wasip3_abi_snapshot_requires_integrity_before_style_exemption,
     test_wasi_abi_snapshot_requires_integrity_before_style_exemption,
     test_compile_database_normalizes_shared_source_paths,
     test_beast_corpus_is_verified_before_excluding_upstream_style,

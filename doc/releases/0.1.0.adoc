@@ -55,6 +55,9 @@ None.
 [#webcpp-0-1-0-tools-and-build]
 == Tools and build
 
+* Added source-built OpenSSL and Cobalt SSL targets for WASIp2.
+* Added explicit browser pthread profiles with main-thread handoff tests.
+* Changed lint to verify WASIp3 ABI snapshots before excluding upstream headers.
 * Fixed embedded CA headers using an unowned namespace and include path.
 * Added source-built Boost.Context for native stackful coroutine applications.
 * Added negative link tests and explicit reference-source build discovery.

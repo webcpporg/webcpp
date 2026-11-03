@@ -32,9 +32,35 @@ buffer sequence before iovec truncation, then sends one contiguous datagram.
 Multiple nonempty buffers require a copy, allocated through the context for
 synchronous sends and the handler's associated allocator for asynchronous sends.
 The async operation owns the copy and frees it before invoking the handler.
-UDP receive and connected `send`/`async_send` still reject multiple nonempty buffers.
+Connected `send`/`async_send` use the same gather path. Datagram `receive`,
+`receive_from` and their asynchronous forms receive one contiguous message and
+scatter it across the original sequence, before any native iovec truncation.
+Scratch storage uses the context allocator synchronously and the associated
+handler allocator asynchronously. Truncated datagrams discard their remainder;
+zero-capacity receives still consume one message. Single nonempty buffers need
+no scratch allocation.
 Zero-byte operations use a live dummy byte when libc rejects a null pointer,
 without allocating a temporary buffer.
+
+WASIp3 forward `async_resolve` uses the native asynchronous lowering of
+`wasi:sockets/ip-name-lookup@0.3.0`, including in the cooperative thread profile.
+A queued operation starts the host lookup after initiation returns. A private
+waitable descriptor registers its subtask with libc's poll implementation and
+Asio's existing select reactor, so unrelated sockets and timers can progress
+without a polling interval or resolver worker. Cancellation removes the reactor
+operation and releases the subtask, result and descriptor before the associated
+handler runs. Numeric lookup and service parsing never initiate host DNS.
+Canonical-name and IPv4-mapping flags remain unsupported by the native host API.
+Reverse DNS behavior is unchanged.
+
+`waitable.cpp` is the only translation unit using private libc declarations.
+`wasi-libc/manifest.json` pins their original source revision and hashes;
+`verify.py` refuses a different SDK revision or changed snapshot. The canonical
+lookup result layout and asynchronous import are private to this backend. SDK
+bindings allocate host-returned lists through their canonical ABI allocator;
+these are released explicitly, while operation, strings and endpoint scratch
+storage use the handler's associated allocator. Boost's public resolver result
+container retains its upstream allocator.
 
 The patch makes no changes to wasi-libc. Upstream implementations of
 `sendmsg`/`recvmsg`, missing socket operations and additional cooperative C++
@@ -66,6 +92,7 @@ Run from the superproject root:
 
 ```bash
 python3 tools/boost/asio-wasip3/prepare_test.py
+python3 tools/boost/asio-wasip3/verify_test.py
 python3 tools/boost/asio-wasip3/run_test.py
 python3 tools/test/asio_wasip3_test.py
 b2 -a toolset=clang-wasip3 variant=release threading=single \

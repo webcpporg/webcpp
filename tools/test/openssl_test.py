@@ -76,9 +76,10 @@ def test_native_upstream_suite_checks_the_consumed_archives(root: Path) -> None:
 
 
 def test_upstream_suite_rejects_wasi_by_name(root: Path) -> None:
-    result = harness.run_b2(root, 'third_party//openssl', 'toolset=clang-wasip3',
-                            'webcpp-openssl-tests=on')
-    harness.expect(result, False, 'upstream test harness requires native executables')
+    for toolset in ('clang-wasip2', 'clang-wasip3'):
+        result = harness.run_b2(root, 'third_party//openssl', 'toolset=' + toolset,
+                                'webcpp-openssl-tests=on')
+        harness.expect(result, False, 'upstream test harness requires native executables')
 
 
 def test_upstream_failure_prevents_archive_publication(root: Path) -> None:
@@ -143,6 +144,25 @@ def test_native_source_dependency(root: Path) -> None:
     result = harness.run_b2(root, 'toolset=clang', 'variant=release',
                             'threading=single', 'libs/openssl_user/test')
     harness.expect(result, True, 'webcpp-openssl.build', '**passed**')
+
+
+def test_wasip2_source_dependency(root: Path) -> None:
+    jam = JAM.replace('import webcpp ;', 'import webcpp ;\nwebcpp.targets wasip2 ;')
+    harness.add_library(root, 'openssl_user', jam, {'uses_openssl.cpp': SOURCE})
+    for exceptions in ('on', 'off'):
+        result = harness.run_b2(root, 'toolset=clang-wasip2', 'variant=release',
+                                'threading=single', f'exception-handling={exceptions}',
+                                'testing.launcher=wasmtime run -W timeout=15s',
+                                'libs/openssl_user/test', timeout=600)
+        harness.expect(result, True, '**passed**')
+    for path in (root / 'bin/third_party').rglob('build.json'):
+        configuration = json.loads(path.read_text())
+        assert 'webcpp-wasip2' in configuration['configure'], configuration
+        assert 'no-threads' in configuration['configure'], configuration
+        assert '--target=wasm32-wasip2' in configuration['flags'], configuration
+    result = harness.run_b2(root, 'third_party//openssl', 'toolset=clang-wasip2',
+                            'threading=multi')
+    harness.expect(result, False, 'WASIp2', 'threading=single')
 
 
 def test_symlinked_compiler_without_c_sibling(root: Path) -> None:
@@ -222,9 +242,8 @@ def test_missing_checkout_is_lazy_and_actionable(root: Path) -> None:
 
 
 def test_unsupported_target_is_rejected(root: Path) -> None:
-    for toolset in ('clang-wasip2', 'emscripten'):
-        result = harness.run_b2(root, 'third_party//openssl', 'toolset=' + toolset)
-        harness.expect(result, False, 'not supported by this recipe')
+    result = harness.run_b2(root, 'third_party//openssl', 'toolset=emscripten')
+    harness.expect(result, False, 'not supported by this recipe')
 
 
 def test_source_checkout_with_spaces(root: Path) -> None:
@@ -307,7 +326,8 @@ def test_source_archive_tampering_fails_before_configuration(root: Path) -> None
 CASES = [test_native_upstream_suite_checks_the_consumed_archives,
          test_upstream_suite_rejects_wasi_by_name,
          test_upstream_failure_prevents_archive_publication,
-         test_native_source_dependency, test_symlinked_compiler_without_c_sibling,
+         test_native_source_dependency, test_wasip2_source_dependency,
+         test_symlinked_compiler_without_c_sibling,
          test_msvc_build_commands_preserve_the_consumers_configuration,
          test_missing_checkout_is_lazy_and_actionable,
          test_unsupported_target_is_rejected, test_pin_mismatch_fails_before_compilation,

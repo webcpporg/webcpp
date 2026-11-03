@@ -138,9 +138,8 @@ int main() {
                        True, '**passed**')
     harness.expect(harness.run_b2(root, 'threading=multi', *options),
                    False, 'WASIp2 supports threading=single only')
-    for target, reason in (('cobalt', 'Cobalt requires'), ('tls', 'OpenSSL requires')):
-        harness.expect(harness.run_b2(root, 'toolset=clang-wasip2', '/webcpp/asio//' + target),
-                       False, reason)
+    # TLS/Cobalt now have real P2 runtime consumers in
+    # libs/asio/test/wasip2_tls_cobalt. Only unsupported profiles are refused.
     stale = root / 'unknown SDK'
     stale.mkdir()
     (stale / 'VERSION').write_text('34.0\nwasi-libc: unknown\n')

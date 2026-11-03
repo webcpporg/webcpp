@@ -73,7 +73,7 @@ for web developers and for AI developers (`CODING-GUIDELINES.md` chapter 16).
 
 | Library | What it is | Targets | State |
 | --- | --- | --- | --- |
-| asio | Boost.Asio and Cobalt with browser event-loop suspension, WASIp3 networking and optional source-built TLS | native, emscripten, wasip3 | a submodule at `libs/asio`; see its feature matrix for variants |
+| asio | Boost.Asio and Cobalt with browser event-loop suspension, WASIp2/P3 networking and optional source-built TLS | native, emscripten, wasip2, wasip3 | a submodule at `libs/asio`; see its feature matrix for variants |
 | beast | HTTP and WebSocket applications using native/WASIp3 sockets, browser WebSocket/fetch, WASI host HTTP or supplied streams | native, emscripten, wasip2, wasip3, by backend | a submodule at `libs/beast`; all 53 upstream applications remain in its compatibility matrix |
 | config | webcpp's configuration, which every library includes first: the target, exceptions and webcpp's version, as Boost.Config is Boost's; webcpp's own | native, wasip2, wasip3, emscripten | a submodule at `libs/config` |
 | xactor | a deterministic actor system, webcpp's own | native, wasip2, wasip3 (`xactor_asio` native only) | a submodule at `libs/xactor`; the model for every port |
@@ -255,7 +255,7 @@ Jamroot is its build configuration, and `libs/<name>` is its repository.
   nested dependencies with the consumer's compiler and runtime settings.
   Native Trystero requires `threading=multi` and exceptions; a single-thread
   request is refused because this backend uses worker threads;
-- for native or WASIp3 guest TLS: Python 3, Perl, Make (nmake on Windows),
+- for native or WASIp2/P3 guest TLS: Python 3, Perl, Make (nmake on Windows),
   the selected compiler and `third_party/libs/openssl`, initialized with
   `git submodule update --init third_party/libs/openssl`. B2 builds the pinned
   OpenSSL sources and matching generated headers. Native Trystero's
@@ -345,7 +345,7 @@ looks.
 `src/detail/*.cpp` and `src/io/*.cpp`, excluding `src/main.cpp` and
 `src/io/ssl.cpp`. It supplies no default `co_main` runner; `/webcpp/asio//cobalt`
 adds the webcpp runner. Ordinary `main` consumers can use the archive directly.
-On WASIp3, `tools/boost/cobalt-wasip3` verifies a Boost 1.92 compatibility patch
+On WASIp2/P3, `tools/boost/cobalt-wasip3` verifies a Boost 1.92 compatibility patch
 and prepares private headers and endpoint/acceptor sources. The archive and
 consumers use the same Asio overlay and thread profile. Signal, serial-port
 and seqpacket sources are omitted, along with `thread.cpp` in single-thread
@@ -364,14 +364,14 @@ compiles `io/ssl.cpp` with `BOOST_COBALT_SSL_SOURCE=1`, source-built OpenSSL and
 the checked shared patch in `tools/boost/cobalt-ssl`. It preserves handler
 associations, fixes handshake state and callback constraints, and exposes a
 borrowed `native_ssl_handle()` for SNI. `/webcpp/asio//cobalt_ssl` adds the
-runner and CA factory. Native and WASIp3 consumers share these SSL corrections;
-browser/WASIp2 are refused. Plain Cobalt does not acquire an OpenSSL dependency.
+runner and CA factory. Native and WASIp2/P3 consumers share these SSL corrections;
+browser OpenSSL is refused. Plain Cobalt does not acquire an OpenSSL dependency.
 Asio's `tls-integration` own lane drives the real OpenSSL/Cobalt fixtures on
 native and WASIp3 profiles, including primitive/composed transfer cancellation,
 truncated shutdown and cancelled shutdown. Its native `openssl-upstream` lane
 requests `webcpp-openssl-tests=on`: the exact archives pass upstream's full
 `alltests` suite before the TLS consumer links. The upstream harness cannot run
-on WASIp3; its separate TLS/entropy integration tests do not substitute for it.
+on WASI; its separate TLS/entropy integration tests do not substitute for it.
 The `openssl-upstream-msvc-14.3` and `openssl-upstream-msvc-14.5` aliases
 select their matching Windows runners/toolsets; the default native upstream
 lane uses Linux. CI uploads upstream logs, proof and build manifests even on

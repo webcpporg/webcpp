@@ -49,13 +49,13 @@ class openssl-target : basic-target
         if $(os) = wasi && [ $(properties).get <webcpp-openssl-tests> ] = "on"
         {
             errors.user-error "The OpenSSL upstream test harness requires native executables."
-                "WASIp3 uses the separately declared TLS integration tests." ;
+                "WASI uses the separately declared TLS integration tests." ;
         }
         if ! ( ( $(tool) in clang gcc && $(os) in darwin linux )
-            || ( $(tool) = clang && $(os) = wasi && $(version) = wasip3 )
+            || ( $(tool) = clang && $(os) = wasi && $(version) in wasip2 wasip3 )
             || ( $(tool) = msvc && $(os) = windows ) )
         {
-            errors.user-error "Source-built OpenSSL supports native Clang/GCC on macOS/Linux, MSVC on Windows, and clang-wasip3."
+            errors.user-error "Source-built OpenSSL supports native Clang/GCC on macOS/Linux, MSVC on Windows, clang-wasip2 and clang-wasip3."
                 "Other targets are not supported by this recipe." ;
         }
         # B2's normal directory omits free flags. Add the effective compiler
@@ -122,6 +122,10 @@ toolset.uses-features webcpp-openssl.build : <toolset> <target-os> <architecture
 
 rule configuration ( properties * )
 {
+    if <toolset-clang:version>wasip2 in $(properties) && <threading>multi in $(properties)
+    {
+        errors.user-error "WASIp2 OpenSSL requires threading=single; the pinned SDK has no WASIp2 thread backend." ;
+    }
     if <target-os>wasi in $(properties) && <threading>multi in $(properties)
     {
         return [ webcpp-wasi.cooperative $(.root) : $(properties) ] ;

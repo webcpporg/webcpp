@@ -27,11 +27,11 @@
     },
     "boost/asio/detail/reactive_socket_sendto_op.hpp": {
       "before": "1f8e02cf41fea19813b97ed8abdb77f64432b2168cd7cfcad86bea36aea1b4df",
-      "after": "a64bdbab55fe71a178ded3fe1f81473e52a9adee6fba4509a1720de237a0732a"
+      "after": "ff72ed6496b9f6c3ea88213f83433e470ef11db948637aefafecbc11d23c9e4b"
     },
     "boost/asio/detail/reactive_socket_service.hpp": {
       "before": "5f68f1e43559adab6ec869f989a33c1295e0fafbb9ce7f27f4c0f205cfb0bbb2",
-      "after": "486d9c8d7962dd9313efaac40dcdf240901e64d1672e58ccd30c499db1f0fe16"
+      "after": "fb5e204b25a39c993c3cbb7480fc1e305952ea2ab5180418a312894b8e938b57"
     },
     "boost/asio/detail/signal_blocker.hpp": {
       "before": "b46eb959862d0b1643f244a743a2366aff3f0acd7638a5c3cfa78dc826dd4df9",
@@ -47,7 +47,7 @@
     },
     "boost/asio/detail/impl/select_reactor.ipp": {
       "before": "4e6df639193d0c93d2a9b3e2ead005824a6a3c921d1382c3ce72e5ce959e6a48",
-      "after": "f1a671b45aafe10afe156748b1a0c01d05dba9ded02b7baef57bd61d445202b2"
+      "after": "6587f498614375ba046e799c434871ecb682854f219d2ca0cb0685d457341998"
     },
     "boost/asio/detail/select_interrupter.hpp": {
       "before": "debfbfa6e8915f7123229d2031b4704b1b95edcb4590f4d9a5b25c8cdd4105d5",
@@ -55,7 +55,27 @@
     },
     "boost/asio/detail/resolver_service.hpp": {
       "before": "8ec1a1f84c3de50a4bf85e9ae5f2247ceb10cb36970c2bcaa3598587fa3acb50",
-      "after": "206411e63f5e34f028bd9c7a09a2866c61b1f8d2c3d1f7dba39357ede2afc733"
+      "after": "d56d25b9795e5da2420f63f1c511520e515f20e76e0afa601c70a56c8f78812d"
+    },
+    "boost/asio/detail/reactive_socket_service_base.hpp": {
+      "before": "cd6aca62ed4c72088946f85f968f6005d6b72ec7ba4d0d54b244b64963c5668e",
+      "after": "230282cd2f1dfcf196b6c255e90af7cc069cbf9987bf9c3962bbfb134ccbd3ef"
+    },
+    "boost/asio/detail/reactive_socket_send_op.hpp": {
+      "before": "32e0b1a85875a4b352a5f32afb1e07a2397b5a20c3de0580a1b0ecfb9681ab45",
+      "after": "2ac6aae36c0812feb5d2bb7da405419e4f9d2af84adc4c656115f00e39e45f25"
+    },
+    "boost/asio/detail/reactive_socket_recv_op.hpp": {
+      "before": "ffd1dfeb9997f8991e0daa8f85bf72e4aaa555857e8a99cc99faa5ee76e4b878",
+      "after": "adcd584194aeff30bcd23dc7248c1068eb0a939f6ef0c980c786f9fe8799cb3d"
+    },
+    "boost/asio/detail/reactive_socket_recvfrom_op.hpp": {
+      "before": "6f2b4e781fcfbafda3b06e26e7ba57f7fbe207571b524e617d621ee3f7b0b24b",
+      "after": "668eaeb1f563dc5c9ad69d1c7f4b7888066bbe814cf3cac83a138281daf17acb"
+    },
+    "boost/asio/detail/select_reactor.hpp": {
+      "before": "c00df2bc8876796f774c090d65d1b61d72f96f37611e7bdf72ea571afccd1fc8",
+      "after": "e46bdac4c17852f4c3a08340d63c0f6d93234271cf53cc23bdaff182115fc74c"
     }
   }
 }
