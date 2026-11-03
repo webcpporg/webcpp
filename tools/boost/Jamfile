@@ -184,6 +184,8 @@ compiled boost_context : [ glob libs/context/src/fcontext.cpp ]
   : libs/context/src/fcontext.cpp is missing
   : <conditional>@context-configuration <define>BOOST_CONTEXT_SOURCE
     <define>BOOST_CONTEXT_STATIC_LINK=1 <define>BOOST_CONTEXT_NO_LIB=1
+    # Upstream's static MSVC recipe removes the MASM PROC export qualifier.
+    <toolset>msvc:<define>BOOST_CONTEXT_EXPORT=
   : <define>BOOST_CONTEXT_STATIC_LINK=1 <define>BOOST_CONTEXT_NO_LIB=1
     <conditional>@context-usage ;
 

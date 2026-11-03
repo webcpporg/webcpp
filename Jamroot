@@ -248,7 +248,10 @@ project /webcpp
       <toolset>gcc:<cxxflags>"-isystem\"$(.boost-include)\""
       <toolset>clang:<cxxflags>"--system-header-prefix=\"boost/\""
       <toolset>emscripten:<cxxflags>"--system-header-prefix=\"boost/\""
-      <toolset>msvc:<cxxflags>"\"/external:I$(.boost-include)\""
+      # MSVC searches ordinary and external directories in command order.
+      # Quote the path alone so b2 orders private -I overlays before this
+      # /external:I option; quoting the whole option moves Boost first.
+      <toolset>msvc:<cxxflags>"/external:I\"$(.boost-include)\""
       <toolset>msvc:<cxxflags>"/external:W0"
       # Boost.Container's auto-link (reached through Boost.JSON) would ask
       # for a compiled library on MSVC.

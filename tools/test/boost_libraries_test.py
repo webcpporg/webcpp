@@ -22,6 +22,7 @@ Run with the names of some cases to run only those."""
 from __future__ import annotations
 
 import re
+import shlex
 import shutil
 import struct
 import sys
@@ -706,6 +707,77 @@ def test_asio_windows_allocator_overlay_reaches_sources_and_consumers(root: Path
             assert ('boost-asio-windows/include' in command) == selected, command
 
 
+def test_msvc_overlays_win_actual_header_lookup(root: Path) -> None:
+    # MSVC searches /I and /external:I in command order. Unlike GCC/Clang,
+    # an earlier external path shadows a later ordinary overlay path.
+    harness.add_library(root, 'coroutines', COBALT_JAMFILE, {'coroutines.cpp': COBALT_SOURCE})
+    config = harness.user_config(root).read_text()
+    configured = re.search(r'(?m)^\s*using\s+boost\b[^\n]*<include>'
+                           r'(?:"([^"]+)"|([^";\s]+))', config)
+    assert configured, config
+    headers = root / 'Boost headers with spaces'
+    headers.symlink_to(Path(configured.group(1) or configured.group(2)))
+    libraries = root / 'Boost libraries with spaces'
+    libraries.mkdir()
+    config = harness.USING_BOOST.sub('', config) + \
+        f'using boost : 1.92 : <include>"{headers}" <library>"{libraries}" ;\n'
+    harness.configure(root, config + f'\nusing msvc : 14.3 : "{sys.executable}"'
+                      ' : <setup> <rewrite-setup-scripts>off ;\n')
+    jamroot = root / 'Jamroot'
+    original = jamroot.read_text()
+    # A foreign-toolset dry run emits commands but cannot execute cmd.exe for
+    # configuration checks. Restore those checks before the real native compile.
+    jamroot.write_text(original.replace('<conditional>@boost-check', '<webcpp-boost-check>off'))
+    try:
+        result = harness.run_b2(root, '-a', '-n', '-d+2', 'toolset=msvc-14.3',
+                               'target-os=windows', 'architecture=x86', 'address-model=64',
+                               'exception-handling=off', 'libs/coroutines/test')
+    finally:
+        jamroot.write_text(original)
+        harness.configure(root, config)
+    harness.expect(result, True)
+    result_commands = result.stdout
+    commands = [line for line in result.stdout.splitlines()
+                if ' -c ' in line and 'coroutines.cpp' in line]
+    assert len(commands) == 1, result.stdout[-4000:]
+    includes = []
+    for word in shlex.split(commands[0]):
+        for prefix in ('/external:I', '-I', '/I'):
+            if word.startswith(prefix):
+                includes.append(word[len(prefix):])
+                break
+    assert any('boost-asio-windows/include' in path for path in includes), commands
+    assert any('boost-cobalt-common/include' in path for path in includes), commands
+    # Preparing the real common overlay and compiling against the emitted order
+    # proves which promise definition wins, including a checkout containing spaces.
+    harness.expect(harness.run_b2(root, '/webcpp/cobalt-common//prepared.stamp'), True)
+    assert (root / 'bin/boost-cobalt-common/include/boost/cobalt/detail/main.hpp').is_file()
+    flags = ' '.join(f'-I\\"{path}\\"' for path in includes)
+    source = ('#include <boost/cobalt/main.hpp>\n'
+              'static_assert(requires(boost::cobalt::detail::main_promise& promise) {\n'
+              '    promise.unhandled_exception();\n'
+              '});\n')
+    harness.add_library(root, 'selected',
+                        'import webcpp ;\nwebcpp.targets native ;\n'
+                        'webcpp.compile promise : promise.cpp : <exception-handling>off '
+                        f'<cxxflags>"{flags}" ;\n', {'promise.cpp': source})
+    result = harness.run_b2(root, '-a', 'libs/selected/test//promise')
+    harness.expect(result, True, '**passed**')
+    # The same precedence must reach every separately compiled Cobalt source.
+    compiled = [line for line in result_commands.splitlines()
+                if ' -c ' in line and '/cobalt/src/' in line]
+    assert compiled, result_commands[-4000:]
+    for command in [*commands, *compiled]:
+        words = shlex.split(command)
+        external = next(index for index, word in enumerate(words)
+                        if word.startswith('/external:I'))
+        for overlay in ('boost-asio-windows/include', 'boost-cobalt-common/include'):
+            selected = next(index for index, word in enumerate(words) if overlay in word)
+            assert selected < external, command
+        assert '/external:W0' in words, command
+        assert '/external:anglebrackets' not in words, command
+
+
 def test_boost_cobalt_preserves_exception_setting(root: Path) -> None:
     # A blanket exception requirement would reject a valid result-based consumer.
     # Build the real archive and execute eager promises and cancellation in each mode.
@@ -785,6 +857,7 @@ CASES = [
     test_boost_cobalt_warns_only_for_disabled_exceptions,
     test_boost_cobalt_preserves_exception_setting,
     test_asio_windows_allocator_overlay_reaches_sources_and_consumers,
+    test_msvc_overlays_win_actual_header_lookup,
     test_boost_url_links_on_every_target,
     test_boost_charconv_links_on_every_target,
     test_boost_locale_on_every_target,
