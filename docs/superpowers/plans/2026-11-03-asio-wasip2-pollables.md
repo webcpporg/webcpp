@@ -102,3 +102,25 @@ Decisions: reuse libc select/poll, pin the private descriptor ABI, retain deferr
 initiation and upstream public-result allocation, and keep host-blocking writes explicit.
 The ABI bridge must be revalidated on SDK updates. No CPU-thread, guest TLS, Cobalt,
 Unix addressing or host WebSocket-upgrade capability is implied for P2.
+
+### Additional local regression, 2026-11-03
+
+A fresh Emscripten Release build passed 271 B2 test targets with no unexpected
+failures or skipped dependencies, updating 2,941 build targets. It covered the
+Asio/Beast default tests/examples and Asio Asyncify/Cobalt lanes with EH on/off.
+This is Node-based Emscripten regression evidence, not a fresh complete real-browser
+or remote-CI run. The implementation commits above are unchanged.
+
+Proposal commit `5a1fcb6` records the scope amendment and exact committed reference
+trees (182 Asio files, 774 Beast files), with Git blobs and executable modes verified.
+All 23 proposals pass their structural check, all 17 proposal-tool tests pass and
+strict OpenSpec validation passes in all 15 roots. Root `b2 check-release` passed
+for `e80ffab` after the implementation commits. The later local documentation-only
+verification record does not replace the pending exact-candidate remote CI.
+
+The full compilation-database preparation completed successfully with 1,419 commands.
+It includes Asio P2 aggregate commands with and without exceptions and prepares the
+checked overlays and generated dependencies used by the lint. This is preparation
+and aggregate compilation evidence, not a claim that all 1,419 commands received
+clang-tidy in this increment; the focused 20-configuration result above remains its
+actual static-analysis scope.
