@@ -1,0 +1,58 @@
+# Diagnostic workflow kept on its verification branch only.
+name: Windows integration verification
+on:
+  push:
+    branches: [work/beast-windows-verify-2026-11-03]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    name: Windows regressions (${{ matrix.toolset }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            toolset: msvc-14.3
+          - os: windows-2025
+            toolset: msvc-14.5
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          submodules: true
+      - uses: ./tools/ci/actions/boost
+      - name: Configure and run exact regressions
+        env:
+          TOOLSET: ${{ matrix.toolset }}
+        run: |
+          python tools/ci/matrix.py register "$TOOLSET"
+          b2 --user-config=.local/user-config.jam -a -d+2 --dump-tests \
+            --out-xml="$TOOLSET.xml" "toolset=$TOOLSET" address-model=64 \
+            libs/asio/test//allocation_native \
+            libs/asio/test//allocation_native_release \
+            libs/asio/test//cobalt_accept_cancel \
+            libs/asio/test//cobalt_exceptions_off_native \
+            libs/asio/test//cobalt_network_exceptions_off \
+            libs/asio/test//cobalt_status_exceptions_off_native \
+            libs/asio/test//tls_client_context \
+            libs/beast/test//socket \
+            libs/beast/test/applications//documentation_snippets \
+            libs/beast/test/applications//context_unwind
+      - name: Upload raw results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: lane-${{ matrix.toolset }}
+          path: ${{ matrix.toolset }}.xml
+          if-no-files-found: error
+      - name: Require passing XML results
+        env:
+          TOOLSET: ${{ matrix.toolset }}
+        run: python tools/report/report.py --lane "$TOOLSET=$TOOLSET.xml" --out report
