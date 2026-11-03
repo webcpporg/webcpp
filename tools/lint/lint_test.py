@@ -372,6 +372,29 @@ def test_compile_database_lists_what_b2_builds(root):
 WORLD = 'libs/component_demo/include/webcpp/component_demo/world.hpp'
 
 
+def test_compile_database_normalizes_shared_source_paths(root):
+    # Separate Jamfiles can name the same physical source through different ../ paths.
+    # The native command must win over WASI, including its exception-free twin.
+    prepare(root)
+    write(root, 'libs/demo/example/shared.cpp', CPP + '\nint main() {\n    return 0;\n}\n')
+    for directory, target in (('native_shared', 'native'), ('wasi_shared', 'wasip2')):
+        write(root, f'libs/demo/test/{directory}/Jamfile', HASH + '\nimport webcpp ;\n'
+              f'webcpp.targets {target} ;\n'
+              'webcpp.compile shared : ../../example/shared.cpp ;\n')
+        append(root, 'libs/demo/test/Jamfile', f'build-project {directory} ;\n')
+    completed = compile_database(root)
+    assert completed.returncode == 0, completed.stdout[-6000:]
+    source = (root / 'libs/demo/example/shared.cpp').resolve()
+    entries = [entry for entry in json.loads(
+        (root / 'compile database/compile_commands.json').read_text())
+        if Path(entry['file']).resolve() == source]
+    assert len(entries) == 2, entries
+    assert ['-fno-exceptions' in entry['arguments'] for entry in entries] == [False, True]
+    for entry in entries:
+        assert entry['file'] == str(root / 'libs/demo/example/shared.cpp'), entry
+        assert not any(word.startswith('--target=wasm') for word in entry['arguments']), entry
+
+
 def test_compile_database_prepares_generated_header_dependencies(root):
     # A clean checkout must analyse headers that depend on generated data.
     # A dry run alone lists the include path but never creates its header.
@@ -1608,7 +1631,7 @@ def test_raw_rules(root):
         f"{at(root, test, 'raw_link ;')} link is b2's own rule; a test or example Jamfile "
         'declares its programs with the rules of tools/webcpp.jam, here webcpp.link\n',
         f"{at(root, test, 'raw_link_fail')} link-fail is b2's own rule; a test or example "
-        'Jamfile declares its programs with the rules of tools/webcpp.jam, here webcpp.link\n',
+        'Jamfile declares its programs with the rules of tools/webcpp.jam, here webcpp.link-fail\n',
         f"{at(root, example, 'raw_exe')} exe is b2's own rule; a test or example Jamfile "
         'declares its programs with the rules of tools/webcpp.jam, here webcpp.example, '
         'webcpp.run or webcpp.serve\n',
@@ -2109,7 +2132,29 @@ def test_third_party_code_is_never_read(root):
                  spared=('third_party/libs/',))
 
 
+def test_beast_corpus_is_verified_before_excluding_upstream_style(root):
+    prepare(root)
+    corpus = 'libs/beast/example/upstream/original.cpp'
+    verifier = 'libs/beast/test/applications/inventory.py'
+    # Deliberately invalid WebCPP style: only a verified upstream snapshot is exempt.
+    write(root, corpus, 'int original(){return 42;}\n')
+    write(root, verifier, HASH + '\nimport sys\n\nsys.exit(0)\n')
+    expect_clean(lint(root))
+    # A failed integrity check must fail lint, never silently waive the corpus.
+    write(root, verifier, HASH + '\nimport sys\n\nsys.exit(1)\n')
+    result = lint(root)
+    assert result.returncode != 0, result.stdout
+    assert 'upstream corpus integrity' in FAILED.findall(result.stdout), result.stdout
+    # The port itself keeps normal checks, even when the upstream snapshot is valid.
+    write(root, verifier, HASH + '\nimport sys\n\nsys.exit(0)\n')
+    adapted = 'libs/beast/example/applications/notes.txt'
+    write(root, adapted, EM_DASH + '\n')
+    expect_alone(lint(root), 'em dash', [adapted + ':1:'])
+
+
 CASES = [
+    test_compile_database_normalizes_shared_source_paths,
+    test_beast_corpus_is_verified_before_excluding_upstream_style,
     test_clean_tree_passes,
     test_no_library_passes,
     test_a_user_config_the_environment_names_is_read,

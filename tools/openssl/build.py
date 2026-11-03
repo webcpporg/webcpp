@@ -30,11 +30,16 @@ from source import check_checkout, stage_source
 HERE = Path(__file__).resolve().parent
 
 
-def run(command: list[str], *, cwd: Path, env: dict[str, str], log: Path) -> None:
+def run(command: list[str], *, cwd: Path, env: dict[str, str], log: Path,
+        timeout: float = 600) -> None:
     print('+ ' + shlex.join(command), flush=True)
-    with log.open('w') as stream:
-        result = subprocess.run(command, cwd=cwd, env=env, stdout=stream,
-                                stderr=subprocess.STDOUT, timeout=600)
+    try:
+        with log.open('w') as stream:
+            result = subprocess.run(command, cwd=cwd, env=env, stdout=stream,
+                                    stderr=subprocess.STDOUT, timeout=timeout)
+    except subprocess.TimeoutExpired as error:
+        print(log.read_text(errors='replace')[-14000:], file=sys.stderr)
+        raise RuntimeError(f'command timed out after {timeout:g}s; full log: {log}') from error
     if result.returncode:
         print(log.read_text(errors='replace')[-14000:], file=sys.stderr)
         raise RuntimeError(f'command failed ({result.returncode}); full log: {log}')
@@ -220,7 +225,11 @@ def build_source(args: argparse.Namespace, output: Path, pin: dict, scratch: Pat
          '--prefix=' + str(install)], cwd=build, env=env, log=output / 'configure.log')
     make = ['nmake', '/nologo'] if windows else ['make']
     jobs = [] if windows else ['-j' + str(min(8, os.cpu_count() or 1))]
-    run([*make, *jobs, 'build_libs'], cwd=build, env=env, log=output / 'build.log')
+    # nmake builds one translation unit at a time. Windows CI exceeded ten
+    # minutes while still compiling normally; retain a bounded thirty-minute
+    # budget for this phase. Parallel Make retains the shorter budget.
+    run([*make, *jobs, 'build_libs'], cwd=build, env=env, log=output / 'build.log',
+        timeout=1800 if windows else 600)
     if windows:
         # Upstream install_dev requires an external PDB even with B2's /Z7
         # embedded symbols or debug-symbols=off. Stage exactly its public and

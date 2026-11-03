@@ -19,7 +19,9 @@
 #     webcpp.headers-alone library : include-root : only * : requirements *
 #       : targets * ;
 #     webcpp.link name : sources + : requirements * : targets * ;
+#     webcpp.link-fail name : sources + : requirements * : targets * ;
 #     webcpp.data directories + ;  (requirements: a run's data on WASI)
+#     webcpp.source-only directories + ;  (upstream corpus, not a build)
 #
 # the rules of a program a page loads, on emscripten alone, in both
 # suspension variants, its manifest and the table of their sizes:
@@ -431,6 +433,14 @@ local rule node-runnable ( kind name : requirements * )
 # an exe of the same sources and requirements, for a target that needs its
 # files, such as a page that loads it. Each source of a program an example
 # Jamfile links is recorded for linked-of: the library's page shows its code.
+# A negative link test: its translation units must compile, but their
+# combination must not produce an executable. Sources remain in lint.
+rule link-fail ( name : sources + : requirements * : targets * )
+{
+    testing.link-fail $(sources) : $(requirements)
+        [ program link-fail : $(name) : $(targets) ] $(.handler) : $(name) ;
+}
+
 rule link ( name : sources + : requirements * : targets * )
 {
     local only = [ program link : $(name) : $(targets) ] ;
@@ -806,12 +816,45 @@ rule declared ( directories * )
 
 # Loads the Jamfiles under directories (absolute, in b2's form), at any
 # depth, which a build loads only once it reaches them.
+# Marks child directories as source material whose original build files are
+# not WebCPP projects. This affects discovery only, never lint or compilation
+# of sources explicitly named by a WebCPP target.
+rule source-only ( directories + )
+{
+    local found = [ where ] ;
+    for local directory in $(directories)
+    {
+        local absolute = [ path.root [ path.make $(directory) ] $(found[2]) ] ;
+        local child = [ path.relative $(absolute) $(found[2]) : no-error ] ;
+        if $(child) in . not-a-child
+        {
+            errors.user-error "webcpp.source-only requires a child directory: $(directory)" ;
+        }
+        if ! [ path.exists [ path.native $(absolute) ] ]
+        {
+            errors.user-error "webcpp.source-only directory does not exist: $(directory)" ;
+        }
+        .source-only += $(absolute) ;
+    }
+}
+
 local rule load-jamfiles ( directories * )
 {
     local names = [ modules.peek project : JAMFILE ] ;
     for local jamfile in [ path.glob-tree $(directories) : $(names) ]
     {
-        project.load $(jamfile:D) ;
+        local source-only ;
+        for local directory in $(.source-only)
+        {
+            if [ path.relative $(jamfile) $(directory) : no-error ] != not-a-child
+            {
+                source-only = true ;
+            }
+        }
+        if ! $(source-only)
+        {
+            project.load $(jamfile:D) ;
+        }
     }
 }
 

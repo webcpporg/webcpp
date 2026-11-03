@@ -142,7 +142,7 @@ TARGETS = {
 # A program can need one on a target that the library's native aggregate never prepares.
 BOOST_OVERLAYS = {
     f'bin/boost-{name}/include': f'tools/boost/{name}//prepared.stamp'
-    for name in ('asio-wasip3', 'cobalt-common', 'cobalt-wasip3', 'cobalt-ssl')
+    for name in ('asio-wasip3', 'asio-windows', 'cobalt-common', 'cobalt-wasip3', 'cobalt-ssl')
 }
 
 # The property of the request that builds a program without exceptions as a user asks b2 for one,
@@ -607,6 +607,11 @@ def prepare_boost_overlays(root: str, target: str, commands: list[list[str]]) ->
                       'while preparing checked Boost overlays')
 
 
+def source_path(root: str, source: str) -> str:
+    """The physical source's path relative to root, independent of its Jamfile's spelling."""
+    return os.path.relpath(os.path.realpath(os.path.join(root, source)), os.path.realpath(root))
+
+
 def read(root: str, target: str, commands: list[list[str]], entries: list[dict[str, object]],
          seen: set[tuple[str, ...]], earlier: set[str],
          wasi_clang: str | None) -> tuple[Units, set[str]]:
@@ -626,6 +631,8 @@ def read(root: str, target: str, commands: list[list[str]], entries: list[dict[s
             units.setdefault(unit.group(1), {}).setdefault(unit.group(2), []).append(words)
         if source.startswith(f'{BUILD_DIR}/') or not of_the_tree(root, source):
             continue
+        source = source_path(root, source)
+        words = [*words[:-1], source]
         sources.add(source)
         key = tuple(without_output(words))
         if source in earlier or key in seen:
@@ -739,8 +746,11 @@ def twins(root: str, target: str, chosen: dict[str, list[Aggregate]], units: Uni
         unit = ALONE.match(source)
         if unit:
             without.setdefault(unit.group(1), {}).setdefault(unit.group(2), []).append(words)
-        if (source.startswith(f'{BUILD_DIR}/') or not of_the_tree(root, source)
-                or first.setdefault(source, target) != target):
+        if source.startswith(f'{BUILD_DIR}/') or not of_the_tree(root, source):
+            continue
+        source = source_path(root, source)
+        words = [*words[:-1], source]
+        if first.setdefault(source, target) != target:
             continue
         if NO_EXCEPTIONS not in words:
             kept.add(source)

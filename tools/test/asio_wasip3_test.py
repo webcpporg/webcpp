@@ -41,6 +41,15 @@ void instantiate() {
 '''
 TARGET = 'libs/demo/test//wasi_configuration'
 
+HOST_SOURCE = '''#include <boost/asio/associated_executor.hpp>
+#include <boost/asio/associated_allocator.hpp>
+#include <boost/asio/associated_cancellation_slot.hpp>
+#include <boost/asio/async_result.hpp>
+#include <boost/asio/bind_allocator.hpp>
+#include <boost/asio/execution.hpp>
+void host_traits() {}
+'''
+
 
 def fixture(root: Path) -> None:
     directory = root / 'libs/demo/test'
@@ -82,8 +91,26 @@ def test_cooperative_profile_and_missing_exception_runtime(root: Path) -> None:
     harness.expect(result, False, 'requires wasi-sdk', 'experimental-coop-threads sysroot')
 
 
+def test_wasip2_host_traits_without_socket_reactor(root: Path) -> None:
+    fixture(root)
+    directory = root / 'libs/demo/test'
+    jam = directory / 'Jamfile'
+    jam.write_text(jam.read_text() + '''
+webcpp.compile host_traits : host_traits.cpp
+  : <toolset>clang-wasip2:<library>/webcpp/asio-wasip3//host-headers ;
+''')
+    (directory / 'host_traits.cpp').write_text(HOST_SOURCE)
+    for toolset in ('clang', 'clang-wasip2'):
+        for handling in ('on', 'off'):
+            result = harness.run_b2(root, '-a', f'toolset={toolset}',
+                                    f'exception-handling={handling}',
+                                    'libs/demo/test//host_traits')
+            harness.expect(result, True, '**passed**')
+
+
 CASES = [test_overlay_is_wasi_only_and_precedes_stock_headers,
-         test_cooperative_profile_and_missing_exception_runtime]
+         test_cooperative_profile_and_missing_exception_runtime,
+         test_wasip2_host_traits_without_socket_reactor]
 
 if __name__ == '__main__':
     sys.exit(harness.run_cases('asio_wasip3_test', CASES, sys.argv[1:]))

@@ -637,7 +637,13 @@ rule serve-and-compare ( target : source : properties * )
     local version = [ version-of $(properties) ] ;
     PYTHON on $(target) = $(.python) ;
     SERVER on $(target) = $(.server) ;
-    FLAGS on $(target) = $(.wasmtime-flags.$(version)) ;
+    local flags = $(.wasmtime-flags.$(version)) ;
+    if $(version) = p3 && <threading>multi in $(properties)
+    {
+        # Cooperative wasi-sdk libc uses context slot 1 in a component task.
+        flags = "$(flags) -W component-model-threading" ;
+    }
+    FLAGS on $(target) = $(flags) ;
     PROGRAM on $(target) = [ quoted $(.served.$(key)) ] ;
     # Empty, or the two words --wasmtime '<value>': a word made only of an
     # empty variable disappears, as run-and-compare's LAUNCHER_ARGS does.

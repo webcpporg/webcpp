@@ -341,6 +341,44 @@ jobs:
       # (its entry's chrome), as trystero's interop does.
       - if: matrix.chrome
         uses: ./tools/ci/actions/chrome
+        with:
+          product: ${{ matrix.library == 'beast' && 'chrome' || 'chrome-headless-shell' }}
+
+      - name: Build the native Beast interoperability peer
+        if: matrix.library == 'beast' && (matrix.lane == 'browser' || matrix.lane == 'browser-node')
+        shell: bash
+        run: |
+          python3 tools/ci/matrix.py register clang-18
+          b2 --user-config=.local/user-config.jam \
+            libs/beast/test/browser/peer//native_peer-program \
+            toolset=clang-18 threading=multi -j2
+
+      # This embedding adds a private test CA through Wasmtime's supported host hook.
+      # Stock Wasmtime uses its bundled public roots and has no CLI test-CA option.
+      - name: Restore the isolated WASI HTTPS host fixture
+        if: matrix.library == 'beast' && matrix.lane == 'applications-host-tls'
+        id: host-tls-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .local/beast-host-tls
+          key: beast-host-tls-${{ runner.os }}-${{ runner.arch }}-rust-1.97.1-${{ hashFiles('libs/beast/test/applications/host-tls/Cargo.lock', 'libs/beast/test/applications/host-tls/Cargo.toml', 'libs/beast/test/applications/host-tls/src/**') }}
+
+      - name: Build the isolated WASI HTTPS host fixture
+        if: matrix.library == 'beast' && matrix.lane == 'applications-host-tls'
+        shell: bash
+        run: |
+          rustup toolchain install 1.97.1 --profile minimal
+          cargo +1.97.1 build --locked --jobs 2 \
+            --manifest-path libs/beast/test/applications/host-tls/Cargo.toml \
+            --target-dir .local/beast-host-tls
+          echo "WEBCPP_WASI_TLS_FIXTURE=$PWD/.local/beast-host-tls/debug/webcpp-beast-host-tls-fixture" >> "$GITHUB_ENV"
+
+      - name: Save the isolated WASI HTTPS host fixture
+        if: matrix.library == 'beast' && matrix.lane == 'applications-host-tls' && steps.host-tls-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .local/beast-host-tls
+          key: ${{ steps.host-tls-cache.outputs.cache-primary-key }}
 
       # It registers its toolset in .local/user-config.jam, prints its b2 command and runs it.
       - name: Own lane

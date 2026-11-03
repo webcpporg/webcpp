@@ -1140,6 +1140,14 @@ def test_asio_browser_lane_receives_chrome(root):
     entry = own_lane_entry_of(own)
     assert entry['chrome'] is True, entry
 
+    for lane, platform in (('browser', 'emscripten'),
+                           ('applications-browser', 'emscripten'),
+                           ('applications-chat', 'native'),
+                           ('applications-chat', 'wasip3')):
+        beast = matrix.OwnLane('beast', lane, ('libs/beast/test/browser',),
+                               platform, 'original')
+        assert own_lane_entry_of(beast)['chrome'] is True, (lane, platform)
+
 
 def test_a_browser_lane_has_the_pinned_chrome(root):
     # An own lane whose driver meets a browser, asio's browser, trystero's interop and document's js
@@ -1147,7 +1155,9 @@ def test_a_browser_lane_has_the_pinned_chrome(root):
     # chrome-headless-shell, which gives CHROME; no other own lane does, and no job names the
     # image's Chrome.
     assert matrix.CHROME_LANES == {
-        ('asio', 'browser'), ('document', 'js'), ('trystero', 'interop')}, matrix.CHROME_LANES
+        ('asio', 'browser'), ('beast', 'browser'), ('beast', 'applications-browser'),
+        ('beast', 'applications-chat'), ('document', 'js'),
+        ('trystero', 'interop')}, matrix.CHROME_LANES
     boost_only(root)
     external_library(root)
     oracle_library(root, 'beta')
@@ -1157,6 +1167,7 @@ def test_a_browser_lane_has_the_pinned_chrome(root):
     steps = job_steps(workflow_jobs()['own-lanes'])
     chrome = [step for step in steps if 'uses: ./tools/ci/actions/chrome' in step]
     assert len(chrome) == 1 and 'if: matrix.chrome\n' in chrome[0], chrome
+    assert "matrix.library == 'beast' && 'chrome' || 'chrome-headless-shell'" in chrome[0], chrome
     workflow = (harness.ROOT / '.github/workflows/library.yml').read_text()
     assert '/usr/bin/google-chrome' not in workflow
     # AGENTS.md names the shell's version once, the action's.
@@ -1168,6 +1179,31 @@ def test_a_browser_lane_has_the_pinned_chrome(root):
     assert 'Chrome 154' not in agents and 'google-chrome' not in agents
     action = (matrix.ROOT / 'tools/ci/actions/chrome/action.yml').read_text()
     assert set(re.findall(r'\d+\.\d+\.\d+\.\d+', action)) == {pinned.group(1)}, action
+
+
+def test_host_tls_fixture_is_isolated_to_its_own_lane(root):
+    steps = job_steps(workflow_jobs()['own-lanes'])
+    fixture = [step for step in steps if 'WASI HTTPS host fixture' in step]
+    assert len(fixture) == 3, fixture
+    assert all("matrix.library == 'beast' && matrix.lane == 'applications-host-tls'"
+               in step for step in fixture), fixture
+    build = next(step for step in fixture if 'cargo +1.97.1 build' in step)
+    assert 'build --locked --jobs 2' in build and 'WEBCPP_WASI_TLS_FIXTURE=' in build, build
+    assert 'rustup toolchain install 1.97.1 --profile minimal' in build, build
+    restore = next(step for step in fixture if 'cache/restore' in step)
+    assert 'Cargo.lock' in restore and 'Cargo.toml' in restore and 'src/**' in restore, restore
+
+
+def test_browser_contract_lanes_build_a_native_beast_peer(root):
+    steps = job_steps(workflow_jobs()['own-lanes'])
+    peers = [step for step in steps if 'Build the native Beast interoperability peer' in step]
+    assert len(peers) == 1, peers
+    peer = peers[0]
+    assert "matrix.library == 'beast'" in peer and "matrix.lane == 'browser-node'" in peer, peer
+    assert "matrix.lane == 'browser'" in peer, peer
+    assert 'tools/ci/matrix.py register clang-18' in peer, peer
+    assert 'libs/beast/test/browser/peer//native_peer-program' in peer, peer
+    assert 'toolset=clang-18 threading=multi' in peer, peer
 
 
 # A stand-in of docker: each call's words to docker.log, quoted as a shell reads them, one line
@@ -1361,6 +1397,8 @@ CASES = [
     test_a_container_lane_has_its_image_from_the_cache,
     test_asio_browser_lane_receives_chrome,
     test_a_browser_lane_has_the_pinned_chrome,
+    test_host_tls_fixture_is_isolated_to_its_own_lane,
+    test_browser_contract_lanes_build_a_native_beast_peer,
     test_container_apt_get_retries_transient_failures,
     test_a_container_lane_runs_b2_with_no_network,
     test_a_container_lane_whose_image_does_not_build_fails,

@@ -683,6 +683,29 @@ def test_boost_cobalt_warns_only_for_disabled_exceptions(root: Path) -> None:
     assert issue not in result.stdout, result.stdout
 
 
+def test_asio_windows_allocator_overlay_reaches_sources_and_consumers(root: Path) -> None:
+    # Windows-only private headers must reach Asio applications and compiled Cobalt alike.
+    harness.add_library(root, 'asio',
+                        'import webcpp ;\nwebcpp.targets native ;\n'
+                        'webcpp.run context : context.cpp : <library>/webcpp/asio//asio ;\n',
+                        {'context.cpp': '#include <webcpp/asio.hpp>\nint main() {}\n'})
+    original = harness.ROOT / 'libs/asio'
+    (root / 'libs/asio/build.jam').write_text((original / 'build.jam').read_text())
+    for name in ('include', 'src'):
+        shutil.copytree(original / name, root / 'libs/asio' / name)
+    harness.add_library(root, 'coroutines', COBALT_JAMFILE, {'coroutines.cpp': COBALT_SOURCE})
+    for request, selected in (((), False), (('target-os=windows',), True)):
+        result = harness.run_b2(root, '-a', '-n', '-d+2', *request,
+                               'libs/asio/test//context', 'libs/coroutines/test')
+        harness.expect(result, True)
+        commands = [line for line in result.stdout.splitlines()
+                    if ' -c ' in line and any(name in line for name in
+                                             ('context.cpp', 'coroutines.cpp', '/cobalt/src/'))]
+        assert commands, result.stdout[-4000:]
+        for command in commands:
+            assert ('boost-asio-windows/include' in command) == selected, command
+
+
 def test_boost_cobalt_preserves_exception_setting(root: Path) -> None:
     # A blanket exception requirement would reject a valid result-based consumer.
     # Build the real archive and execute eager promises and cancellation in each mode.
@@ -717,11 +740,51 @@ def test_boost_cobalt_preserves_exception_setting(root: Path) -> None:
             print(f'cobalt {request or ("native",)} exceptions={exceptions}: passed', flush=True)
 
 
+def test_boost_context_unwinds_native_stack(root: Path) -> None:
+    source = r'''#include <boost/context/fiber.hpp>
+#include <utility>
+int main() {
+    int count = 0;
+    struct guard { int& value; ~guard() { ++value; } };
+    {
+        boost::context::fiber fiber([&](boost::context::fiber caller) {
+            guard instance{count};
+            caller = std::move(caller).resume();
+            return caller;
+        });
+        fiber = std::move(fiber).resume();
+        if (count != 0) return 1;
+    }
+    return count == 1 ? 0 : 2;
+}
+'''
+    harness.add_library(root, 'context_probe',
+                        'import webcpp ;\nwebcpp.run fiber : fiber.cpp : '
+                        '<library>/webcpp//boost_context <exception-handling>on ;\n',
+                        {'fiber.cpp': source})
+    result = harness.run_b2(root, '-a', '-d+2', 'libs/context_probe/test')
+    harness.expect(result, True)
+    assert passed(result) == {'fiber'}, result.stdout[-4000:]
+    assert '-lboost_context' not in result.stdout, result.stdout[-4000:]
+    assert 'BOOST_CONTEXT_STATIC_LINK=1' in result.stdout
+    assert 'BOOST_CONTEXT_NO_LIB=1' in result.stdout
+
+
+def test_boost_context_refuses_unverified_wasm(root: Path) -> None:
+    for target in ('wasip2', 'wasip3'):
+        result = harness.run_b2(root, f'toolset=clang-{target}', '/webcpp//boost_context')
+        harness.expect(result, False, f'Boost.Context has no verified {target} backend',
+                       'JSPI, Asyncify and C++20 awaitables do not')
+
+
 CASES = [
+    test_boost_context_unwinds_native_stack,
+    test_boost_context_refuses_unverified_wasm,
     test_boost_cobalt_names_missing_or_mismatched_sources,
     test_boost_cobalt_omits_main_and_ssl_from_supplied_sources,
     test_boost_cobalt_warns_only_for_disabled_exceptions,
     test_boost_cobalt_preserves_exception_setting,
+    test_asio_windows_allocator_overlay_reaches_sources_and_consumers,
     test_boost_url_links_on_every_target,
     test_boost_charconv_links_on_every_target,
     test_boost_locale_on_every_target,

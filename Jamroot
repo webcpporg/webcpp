@@ -423,7 +423,7 @@ use-project /webcpp/boost-libraries : tools/boost ;
 # Boost.JSON does with boost_json. Each alias checks the sources before anything
 # is built; what Boost.Locale gives on each target is the table of
 # CODING-GUIDELINES.md chapter 10.
-for local name in boost_url boost_charconv boost_locale boost_cobalt boost_cobalt_io_ssl
+for local name in boost_url boost_charconv boost_locale boost_cobalt boost_cobalt_io_ssl boost_context
 {
     alias $(name) : tools/boost//$(name) : <conditional>@boost-source-usable ;
 }

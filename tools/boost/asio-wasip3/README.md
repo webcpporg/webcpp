@@ -15,6 +15,13 @@ Stale extra files or symlinks in the private overlay stop preparation; clean tha
 private directory and rebuild after changing the set of patched headers.
 Only patched headers are copied; other headers continue to come from Boost.
 
+`/webcpp/asio-wasip3//host-headers` exposes association and completion-token
+traits to the single-threaded WASIp2 host HTTP scheduler. The only platform
+change selected on WASIp2 is the signal-free wait in `null_event`: WASI uses
+`poll` instead of the unavailable POSIX `pause`. This does not enable the Asio
+socket reactor on WASIp2. Host operations supply their own executor and never
+fall back to `system_executor` or an operating-system thread pool.
+
 The changes address missing POSIX signals/interface names, no-thread waiting,
 thread-safe signal-blocker selection, shutdown error mapping, unavailable socket
 options, scalar socket I/O, and resolver thread-pool initiation without threads.
@@ -41,10 +48,25 @@ contains the no-exceptions runtime only. The project selects Wasmtime 50.0.1 for
 launcher, using `wasmtime` on `PATH` and granting network/name-lookup access.
 It is not a production capability policy.
 
+The launcher bounds each guest's execution to 600 seconds by default. The global
+WASIp3 lane includes finite document and Unicode workloads, not only short
+network tests: unchanged debug document tests took 127-147 seconds locally
+under concurrent build load, and the benchmark smoke pass completed in 155
+seconds. A benchmark run under heavier contention exceeded even 180 seconds.
+The earlier 15-second limit interrupted these tests. The default provides
+about four times the longest completed measurement for shared runners while
+still terminating a stuck guest. Set
+`WEBCPP_WASIP3_TEST_TIMEOUT` to a positive integer number of seconds to change
+the bound. Empty, zero, negative and noninteger values fail before launch.
+For focused loopback tests, use `WEBCPP_WASIP3_TEST_TIMEOUT=15`. This setting
+changes only the execution bound; all runtime options and guest arguments are
+forwarded unchanged.
+
 Run from the superproject root:
 
 ```bash
 python3 tools/boost/asio-wasip3/prepare_test.py
+python3 tools/boost/asio-wasip3/run_test.py
 python3 tools/test/asio_wasip3_test.py
 b2 -a toolset=clang-wasip3 variant=release threading=single \
   testing.launcher=tools/boost/asio-wasip3/run.sh libs/asio/test libs/asio/example

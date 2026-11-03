@@ -4,6 +4,10 @@
     "boost/cobalt/composition.hpp": {
       "before": "4f89225430772cc39a82e37ec1b67069b342fa77423b3f6ad74edc3d8d1a77c5",
       "after": "a4d22f4619cad58063473d0e86a31dfbbfd4856b57d59c22e1c18ec0ccfabe1b"
+    },
+    "boost/cobalt/detail/main.hpp": {
+      "before": "fbdcb0ca58d8a368b8e4ec680dc99bcdd6ce2a2c5375770e278dec1dec91afcb",
+      "after": "2a55b2e808068c0aaef80ab257f462ab9d61f7d3d59ef0ede23ed6b56046bdf5"
     }
   }
 }

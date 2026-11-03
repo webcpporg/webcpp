@@ -50,11 +50,14 @@ class WindowsBuildTest(unittest.TestCase):
             with self.subTest(arch=arch):
                 commands = []
                 environments = []
+                timeouts = []
                 output = self.root / arch
 
-                def command(command: list[str], *, cwd: Path, env: dict, log: Path) -> None:
+                def command(command: list[str], *, cwd: Path, env: dict, log: Path,
+                            timeout: float = 600) -> None:
                     commands.append(command)
                     environments.append(env)
+                    timeouts.append(timeout)
                     log.write_text('completed\n')
                     if command[-1] == 'build_libs':
                         (cwd / 'include/openssl').mkdir(parents=True)
@@ -77,6 +80,7 @@ class WindowsBuildTest(unittest.TestCase):
                 self.assertIn('no-asm', commands[0])
                 self.assertEqual(commands[1], ['nmake', '/nologo', 'build_libs'])
                 self.assertEqual(len(commands), 2)
+                self.assertEqual(timeouts, [600, 1800])
                 self.assertEqual((output / 'libssl.lib').read_bytes(), b'ssl-' + arch.encode())
                 self.assertEqual((output / 'include/openssl/configuration.h').read_text(), arch)
                 self.assertEqual((output / 'include/openssl/applink.c').read_bytes(),
@@ -91,6 +95,14 @@ class WindowsBuildTest(unittest.TestCase):
                 self.assertEqual(environments[0]['ARFLAGS'], '/lib /nologo')
                 self.assertNotIn('CL', environments[0])
                 self.assertNotIn('_CL_', environments[0])
+
+    def test_a_stalled_command_keeps_its_diagnostic_log(self) -> None:
+        log = self.root / 'stalled.log'
+        with self.assertRaisesRegex(RuntimeError, r'command timed out after 2s; full log:'):
+            build.run([sys.executable, '-u', '-c',
+                       'import time; print("last compiler output"); time.sleep(10)'],
+                      cwd=self.root, env=os.environ.copy(), log=log, timeout=2)
+        self.assertEqual(log.read_text(), 'last compiler output\n')
 
     def test_windows_target_uses_the_configured_compilers_architecture(self) -> None:
         for output, target in (('WEBCPP_OPENSSL_X86', 'VC-WIN32'),

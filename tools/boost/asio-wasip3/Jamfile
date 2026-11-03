@@ -45,3 +45,10 @@ alias headers : : : : <dependency>prepared.stamp
     <cxxflags>"-I\"$(OVERLAY)/include\""
     <conditional>@configuration ;
 explicit headers ;
+
+# Association and completion-token traits for a host-owned HTTP scheduler.
+# This alias does not enable a socket reactor or cooperative threads on WASIp2.
+alias host-headers : : : : <dependency>prepared.stamp
+    <cxxflags>"-I\"$(OVERLAY)/include\""
+    <define>BOOST_ASIO_DISABLE_THREADS ;
+explicit host-headers ;

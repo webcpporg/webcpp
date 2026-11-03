@@ -260,6 +260,8 @@ def boost_archive(scratch: Path) -> Path:
                        ('libs/cobalt/src/detail/util.cpp', '// cobalt detail\n'),
                        ('libs/cobalt/src/io/sleep.cpp', '// cobalt io\n'),
                        ('libs/cobalt/src/io/ssl.cpp', '// cobalt ssl\n'),
+                       ('libs/context/src/asm/jump_arm64_aapcs_macho_gas.S', '// context asm\n'),
+                       ('libs/context/src/posix/stack_traits.cpp', '// context stack\n'),
                        ('libs/url/doc/index.html', '<p>not kept</p>\n')):
         (tree / path).parent.mkdir(parents=True, exist_ok=True)
         (tree / path).write_text(text)
@@ -322,7 +324,9 @@ MARKER = '.webcpp-boost-source'
 KEPT_SOURCES = [MARKER, 'boost/version.hpp', 'libs/charconv/src/from_chars.cpp',
                 'libs/cobalt/src/detail/util.cpp', 'libs/cobalt/src/io/sleep.cpp',
                 'libs/cobalt/src/io/ssl.cpp', 'libs/cobalt/src/main.cpp',
-                'libs/cobalt/src/this_thread.cpp', 'libs/json/src/src.cpp',
+                'libs/cobalt/src/this_thread.cpp',
+                'libs/context/src/asm/jump_arm64_aapcs_macho_gas.S',
+                'libs/context/src/posix/stack_traits.cpp', 'libs/json/src/src.cpp',
                 'libs/locale/src/message.cpp', 'libs/url/src/detail/pattern.hpp',
                 'libs/url/src/url.cpp']
 
@@ -368,7 +372,8 @@ def test_boost_configure_refuses_a_cached_prefix_with_stale_sources(scratch: Pat
     prefix = scratch / 'prefix'
     result = run(script, 'install', prefix, env=runner)
     assert result.returncode == 0, (result.returncode, result.stdout, result.stderr)
-    for stale in ((prefix / 'source' / MARKER), (prefix / 'source/libs/cobalt/src')):
+    for stale in ((prefix / 'source' / MARKER), (prefix / 'source/libs/cobalt/src'),
+                  (prefix / 'source/libs/context/src')):
         kept = scratch / 'kept'
         shutil.move(stale, kept)
         result = subprocess.run(['bash', str(script), 'configure', str(prefix)],
@@ -1673,15 +1678,15 @@ CHROME_BUILDS = {
 }
 
 
-def chrome_archive(scratch: Path, build: str) -> Path:
+def chrome_archive(scratch: Path, build: str, product: str = 'chrome-headless-shell') -> Path:
     """A stand-in of the shell's zip: its top directory, a program that prints its arguments, and
     the files beside it."""
-    archive = scratch / f'chrome-headless-shell-{build}.zip'
+    archive = scratch / f'{product}-{build}.zip'
     with zipfile.ZipFile(archive, 'w') as zipped:
-        program = zipfile.ZipInfo(f'chrome-headless-shell-{build}/chrome-headless-shell')
+        program = zipfile.ZipInfo(f'{product}-{build}/{product}')
         program.external_attr = 0o755 << 16
         zipped.writestr(program, '#!/bin/sh\necho "shell $*"\n')
-        zipped.writestr(f'chrome-headless-shell-{build}/ABOUT', 'about\n')
+        zipped.writestr(f'{product}-{build}/ABOUT', 'about\n')
     return archive
 
 
@@ -1709,6 +1714,38 @@ def test_chrome_installs_the_pinned_headless_shell(scratch: Path) -> None:
                              text=True, check=False)
         assert (ran.returncode, ran.stdout) == (0, 'shell --no-sandbox --headless=new x y\n'), ran
         assert f'chrome-headless-shell {CHROME_VERSION}' in result.stdout, result.stdout
+
+
+def test_chrome_installs_full_chrome_for_isolated_certificate_trust(scratch: Path) -> None:
+    builds = {
+        'X64': ('linux64', '55672d1f392fd3e7b7a08621b6e804e6bcb39d40cf155504abb74b3a021ea8ea'),
+        'ARM64': ('linux-arm64',
+                  'b9d44e5d183260ca941a4c4d8d21c8a437d81ef778a489047ef98968b0475dc5'),
+    }
+    for processor, (build, digest) in builds.items():
+        root = scratch / processor
+        root.mkdir()
+        url = (f'https://storage.googleapis.com/chrome-for-testing-public/{CHROME_VERSION}/{build}/'
+               f'chrome-{build}.zip')
+        archive = chrome_archive(root, build, 'chrome')
+        script = serving_tree(root, 'chrome', CHROME, {url: archive})
+        runner = dependency_runner(root, 'Linux', processor, stand_ins(root, {}))
+        runner['WEBCPP_CHROME_PRODUCT'] = 'chrome'
+        result = dependency_step(root, script, runner)
+        assert result.returncode == 0, (processor, result.stderr)
+        assert downloads(root) == [(url, digest)], downloads(root)
+        wrapper = root.resolve() / '.local/chrome/chrome'
+        assert (root / 'github-env').read_text() == f'CHROME={wrapper}\n'
+        ran = subprocess.run([str(wrapper), '--headless=new'], capture_output=True,
+                             text=True, check=False)
+        assert (ran.returncode, ran.stdout) == (0, 'shell --no-sandbox --headless=new\n'), ran
+        (root / 'tools/ci/download.sh').write_text(
+            f'#!/bin/sh\nexec bash "{DOWNLOAD}" "{archive.as_uri()}" "$2" "$3"\n')
+        result = dependency_step(root, script, runner)
+        assert result.returncode == 1 and f'and {digest} is pinned' in result.stderr, result
+        runner['WEBCPP_CHROME_PRODUCT'] = '../invalid'
+        result = dependency_step(root, script, runner)
+        assert result.returncode == 1 and 'unsupported Chrome product' in result.stderr, result
 
 
 def test_chrome_refuses_a_shell_it_does_not_pin_or_a_runner_it_has_none_for(scratch: Path) -> None:
@@ -1891,6 +1928,7 @@ CASES: list[Callable[[Path], None]] = [
     test_openssl_refuses_one_that_is_not_3_or_a_runner_it_has_none_for,
     test_container_builds_the_image_once_and_loads_it_after,
     test_chrome_installs_the_pinned_headless_shell,
+    test_chrome_installs_full_chrome_for_isolated_certificate_trust,
     test_chrome_refuses_a_shell_it_does_not_pin_or_a_runner_it_has_none_for,
 ]
 

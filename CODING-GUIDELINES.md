@@ -6722,6 +6722,64 @@ The original proposal has not been amended and no CI ran.
 
 Its conflicts with chapters 1 to 13 are in chapter 19.
 
+### beast (Boost.Beast portability facade)
+
+The owner's expanded Beast genesis proposal in
+`libraries/beast/openspec/changes/genesis` governs this implementation. The
+library is the `webcpporg/beast` submodule at `libs/beast`. The proposal records
+source compatibility, explicit environment counterparts and unavailable
+facilities separately; a successful compile never proves runtime parity.
+
+- Portable HTTP messages, parsers and serializers reuse Boost.Beast 1.92.
+  `http.hpp` remains independent of a socket reactor. Byte-stream algorithms
+  are explicit `http/read.hpp` and `http/write.hpp` includes.
+- Native and WASIp3 guest sockets use webcpp::asio. Guest TLS is optional and
+  explicitly links the project's source-built OpenSSL through `//tls`.
+  `set_server_name` sets SNI only; peer verification and hostname validation
+  remain explicit. Native and WASIp3 stream internals retain upstream Beast's
+  allocation behavior, even when accepting the portable allocator constructor.
+- The browser backend uses JavaScript WebSocket and fetch. Its TCP-shaped
+  lowest layer records an authority rather than opening a raw socket, and its
+  TLS-shaped layer records intent rather than running guest OpenSSL. The
+  browser owns trust, handshake headers, framing, DNS and redirects.
+- Browser stream state, retained metadata and payloads use the stream allocator;
+  operation completions use their associated allocator and executor. The
+  intrusive Asio bridge registration avoids an independent lookup allocation.
+  Receive limits account for retained message records as well as payloads,
+  including browser arrivals before the application drains its executor.
+  Terminal registrations and queued events are scoped to one connection or
+  request generation, so cancellation and reuse cannot deliver stale results.
+- `browser::http_byte_stream` is an explicit synthetic HTTP/1.1 adapter for
+  algorithms that require bytes. Fetch has already decoded the body. Its
+  internal parser, fields and body use the stream resource; synthetic chunk
+  sizes use fixed storage because upstream's helper has no allocator hook.
+- The propagated B2 feature `webcpp-beast-unsupported=error|ignore` selects the
+  unsupported-setting policy, defaulting to error. Translation units with
+  different policies must fail to link. Ignoring a setting never enables an
+  unavailable transport or conceals an operational network failure.
+- WASI host HTTP is independent of guest sockets and OpenSSL. The `//wasi-http`
+  target uses webcpp::wasi's independent host bindings on P2/P3, preserving
+  full messages, trailers, cancellation and explicit host ownership. Supplied
+  stdin/stdout streams are meaningful counterparts for local-socket examples;
+  they do not supply Unix-domain addressing. Host HTTP does not provide a
+  WebSocket upgrade or a guest TCP listener.
+- The immutable upstream application corpus contains all 53 executable
+  definitions at its pinned commit. Inventory checks validate original hashes,
+  Jamfiles, CMake definitions and entry points. All adaptations are generated
+  by checked-in generators and inspectable patches; never edit their output.
+  Preserve each application's algorithm where possible, and record every
+  scheduling, resolver, transport or error-handling adaptation explicitly.
+- Feature and application matrices in the guide keep compilation and execution
+  separate for every target, exception mode and supported threading profile.
+  Unavailable stackful Wasm coroutines, browser listeners, WASIp2 guest sockets
+  and cooperative WASIp3 exceptions remain unavailable, never counted as passes.
+- Native upstream programs are the oracle. Browser validation runs in real
+  Chrome with a disposable CA profile, independently of Node. WASI host HTTPS
+  uses a pinned Wasmtime host fixture with normal trust and hostname checks;
+  guest TLS evidence cannot substitute for it. Positive and negative trust
+  controls accompany TLS application evidence. Documentation follows Diataxis
+  in AsciiDoc with MrDocs API reference and executable examples.
+
 ## 16. Roadmap
 
 What webcpp does not have yet, and the chapters that mention it:
@@ -8067,33 +8125,6 @@ summary.
 The proposals not yet decided, each briefly, with the questions they leave
 for the owner. A draft decides nothing: it is here so that a contributor sees
 what is coming, and its proposal holds it in full.
-
-### beast (implementation started locally)
-
-The owner authorized implementation on 2026-11-02 after expanding the proposal
-in `libraries/beast/openspec/changes/genesis` to WASIp2, WASIp3, Emscripten and all
-53 upstream executable examples. That proposal governs over the older
-2026-10-10 baseline. Upstream Beast data types are reused; host transports do not
-need upstream network/protocol execution. The library currently exists as a local
-repository at `libs/beast`, with no organization repository or release yet.
-
-The first increment separates portable messages/parsers/serializers from explicit
-socket algorithm headers and optional TLS. Native and WASIp3 use the existing
-Asio socket backend; browser WebSocket/fetch and WASI host HTTP remain subsequent
-work, with application adaptation distinguished from exact transport parity.
-The feature matrix is in the library guide; only recorded build/runtime evidence
-establishes a supported profile. The remaining proposal must not be marked complete
-from this initial backend.
-
-The unsupported-setting policy is a propagated B2 feature, default error. Native
-WebSocket state keeps upstream allocation while accepting the portable allocator
-constructor syntax. `set_server_name` configures guest TLS SNI only and rejects
-empty, overlong and embedded-NUL names; it does not perform certificate verification.
-
-The implementation plan and current decisions are in the proposal's
-`reference/plan.md` and `design.md`. No change adds guest OpenSSL or a missing
-Asio WASIp2 reactor as a prerequisite to host HTTP. Missing Unix socket facilities
-receive explicit host-stream counterparts where meaningful.
 
 ### webrtc (draft, not decided)
 

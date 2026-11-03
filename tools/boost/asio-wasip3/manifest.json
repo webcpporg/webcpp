@@ -11,7 +11,7 @@
     },
     "boost/asio/detail/impl/null_event.ipp": {
       "before": "00b0ffc7de583ed07afe02ca249d630414c118ac2d68948cbc1a51d47c583617",
-      "after": "0aac40516a78403d514ec7ee98ae867a20eac3fbef683c8be556c4c7f4630447"
+      "after": "52999ae8533645b9d897df9cca045bccb132f57001494922443e1f50f2c5ad26"
     },
     "boost/asio/detail/impl/resolver_thread_pool.ipp": {
       "before": "2c1488b04ea5cb139f0a632aa908b9ce7fe01e7c95464af2f9a16541cab31cb8",

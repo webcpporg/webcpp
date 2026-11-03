@@ -1,10 +1,6 @@
 {
   "boost_version": 109200,
   "files": {
-    "boost/cobalt/detail/main.hpp": {
-      "before": "fbdcb0ca58d8a368b8e4ec680dc99bcdd6ce2a2c5375770e278dec1dec91afcb",
-      "after": "8626f94300962cc0ff674c8f5df5e6ca171254aad34f8964a159d2e327684fe9"
-    },
     "boost/cobalt/io/acceptor.hpp": {
       "before": "d4288bd7bfd6953c15fdfac09a8caff56c7e78fceebe2c5b9f232daff8736c18",
       "after": "33c3aa0fa45184a555353153c08f4950b81209221791ec43759ab783fc7ba6fd"

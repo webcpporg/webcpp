@@ -6,14 +6,21 @@
 
 name: Chrome
 description: >-
-  Installs Chrome for Testing's chrome-headless-shell 155.0.8059.39 in .local/chrome-headless-shell,
+  Installs Chrome for Testing 155.0.8059.39 in .local/<product>,
   checked against its SHA-256, and gives the later steps CHROME, a wrapper that runs it without
   its sandbox (install.sh says why): the Chrome a driven test runs when its driver meets a browser,
-  as trystero's interop lane does. On Linux.
+  as trystero's interop lane does. Full Chrome supports isolated certificate trust profiles. On Linux.
+
+inputs:
+  product:
+    description: chrome-headless-shell, or chrome for certificate-profile tests
+    default: chrome-headless-shell
 
 runs:
   using: composite
   steps:
-    - name: chrome-headless-shell 155.0.8059.39
+    - name: Chrome for Testing 155.0.8059.39
       shell: bash
+      env:
+        WEBCPP_CHROME_PRODUCT: ${{ inputs.product }}
       run: bash tools/ci/actions/chrome/install.sh

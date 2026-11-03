@@ -23,6 +23,7 @@ system.
 | Library | What it is | Targets |
 | --- | --- | --- |
 | [asio](https://github.com/webcpporg/asio) | Boost.Asio and Cobalt with browser event-loop suspension, WASIp3 networking and optional source-built TLS. | native, emscripten, wasip3 |
+| [beast](https://github.com/webcpporg/beast) | Beast-compatible HTTP and WebSocket applications, with native/WASIp3 sockets, browser WebSocket and fetch, WASI host HTTP and supplied streams. Its guide records compatibility and results for all 53 upstream applications. | native, emscripten, wasip2, wasip3, by backend |
 | [xactor](https://github.com/webcpporg/xactor) | A header-only, deterministic actor system: actors that handle one message at a time, with fuel per execution, timers and a lifecycle. | native, wasip2, wasip3 |
 | [xstate](https://github.com/webcpporg/xstate) | A header-only port of XState's state machines and actors: machines read from XState's JSON config, stepped by XState's pure functions or run as actors on xactor. Ports XState 5.33.2, and is proven against it. | native, wasip2, wasip3 |
 | [pratt](https://github.com/webcpporg/pratt) | A header-only Pratt parser engine, generic through concepts, with a calculator built on it, exact in decimal by default; a library of webcpp's own. | native, emscripten, wasip2, wasip3 |
@@ -38,7 +39,7 @@ library on every target are published at <https://webcpporg.github.io/>.
 ## Prerequisites
 
 - Boost 1.92 or newer, installed, and for a library that links Boost.URL,
-  Boost.Charconv or Boost.Locale its sources, which `bash
+  Boost.Charconv, Boost.Locale, Boost.Cobalt or Boost.Context its sources, which `bash
   tools/ci/actions/boost/install.sh source .local/boost-source` fetches;
 - b2;
 - a C++20 compiler;
@@ -61,6 +62,9 @@ library on every target are published at <https://webcpporg.github.io/>.
   native backends;
 - for a library's oracle lane, which runs the original it ports against the
   same cases and examples, Node and npm;
+- for Beast's browser contracts, Node 26 and full Chrome for Testing with a
+  disposable CA profile; its WASI HTTPS host fixture builds with Rust 1.97.1
+  and the checked-in Cargo lockfile, as its verification guide describes;
 - for the lint, wasi-sdk 34, whose clang-format and clang-tidy it runs, the
   wasip2, wasip3 and emscripten toolsets below, wit-bindgen, the WIT and
   trystero's libraries, since it reads what those toolsets compile, and Node,

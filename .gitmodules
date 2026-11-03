@@ -40,3 +40,6 @@
 [submodule "libs/asio"]
 	path = libs/asio
 	url = ../asio.git
+[submodule "libs/beast"]
+	path = libs/beast
+	url = ../beast.git

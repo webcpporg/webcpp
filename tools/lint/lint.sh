@@ -134,6 +134,18 @@ for library in libs/*/; do
     fi
 done
 
+# Keep the exact upstream Beast oracle's notices and style. Its pinned inventory
+# must validate before this one directory is excluded; adaptations remain linted.
+beast_corpus_verified=false
+if [ -d libs/beast/example/upstream ]; then
+    rule 'upstream corpus integrity'
+    if python3 libs/beast/test/applications/inventory.py --check; then
+        beast_corpus_verified=true
+    else
+        fail 'the pinned Boost.Beast application corpus failed its integrity check'
+    fi
+fi
+
 # Every file of the repositories that is there, relative to the root, sorted, NUL-separated.
 # The index can name a path a move has not been staged for yet, and a submodule is listed as a
 # directory; neither is a file. A symbolic link is not read either: its text is a path.
@@ -146,6 +158,8 @@ for repository in "${repositories[@]}"; do
               fi
               case "${path}" in
                   third_party/libs/*) continue ;;
+                  libs/beast/example/upstream/*)
+                      if [ "${beast_corpus_verified}" = true ]; then continue; fi ;;
               esac
               if [ -f "${path}" ] && [ ! -L "${path}" ]; then
                   printf '%s\0' "${path}"

@@ -75,7 +75,7 @@
  # include <boost/asio/detail/socket_types.hpp>
  #else
  # include <unistd.h>
-+# if defined(__wasip3__)
++# if defined(__wasip2__) || defined(__wasip3__)
 +#  include <poll.h>
 +# endif
  # if defined(__hpux)
@@ -85,7 +85,7 @@
  #elif defined(BOOST_ASIO_WINDOWS) || defined(BOOST_ASIO_CYGWIN_W32_SOCKETS)
    ::Sleep(INFINITE);
  #else
-+#if defined(__wasip3__)
++#if defined(__wasip2__) || defined(__wasip3__)
 +  // Wait through the Component Model rather than a nonexistent POSIX signal.
 +  ::poll(0, 0, -1);
 +#else

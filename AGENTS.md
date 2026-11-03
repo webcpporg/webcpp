@@ -74,6 +74,7 @@ for web developers and for AI developers (`CODING-GUIDELINES.md` chapter 16).
 | Library | What it is | Targets | State |
 | --- | --- | --- | --- |
 | asio | Boost.Asio and Cobalt with browser event-loop suspension, WASIp3 networking and optional source-built TLS | native, emscripten, wasip3 | a submodule at `libs/asio`; see its feature matrix for variants |
+| beast | HTTP and WebSocket applications using native/WASIp3 sockets, browser WebSocket/fetch, WASI host HTTP or supplied streams | native, emscripten, wasip2, wasip3, by backend | a submodule at `libs/beast`; all 53 upstream applications remain in its compatibility matrix |
 | config | webcpp's configuration, which every library includes first: the target, exceptions and webcpp's version, as Boost.Config is Boost's; webcpp's own | native, wasip2, wasip3, emscripten | a submodule at `libs/config` |
 | xactor | a deterministic actor system, webcpp's own | native, wasip2, wasip3 (`xactor_asio` native only) | a submodule at `libs/xactor`; the model for every port |
 | xstate | a port of XState 5.33.2's state machines and actors; depends on xactor and Boost.JSON | native, wasip2, wasip3; its oracle lane | a submodule at `libs/xstate`; the first user of the shared oracle (`CODING-GUIDELINES.md` chapter 12) |
@@ -989,7 +990,9 @@ webcpp.boost-test   <name> : <sources> + : <requirements> * ;
 webcpp.example      <source> : <requirements> * : <targets> * ;
 webcpp.headers-alone <library> : <include-root> : <only> * : <requirements> * : <targets> * ;
 webcpp.link         <name> : <sources> + : <requirements> * : <targets> * ;
+webcpp.link-fail    <name> : <sources> + : <requirements> * : <targets> * ;
 webcpp.data         <directory> + ;   (requirements)
+webcpp.source-only <directory> + ;   (reference source trees)
 ```
 
 | Rule | Passes when | Notes |
@@ -999,8 +1002,10 @@ webcpp.data         <directory> + ;   (requirements)
 | `webcpp.run-fail` | the program exits with another status | built and run as `webcpp.run`'s, and links `/webcpp//node-test` likewise |
 | `webcpp.compile` | the sources compile | no program is linked; takes `/webcpp//node-test` for its header |
 | `webcpp.compile-fail` | the sources do not compile | left out of clang-tidy; any error passes it, the wrong one included; takes `/webcpp//node-test` for its header |
+| `webcpp.link-fail` | the compiled sources fail to link | use a matching successful control to distinguish the intended incompatibility from unrelated failures; the sources remain in clang-tidy |
 | `webcpp.compile-diagnostic` | the sources stop with every error they state in clang's `-verify` comments, `// expected-error@<file>:* {{<message>}}` for a header they include or `// expected-error@+1 {{<message>}}` for the next line | compiled with `-Xclang -verify -Xclang -verify-ignore-unexpected=error,note`, so an error not stated and a note are ignored; built on b2's `clang` toolset only (native clang, `clang-wasip2`, `clang-wasip3`) and skipped elsewhere, since `-verify` is clang's: a refusal would turn every gcc and msvc lane red for a declaration that holds; left out of clang-tidy; takes `/webcpp//node-test` for its header |
 | `webcpp.boost-test` | every case of the Boost.Test suite passes | native only, whatever the Jamfile declares; the header-only framework, `tools/boost_test_runner.cpp`, is one object of the suite's, always compiled with exceptions |
+| `webcpp.source-only` | | declares child source directories whose original Jamfiles are not WebCPP projects; use in `build.jam` before discovery; it changes neither explicit compilation nor lint |
 | `webcpp.example` | the program exits with 0, and its standard output, carriage returns removed, equals `<stem>.expected` beside it | its standard input is `<stem>.input` beside it, else empty, never the terminal, on every target (wasmtime passes it through, and node under `-sNODERAWFS=1`); run through `testing.launcher` for WASI, and on emscripten with the node on `PATH`, not the one b2's toolset registered, which b2 gives only to its own testing rules, by `tools/example/run_example.py`, which names a failing exit status (or the signal) before the diff; always run again, and `<stem>.input` is a source of the run; links `/webcpp//node-test` on every target (Targets, above) |
 | `webcpp.link` | the program links | never run: a program for a browser, which node refuses to run (`-sENVIRONMENT=web`), or one that needs the network; b2's `link` test, which `--dump-tests` lists and the report shows as a link test; never linked with `-sNODERAWFS=1`. The explicit target `<name>-program` is the same program, an `exe` of the same sources and requirements, `<name>-program.js` on emscripten, for a target that needs its files, such as a page that loads it. An example Jamfile's is shown on the page by its code, and has no `.expected` (chapter 3) |
 | `webcpp.headers-alone` | each public header compiles alone | one test per header, `alone-<path>` with `/` as `-` (`alone-xactor-scheduler`), against `/webcpp/<library>//<library>` and the requirements given, for the targets given or the Jamfile's; `only` restricts a call to the public headers its globs match, relative to `<include-root>/webcpp/` (`wasi/http/response.hpp`), a glob that matches none stopping the build; a library may call it several times, and a header two calls take stops the build, naming it |
@@ -1823,6 +1828,11 @@ wrapper each quoted as one word of Jam.
   `CHROME_DEVEL_SANDBOX` naming the image's setuid helper,
   `/opt/google/chrome/chrome-sandbox`.
   The headless shell sends nothing to Google of its own (measured).
+  Beast browser lanes select `product: chrome` at the same pinned version,
+  installed into `.local/chrome`. Its certificate tests need full Chrome's
+  isolated profile trust store. Test CAs are installed only in disposable
+  profiles; no host trust store or certificate-validation bypass is used.
+  The drivers disable background networking and operate against local fixtures.
 - `container` gives a job the container lanes' image (above): built from
   `tools/ci/container/Dockerfile` when the cache does not hold it, saved
   there under the Dockerfile's digest, and loaded from there otherwise.
