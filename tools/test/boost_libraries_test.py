@@ -694,6 +694,11 @@ def test_asio_windows_allocator_overlay_reaches_sources_and_consumers(root: Path
     (root / 'libs/asio/build.jam').write_text((original / 'build.jam').read_text())
     for name in ('include', 'src'):
         shutil.copytree(original / name, root / 'libs/asio' / name)
+    # The actual Asio build project requires config even in a dry run.
+    config = root / 'libs/config'
+    config.mkdir()
+    shutil.copyfile(harness.ROOT / 'libs/config/build.jam', config / 'build.jam')
+    shutil.copytree(harness.ROOT / 'libs/config/include', config / 'include')
     harness.add_library(root, 'coroutines', COBALT_JAMFILE, {'coroutines.cpp': COBALT_SOURCE})
     for request, selected in (((), False), (('target-os=windows',), True)):
         result = harness.run_b2(root, '-a', '-n', '-d+2', *request,
