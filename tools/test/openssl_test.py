@@ -259,6 +259,7 @@ def test_msvc_tls_lanes_keep_distinct_openssl_thread_profiles(root: Path) -> Non
                         if '--source "' in line and '--threading "' in line]
             assert commands, result.stdout[-4000:]
             profiles: dict[str, set[str]] = {}
+            stages: dict[str, set[str]] = {}
             for command in commands:
                 options = dict(re.findall(r'--(threading|output|variant) "([^"]+)"', command))
                 threads = options['threading']
@@ -267,9 +268,16 @@ def test_msvc_tls_lanes_keep_distinct_openssl_thread_profiles(root: Path) -> Non
                 if variant == 'debug':
                     runtime += 'd'
                 assert re.search(r'(?<!\S)' + runtime + r'(?!\S)', command), command
-                if lane.startswith('openssl-upstream'):
-                    assert '--test' in command, command
-                profiles.setdefault(threads, set()).add(options['output'])
+                headers_only = '--headers-only' in command
+                stages.setdefault(threads, set()).add('headers' if headers_only else 'archives')
+                if headers_only:
+                    # Header preparation must not execute the optional upstream suite.
+                    assert '--test' not in command, command
+                else:
+                    assert ('--test' in command) == lane.startswith('openssl-upstream'), command
+                    profiles.setdefault(threads, set()).add(options['output'])
+            assert stages == {'single': {'headers', 'archives'},
+                              'multi': {'headers', 'archives'}}, (version, lane, stages)
             assert set(profiles) == {'single', 'multi'}, (version, lane, profiles)
             assert profiles['single'].isdisjoint(profiles['multi']), profiles
             sources = ['tls_client.cpp']
