@@ -17,8 +17,8 @@ test needs none. --program names the served test's declaration in a message, as 
 ("webcpp.serve <source> in <Jamfile>"), else the component does.
 
 wasmtime runs as `wasmtime serve WORDS --addr 127.0.0.1:0 WASM`, with its standard input
-/dev/null, the child of a keeper (KEEPER), a small Python program that leads a process group of
-its own, in the session of this script, which b2 runs it in: what stops b2's session stops it too.
+/dev/null, the child of process_tree.py's keeper, a small Python program leading its own process
+group in the session of this script, which b2 runs it in: what stops b2's session stops it too.
 The keeper's standard input is a pipe that only this script holds: when it ends, because this
 script ended, however it ended, the keeper kills its group, wasmtime with it. Port 0 makes the
 system choose a free port, which wasmtime names on its standard error when it listens; nothing is
@@ -71,7 +71,9 @@ import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 
-# The headers wasmtime 47.0.3 adds to a response, whatever the component sets, measured with
+from process_tree import start_tree, terminate_tree
+
+# The headers wasmtime 50.0.1 adds to a response, whatever the component sets, measured with
 # `wasmtime serve` on a component whose answers carry content-type and x-method only: date on
 # every response, and transfer-encoding: chunked on every response that has a body (all but the
 # answer to HEAD).
@@ -80,7 +82,7 @@ HOST_HEADERS = frozenset({'date', 'transfer-encoding'})
 # What a transcript says the server is: one host and port on every machine.
 SHOWN_ORIGIN = 'http://localhost:8080'
 
-# The line in which wasmtime 47.0.3 says it listens, on its standard error:
+# The line in which wasmtime 50.0.1 says it listens, on its standard error:
 # `Serving HTTP on http://127.0.0.1:53187/`.
 SERVING = re.compile(r'Serving HTTP on http://([0-9.]+):([0-9]+)/')
 
@@ -156,52 +158,11 @@ def read_requests(path: Path) -> list[tuple[str, str]]:
     return requests
 
 
-# The keeper of wasmtime, run as `python -c KEEPER <wasmtime> serve ...`, the leader of a process
-# group of its own: it starts wasmtime as its child, in its group, with the standard input
-# /dev/null, and exits with its status, 128 plus the signal's number for a signal. The SIGTERM that
-# stop sends its group ends wasmtime, and the keeper outlives it, so that waiting for the keeper
-# waits for wasmtime: a handler, unlike an ignored signal, is not passed on to wasmtime. And it
-# reads its own standard input, a pipe that only serve.py holds, until it ends, when serve.py has
-# ended without stopping the group first, as a SIGKILL ends it: it then kills its group, itself
-# and wasmtime with it.
-KEEPER = """
-import os
-import signal
-import subprocess
-import sys
-import threading
-
-signal.signal(signal.SIGTERM, lambda *_: None)
-try:
-    child = subprocess.Popen(sys.argv[1:], stdin=subprocess.DEVNULL)
-except OSError as error:
-    print(f'cannot start {sys.argv[1]}: {error.strerror or error}', file=sys.stderr, flush=True)
-    os._exit(127)
-
-
-def watch():
-    while os.read(0, 4096):
-        pass
-    os.killpg(0, signal.SIGKILL)
-
-
-threading.Thread(target=watch, daemon=True).start()
-status = child.wait()
-# Without the interpreter's shutdown, which a thread still reading would hold up.
-os._exit(status if status >= 0 else 128 - status)
-"""
-
-
 def start(wasmtime: str, flags: list[str], component: Path) -> Server:
-    """wasmtime serving component, started under its keeper; what it writes is read as it comes.
-
-    Tip: os.setpgrp is Popen's process_group=0 of Python 3.11, which Python 3.9 lacks; no
-    thread runs yet when it is called."""
+    """wasmtime serving component, started under its keeper; what it writes is read as it comes."""
     try:
-        process = subprocess.Popen([sys.executable, '-c', KEEPER, wasmtime, 'serve', *flags,
-                                    '--addr', ADDRESS, str(component)],
-                                   stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                   stderr=subprocess.PIPE, preexec_fn=os.setpgrp)
+        process = start_tree([wasmtime, 'serve', *flags, '--addr', ADDRESS, str(component)],
+                             capture=True)
     except OSError as error:
         raise Failed(2, f'cannot start {wasmtime}: {error.strerror or error}') from None
     server = Server(process)
@@ -251,12 +212,10 @@ def stop(server: Server) -> None:
     or that refuses (macOS answers EPERM for a zombie), is left. What wasmtime wrote is then read
     to its end."""
     process = server.process
-    with contextlib.suppress(ProcessLookupError, PermissionError):
-        os.killpg(process.pid, signal.SIGTERM)
+    terminate_tree(process)
     with contextlib.suppress(subprocess.TimeoutExpired):
         process.wait(GRACE)
-    with contextlib.suppress(ProcessLookupError, PermissionError):
-        os.killpg(process.pid, signal.SIGKILL)
+    terminate_tree(process, force=True)
     process.wait()
     if process.stdin is not None:
         process.stdin.close()
@@ -375,7 +334,7 @@ def find_wasmtime(given: str | None, program: str) -> str:
     found = shutil.which('wasmtime')
     if found is None:
         raise UsageError(f'{what} no -sWASMTIME=<path> was given, and there is none on PATH. '
-                         'Install wasmtime 47.0.3 on PATH, or give its path with '
+                         'Install wasmtime 50.0.1 on PATH, or give its path with '
                          '-sWASMTIME=<path>.')
     return found
 

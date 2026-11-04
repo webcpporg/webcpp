@@ -372,15 +372,38 @@ def test_compile_database_lists_what_b2_builds(root):
 WORLD = 'libs/component_demo/include/webcpp/component_demo/world.hpp'
 
 
+def test_compile_database_normalizes_shared_source_paths(root):
+    # Separate Jamfiles can name the same physical source through different ../ paths.
+    # The native command must win over WASI, including its exception-free twin.
+    prepare(root)
+    write(root, 'libs/demo/example/shared.cpp', CPP + '\nint main() {\n    return 0;\n}\n')
+    for directory, target in (('native_shared', 'native'), ('wasi_shared', 'wasip2')):
+        write(root, f'libs/demo/test/{directory}/Jamfile', HASH + '\nimport webcpp ;\n'
+              f'webcpp.targets {target} ;\n'
+              'webcpp.compile shared : ../../example/shared.cpp ;\n')
+        append(root, 'libs/demo/test/Jamfile', f'build-project {directory} ;\n')
+    completed = compile_database(root)
+    assert completed.returncode == 0, completed.stdout[-6000:]
+    source = (root / 'libs/demo/example/shared.cpp').resolve()
+    entries = [entry for entry in json.loads(
+        (root / 'compile database/compile_commands.json').read_text())
+        if Path(entry['file']).resolve() == source]
+    assert len(entries) == 2, entries
+    assert ['-fno-exceptions' in entry['arguments'] for entry in entries] == [False, True]
+    for entry in entries:
+        assert entry['file'] == str(root / 'libs/demo/example/shared.cpp'), entry
+        assert not any(word.startswith('--target=wasm') for word in entry['arguments']), entry
+
+
 def test_compile_database_prepares_generated_header_dependencies(root):
     # A clean checkout must analyse headers that depend on generated data.
     # A dry run alone lists the include path but never creates its header.
     harness.replace(root / 'libs/demo/build.jam', '<include>include ;',
                     '<include>include <library>/webcpp/third_party//ca_certificates ;')
     append(root, 'libs/demo/include/webcpp/demo.hpp',
-           '\n#include <webcpp_ca_certificates.hpp>\n'
-           'static_assert(webcpp::detail::ca_certificates::count > 0);\n')
-    assert not list((root / 'bin').rglob('webcpp_ca_certificates.hpp'))
+           '\n#include <webcpp/asio/detail/ca_certificates.hpp>\n'
+           'static_assert(webcpp::asio::detail::ca_certificates::count > 0);\n')
+    assert not list((root / 'bin').rglob('ca_certificates.hpp'))
     completed = compile_database(root)
     assert completed.returncode == 0, completed.stdout[-6000:]
     entries = json.loads((root / 'compile database/compile_commands.json').read_text())
@@ -391,6 +414,169 @@ def test_compile_database_prepares_generated_header_dependencies(root):
         said = compile_commands.compiles_aggregate(str(root), command, str(aggregate))
         assert not said, said
     # Preparing compilation inputs must not execute the library's programs.
+    assert not list((root / 'bin').rglob('*.run'))
+
+
+def test_compile_database_prepares_program_openssl_variants(root):
+    # A program-only define selects a different OpenSSL configuration than any
+    # public header unit. Both exception modes must be analysable on a clean tree.
+    # A relocated build tree must retain B2's output spelling during preparation.
+    output = root / 'build outputs'
+    output.mkdir()
+    (root / 'bin').symlink_to(output, target_is_directory=True)
+    harness.add_library(root, 'tls_user', HASH + '\nimport webcpp ;\n'
+                        'webcpp.targets native ;\n', {})
+    lane = root / 'libs/tls_user/test/release'
+    lane.mkdir()
+    (lane / 'Jamfile').write_text(HASH + '\nimport webcpp ;\n'
+                                 'project : default-build <variant>release ;\n'
+                                 'webcpp.targets native ;\n'
+                                 'webcpp.run tls_program : tls_program.cpp\n'
+                                 '  : <library>/webcpp/third_party//openssl\n'
+                                 '    <define>WEBCPP_TEST_TLS_PROGRAM ;\n'
+                                 'webcpp.run tls_upstream : tls_upstream.cpp\n'
+                                 '  : <library>/webcpp/third_party//openssl\n'
+                                 '    <define>WEBCPP_TEST_TLS_PROGRAM\n'
+                                 '    <webcpp-openssl-tests>on ;\n'
+                                 'webcpp.lane tls-variant : tls_program tls_upstream : native ;\n')
+    source = lane / 'tls_program.cpp'
+    source.write_text(CPP + '\n#include <openssl/ssl.h>\n'
+                      'int main() { return SSL_ERROR_NONE; }\n')
+    (lane / 'tls_upstream.cpp').write_text(source.read_text())
+    # Both ordinary and upstream-tested consumers must have a preparation
+    # graph containing only generation, including their exception-free twins.
+    request = 'libs/tls_user/test/release//tls-variant'
+    planned = harness.run_b2(root, '-n', 'exception-handling=on,off', request)
+    assert planned.returncode == 0, planned.stdout[-6000:]
+    directories = re.findall(r'^webcpp-openssl\.build (.+)[/\\]libssl\.(?:a|lib)$',
+                             planned.stdout, re.MULTILINE)
+    assert len(directories) == 4, planned.stdout[-6000:]
+    preparation = harness.run_b2(
+        root, '-n', f'--webcpp-lint-source={request}',
+        '--webcpp-lint-property=exception-handling=on,off',
+        *(f'--webcpp-lint-header={directory}/include/openssl/configuration.h'
+          for directory in directories), 'lint-provider-headers')
+    assert preparation.returncode == 0, preparation.stdout[-6000:]
+    assert not re.search(r'^webcpp-openssl\.build ', preparation.stdout, re.MULTILINE), (
+        preparation.stdout[-6000:])
+    completed = compile_database(root)
+    assert completed.returncode == 0, completed.stdout[-6000:]
+    entries = json.loads((root / 'compile database/compile_commands.json').read_text())
+    commands = [entry['arguments'] for entry in entries if Path(entry['file']).parent == lane]
+    assert len(commands) == 4, commands
+    for command in commands:
+        # The preparation target must preserve the own lane's release default,
+        # rather than propagate its own debug default into the consumer.
+        assert any('/release/' in word for word in command), command
+        said = compile_commands.compiles_aggregate(str(root), command, command[-1])
+        assert not said, said
+    # Analysis needs configured headers, never archives or an upstream suite.
+    assert not list((root / 'bin/third_party').rglob('libssl.a'))
+    assert not list((root / 'bin/third_party').rglob('libssl.lib'))
+    assert not list((root / 'bin/third_party').rglob('build.json'))
+    assert not list((root / 'bin/third_party').rglob('upstream-tests.log'))
+    # Preparation may build dependencies, but must not execute consumer programs.
+    assert not list((root / 'bin').rglob('*.run'))
+    # Existing generated headers must not turn an incremental analysis into
+    # an execution of the consumer targets used to discover their variants.
+    repeated = compile_database(root)
+    assert repeated.returncode == 0, repeated.stdout[-6000:]
+    assert json.loads((root / 'compile database/compile_commands.json').read_text()) == entries
+    assert not list((root / 'bin').rglob('*.run'))
+    assert not list((root / 'bin/third_party').rglob('build.json'))
+    # Every public upstream header must be present, with the same bytes as a
+    # subsequent real archive build. Preparing headers cannot satisfy its action.
+    upstream = root / 'third_party/libs/openssl/include/openssl'
+    names = {path.name for path in upstream.glob('*.h')}
+    names |= {path.name.removesuffix('.in') for path in upstream.glob('*.h.in')}
+    before = {}
+    for configured in (root / 'bin/third_party').rglob('configuration.h'):
+        assert names <= {path.name for path in configured.parent.iterdir()}, configured
+        before.update({path: path.read_bytes() for path in configured.parent.glob('*.h')})
+    built = harness.run_b2(root, 'libs/tls_user/test/release//tls_program')
+    assert built.returncode == 0, built.stdout[-6000:]
+    assert 'webcpp-openssl.build ' in built.stdout, built.stdout[-6000:]
+    assert len(list((root / 'bin/third_party').rglob('build.json'))) == 1
+    assert all(path.read_bytes() == contents for path, contents in before.items())
+    # The tested variant still requires the full archive action and upstream
+    # suite when a real consumer asks for it. This dry run executes neither.
+    tested = harness.run_b2(root, '-n', 'libs/tls_user/test/release//tls_upstream')
+    assert tested.returncode == 0, tested.stdout[-6000:]
+    assert 'webcpp-openssl.build ' in tested.stdout and '--test' in tested.stdout
+    # A missing header and an existing, stale variant must both be updated.
+    # Inspect B2's actual actions without rebuilding OpenSSL a third time.
+    # B2 roots output paths at its actual cwd. Preserve the bin symlink while
+    # resolving the parent's /var alias on macOS, just as its dry run does.
+    headers = sorted(root.resolve() / header.relative_to(root)
+                     for header in (root / 'bin/third_party').rglob('configuration.h'))
+    assert len(headers) == 4, headers
+    changed = max(header.stat().st_mtime for header in headers) + 1
+    os.utime(root / 'tools/openssl/build.py', (changed, changed))
+    headers[0].unlink()
+    pending = harness.run_b2(
+        root, '-n', '--webcpp-lint-source=libs/tls_user/test/release//tls-variant',
+        '--webcpp-lint-property=exception-handling=on,off',
+        *(f'--webcpp-lint-header={header}' for header in headers), 'lint-provider-headers')
+    assert pending.returncode == 0, pending.stdout[-6000:]
+    assert len(re.findall(r'^webcpp-openssl\.generate-headers ', pending.stdout,
+                          re.MULTILINE)) == 4, (
+        pending.stdout[-6000:])
+    assert not re.search(r'^webcpp-openssl\.build ', pending.stdout, re.MULTILINE)
+    assert 'testing.capture-output' not in pending.stdout, pending.stdout[-6000:]
+    assert not re.search(r'^\S+\.compile', pending.stdout, re.MULTILINE), pending.stdout[-6000:]
+
+
+def test_compile_database_prepares_program_libdatachannel_variants(root):
+    # RTC programs need their own provider headers even if no public header
+    # unit selects that configuration. No archive build may hide missing inputs.
+    output = root / 'build outputs'
+    output.mkdir()
+    (root / 'bin').symlink_to(output, target_is_directory=True)
+    harness.add_library(root, 'rtc_user', HASH + '\nimport webcpp ;\n'
+                        'webcpp.targets native ;\n'
+                        'webcpp.run rtc_program : rtc_program.cpp\n'
+                        '  : <library>/webcpp/third_party//libdatachannel\n'
+                        '    <threading>multi <define>WEBCPP_TEST_RTC_PROGRAM ;\n',
+                        {'rtc_program.cpp': CPP + '\n#include <rtc/datachannel.hpp>\n'
+                         'int main() { return 0; }\n'})
+    completed = compile_database(root)
+    assert completed.returncode == 0, completed.stdout[-6000:]
+    entries = json.loads((root / 'compile database/compile_commands.json').read_text())
+    source = root / 'libs/rtc_user/test/rtc_program.cpp'
+    commands = [entry['arguments'] for entry in entries if Path(entry['file']) == source]
+    assert len(commands) == 2, commands
+    for command in commands:
+        said = compile_commands.compiles_aggregate(str(root), command, str(source))
+        assert not said, said
+    assert not list((root / 'bin/third_party').rglob('*.a'))
+    assert not list((root / 'bin/third_party').rglob('*.lib'))
+    assert not list((root / 'bin/third_party').rglob('build.json'))
+    assert not list((root / 'bin').rglob('*.run'))
+    headers = sorted((root / 'bin/third_party').rglob('datachannel.hpp'))
+    assert len(headers) == 2, headers
+    upstream = root / 'third_party/libs/libdatachannel/include/rtc'
+    for header in headers:
+        for source_header in upstream.iterdir():
+            assert (header.parent / source_header.name).read_bytes() == source_header.read_bytes()
+    repeated = compile_database(root)
+    assert repeated.returncode == 0, repeated.stdout[-6000:]
+    assert json.loads((root / 'compile database/compile_commands.json').read_text()) == entries
+    assert not list((root / 'bin/third_party').rglob('build.json'))
+    assert not list((root / 'bin').rglob('*.run'))
+    # Preparing headers leaves the real consumer's full archive actions pending.
+    pending = harness.run_b2(root, '-n', 'libs/rtc_user/test//rtc_program')
+    assert pending.returncode == 0, pending.stdout[-6000:]
+    assert 'webcpp-libdatachannel.build ' in pending.stdout, pending.stdout[-6000:]
+    assert 'webcpp-openssl.build ' in pending.stdout, pending.stdout[-6000:]
+    # A missing header and a stale sibling variant must both be restored without
+    # accidentally running the consumer or publishing a successful build record.
+    changed = max(header.stat().st_mtime for header in headers) + 1
+    os.utime(root / 'tools/libdatachannel/build.py', (changed, changed))
+    headers[0].unlink()
+    refreshed = compile_database(root)
+    assert refreshed.returncode == 0, refreshed.stdout[-6000:]
+    assert all(header.is_file() for header in headers), headers
+    assert not list((root / 'bin/third_party').rglob('build.json'))
     assert not list((root / 'bin').rglob('*.run'))
 
 
@@ -777,6 +963,39 @@ def test_a_compiled_boost_library_s_sources_are_not_analysed(root):
                          (str(root.parent / 'boost source/libs/url/src/url.cpp'), False)):
         assert compile_commands.of_the_tree(str(root), source) == ours, (source, ours)
     expect_clean(lint(root))
+
+
+def test_clang_tidy_prepares_cobalt_wrappers_on_a_clean_tree(root):
+    # The library's aggregate is native, but a WASIp3-only program also compiles
+    # webcpp's Cobalt wrappers. Their checked source overlay must exist before
+    # clang-tidy reads them, even when no public header needs that overlay.
+    prepare(root)
+    append(root, 'libs/demo/test/Jamfile',
+           'webcpp.run cobalt : cobalt.cpp : <library>/webcpp//boost_cobalt : wasip3 ;\n')
+    write(root, 'libs/demo/test/cobalt.cpp', CPP + '\n'
+          'int main() {\n'
+          '    return 1;\n'
+          '}\n')
+    overlay = root / 'bin/boost-cobalt-wasip3/include/libs/cobalt/src/io'
+    assert not overlay.exists(), overlay
+    completed = compile_database(root)
+    assert completed.returncode == 0, completed.stdout[-6000:]
+    entries = json.loads((root / 'compile database/compile_commands.json').read_text())
+    wrappers = [entry for entry in entries
+                if '/tools/boost/cobalt-wasip3/' in entry['file']]
+    assert len(wrappers) == 4, wrappers
+    for entry in wrappers:
+        for marker in ('-DBOOST_COBALT_SOURCE=1', '-DBOOST_COBALT_IO_SOURCE=1'):
+            assert marker in entry['arguments'], entry
+    expect_clean(lint(root))
+    for name in ('acceptor', 'endpoint'):
+        assert (overlay / f'{name}.cpp').is_file(), name
+    result = harness.run_b2(root, '-a', 'toolset=clang-wasip3',
+                            'tools/boost/cobalt-wasip3//acceptor',
+                            'tools/boost/cobalt-wasip3//endpoint')
+    harness.expect(result, True)
+    # Preparing lint inputs must not execute the deliberately failing program.
+    assert not list((root / 'bin/libs/demo/test').rglob('cobalt.run'))
 
 
 def test_clang_tidy_refuses_a_throw_on_each_target_without_exceptions(root):
@@ -1271,6 +1490,11 @@ def test_returns_this_spares_what_the_standard_specifies(root):
           '        return *this;  // after a marked function\n'
           '    }\n'
           '\n'
+          '    // lint-std: std::basic_regex::assign returns *this\n'
+          '    stepper& assign() noexcept { return *this; }  // compact marked\n'
+          '\n'
+          '    stepper& after_compact() { return *this; }  // after compact marked\n'
+          '\n'
           '    // lint-std:\n'
           '    stepper& unexplained() {\n'
           '        advance();\n'
@@ -1285,9 +1509,11 @@ def test_returns_this_spares_what_the_standard_specifies(root):
           '};\n')
     expect_alone(lint(root), 'returns *this',
                  [at(root, path, '// postfix'), at(root, path, '// after a marked function'),
+                  at(root, path, '// after compact marked'),
                   at(root, path, '// marked without a reason')],
                  spared=(at(root, path, '// prefix increment'),
                          at(root, path, '// prefix decrement'),
+                         at(root, path, '// compact marked'),
                          at(root, path, '// marked, with a reason')))
 
 
@@ -1409,8 +1635,10 @@ def test_world_rule(root):
 def test_bare_throw(root):
     prepare(root)
     # A library header raises through boost::throw_exception alone. A throw in a template that
-    # nothing instantiates, which no build compiles, fails, and so does a rethrow inside the
-    # region a build with exceptions compiles; what only reads as a throw does not: the
+    # nothing instantiates fails, as does a rethrow. Both sit behind the exceptions guard:
+    # Clang 18 diagnoses an unguarded nondependent throw even without instantiating its template.
+    # The separate clang-tidy case proves an unguarded throw fails compilation too.
+    # What only reads as a throw does not: the
     # function, a string, a comment, a Doc Comment, a raw string, noexcept(false), a name
     # that holds the word, and JavaScript's throw in an EM_JS body, after which C++ is read
     # again. A test or an example may throw: catches.cpp does.
@@ -1443,6 +1671,8 @@ def test_bare_throw(root):
           '\n'
           'namespace webcpp::demo {\n'
           '\n'
+          '#ifndef WEBCPP_DEMO_NO_EXCEPTIONS\n'
+          '\n'
           '/** Returns the count it is given, refusing a negative one.\n'
           '\n'
           '    @tparam Count A signed type.\n'
@@ -1456,8 +1686,6 @@ def test_bare_throw(root):
           '    }\n'
           '    return count;\n'
           '}\n'
-          '\n'
-          '#ifndef WEBCPP_DEMO_NO_EXCEPTIONS\n'
           '\n'
           '/** Runs the work it is given, and lets what it throws go on.\n'
           '\n'
@@ -1573,7 +1801,7 @@ def test_raw_rules(root):
         f"{at(root, test, 'raw_link ;')} link is b2's own rule; a test or example Jamfile "
         'declares its programs with the rules of tools/webcpp.jam, here webcpp.link\n',
         f"{at(root, test, 'raw_link_fail')} link-fail is b2's own rule; a test or example "
-        'Jamfile declares its programs with the rules of tools/webcpp.jam, here webcpp.link\n',
+        'Jamfile declares its programs with the rules of tools/webcpp.jam, here webcpp.link-fail\n',
         f"{at(root, example, 'raw_exe')} exe is b2's own rule; a test or example Jamfile "
         'declares its programs with the rules of tools/webcpp.jam, here webcpp.example, '
         'webcpp.run or webcpp.serve\n',
@@ -2074,12 +2302,66 @@ def test_third_party_code_is_never_read(root):
                  spared=('third_party/libs/',))
 
 
+def test_beast_corpus_is_verified_before_excluding_upstream_style(root):
+    prepare(root)
+    corpus = 'libs/beast/example/upstream/original.cpp'
+    verifier = 'libs/beast/test/applications/inventory.py'
+    # Deliberately invalid WebCPP style: only a verified upstream snapshot is exempt.
+    write(root, corpus, 'int original(){return 42;}\n')
+    write(root, verifier, HASH + '\nimport sys\n\nsys.exit(0)\n')
+    expect_clean(lint(root))
+    # A failed integrity check must fail lint, never silently waive the corpus.
+    write(root, verifier, HASH + '\nimport sys\n\nsys.exit(1)\n')
+    result = lint(root)
+    assert result.returncode != 0, result.stdout
+    assert 'upstream corpus integrity' in FAILED.findall(result.stdout), result.stdout
+    # The port itself keeps normal checks, even when the upstream snapshot is valid.
+    write(root, verifier, HASH + '\nimport sys\n\nsys.exit(0)\n')
+    adapted = 'libs/beast/example/applications/notes.txt'
+    write(root, adapted, EM_DASH + '\n')
+    expect_alone(lint(root), 'em dash', [adapted + ':1:'])
+
+
+def check_wasi_abi_style_exemption(root, profile):
+    prepare(root)
+    snapshot = f'tools/boost/asio-{profile}/wasi-libc/descriptor.h'
+    verifier = f'tools/boost/asio-{profile}/verify.py'
+    # This test replaces the verifier with a controlled executable. Its unit
+    # tests import the real implementation, which is absent in this fixture.
+    (root / f'tools/boost/asio-{profile}/verify_test.py').unlink(missing_ok=True)
+    write(root, snapshot, '// upstream text ' + EM_DASH + '\n')
+    write(root, verifier, HASH + '\nimport sys\n\nsys.exit(0)\n')
+    expect_clean(lint(root))
+    write(root, verifier, HASH + '\nimport sys\n\nsys.exit(1)\n')
+    result = lint(root)
+    assert result.returncode != 0, result.stdout
+    assert 'WASI ABI declaration integrity' in FAILED.findall(result.stdout), result.stdout
+    write(root, verifier, HASH + '\nimport sys\n\nsys.exit(0)\n')
+    bridge = f'tools/boost/asio-{profile}/notes.txt'
+    write(root, bridge, EM_DASH + '\n')
+    expect_alone(lint(root), 'em dash', [bridge + ':1:'])
+
+
+def test_wasi_abi_snapshot_requires_integrity_before_style_exemption(root):
+    check_wasi_abi_style_exemption(root, 'wasip2')
+
+
+def test_wasip3_abi_snapshot_requires_integrity_before_style_exemption(root):
+    check_wasi_abi_style_exemption(root, 'wasip3')
+
+
 CASES = [
+    test_wasip3_abi_snapshot_requires_integrity_before_style_exemption,
+    test_wasi_abi_snapshot_requires_integrity_before_style_exemption,
+    test_compile_database_normalizes_shared_source_paths,
+    test_beast_corpus_is_verified_before_excluding_upstream_style,
     test_clean_tree_passes,
     test_no_library_passes,
     test_a_user_config_the_environment_names_is_read,
     test_compile_database_lists_what_b2_builds,
     test_compile_database_prepares_generated_header_dependencies,
+    test_compile_database_prepares_program_openssl_variants,
+    test_compile_database_prepares_program_libdatachannel_variants,
     test_compile_database_reads_what_only_wasi_builds,
     test_an_aggregate_no_units_options_compile_names_each,
     test_wasi_sdk_is_told_by_the_compiler_itself,
@@ -2096,6 +2378,7 @@ CASES = [
     test_clang_tidy_reads_a_program_of_javascript_exceptions,
     test_a_dependency_s_warnings_are_not_ours,
     test_a_compiled_boost_library_s_sources_are_not_analysed,
+    test_clang_tidy_prepares_cobalt_wrappers_on_a_clean_tree,
     test_clang_tidy_refuses_a_throw_on_each_target_without_exceptions,
     test_a_native_header_that_needs_no_exceptions_has_its_twin,
     test_a_library_webcpp_does_not_build_missing_is_named,

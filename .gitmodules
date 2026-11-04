@@ -40,3 +40,9 @@
 [submodule "libs/asio"]
 	path = libs/asio
 	url = ../asio.git
+[submodule "libs/beast"]
+	path = libs/beast
+	url = ../beast.git
+[submodule "third_party/libs/libdatachannel"]
+	path = third_party/libs/libdatachannel
+	url = https://github.com/paullouisageneau/libdatachannel.git

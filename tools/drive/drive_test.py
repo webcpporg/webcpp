@@ -18,6 +18,7 @@ some cases to run only those."""
 
 from __future__ import annotations
 
+import ctypes
 import json
 import os
 import signal
@@ -42,7 +43,9 @@ import time
 import os
 
 mode, record, program = sys.argv[1:4]
-recorded = {'pid': os.getpid(), 'pgid': os.getpgid(0)}
+recorded = {'pid': os.getpid()}
+if os.name != 'nt':
+    recorded['pgid'] = os.getpgid(0)
 
 
 def save():
@@ -61,15 +64,50 @@ if mode == 'fail':
 if mode == 'hang':
     while True:
         time.sleep(1)
-child = subprocess.Popen([sys.executable, '-c', 'import time\nwhile True: time.sleep(1)'])
+if mode.startswith('grandchild-'):
+    child_record = record + '.child'
+    child_code = ('import json, os, subprocess, sys\n'
+                  'command = [sys.executable, "-c", "import time; time.sleep(600)"]\n'
+                  'child = subprocess.Popen(command)\n'
+                  'with open(sys.argv[1] + ".tmp", "w") as stream: json.dump(child.pid, stream)\n'
+                  'os.replace(sys.argv[1] + ".tmp", sys.argv[1])\n'
+                  'child.wait()\n')
+    child = subprocess.Popen([sys.executable, '-c', child_code, child_record])
+    while not os.path.exists(child_record):
+        time.sleep(0.01)
+    with open(child_record) as stream:
+        recorded['grandchild'] = json.load(stream)
+else:
+    child = subprocess.Popen([sys.executable, '-c', 'import time\nwhile True: time.sleep(1)'])
 recorded['child'] = child.pid
 save()
-if mode == 'orphan':
+if mode == 'grandchild-windows-status':
+    import ctypes
+    from ctypes import wintypes
+    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+    kernel.ExitProcess.argtypes = (wintypes.UINT,)
+    kernel.ExitProcess.restype = None
+    kernel.ExitProcess(0xC0000005)
+if mode in ('orphan', 'grandchild-orphan'):
     sys.exit(0)
 child.wait()
 '''
 
 SHOWN = 'webcpp.drive driven in libs/web/test/Jamfile'
+
+# Reproduce Windows' missing signal/alarm API while still running real children
+# under this host's process-tree implementation. Windows itself uses its Job Object.
+WINDOWS_SIGNALS = r'''
+import runpy
+import signal
+import sys
+
+for name in ('SIGHUP', 'SIGALRM', 'alarm'):
+    if hasattr(signal, name):
+        delattr(signal, name)
+sys.argv = sys.argv[1:]
+runpy.run_path(sys.argv[0], run_name='__main__')
+'''
 
 
 def outcome(result: subprocess.CompletedProcess[str]) -> str:
@@ -97,7 +135,8 @@ class Run:
     def run(self, *extra: str) -> subprocess.CompletedProcess[str]:
         # As b2 starts an action: in a process group of its own.
         return subprocess.run(self.arguments(*extra), capture_output=True, text=True,
-                              check=False, timeout=120, preexec_fn=os.setpgrp)
+                              check=False, timeout=120,
+                              preexec_fn=os.setpgrp if os.name != 'nt' else None)
 
     def recorded(self, holds=lambda record: True, seconds: float = 30) -> dict:
         """What the stand-in recorded, once holds is true of it."""
@@ -111,23 +150,62 @@ class Run:
         raise AssertionError(f'the stand-in recorded nothing that holds in {seconds} s')
 
 
+def windows_alive(pid: int, *, terminate: bool = False) -> bool:
+    """Inspect a recorded process without sending os.kill's destructive Windows signal 0."""
+    if sys.platform != 'win32':
+        raise OSError('Windows process handles require Windows')
+    from ctypes import wintypes
+
+    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+    kernel.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+    kernel.OpenProcess.restype = wintypes.HANDLE
+    kernel.WaitForSingleObject.argtypes = (wintypes.HANDLE, wintypes.DWORD)
+    kernel.WaitForSingleObject.restype = wintypes.DWORD
+    kernel.TerminateProcess.argtypes = (wintypes.HANDLE, wintypes.UINT)
+    kernel.TerminateProcess.restype = wintypes.BOOL
+    kernel.CloseHandle.argtypes = (wintypes.HANDLE,)
+    kernel.CloseHandle.restype = wintypes.BOOL
+    handle = kernel.OpenProcess(0x00100001, False, pid)  # SYNCHRONIZE | PROCESS_TERMINATE
+    if not handle:
+        error = ctypes.get_last_error()
+        if error == 87:  # ERROR_INVALID_PARAMETER: the process no longer exists.
+            return False
+        raise ctypes.WinError(error)
+    try:
+        state = kernel.WaitForSingleObject(handle, 0)
+        if state == 0xFFFFFFFF:
+            raise ctypes.WinError(ctypes.get_last_error())
+        alive = state == 258  # WAIT_TIMEOUT
+        if alive and terminate and not kernel.TerminateProcess(handle, 1):
+            raise ctypes.WinError(ctypes.get_last_error())
+        return alive
+    finally:
+        kernel.CloseHandle(handle)
+
+
 def gone(record: dict, seconds: float = 10) -> None:
     """Asserts that the stand-in's process group and each process it recorded are gone, within
     seconds, and that ps lists none of them: a killed process can stay a zombie for a moment."""
-    pids = [record['pid'], *([record['child']] if 'child' in record else [])]
+    pids = [record[key] for key in ('pid', 'child', 'grandchild') if key in record]
     deadline = time.monotonic() + seconds
     while True:
-        listed = subprocess.run(['ps', '-A', '-o', 'pid=,pgid=,stat='], capture_output=True,
-                                text=True, check=True).stdout.split('\n')
-        alive = [line for line in listed if line.split()[:1] and (
-            int(line.split()[0]) in pids or int(line.split()[1]) == record['pgid'])
-            and not line.split()[2].startswith('Z')]
+        if os.name == 'nt':
+            alive = [str(pid) for pid in pids if windows_alive(pid)]
+        else:
+            listed = subprocess.run(['ps', '-A', '-o', 'pid=,pgid=,stat='], capture_output=True,
+                                    text=True, check=True).stdout.split('\n')
+            alive = [line for line in listed if line.split()[:1] and (
+                int(line.split()[0]) in pids or int(line.split()[1]) == record['pgid'])
+                and not line.split()[2].startswith('Z')]
         if not alive:
             return
         if time.monotonic() > deadline:
             for pid in pids:
                 try:
-                    os.kill(pid, signal.SIGKILL)
+                    if os.name == 'nt':
+                        windows_alive(pid, terminate=True)
+                    else:
+                        os.kill(pid, signal.SIGKILL)
                 except ProcessLookupError:
                     pass
             raise AssertionError(f'still there: {alive}')
@@ -141,6 +219,19 @@ def test_a_driver_that_passes_writes_the_output(scratch: Path) -> None:
     assert f'driving {run.program}: ready' in result.stdout, outcome(result)
     assert run.output.read_text() == 'driven\n'
     gone(run.recorded())
+
+
+def test_drivers_run_without_unix_signal_names(scratch: Path) -> None:
+    for mode, status in (('pass', 0), ('fail', 3), ('program-hangs', 1), ('orphan', 0)):
+        run = Run(scratch, mode)
+        arguments = run.arguments('--timeout', '2')
+        result = subprocess.run([sys.executable, '-c', WINDOWS_SIGNALS, *arguments[1:]],
+                                capture_output=True, text=True, check=False, timeout=15)
+        assert result.returncode == status, (mode, outcome(result))
+        assert run.output.exists() == (status == 0), (mode, outcome(result))
+        if mode == 'program-hangs':
+            assert 'did not end within 2 s' in result.stderr, outcome(result)
+        gone(run.recorded())
 
 
 def test_a_driver_that_fails_exits_with_its_status(scratch: Path) -> None:
@@ -187,18 +278,86 @@ def test_a_program_the_driver_leaves_running_is_stopped(scratch: Path) -> None:
     gone(run.recorded(lambda record: 'child' in record))
 
 
+def test_descendants_cannot_outlive_the_driver(scratch: Path) -> None:
+    for mode, status in (('grandchild-hangs', 1), ('grandchild-orphan', 0)):
+        run = Run(scratch, mode)
+        result = run.run('--timeout', '2')
+        assert result.returncode == status, outcome(result)
+        gone(run.recorded(lambda record: 'grandchild' in record))
+
+
+def test_windows_status_keeps_all_32_bits(scratch: Path) -> None:
+    run = Run(scratch, 'grandchild-windows-status')
+    result = run.run()
+    assert result.returncode == 0xC0000005, outcome(result)
+    assert f'exited with {0xC0000005}' in result.stderr, outcome(result)
+    assert not run.output.exists()
+    gone(run.recorded(lambda record: 'grandchild' in record))
+
+
+def test_nested_windows_jobs_keep_timeout_and_cleanup(scratch: Path) -> None:
+    if sys.platform != 'win32':
+        return
+    # Give the runner an outer job, as a Windows CI service may do. Its keeper
+    # must establish a nested job before any driver or descendant starts.
+    bootstrap = ('import json, os, subprocess, sys\n'
+                 f'sys.path.insert(0, {str(HERE.parent / "component")!r})\n'
+                 'from process_tree import windows_job\n'
+                 'windows_job()\n'
+                 'result = subprocess.run(sys.argv[2:], capture_output=True,\n'
+                 '                        text=True, timeout=15)\n'
+                 'with open(sys.argv[1] + ".tmp", "w") as stream:\n'
+                 '    json.dump([result.returncode, result.stdout, result.stderr], stream)\n'
+                 'os.replace(sys.argv[1] + ".tmp", sys.argv[1])\n'
+                 'sys.stdin.buffer.read(1)\n')
+    for mode, status in (('pass', 0), ('grandchild-hangs', 1), ('grandchild-orphan', 0)):
+        run = Run(scratch, mode)
+        completed = scratch / f'{mode}.completed'
+        outer = subprocess.Popen([sys.executable, '-c', bootstrap, str(completed),
+                                  *run.arguments('--timeout', '2')], stdin=subprocess.PIPE,
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            deadline = time.monotonic() + 20
+            while not completed.exists() and time.monotonic() < deadline:
+                assert outer.poll() is None, (mode, outer.returncode)
+                time.sleep(0.05)
+            assert completed.exists(), f'{mode}: nested driver did not complete'
+            result = json.loads(completed.read_text())
+            assert result[0] == status, (mode, result)
+            # The outer job must still be open while checking the inner tree.
+            # Its kill-on-close cannot rescue a keeper that leaked descendants.
+            assert outer.poll() is None, mode
+            gone(run.recorded())
+            assert outer.poll() is None, mode
+        finally:
+            outer.communicate('\n', timeout=20)
+        assert outer.returncode == 0, outer.returncode
+
+
 def test_a_killed_or_stopped_run_leaves_nothing(scratch: Path) -> None:
     # A SIGKILL, which drive.py cannot answer, to drive.py alone or to its process group, as b2
     # sends to an action it stops (b2 -l), and a SIGTERM leave nothing: the keeper sees drive.py
     # gone and kills its group.
+    if os.name == 'nt':
+        for name in ('killed', 'terminated'):
+            run = Run(scratch, 'grandchild-hangs')
+            run.record = scratch / f'{name}.json'
+            process = subprocess.Popen(run.arguments(), stdout=subprocess.PIPE,
+                                       stderr=subprocess.PIPE, text=True)
+            recorded = run.recorded(lambda record: 'grandchild' in record)
+            process.kill() if name == 'killed' else process.terminate()
+            process.communicate(timeout=60)
+            assert process.returncode != 0, process.returncode
+            gone(recorded)
+        return
     for name, kill, number in (('alone', os.kill, signal.SIGKILL),
-                               ('group', os.killpg, signal.SIGKILL),
-                               ('terminated', os.kill, signal.SIGTERM)):
-        run = Run(scratch, 'program-hangs')
+                              ('group', os.killpg, signal.SIGKILL),
+                              ('terminated', os.kill, signal.SIGTERM)):
+        run = Run(scratch, 'grandchild-hangs')
         run.record = scratch / f'{name}.json'
         process = subprocess.Popen(run.arguments(), stdout=subprocess.PIPE,
                                    stderr=subprocess.PIPE, text=True, preexec_fn=os.setpgrp)
-        recorded = run.recorded(lambda record: 'child' in record)
+        recorded = run.recorded(lambda record: 'grandchild' in record)
         kill(process.pid, number)
         process.communicate(timeout=60)
         assert process.returncode == -number, (name, process.returncode)
@@ -212,7 +371,7 @@ def test_the_bound_is_30_seconds_by_default(scratch: Path) -> None:
     assert '(30 by default)' in ' '.join(result.stdout.split()), outcome(result)
     run = Run(scratch, 'hang')
     process = subprocess.Popen(run.arguments(), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                               text=True, preexec_fn=os.setpgrp)
+                               text=True, preexec_fn=os.setpgrp if os.name != 'nt' else None)
     recorded = run.recorded()
     try:
         process.communicate(timeout=20)
@@ -243,10 +402,14 @@ def test_usage_errors_exit_2(scratch: Path) -> None:
 
 CASES = [
     test_a_driver_that_passes_writes_the_output,
+    test_drivers_run_without_unix_signal_names,
     test_a_driver_that_fails_exits_with_its_status,
     test_a_hanging_driver_is_stopped_within_its_bound,
     test_a_hanging_program_is_stopped_within_its_bound,
     test_a_program_the_driver_leaves_running_is_stopped,
+    test_descendants_cannot_outlive_the_driver,
+    test_windows_status_keeps_all_32_bits,
+    test_nested_windows_jobs_keep_timeout_and_cleanup,
     test_a_killed_or_stopped_run_leaves_nothing,
     test_the_bound_is_30_seconds_by_default,
     test_usage_errors_exit_2,
@@ -260,6 +423,11 @@ def main(argv: list[str]) -> int:
         return 2
     for case in CASES:
         if argv and case.__name__ not in argv:
+            continue
+        windows_only = (test_windows_status_keeps_all_32_bits,
+                        test_nested_windows_jobs_keep_timeout_and_cleanup)
+        if case in windows_only and sys.platform != 'win32':
+            print(f'{case.__name__}: skipped (requires Windows)')
             continue
         with tempfile.TemporaryDirectory(prefix='webcpp drive ') as scratch:
             case(Path(scratch))

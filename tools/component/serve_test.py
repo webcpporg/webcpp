@@ -6,7 +6,7 @@
 # https://www.boost.org/LICENSE_1_0.txt)
 
 """Checks tools/component/serve.py with a stand-in for wasmtime: a small Python program, given as
---wasmtime, that serves fixed answers on the address it is given and says so as wasmtime 47.0.3
+--wasmtime, that serves fixed answers on the address it is given and says so as wasmtime 50.0.1
 does, so that the runner is checked without a component. The stand-in reads what to do from the file
 given as the component: when to say it serves, whether to answer, to ignore SIGTERM or to start a
 child in its process group, and where to record its process, its port and the requests it got, with
@@ -288,7 +288,8 @@ def test_transcript_format(scratch: Path) -> None:
         ('OPTIONS', '*'), ('PATCH', '/items/7?x=1&y=%2F')], shell.recorded()
     commands = [line.removeprefix('$ ') for line in (SHELL_TRANSCRIPT + TRANSCRIPT).splitlines()
                 if line.startswith('$ ')]
-    for command, words in zip(commands, CURL_WORDS, strict=True):
+    assert len(commands) == len(CURL_WORDS)
+    for command, words in zip(commands, CURL_WORDS):
         split = subprocess.run(['sh', '-c', 'curl() { printf "%s\\n" "$@"; }; ' + command],
                                capture_output=True, text=True, check=True, timeout=30)
         assert split.stdout.splitlines() == words, (command, split.stdout)
@@ -377,7 +378,7 @@ def test_a_server_that_never_serves_exits_2(scratch: Path) -> None:
     result = subprocess.run(arguments, capture_output=True, text=True, check=False, timeout=60,
                             env={**os.environ, 'PATH': str(empty)})
     assert result.returncode == 2, outcome(result)
-    assert ('no -sWASMTIME=<path> was given, and there is none on PATH. Install wasmtime 47.0.3 '
+    assert ('no -sWASMTIME=<path> was given, and there is none on PATH. Install wasmtime 50.0.1 '
             'on PATH, or give its path with -sWASMTIME=<path>.') in result.stderr, outcome(result)
     (empty / 'wasmtime').symlink_to(run.stand_in)
     result = subprocess.run(arguments, capture_output=True, text=True, check=False, timeout=60,

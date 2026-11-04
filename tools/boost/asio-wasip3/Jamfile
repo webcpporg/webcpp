@@ -10,6 +10,7 @@ import make ;
 import modules ;
 import path ;
 import webcpp-wasi ;
+import webcpp-target ;
 
 project /webcpp/asio-wasip3 ;
 path-constant BUNDLE : . ;
@@ -34,6 +35,10 @@ actions prepare
 
 rule configuration ( properties * )
 {
+    if [ webcpp-target.target-of $(properties) ] = wasip2 && <threading>multi in $(properties)
+    {
+        errors.user-error "webcpp::asio: WASIp2 supports threading=single only; use WASIp3 for the cooperative thread profile." ;
+    }
     if <threading>single in $(properties)
     {
         return <define>BOOST_ASIO_DISABLE_THREADS ;
@@ -42,6 +47,30 @@ rule configuration ( properties * )
 }
 
 alias headers : : : : <dependency>prepared.stamp
+    <toolset>clang-wasip3:<source>waitable <include>include
     <cxxflags>"-I\"$(OVERLAY)/include\""
     <conditional>@configuration ;
 explicit headers ;
+
+# Association and completion-token traits for a host-owned HTTP scheduler.
+# This alias does not enable a socket reactor or cooperative threads on WASIp2.
+alias host-headers : : : : <dependency>prepared.stamp
+    <cxxflags>"-I\"$(OVERLAY)/include\""
+    <define>BOOST_ASIO_DISABLE_THREADS ;
+explicit host-headers ;
+
+make verified.stamp : verify.py wasi-libc/manifest.json : @verify
+  : <location>$(OVERLAY) <webcpp-boost-check>off ;
+always verified.stamp ;
+explicit verified.stamp ;
+rule verify ( targets * : sources * : properties * )
+{
+    SCRIPT on $(targets) = $(BUNDLE)/verify.py ;
+    SDK on $(targets) = [ webcpp-wasi.sdk $(WEBCPP_ROOT) ] ;
+}
+actions verify
+{
+    python3 "$(SCRIPT)" --sdk "$(SDK)" --stamp "$(<)"
+}
+obj waitable : waitable.cpp : <include>include <include>wasi-libc <dependency>verified.stamp ;
+explicit waitable ;

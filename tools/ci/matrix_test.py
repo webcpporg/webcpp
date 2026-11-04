@@ -94,7 +94,10 @@ def test_plan_of_one_library(root):
         'msvc-14.3', 'msvc-14.5'], lanes
     assert by_id['apple-clang']['detect'] == 'clang++', by_id['apple-clang']
     assert by_id['wasip2']['toolset'] == 'clang-wasip2', by_id['wasip2']
-    assert by_id['wasip3']['options'] == ['testing.launcher=wasmtime'], by_id['wasip3']
+    assert by_id['wasip2']['options'] == [
+        'testing.launcher=tools/boost/asio-wasip2/run.sh'], by_id['wasip2']
+    assert by_id['wasip3']['options'] == [
+        'testing.launcher=tools/boost/asio-wasip3/run.sh'], by_id['wasip3']
     assert by_id['wasip3']['wasm'] and not by_id['gcc-14']['wasm'], lanes
     assert by_id['msvc-14.5']['os'] == 'windows-2025', by_id['msvc-14.5']
     assert by_id['clang-22']['os'] == 'ubuntu-26.04', by_id['clang-22']
@@ -496,7 +499,8 @@ def test_an_own_lanes_command(root):
     xml = Path('bin/ci/wasip2.alpha.http.xml')
     assert matrix.own_lane_command(served[0], config, xml, []) == [
         'b2', f'--user-config={config}', '-a', '--dump-tests', f'--out-xml={xml}',
-        'toolset=clang-wasip2', 'testing.launcher=wasmtime', 'libs/alpha/example//http',
+        'toolset=clang-wasip2', 'testing.launcher=tools/boost/asio-wasip2/run.sh',
+        'libs/alpha/example//http',
         'libs/alpha/test//http']
     # On emscripten, as the emscripten lane runs: its toolset, and no launcher.
     driven = matrix.parsed_own_lanes('alpha driver libs/alpha/test/driver emscripten original')
@@ -518,6 +522,118 @@ def test_an_own_lanes_command(root):
         assert (lane.id, lane.os) == (lane_id, 'ubuntu-24.04'), lane
 
 
+def test_beast_browser_lanes_cover_policies_and_exception_modes(root):
+    config = root / 'config.jam'
+    options = ['exception-handling=on,off', 'webcpp-beast-unsupported=error,ignore']
+    for name in ('browser', 'browser-node'):
+        own = matrix.parsed_own_lanes(
+            f'beast {name} libs/beast/test/browser emscripten original')[0]
+        xml = root / f'{own.id}.xml'
+        command = matrix.own_lane_command(own, config, xml, ['-j2'])
+        assert command == [
+            'b2', f'--user-config={config}', '-a', '--dump-tests', f'--out-xml={xml}',
+            'toolset=emscripten', *options, '-j2', f'libs/beast/test/browser//{name}'], command
+    # The policy is Beast-specific; application lanes select their own exception mode.
+    for declaration in ('asio browser libs/asio/test/browser emscripten original',
+                        'beast applications-browser libs/beast/test/applications/browser '
+                        'emscripten original',
+                        'beast browser libs/beast/test/browser native original'):
+        own = matrix.parsed_own_lanes(declaration)[0]
+        command = matrix.own_lane_command(own, config, root / 'other.xml', [])
+        assert all(option not in command for option in options), command
+
+
+def test_asio_capability_lanes_cover_suspension_and_exception_modes(root):
+    # These direct-source drivers need the CI request to expand their profiles.
+    harness.add_library(root, 'asio',
+                        'import webcpp ;\nwebcpp.targets emscripten wasip2 ;\n'
+                        'webcpp.original python3 ;\n'
+                        'webcpp.drive worker : pass.cpp : : driver.py : : emscripten ;\n'
+                        'webcpp.drive exception : pass.cpp : <exception-handling>on\n'
+                        '  : driver.py : : emscripten ;\n'
+                        'webcpp.drive tls : pass.cpp : : driver.py : : wasip2 ;\n'
+                        'webcpp.lane browser-workers : worker : emscripten ;\n'
+                        'webcpp.lane browser-worker-exceptions : exception : emscripten ;\n'
+                        'webcpp.lane wasip2-tls : tls : wasip2 ;\n',
+                        {'pass.cpp': 'int main() {}\n', 'driver.py': '',
+                         'package.json': '{}\n', 'package-lock.json': '{}\n'})
+    entries = own_lanes(root, '--library', 'asio')
+    assert {entry['id'] for entry in entries} == {
+        'emscripten.asio.browser-workers', 'emscripten.asio.browser-worker-exceptions',
+        'wasip2.asio.wasip2-tls'}, entries
+    expected = {
+        'browser-workers': ['toolset=emscripten', 'webcpp-suspend=jspi,asyncify',
+                            'exception-handling=on,off'],
+        'browser-worker-exceptions': ['toolset=emscripten', 'webcpp-suspend=jspi,asyncify',
+                                      'exception-handling=on'],
+        'wasip2-tls': ['toolset=clang-wasip2',
+                       'testing.launcher=tools/boost/asio-wasip2/run.sh',
+                       'exception-handling=on,off'],
+    }
+    for entry in entries:
+        own = matrix.parsed_own_lane(json.dumps(entry))
+        command = matrix.own_lane_command(own, root / 'config.jam', root / 'lane.xml', [])
+        assert command[5:] == [*expected[own.lane],
+                               f'libs/asio/test//{own.lane}'], command
+
+
+def test_openssl_upstream_lanes_use_the_windows_builds(root):
+    # Exercise the public planner and command builder. A native-only lane used
+    # to select Linux even when its purpose was to validate the MSVC recipe.
+    for version in ('14.3', '14.5'):
+        name = f'openssl-upstream-msvc-{version}'
+        own = matrix.parsed_own_lanes(
+            f'asio {name} libs/asio/test/tls native original')[0]
+        entry = own_lane_entry_of(own)
+        base = next(lane for lane in matrix.LANES if lane.id == f'msvc-{version}')
+        assert entry['os'] == base.os, entry
+        command = matrix.own_lane_command(own, root / 'config.jam', root / 'test.xml', [])
+        assert f'toolset={base.toolset}' in command, command
+        assert all(option in command for option in matrix.MSVC_OPTIONS), command
+        assert matrix.parsed_own_lane(json.dumps(entry)) == own
+    ordinary = matrix.parsed_own_lanes(
+        'asio openssl-upstream libs/asio/test/tls native original')[0]
+    assert own_lane_entry_of(ordinary)['os'] == 'ubuntu-24.04'
+
+
+def test_a_wasip3_lane_can_bind_a_loopback_socket(root):
+    # Run the planned lane, including its launcher: Wasmtime refuses even a loopback bind
+    # without an explicit network grant, which a successful compile cannot establish.
+    harness.add_library(root, 'network',
+                        'import webcpp ;\nwebcpp.targets wasip3 ;\n'
+                        'webcpp.run loopback : loopback.cpp ;\n', {
+                            'loopback.cpp': r'''#include <arpa/inet.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
+int main() {
+    int const descriptor = socket(AF_INET, SOCK_STREAM, 0);
+    if (descriptor < 0) return 1;
+    sockaddr_in address{};
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    int const result = bind(descriptor, reinterpret_cast<sockaddr*>(&address), sizeof(address));
+    close(descriptor);
+    return result == 0 ? 0 : 1;
+}
+'''})
+    (root / 'libs/network/example').mkdir()
+    (root / 'libs/network/example/Jamfile').write_text(
+        'import webcpp ;\nwebcpp.targets wasip3 ;\n')
+    boost_only(root)
+    (root / '.local/wasi-sdk').symlink_to((matrix.ROOT / '.local/wasi-sdk').resolve())
+    entries = planned(root, '--library', 'network')
+    assert len(entries) == 1 and entries[0]['id'] == 'wasip3', entries
+    result = run(root, 'lane', json.dumps(entries[0]))
+    assert result.returncode == 0, (result.stdout[-4000:], result.stderr)
+    # --out-xml makes b2 return success on a test failure: read the verdict as CI does.
+    result = subprocess.run([
+        sys.executable, str(root / 'tools/report/report.py'), '--lane',
+        f'wasip3={root / "bin/ci/wasip3.xml"}', '--out', str(root / 'report')],
+        capture_output=True, text=True, check=False)
+    assert result.returncode == 0, (result.stdout, result.stderr)
+
+
 def test_an_own_lane_on_a_target_writes_its_xml_and_the_report_merges_it(root):
     jamfile = root / 'libs/demo/test/Jamfile'
     jamfile.write_text(jamfile.read_text() + 'webcpp.lane served : pass : wasip2 ;\n')
@@ -535,7 +651,8 @@ def test_an_own_lane_on_a_target_writes_its_xml_and_the_report_merges_it(root):
     printed = (f'own lane wasip2.demo.served: b2 '
                f'{shlex.quote(f"--user-config={config.resolve()}")} -a --dump-tests '
                f'{shlex.quote(f"--out-xml={xml}")} toolset=clang-wasip2 '
-               'testing.launcher=wasmtime --build-dir=bin/own libs/demo/test//served\n')
+               'testing.launcher=tools/boost/asio-wasip2/run.sh '
+               '--build-dir=bin/own libs/demo/test//served\n')
     assert result.stdout.startswith(printed), (printed, result.stdout[:2000])
     assert output.read_text().splitlines() == ['lane=wasip2.demo.served',
                                                f'xml={xml.as_posix()}'], output.read_text()
@@ -906,7 +1023,7 @@ def test_the_report_names_a_planned_lane_that_wrote_nothing(root):
     report = run(root, 'report', '--plan', json.dumps({'include': entries}), '--lanes',
                  str(lanes), '--out', str(root / 'report'))
     assert report.returncode == 2, (report.returncode, report.stdout, report.stderr)
-    assert 'the lane wasip3 (wasm32-wasip3 (wasi-sdk 34, wasmtime 47.0.3)) wrote no XML' in (
+    assert 'the lane wasip3 (wasm32-wasip3 (wasi-sdk 34, wasmtime 50.0.1)) wrote no XML' in (
         report.stderr), report.stderr
     # The lanes that did write are still reported.
     assert 'data-lane="wasip2"' in (root / 'report/index.html').read_text()
@@ -945,7 +1062,7 @@ def test_a_lane_of_a_library_with_external_dependencies_says_so(root):
     # the CI's actions of their names, on a lane or an own lane that builds trystero: its entry
     # says external, and no other does.
     assert matrix.EXTERNAL_DEPENDENCIES == {
-        'trystero': ('secp256k1', 'libdatachannel', 'openssl')}, matrix.EXTERNAL_DEPENDENCIES
+        'trystero': ('secp256k1',)}, matrix.EXTERNAL_DEPENDENCIES
     # Asio builds the pinned OpenSSL sources through its B2 dependency.
     assert not matrix.needs_external('asio')
     for dependencies in matrix.EXTERNAL_DEPENDENCIES.values():
@@ -1020,19 +1137,18 @@ def job_steps(job: str) -> list[str]:
 
 
 def test_the_jobs_install_the_external_dependencies(_):
-    # The lanes and the own lanes run the dependency actions for an entry that says external,
-    # OpenSSL first, which libdatachannel builds against, and secp256k1 for emscripten too after
-    # emsdk on an entry that has it; libdatachannel and OpenSSL, which only the native backend
-    # needs, not on emscripten. The docs and lint jobs run them when the plan's external is true,
-    # with Clang 18, the toolset they parse with, and the lint, which analyses emscripten's
-    # commands, with secp256k1's emscripten build when a library declares emscripten.
+    # Only secp256k1 remains external. B2 builds transport and TLS from source,
+    # so independent binary-install actions must not inject a second provider.
     jobs = workflow_jobs()
+    for job in jobs.values():
+        assert 'uses: ./tools/ci/actions/openssl' not in job
+        assert 'uses: ./tools/ci/actions/libdatachannel' not in job
     plan = jobs['plan']
     assert 'external: ${{ steps.plan.outputs.external }}' in plan, plan
     assert 'lint-external: ${{ steps.plan.outputs.lint-external }}' in plan, plan
     assert 'python3 tools/ci/matrix.py external "${arguments[@]}"' in plan, plan
     assert 'lint_external="$(python3 tools/ci/matrix.py external)"' in plan, plan
-    actions = ('emsdk', 'openssl', 'secp256k1', 'libdatachannel')
+    actions = ('emsdk', 'secp256k1')
     steps = job_steps(jobs['lanes'])
     uses = [next((action for action in actions if f'./tools/ci/actions/{action}' in step), None)
             for step in steps]
@@ -1040,24 +1156,20 @@ def test_the_jobs_install_the_external_dependencies(_):
     by_action = {action: step for action, step in zip(uses, steps) if action}
     for action in actions:
         assert by_action[action].lstrip().startswith(f'- &{action}\n'), by_action[action]
-    assert 'if: matrix.external && !matrix.emsdk' in by_action['openssl'], by_action
     assert 'if: matrix.external\n' in by_action['secp256k1'], by_action
     assert 'emscripten: ${{ matrix.emsdk }}' in by_action['secp256k1'], by_action
     assert 'cc: ${{ matrix.cc }}' in by_action['secp256k1'], by_action
-    assert 'if: matrix.external && !matrix.emsdk' in by_action['libdatachannel'], by_action
-    assert 'cxx: ${{ matrix.cxx }}' in by_action['libdatachannel'], by_action
     # The own lanes install them by the same anchors, in the same order.
     firsts = [step.strip().splitlines()[0] for step in job_steps(jobs['own-lanes'])]
     aliases = [first for first in firsts if first in {f'- *{action}' for action in actions}]
     assert aliases == [f'- *{action}' for action in actions], aliases
     for name, output in (('docs', 'external'), ('lint', 'lint-external')):
         steps = job_steps(jobs[name])
-        for action in ('openssl', 'secp256k1', 'libdatachannel'):
+        for action in ('secp256k1',):
             found = [step for step in steps if f'uses: ./tools/ci/actions/{action}' in step]
             assert len(found) == 1, (name, action, found)
             assert f"if: needs.plan.outputs.{output} == 'true'" in found[0], (name, found)
-            if action != 'openssl':
-                assert 'cc: clang-18' in found[0], (name, found)
+            assert 'cc: clang-18' in found[0], (name, found)
         emsdk = next(index for index, step in enumerate(steps) if 'actions/emsdk' in step)
         secp256k1 = next(index for index, step in enumerate(steps) if 'actions/secp256k1' in step)
         assert emsdk < secp256k1, name
@@ -1096,10 +1208,26 @@ def test_a_container_lane_has_its_image_from_the_cache(_):
 
 def test_asio_browser_lane_receives_chrome(root):
     # The browser driver needs Chrome when the lane is scheduled, on emscripten alone.
-    own = matrix.OwnLane('asio', 'browser', ('libs/asio/test/browser',),
-                         'emscripten', 'original')
-    entry = own_lane_entry_of(own)
-    assert entry['chrome'] is True, entry
+    harness.add_library(root, 'asio',
+                        'import webcpp ;\nwebcpp.targets emscripten ;\n'
+                        'webcpp.original python3 ;\n'
+                        'webcpp.drive page : pass.cpp : : driver.py ;\n'
+                        'webcpp.lane browser : page : emscripten ;\n'
+                        'webcpp.lane browser-workers : page : emscripten ;\n'
+                        'webcpp.lane browser-worker-exceptions : page : emscripten ;\n',
+                        {'pass.cpp': 'int main() {}\n', 'driver.py': '',
+                         'package.json': '{}\n', 'package-lock.json': '{}\n'})
+    entries = own_lanes(root, '--library', 'asio')
+    assert {entry['lane']: entry['chrome'] for entry in entries} == {
+        'browser': True, 'browser-workers': True, 'browser-worker-exceptions': True}, entries
+
+    for lane, platform in (('browser', 'emscripten'),
+                           ('applications-browser', 'emscripten'),
+                           ('applications-chat', 'native'),
+                           ('applications-chat', 'wasip3')):
+        beast = matrix.OwnLane('beast', lane, ('libs/beast/test/browser',),
+                               platform, 'original')
+        assert own_lane_entry_of(beast)['chrome'] is True, (lane, platform)
 
 
 def test_a_browser_lane_has_the_pinned_chrome(root):
@@ -1108,7 +1236,10 @@ def test_a_browser_lane_has_the_pinned_chrome(root):
     # chrome-headless-shell, which gives CHROME; no other own lane does, and no job names the
     # image's Chrome.
     assert matrix.CHROME_LANES == {
-        ('asio', 'browser'), ('document', 'js'), ('trystero', 'interop')}, matrix.CHROME_LANES
+        ('asio', 'browser'), ('asio', 'browser-workers'), ('asio', 'browser-worker-exceptions'),
+        ('beast', 'browser'), ('beast', 'applications-browser'),
+        ('beast', 'applications-chat'), ('document', 'js'),
+        ('trystero', 'interop')}, matrix.CHROME_LANES
     boost_only(root)
     external_library(root)
     oracle_library(root, 'beta')
@@ -1118,6 +1249,7 @@ def test_a_browser_lane_has_the_pinned_chrome(root):
     steps = job_steps(workflow_jobs()['own-lanes'])
     chrome = [step for step in steps if 'uses: ./tools/ci/actions/chrome' in step]
     assert len(chrome) == 1 and 'if: matrix.chrome\n' in chrome[0], chrome
+    assert "matrix.library == 'beast' && 'chrome' || 'chrome-headless-shell'" in chrome[0], chrome
     workflow = (harness.ROOT / '.github/workflows/library.yml').read_text()
     assert '/usr/bin/google-chrome' not in workflow
     # AGENTS.md names the shell's version once, the action's.
@@ -1129,6 +1261,31 @@ def test_a_browser_lane_has_the_pinned_chrome(root):
     assert 'Chrome 154' not in agents and 'google-chrome' not in agents
     action = (matrix.ROOT / 'tools/ci/actions/chrome/action.yml').read_text()
     assert set(re.findall(r'\d+\.\d+\.\d+\.\d+', action)) == {pinned.group(1)}, action
+
+
+def test_host_tls_fixture_is_isolated_to_its_own_lane(root):
+    steps = job_steps(workflow_jobs()['own-lanes'])
+    fixture = [step for step in steps if 'WASI HTTPS host fixture' in step]
+    assert len(fixture) == 3, fixture
+    assert all("matrix.library == 'beast' && matrix.lane == 'applications-host-tls'"
+               in step for step in fixture), fixture
+    build = next(step for step in fixture if 'cargo +1.97.1 build' in step)
+    assert 'build --locked --jobs 2' in build and 'WEBCPP_WASI_TLS_FIXTURE=' in build, build
+    assert 'rustup toolchain install 1.97.1 --profile minimal' in build, build
+    restore = next(step for step in fixture if 'cache/restore' in step)
+    assert 'Cargo.lock' in restore and 'Cargo.toml' in restore and 'src/**' in restore, restore
+
+
+def test_browser_contract_lanes_build_a_native_beast_peer(root):
+    steps = job_steps(workflow_jobs()['own-lanes'])
+    peers = [step for step in steps if 'Build the native Beast interoperability peer' in step]
+    assert len(peers) == 1, peers
+    peer = peers[0]
+    assert "matrix.library == 'beast'" in peer and "matrix.lane == 'browser-node'" in peer, peer
+    assert "matrix.lane == 'browser'" in peer, peer
+    assert 'tools/ci/matrix.py register clang-18' in peer, peer
+    assert 'libs/beast/test/browser/peer//native_peer-program' in peer, peer
+    assert 'toolset=clang-18 threading=multi' in peer, peer
 
 
 # A stand-in of docker: each call's words to docker.log, quoted as a shell reads them, one line
@@ -1191,8 +1348,9 @@ def test_a_container_lane_runs_b2_with_no_network(root):
     assert re.search(r'install[^&]*--snapshot "\$\{SNAPSHOT\}" ca-certificates', code), code
     digest = hashlib.sha256(dockerfile.encode()).hexdigest()
     assert matrix.CONTAINER_IMAGE == f'webcpp-lane:{digest[:16]}', matrix.CONTAINER_IMAGE
-    for package in ('g++-14', 'clang-18', 'libssl-dev', 'python3'):
-        assert f' {package}' in dockerfile, (package, dockerfile)
+    for package in ('g++-14', 'clang-18', 'python3', 'git', 'make', 'perl', 'cmake', 'pkg-config'):
+        assert re.search(r'install\b[^&]*\s' + re.escape(package) + r'(?=\s|$)', code), (
+            package, code)
     entry = host_lane(root)
     entry['container'] = True
     # A lane of a library that needs external libraries: the build requires them, and is given
@@ -1210,7 +1368,7 @@ def test_a_container_lane_runs_b2_with_no_network(root):
     for name in matrix.EXTERNAL_VARIABLES:
         environment.pop(name, None)
     environment.update(PATH=f'{tools}:{environment["PATH"]}', STAND_IN_DOCKER_LOG=str(log),
-                       STAND_IN_IMAGE=matrix.CONTAINER_IMAGE, LIBDATACHANNEL_ROOT='/somewhere')
+                       STAND_IN_IMAGE=matrix.CONTAINER_IMAGE, SECP256K1_ROOT='/somewhere')
     result = subprocess.run([sys.executable, str(root / 'tools/ci/matrix.py'), 'lane',
                              json.dumps(entry), '--', '--build-dir=bin/lane'], cwd=root,
                             env=environment, capture_output=True, text=True, check=False,
@@ -1240,8 +1398,8 @@ def test_a_container_lane_runs_b2_with_no_network(root):
     assert command[1:4] == [f'--user-config={config.resolve()}', '-a', '--dump-tests'], command
     toolset = command.index(next(word for word in command if word.startswith('toolset=')))
     assert command[toolset + 1:toolset + 3] == ['webcpp-require-external=on',
-                                                '-sLIBDATACHANNEL_ROOT=/somewhere'], command
-    assert not any(word.startswith('-sSECP256K1_ROOT') for word in command), command
+                                                '-sSECP256K1_ROOT=/somewhere'], command
+    assert not any(word.startswith('-sLIBDATACHANNEL_ROOT') for word in command), command
     version = matrix.major_version('clang++')
     system = 'darwin' if sys.platform == 'darwin' else 'linux'
     assert (resolved / f'bin/ci/clang-{system}-{version}.xml').is_file()
@@ -1302,6 +1460,10 @@ CASES = [
     test_own_lanes_of_every_library_and_of_one,
     test_own_lanes_on_targets,
     test_an_own_lanes_command,
+    test_beast_browser_lanes_cover_policies_and_exception_modes,
+    test_asio_capability_lanes_cover_suspension_and_exception_modes,
+    test_openssl_upstream_lanes_use_the_windows_builds,
+    test_a_wasip3_lane_can_bind_a_loopback_socket,
     test_a_lane_is_named_by_the_compiler_version,
     test_abbreviated_paths_keep_the_lane_name,
     test_register_writes_the_lanes_toolsets_in_order,
@@ -1320,6 +1482,8 @@ CASES = [
     test_a_container_lane_has_its_image_from_the_cache,
     test_asio_browser_lane_receives_chrome,
     test_a_browser_lane_has_the_pinned_chrome,
+    test_host_tls_fixture_is_isolated_to_its_own_lane,
+    test_browser_contract_lanes_build_a_native_beast_peer,
     test_container_apt_get_retries_transient_failures,
     test_a_container_lane_runs_b2_with_no_network,
     test_a_container_lane_whose_image_does_not_build_fails,

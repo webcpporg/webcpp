@@ -98,8 +98,11 @@ translation unit; one that holds fewer is a translation unit of its own,
 
 Before selecting each aggregate command, its compile-only headers-alone targets are built
 through B2. This materializes generated dependencies, including OpenSSL configuration and CA
-data, on a clean checkout. The corresponding exception-free units are prepared too. No test
-program is executed by this preparation.
+data, on a clean checkout. The corresponding exception-free units are prepared too. Selected
+program commands may also need checked Boost overlays on a target no aggregate uses; their
+include paths select the overlays' B2 preparation targets before analysis. Neither preparation
+executes a test program. Program-only OpenSSL and libdatachannel variants prepare their
+verified provider headers too, without compiling archives or publishing build proof.
 
 b2 runs with root/.local/user-config.jam when it exists, else with $WEBCPP_USER_CONFIG when it
 is set, else with its own search; and without CPATH, CPLUS_INCLUDE_PATH and C_INCLUDE_PATH,
@@ -134,6 +137,13 @@ TARGETS = {
     'wasip2': ['toolset=clang-wasip2'],
     'wasip3': ['toolset=clang-wasip3'],
     'emscripten': ['toolset=emscripten'],
+}
+
+# Checked overlays owned by tools/boost: each include directory's B2 preparation target.
+# A program can need one on a target that the library's native aggregate never prepares.
+BOOST_OVERLAYS = {
+    f'bin/boost-{name}/include': f'tools/boost/{name}//prepared.stamp'
+    for name in ('asio-wasip3', 'asio-windows', 'cobalt-common', 'cobalt-wasip3', 'cobalt-ssl')
 }
 
 # The property of the request that builds a program without exceptions as a user asks b2 for one,
@@ -266,12 +276,12 @@ def declared_lanes(root: str) -> dict[str, list[str]]:
 
 
 def target_run(root: str, target: str, libraries: list[str],
-               lanes: list[str]) -> list[list[str]]:
-    """The compile commands of the dry run of every library's programs for target, which the
+               lanes: list[str]) -> list[str]:
+    """The lines of the dry run of every library's programs for target, which the
     libraries named declare, and of the own lanes given; a dry run that fails names the target
     and its toolset."""
     try:
-        return compiles(dry_run(root, [*TARGETS[target], *PROGRAMS, *lanes]))
+        return dry_run(root, [*TARGETS[target], *PROGRAMS, *lanes])
     except Failure as failure:
         if target == 'native':
             raise
@@ -576,10 +586,89 @@ def of_the_tree(root: str, source: str) -> bool:
 Units = dict[str, dict[str, list[list[str]]]]
 
 
-def read(root: str, target: str, commands: list[list[str]], entries: list[dict[str, object]],
+def prepare_boost_overlays(root: str, target: str, commands: list[list[str]]) -> None:
+    """Build the checked Boost overlays selected commands include, without compiling programs."""
+    includes: set[Path] = set()
+    for words in commands:
+        for index, word in enumerate(words):
+            if word in ('-I', '-isystem') and index + 1 < len(words):
+                directory = words[index + 1]
+            elif word.startswith('-I'):
+                directory = word[2:]
+            else:
+                continue
+            includes.add(Path(root, directory).resolve())
+    requested = sorted(preparation for directory, preparation in BOOST_OVERLAYS.items()
+                       if Path(root, directory).resolve() in includes)
+    if not requested:
+        return
+    command, completed = run_b2(root, ['-d0', *TARGETS[target], *requested])
+    if completed.returncode != 0:
+        raise Failure(f'{completed.stdout}{" ".join(command)} exited {completed.returncode} '
+                      'while preparing checked Boost overlays')
+
+
+def prepare_provider_headers(root: str, request: list[str], commands: list[list[str]],
+                            lines: list[str]) -> None:
+    """Build each program's configured provider headers without executing its test target."""
+    includes: set[Path] = set()
+    for words in commands:
+        for index, word in enumerate(words):
+            if word in ('-I', '-isystem') and index + 1 < len(words):
+                include = words[index + 1]
+            elif word.startswith('-I'):
+                include = word[2:]
+            else:
+                continue
+            directory = Path(root, include).resolve()
+            if (directory.is_relative_to(Path(root, BUILD_DIR, 'third_party').resolve())
+                    and directory.name == 'include'
+                    and directory.parent.name.startswith('config-')):
+                includes.add(directory)
+    if not includes:
+        return
+    # Select each provider by its real B2 action, preserving the exact variant
+    # that the consumer uses, including program-only definitions and ABI flags.
+    headers: set[str] = set()
+    for line in lines:
+        built = re.fullmatch(
+            r'webcpp-(openssl|libdatachannel)\.build (.+[/\\])'
+            r'(?:libssl|libdatachannel|datachannel)\.(?:a|lib)', line)
+        if built:
+            directory = Path(root, built.group(2), 'include')
+            # B2 aliases explicit outputs by their original spelling, even when
+            # the build directory is a symlink. Canonicalize only comparisons.
+            if directory.resolve() in includes:
+                header = ('openssl/configuration.h' if built.group(1) == 'openssl'
+                          else 'rtc/datachannel.hpp')
+                headers.add(str(directory / header))
+    if not headers:
+        return
+    # Resolve the original consumers inside a dedicated B2 preparation target.
+    # Its result contains only provider headers, even when those files exist.
+    # Existing filenames on B2's command line would instead become input files
+    # and let B2 execute all the consumers. Never execute a dry-run shell line.
+    properties = ['webcpp-require-external=on',
+                  *(argument for argument in request if '=' in argument)]
+    original = [f'--webcpp-lint-property={argument}' for argument in properties]
+    sources = [f'--webcpp-lint-source={argument}' for argument in request if '=' not in argument]
+    requested = [f'--webcpp-lint-header={header}' for header in sorted(headers)]
+    command, completed = run_b2(root, ['-d0', *properties, *original, *sources, *requested,
+                                      'lint-provider-headers'])
+    if completed.returncode != 0 or any(not Path(header).is_file() for header in headers):
+        raise Failure(f'{completed.stdout}{" ".join(command)} exited {completed.returncode} '
+                      'while preparing program provider headers')
+
+
+def source_path(root: str, source: str) -> str:
+    """The physical source's path relative to root, independent of its Jamfile's spelling."""
+    return os.path.relpath(os.path.realpath(os.path.join(root, source)), os.path.realpath(root))
+
+
+def read(root: str, target: str, lines: list[str], entries: list[dict[str, object]],
          seen: set[tuple[str, ...]], earlier: set[str],
-         wasi_clang: str | None) -> tuple[Units, set[str]]:
-    """Adds to entries each command of commands, compiled for target, that compiles a .cpp file of
+         wasi_clang: str | None, request: list[str]) -> tuple[Units, set[str]]:
+    """Adds to entries each command of lines, compiled for target, that compiles a .cpp file of
     the source tree that is not in earlier, a source an earlier target compiles, and that is not
     in seen, as the lint analyses it (analysed); a WebAssembly command of a compiler other than
     wasi-sdk's clang++ or, on emscripten, Emscripten's em++ fails. Returns the commands of the
@@ -587,20 +676,26 @@ def read(root: str, target: str, commands: list[list[str]], entries: list[dict[s
     commands compile."""
     units: Units = {}
     sources: set[str] = set()
-    for words in commands:
+    selected: list[list[str]] = []
+    for words in compiles(lines):
         source = words[-1]
         unit = ALONE.match(source)
         if unit:
             units.setdefault(unit.group(1), {}).setdefault(unit.group(2), []).append(words)
         if source.startswith(f'{BUILD_DIR}/') or not of_the_tree(root, source):
             continue
+        source = source_path(root, source)
+        words = [*words[:-1], source]
         sources.add(source)
         key = tuple(without_output(words))
         if source in earlier or key in seen:
             continue
         seen.add(key)
+        selected.append(words)
         entries.append({'directory': root, 'file': os.path.join(root, source),
                         'arguments': analysed(target, source, words, wasi_clang)})
+    prepare_boost_overlays(root, target, selected)
+    prepare_provider_headers(root, request, selected, lines)
     return units, sources
 
 
@@ -698,14 +793,19 @@ def twins(root: str, target: str, chosen: dict[str, list[Aggregate]], units: Uni
     without: Units = {}
     kept: set[str] = set()
     compiled: set[str] = set()
-    for words in compiles(dry_run(root, [*TARGETS[target], WITHOUT_EXCEPTIONS, *PROGRAMS, *lanes,
-                                         *handler, *requested])):
+    selected: list[list[str]] = []
+    request = [*TARGETS[target], WITHOUT_EXCEPTIONS, *PROGRAMS, *lanes, *handler, *requested]
+    lines = dry_run(root, request)
+    for words in compiles(lines):
         source = words[-1]
         unit = ALONE.match(source)
         if unit:
             without.setdefault(unit.group(1), {}).setdefault(unit.group(2), []).append(words)
-        if (source.startswith(f'{BUILD_DIR}/') or not of_the_tree(root, source)
-                or first.setdefault(source, target) != target):
+        if source.startswith(f'{BUILD_DIR}/') or not of_the_tree(root, source):
+            continue
+        source = source_path(root, source)
+        words = [*words[:-1], source]
+        if first.setdefault(source, target) != target:
             continue
         if NO_EXCEPTIONS not in words:
             kept.add(source)
@@ -715,8 +815,11 @@ def twins(root: str, target: str, chosen: dict[str, list[Aggregate]], units: Uni
         if key in seen:
             continue
         seen.add(key)
+        selected.append(words)
         entries.append({'directory': root, 'file': os.path.join(root, source),
                         'arguments': analysed(target, source, words, wasi_clang)})
+    prepare_boost_overlays(root, target, selected)
+    prepare_provider_headers(root, request, selected, lines)
     twinned.programs |= kept - compiled
     for library, theirs in aggregates.items():
         index = next(index for index, aggregate in enumerate(theirs)
@@ -771,7 +874,8 @@ def database(root: str, wasi_clang: str | None = None) -> list[dict[str, object]
             continue
         units[target], sources = read(root, target,
                                       target_run(root, target, declaring, lanes.get(target, [])),
-                                      entries, seen, set(first), wasi_clang)
+                                      entries, seen, set(first), wasi_clang,
+                                      [*TARGETS[target], *PROGRAMS, *lanes.get(target, [])])
         for source in sources:
             first.setdefault(source, target)
 

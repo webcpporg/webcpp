@@ -129,6 +129,41 @@ cobalt::task<void> cancel_read(tls_pair& pair, bool composed) {
     require(static_cast<bool>(pair.peer.close()));
 }
 
+cobalt::task<int> wait_for_blocked_write(tls_pair& pair,
+                                         const cobalt::promise<transfer_result>& writing,
+                                         const cobalt::promise<transfer_result>& receiving,
+                                         bool can_cancel) {
+    pollfd descriptor{.fd = pair.client.native_handle(), .events = POLLOUT, .revents = 0};
+    int ready = 1;
+    while (!writing.ready()) {
+        co_await asio::post(pair.exec, cobalt::use_op);
+        ready = ::poll(&descriptor, 1, 0);
+        constexpr unsigned failure_events = static_cast<unsigned>(POLLERR) |
+                                            static_cast<unsigned>(POLLHUP) |
+                                            static_cast<unsigned>(POLLNVAL);
+        require(ready >= 0 && (static_cast<unsigned>(descriptor.revents) & failure_events) == 0);
+        if (ready == 0 && receiving.ready() && can_cancel) {
+            // WASIp2 may already have a successful SSL completion queued while
+            // libc reports no current write permit. Let the reactor progress,
+            // then require that the same operation is still blocked before
+            // cancelling it. This timer is an event-loop barrier, not evidence
+            // of backpressure; the second poll and promise state provide that.
+            asio::steady_timer barrier(pair.exec, std::chrono::milliseconds(1));
+            const auto [barrier_error] =
+                co_await cobalt::as_tuple(barrier.async_wait(cobalt::use_op));
+            require(!barrier_error);
+            descriptor.revents = 0;
+            ready = ::poll(&descriptor, 1, 0);
+            require(ready >= 0 &&
+                    (static_cast<unsigned>(descriptor.revents) & failure_events) == 0);
+            if (ready == 0 && !writing.ready()) {
+                break;
+            }
+        }
+    }
+    co_return ready;
+}
+
 cobalt::task<bool> cancel_write(tls_pair& pair, bool composed) {
     require(static_cast<bool>(pair.client.set_send_buffer_size(4096)));
     require(static_cast<bool>(pair.peer.set_receive_buffer_size(4096)));
@@ -146,20 +181,8 @@ cobalt::task<bool> cancel_write(tls_pair& pair, bool composed) {
     while (total < data.size()) {
         // One promise per primitive write: a cancelled promise must not start another await.
         auto writing = write_transfer(pair.client, io::buffer(data) + total, composed);
-        pollfd descriptor{.fd = pair.client.native_handle(), .events = POLLOUT, .revents = 0};
-        int ready = 1;
-        while (!writing.ready()) {
-            co_await asio::post(pair.exec, cobalt::use_op);
-            ready = ::poll(&descriptor, 1, 0);
-            constexpr unsigned failure_events = static_cast<unsigned>(POLLERR) |
-                                                static_cast<unsigned>(POLLHUP) |
-                                                static_cast<unsigned>(POLLNVAL);
-            require(ready >= 0 &&
-                    (static_cast<unsigned>(descriptor.revents) & failure_events) == 0);
-            if (ready == 0 && receiving.ready() && (composed || total != 0)) {
-                break;
-            }
-        }
+        const int ready =
+            co_await wait_for_blocked_write(pair, writing, receiving, composed || total != 0);
         const bool cancel = !writing.ready();
         if (cancel) {
             require(ready == 0 && receiving.ready());

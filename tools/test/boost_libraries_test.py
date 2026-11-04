@@ -22,6 +22,7 @@ Run with the names of some cases to run only those."""
 from __future__ import annotations
 
 import re
+import shlex
 import shutil
 import struct
 import sys
@@ -683,6 +684,140 @@ def test_boost_cobalt_warns_only_for_disabled_exceptions(root: Path) -> None:
     assert issue not in result.stdout, result.stdout
 
 
+def test_asio_windows_allocator_overlay_reaches_sources_and_consumers(root: Path) -> None:
+    # Windows-only private headers must reach Asio applications and compiled Cobalt alike.
+    harness.add_library(root, 'asio',
+                        'import webcpp ;\nwebcpp.targets native ;\n'
+                        'webcpp.run context : context.cpp : <library>/webcpp/asio//asio ;\n',
+                        {'context.cpp': '#include <webcpp/asio.hpp>\nint main() {}\n'})
+    original = harness.ROOT / 'libs/asio'
+    (root / 'libs/asio/build.jam').write_text((original / 'build.jam').read_text())
+    for name in ('include', 'src'):
+        shutil.copytree(original / name, root / 'libs/asio' / name)
+    # The actual Asio build project requires config even in a dry run.
+    config = root / 'libs/config'
+    config.mkdir()
+    shutil.copyfile(harness.ROOT / 'libs/config/build.jam', config / 'build.jam')
+    shutil.copytree(harness.ROOT / 'libs/config/include', config / 'include')
+    harness.add_library(root, 'coroutines', COBALT_JAMFILE, {'coroutines.cpp': COBALT_SOURCE})
+    for request, selected in (((), False), (('target-os=windows',), True)):
+        result = harness.run_b2(root, '-a', '-n', '-d+2', *request,
+                               'libs/asio/test//context', 'libs/coroutines/test')
+        harness.expect(result, True)
+        commands = [line for line in result.stdout.splitlines()
+                    if ' -c ' in line and any(name in line for name in
+                                             ('context.cpp', 'coroutines.cpp', '/cobalt/src/'))]
+        assert commands, result.stdout[-4000:]
+        for command in commands:
+            assert ('boost-asio-windows/include' in command) == selected, command
+
+
+def test_msvc_overlays_win_actual_header_lookup(root: Path) -> None:
+    # MSVC searches /I and /external:I in command order. Unlike GCC/Clang,
+    # an earlier external path shadows a later ordinary overlay path.
+    harness.add_library(root, 'coroutines', COBALT_JAMFILE, {'coroutines.cpp': COBALT_SOURCE})
+    config = harness.user_config(root).read_text()
+    configured = re.search(r'(?m)^\s*using\s+boost\b[^\n]*<include>'
+                           r'(?:"([^"]+)"|([^";\s]+))', config)
+    assert configured, config
+    headers = root / 'Boost headers with spaces'
+    headers.symlink_to(Path(configured.group(1) or configured.group(2)))
+    libraries = root / 'Boost libraries with spaces'
+    libraries.mkdir()
+    config = harness.USING_BOOST.sub('', config) + \
+        f'using boost : 1.92 : <include>"{headers}" <library>"{libraries}" ;\n'
+    harness.configure(root, config + f'\nusing msvc : 14.3 : "{sys.executable}"'
+                      ' : <setup> <rewrite-setup-scripts>off ;\n')
+    jamroot = root / 'Jamroot'
+    original = jamroot.read_text()
+    # A foreign-toolset dry run emits commands but cannot execute cmd.exe for
+    # configuration checks. Restore those checks before the real native compile.
+    jamroot.write_text(original.replace('<conditional>@boost-check', '<webcpp-boost-check>off'))
+    try:
+        result = harness.run_b2(root, '-a', '-n', '-d+2', 'toolset=msvc-14.3',
+                               'target-os=windows', 'architecture=x86', 'address-model=64',
+                               'exception-handling=off', 'libs/coroutines/test')
+    finally:
+        jamroot.write_text(original)
+        harness.configure(root, config)
+    harness.expect(result, True)
+    result_commands = result.stdout
+    commands = [line for line in result.stdout.splitlines()
+                if ' -c ' in line and 'coroutines.cpp' in line]
+    assert len(commands) == 1, result.stdout[-4000:]
+    includes = []
+    for word in shlex.split(commands[0]):
+        for prefix in ('/external:I', '-I', '/I'):
+            if word.startswith(prefix):
+                includes.append(word[len(prefix):])
+                break
+    assert any('boost-asio-windows/include' in path for path in includes), commands
+    assert any('boost-cobalt-common/include' in path for path in includes), commands
+    # Preparing the real common overlay and compiling against the emitted order
+    # proves which promise definition wins, including a checkout containing spaces.
+    harness.expect(harness.run_b2(root, '/webcpp/cobalt-common//prepared.stamp'), True)
+    assert (root / 'bin/boost-cobalt-common/include/boost/cobalt/detail/main.hpp').is_file()
+    flags = ' '.join(f'-I\\"{path}\\"' for path in includes)
+    source = ('#include <boost/cobalt/main.hpp>\n'
+              'static_assert(requires(boost::cobalt::detail::main_promise& promise) {\n'
+              '    promise.unhandled_exception();\n'
+              '});\n')
+    harness.add_library(root, 'selected',
+                        'import webcpp ;\nwebcpp.targets native ;\n'
+                        'webcpp.compile promise : promise.cpp : <exception-handling>off '
+                        f'<cxxflags>"{flags}" ;\n', {'promise.cpp': source})
+    result = harness.run_b2(root, '-a', 'libs/selected/test//promise')
+    harness.expect(result, True, '**passed**')
+    # The same precedence must reach every separately compiled Cobalt source.
+    compiled = [line for line in result_commands.splitlines()
+                if ' -c ' in line and '/cobalt/src/' in line]
+    assert compiled, result_commands[-4000:]
+    for command in [*commands, *compiled]:
+        words = shlex.split(command)
+        external = next(index for index, word in enumerate(words)
+                        if word.startswith('/external:I'))
+        for overlay in ('boost-asio-windows/include', 'boost-cobalt-common/include'):
+            selected = next(index for index, word in enumerate(words) if overlay in word)
+            assert selected < external, command
+        assert '/external:W0' in words, command
+        assert '/external:anglebrackets' not in words, command
+
+
+def test_boost_cobalt_thread_joins_without_exceptions(root: Path) -> None:
+    # Omitting thread_promise's exception-disabled hook makes a real coroutine
+    # fail to compile. Exercise the compiled thread implementation and its executor.
+    source = r'''#include <boost/asio/post.hpp>
+#include <boost/cobalt/op.hpp>
+#include <boost/cobalt/this_coro.hpp>
+#include <boost/cobalt/thread.hpp>
+#include <atomic>
+#include <cstdio>
+
+boost::cobalt::thread worker(std::atomic<int>& completed) {
+    auto executor = co_await boost::cobalt::this_coro::executor;
+    co_await boost::asio::post(executor, boost::cobalt::use_op);
+    completed.store(42);
+}
+
+int main() {
+    std::atomic<int> completed{0};
+    auto operation = worker(completed);
+    operation.join();
+    if (completed.load() != 42) return 1;
+    std::puts("thread coroutine completed and joined");
+}
+'''
+    harness.add_library(root, 'thread_probe',
+                        'import webcpp ;\nwebcpp.targets native ;\n'
+                        'webcpp.run thread : thread.cpp : <threading>multi '
+                        '<library>/webcpp//boost_cobalt ;\n', {'thread.cpp': source})
+    for exceptions in ('off', 'on'):
+        result = harness.run_b2(root, '-a', '-j4', '--verbose-test',
+                               f'exception-handling={exceptions}', 'libs/thread_probe/test')
+        harness.expect(result, True, 'thread coroutine completed and joined')
+        assert passed(result) == {'thread'}, result.stdout[-4000:]
+
+
 def test_boost_cobalt_preserves_exception_setting(root: Path) -> None:
     # A blanket exception requirement would reject a valid result-based consumer.
     # Build the real archive and execute eager promises and cancellation in each mode.
@@ -717,11 +852,53 @@ def test_boost_cobalt_preserves_exception_setting(root: Path) -> None:
             print(f'cobalt {request or ("native",)} exceptions={exceptions}: passed', flush=True)
 
 
+def test_boost_context_unwinds_native_stack(root: Path) -> None:
+    source = r'''#include <boost/context/fiber.hpp>
+#include <utility>
+int main() {
+    int count = 0;
+    struct guard { int& value; ~guard() { ++value; } };
+    {
+        boost::context::fiber fiber([&](boost::context::fiber caller) {
+            guard instance{count};
+            caller = std::move(caller).resume();
+            return caller;
+        });
+        fiber = std::move(fiber).resume();
+        if (count != 0) return 1;
+    }
+    return count == 1 ? 0 : 2;
+}
+'''
+    harness.add_library(root, 'context_probe',
+                        'import webcpp ;\nwebcpp.run fiber : fiber.cpp : '
+                        '<library>/webcpp//boost_context <exception-handling>on ;\n',
+                        {'fiber.cpp': source})
+    result = harness.run_b2(root, '-a', '-d+2', 'libs/context_probe/test')
+    harness.expect(result, True)
+    assert passed(result) == {'fiber'}, result.stdout[-4000:]
+    assert '-lboost_context' not in result.stdout, result.stdout[-4000:]
+    assert 'BOOST_CONTEXT_STATIC_LINK=1' in result.stdout
+    assert 'BOOST_CONTEXT_NO_LIB=1' in result.stdout
+
+
+def test_boost_context_refuses_unverified_wasm(root: Path) -> None:
+    for target in ('wasip2', 'wasip3'):
+        result = harness.run_b2(root, f'toolset=clang-{target}', '/webcpp//boost_context')
+        harness.expect(result, False, f'Boost.Context has no verified {target} backend',
+                       'JSPI, Asyncify and C++20 awaitables do not')
+
+
 CASES = [
+    test_boost_context_unwinds_native_stack,
+    test_boost_context_refuses_unverified_wasm,
     test_boost_cobalt_names_missing_or_mismatched_sources,
     test_boost_cobalt_omits_main_and_ssl_from_supplied_sources,
     test_boost_cobalt_warns_only_for_disabled_exceptions,
+    test_boost_cobalt_thread_joins_without_exceptions,
     test_boost_cobalt_preserves_exception_setting,
+    test_asio_windows_allocator_overlay_reaches_sources_and_consumers,
+    test_msvc_overlays_win_actual_header_lookup,
     test_boost_url_links_on_every_target,
     test_boost_charconv_links_on_every_target,
     test_boost_locale_on_every_target,

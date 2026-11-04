@@ -33,9 +33,9 @@ actions prepare
 
 rule supported ( properties * )
 {
-    if ! [ webcpp-target.target-of $(properties) ] in native wasip3
+    if ! [ webcpp-target.target-of $(properties) ] in native wasip2 wasip3
     {
-        errors.user-error "Cobalt SSL requires native or WASIp3 with source-built OpenSSL." ;
+        errors.user-error "Cobalt SSL requires native, WASIp2 or WASIp3 with source-built OpenSSL." ;
     }
 }
 

@@ -24,7 +24,9 @@ import type ;
 # with, which import it as webcpp.
 import tools/webcpp ;
 import tools/webcpp-wasi ;
+import tools/webcpp-lint-headers ;
 import tools/webcpp-openssl ;
+import tools/webcpp-libdatachannel ;
 import tools/webcpp-ca-certificates ;
 
 # A shell with CPATH (Homebrew sets it) puts its headers before the
@@ -248,7 +250,10 @@ project /webcpp
       <toolset>gcc:<cxxflags>"-isystem\"$(.boost-include)\""
       <toolset>clang:<cxxflags>"--system-header-prefix=\"boost/\""
       <toolset>emscripten:<cxxflags>"--system-header-prefix=\"boost/\""
-      <toolset>msvc:<cxxflags>"\"/external:I$(.boost-include)\""
+      # MSVC searches ordinary and external directories in command order.
+      # Quote the path alone so b2 orders private -I overlays before this
+      # /external:I option; quoting the whole option moves Boost first.
+      <toolset>msvc:<cxxflags>"/external:I\"$(.boost-include)\""
       <toolset>msvc:<cxxflags>"/external:W0"
       # Boost.Container's auto-link (reached through Boost.JSON) would ask
       # for a compiled library on MSVC.
@@ -263,11 +268,11 @@ project /webcpp
       <target-os>wasi:<link>static
       # end::wasi-target[]
       # b2's emscripten builds wasm32 (browsers do not all run memory64, and
-      # an address-model=64 request would add -sMEMORY64=1), without pthreads
-      # (they need cross-origin isolation in a page), and static.
+      # an address-model=64 request would add -sMEMORY64=1), and static.
+      # Keep b2's single-thread default, but honor an explicit threading=multi.
+      # Pthreads require a cross-origin isolated page and a compatible library.
       # tag::emscripten-target[]
       <toolset>emscripten:<address-model>32
-      <toolset>emscripten:<threading>single
       <toolset>emscripten:<link>static
       # end::emscripten-target[]
       # Every WASI target builds with exceptions, as native does: whether a
@@ -423,7 +428,7 @@ use-project /webcpp/boost-libraries : tools/boost ;
 # Boost.JSON does with boost_json. Each alias checks the sources before anything
 # is built; what Boost.Locale gives on each target is the table of
 # CODING-GUIDELINES.md chapter 10.
-for local name in boost_url boost_charconv boost_locale boost_cobalt boost_cobalt_io_ssl
+for local name in boost_url boost_charconv boost_locale boost_cobalt boost_cobalt_io_ssl boost_context
 {
     alias $(name) : tools/boost//$(name) : <conditional>@boost-source-usable ;
 }
@@ -566,7 +571,7 @@ for local build in [ glob libs/*/build.jam ]
 # Keep the generated trust header usable outside this source checkout, along
 # with the exact certificate source and notices of the embedded snapshot.
 install install-ca-certificates : third_party//ca_certificates-header
-    : <location>$(.includedir) ;
+    : <location>$(.includedir)/webcpp/asio/detail ;
 install install-ca-certificates-notices
     : third_party/ca_certificates/LICENSE-MPL-2.0.txt
       third_party/ca_certificates/README.md third_party/ca_certificates/cacert.pem
@@ -775,6 +780,9 @@ actions dist
 }
 
 notfile dist : @dist : : <dependency>doc <webcpp-boost-check>off ;
+
+# This target is declared only for the lint's explicit preparation request.
+webcpp-lint-headers.declare-lint-headers ;
 
 explicit boost_version throw_exception boost_json boost_url boost_charconv
     boost_locale boost_cobalt boost_cobalt_io_ssl node-test emscripten-reference test example doc install $(.install)

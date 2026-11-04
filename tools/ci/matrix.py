@@ -162,13 +162,12 @@ EMSDK_JAM = ROOT / 'tools/ci/emsdk.jam'
 # until webcpp builds them from third_party/ (CODING-GUIDELINES.md chapter 16): the CI's actions
 # of these names, tools/ci/actions/<name>, install each where the build looks, in .local/,
 # before a lane, an own lane, the docs or the lint that builds such a library runs.
-EXTERNAL_DEPENDENCIES = {'trystero': ('secp256k1', 'libdatachannel', 'openssl')}
+EXTERNAL_DEPENDENCIES = {'trystero': ('secp256k1',)}
 
 # The variables that name those libraries' directories, which the actions give a job, and a lane
 # of such a library passes to b2 as -s<VARIABLE>=<dir>: a library's build.jam reads them from b2's
 # command line alone, never from the environment.
-EXTERNAL_VARIABLES = ('SECP256K1_ROOT', 'SECP256K1_EMSCRIPTEN_ROOT', 'LIBDATACHANNEL_ROOT',
-                      'OPENSSL_ROOT')
+EXTERNAL_VARIABLES = ('SECP256K1_ROOT', 'SECP256K1_EMSCRIPTEN_ROOT')
 
 # The directory of the Dockerfile a container lane's image is built from, and the image, tagged
 # with the start of the Dockerfile's SHA-256: an image of another Dockerfile is never taken for it.
@@ -190,8 +189,12 @@ CONTAINER_IMAGE = container_tag()
 
 # The own lanes whose driver meets a browser, (library, lane), which the CI's chrome action gives
 # its pinned chrome-headless-shell, as CHROME: trystero's interop, natively and on emscripten, and
-# document's js, whose examples Playwright runs in Chrome, and asio's browser lane.
-CHROME_LANES = {('asio', 'browser'), ('document', 'js'), ('trystero', 'interop')}
+# document's js, whose examples Playwright runs in Chrome, and the browser and
+# chat applications whose fixture connects Chrome to native or WASI servers.
+CHROME_LANES = {('asio', 'browser'), ('asio', 'browser-workers'),
+                ('asio', 'browser-worker-exceptions'),
+                ('beast', 'browser'), ('beast', 'applications-browser'),
+                ('beast', 'applications-chat'), ('document', 'js'), ('trystero', 'interop')}
 
 # MSVC's lanes build 64-bit programs, embed their manifest with the linker and abbreviate b2's
 # paths against Windows's MAX_PATH, as xstate-cpp's green Windows jobs did. b2 abbreviates each
@@ -320,9 +323,12 @@ EMSCRIPTEN_TOOLSET = '{emsdk.jam}'
 
 
 def wasm_lane(target: str) -> Lane:
-    return Lane(id=target, name=f'wasm32-{target} (wasi-sdk 34, wasmtime 47.0.3)',
+    # WASI programs exercise Asio sockets on loopback; Wasmtime needs explicit network
+    # capabilities even there. Reuse the bounded launcher used by the library's own tests.
+    launcher = f'tools/boost/asio-{target}/run.sh'
+    return Lane(id=target, name=f'wasm32-{target} (wasi-sdk 34, wasmtime 50.0.1)',
                 os='ubuntu-24.04', target=target, lane=target, toolset=f'clang-{target}',
-                using=WASI_TOOLSET, options=('testing.launcher=wasmtime',), wasm=True)
+                using=WASI_TOOLSET, options=(f'testing.launcher={launcher}',), wasm=True)
 
 
 # Every lane the CI knows, by target. GCC and Clang on Linux build with libstdc++, the system's
@@ -508,6 +514,20 @@ KINDS = ('original', 'programs')
 OWN_LANE_BASES = {None: 'clang-18', 'native': 'clang-18', 'emscripten': 'emscripten',
                   'wasip2': 'wasip2', 'wasip3': 'wasip3'}
 
+# Own lanes select their supported suspension, exception and library policy modes.
+# Manifest-based browser lanes already expand suspension variants inside B2.
+OWN_LANE_OPTIONS = {
+    ('asio', 'browser-workers', 'emscripten'):
+        ('webcpp-suspend=jspi,asyncify', 'exception-handling=on,off'),
+    ('asio', 'browser-worker-exceptions', 'emscripten'):
+        ('webcpp-suspend=jspi,asyncify', 'exception-handling=on'),
+    ('asio', 'wasip2-tls', 'wasip2'): ('exception-handling=on,off',),
+    ('beast', 'browser', 'emscripten'):
+        ('exception-handling=on,off', 'webcpp-beast-unsupported=error,ignore'),
+    ('beast', 'browser-node', 'emscripten'):
+        ('exception-handling=on,off', 'webcpp-beast-unsupported=error,ignore'),
+}
+
 
 @dataclass(frozen=True)
 class OwnLane:
@@ -583,12 +603,22 @@ def own_lane_base(target: str | None) -> Lane:
     return known[OWN_LANE_BASES[target]]
 
 
+def own_lane_profile(own: OwnLane) -> Lane:
+    """Select a compiler-specific dependency suite or the target's default lane."""
+    if own.library == 'asio' and own.target == 'native':
+        profiles = {'openssl-upstream-msvc-14.3': 'msvc-14.3',
+                    'openssl-upstream-msvc-14.5': 'msvc-14.5'}
+        if own.lane in profiles:
+            return next(lane for lane in LANES if lane.id == profiles[own.lane])
+    return own_lane_base(own.target)
+
+
 def own_lane_entry(own: OwnLane) -> dict[str, object]:
     """The own lane as an entry of the own-lanes matrix: its library, its lane and its
     directories; its target and its id when it names one; and, for every entry, its kind, the name
     of its job, the image, the setup and the compilers of the lane it shares, and whether its
     library needs a library webcpp does not build, which the job reads from here alone."""
-    base = own_lane_base(own.target)
+    base = own_lane_profile(own)
     entry: dict[str, object] = {'library': own.library, 'lane': own.lane,
                                 'directories': list(own.directories)}
     if own.target is not None:
@@ -614,7 +644,7 @@ def own_lanes(user_config: Path, library: str | None) -> list[OwnLane]:
     lanes = [lane for lane in lanes if library is None or lane.library == library]
     for own in lanes:
         try:
-            own_lane_base(own.target)
+            own_lane_profile(own)
         except Failure as failure:
             raise Failure(f'{own.library} declares its own lane {own.lane} in '
                           f'{" and ".join(own.directories)} on {own.target}, which the CI cannot '
@@ -750,14 +780,15 @@ def own_lane_command(own: OwnLane, user_config: Path, xml: Path | None,
                      extra: list[str]) -> list[str]:
     """The own lane's command: b2, from scratch, on <directory>//<lane> for each of its
     directories; with Clang 18 when it names no target, and otherwise with the toolset and the
-    options of the lane it shares, writing xml, as that lane does."""
-    base = own_lane_base(own.target)
+    options of the lane it shares plus its own mode coverage, writing xml, as that lane does."""
+    base = own_lane_profile(own)
     external = external_arguments(needs_external(own.library))
     if own.target is None:
         return ['b2', f'--user-config={user_config}', '-a', f'toolset={base.toolset}', *external,
                 *extra, *own.requests]
+    options = OWN_LANE_OPTIONS.get((own.library, own.lane, own.target), ())
     return ['b2', f'--user-config={user_config}', '-a', '--dump-tests', f'--out-xml={xml}',
-            f'toolset={base.toolset}', *external, *base.options, *extra, *own.requests]
+            f'toolset={base.toolset}', *external, *base.options, *options, *extra, *own.requests]
 
 
 def run_b2(label: str, command: list[str]) -> int:
@@ -861,7 +892,7 @@ def run_lane(lane: Lane, user_config: Path, out_dir: Path, extra: list[str]) -> 
 
 def run_own_lane(own: OwnLane, user_config: Path, out_dir: Path, extra: list[str]) -> int:
     """Runs the own lane, and returns its exit status."""
-    register(resolved(own_lane_base(own.target)), user_config)
+    register(resolved(own_lane_profile(own)), user_config)
     if own.target is None:
         label = f'own lane {" ".join(own.requests)}'
         status = run_b2(label, own_lane_command(own, user_config, None, extra))
@@ -1017,7 +1048,7 @@ def main(arguments: list[str]) -> int:
         # writes none, and its job is its verdict.
         for own in (parsed_own_lane(json.dumps(entry)) for entry in owned):
             if own.target is not None:
-                lanes.append(replace(own_lane_base(own.target), id=own.id, name=own.name,
+                lanes.append(replace(own_lane_profile(own), id=own.id, name=own.name,
                                      lane=own.id))
         return run_report(lanes, options.lanes, options.out)
     except Failure as failure:

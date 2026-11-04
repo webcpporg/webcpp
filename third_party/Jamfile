@@ -87,9 +87,21 @@ import webcpp-openssl ;
 webcpp-openssl.declare $(WEBCPP_ROOT)
     : $(.openssl-headers:B).h $(.openssl-templates:B)
     : ../tools/openssl/build.py ../tools/openssl/source.py ../tools/openssl/wasip3.conf
-    ../tools/openssl/pin.json [ glob-tree-ex libs/openssl : *.c *.h *.in *.pl *.pm *.S *.s
+    ../tools/openssl/msvc.conf
+    ../tools/openssl/pin.json [ glob-tree-ex libs/openssl : *.c *.h *.in *.pl *.pm *.t *.S *.s
         *.conf *.num build.info Configure VERSION.dat *.tmpl : .git ] ;
 explicit openssl ;
+
+# libdatachannel and its pinned nested dependencies use upstream CMake, with
+# the exact OpenSSL archives above. Each archive reaches the program once.
+import webcpp-libdatachannel ;
+.libdatachannel-headers = [ glob libs/libdatachannel/include/rtc/*.hpp libs/libdatachannel/include/rtc/*.h ] ;
+webcpp-libdatachannel.declare $(WEBCPP_ROOT)
+    : $(.libdatachannel-headers:BS)
+    : ../tools/libdatachannel/build.py ../tools/libdatachannel/source.py
+      ../tools/libdatachannel/pin.json ../tools/libdatachannel/msvc.cmake
+      [ glob-tree-ex libs/libdatachannel : *.c *.cpp *.h *.hpp *.in *.cmake CMakeLists.txt : .git ] ;
+explicit libdatachannel ;
 
 # A dated, digest-pinned Mozilla/curl data export, not third-party source code.
 import webcpp-ca-certificates ;

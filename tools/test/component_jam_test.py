@@ -403,6 +403,22 @@ def test_served_component_green_on_wasip2_and_wasip3(root):
     assert len(components) == 1 and components[0].read_bytes()[:8] == COMPONENT, components
 
 
+def test_cooperative_p3_serve_enables_component_threading(root):
+    # The SDK's cooperative libc uses context slot 1, accepted only with this runtime feature.
+    # Enable it for the corresponding P3 profile, preserving P2 and single-task flags.
+    harness.link_wasi_tools(root)
+    for toolset, threading, expected in (
+        (WASIP2, 'single', '-S cli'),
+        (WASIP3, 'single', '-S cli,p3 -W component-model-async'),
+        (WASIP3, 'multi', '-S cli,p3 -W component-model-async -W component-model-threading'),
+    ):
+        result = harness.run_b2(root, '-a', '-n', toolset, f'threading={threading}',
+                               f'{TEST}//answers')
+        harness.expect(result, True)
+        command = next(line for line in result.stdout.splitlines() if ' --flags=' in line)
+        assert f'--flags="{expected}"' in command, command
+
+
 def test_wrong_expected_is_a_run_failure_in_the_report(root):
     harness.link_wasi_tools(root)
     wasmtime = linked_wasmtime(root)
@@ -787,6 +803,7 @@ CASES = [
     test_a_name_declared_twice_is_refused,
     test_shell_characters_in_arguments_reach_wit_bindgen,
     test_served_component_green_on_wasip2_and_wasip3,
+    test_cooperative_p3_serve_enables_component_threading,
     test_wrong_expected_is_a_run_failure_in_the_report,
     test_serve_refuses_native,
     test_native_lane_skips_served_tests,

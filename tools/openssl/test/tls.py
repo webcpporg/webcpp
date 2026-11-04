@@ -23,6 +23,10 @@ require_sni = '--require-sni' in sys.argv[2:]
 client_args = [arg.removeprefix('--client-arg=') for arg in sys.argv[2:]
                if arg.startswith('--client-arg=')]
 WASMTIME = os.environ.get('WASMTIME', 'wasmtime')
+wasip2 = '--wasip2' in sys.argv[2:]
+launcher = ([str(WASMTIME), 'run', '-W', 'timeout=15s'] if wasip2 else
+            [str(WASMTIME), 'run', '-S', 'p3', '-W', 'component-model-async=y',
+             '-W', 'component-model-threading=y', '-W', 'timeout=15s'])
 if not ssl.HAS_TLSv1_3:
     raise SystemExit('The Python TLS server requires TLS 1.3; select a newer Python interpreter.')
 print('Native test server: ' + ssl.OPENSSL_VERSION, flush=True)
@@ -69,9 +73,7 @@ if '--state-test' in sys.argv[2:]:
                    (certs / 'server-key.pem').read_text(), (certs / 'ca.pem').read_text(),
                    version, *client_args]
         if wasm:
-            command = [str(WASMTIME), 'run', '-S', 'p3', '-S', 'inherit-network=y',
-                       '-S', 'tcp=y', '-W', 'component-model-async=y',
-                       '-W', 'component-model-threading=y', '-W', 'timeout=15s'] + command
+            command = (launcher + ['-S', 'inherit-network=y', '-S', 'tcp=y']) + command
         # Fixture keys are ephemeral and stay local; do not print them in the command.
         print('Run TLS state test: ' + str(program) + ' TLS ' + version, flush=True)
         try:
@@ -91,8 +93,7 @@ if embedded:
         invalid = ssl.DER_cert_to_PEM_cert(der + extra)
         command = [str(program), '0', 'localhost', invalid, 'accept', '1.3']
         if wasm:
-            command = [str(WASMTIME), 'run', '-S', 'p3', '-W', 'component-model-async=y',
-                       '-W', 'component-model-threading=y', '-W', 'timeout=15s'] + command
+            command = launcher + command
         run = subprocess.run(command, capture_output=True, text=True, timeout=20)
         if run.returncode != 1 or not run.stderr.startswith('CA preparation:'):
             raise RuntimeError('Trailing DER data was not rejected before connecting: '
@@ -157,15 +158,12 @@ for version in ('1.2', '1.3'):
             command = [str(program), str(port), hostname, authorities]
             if wasm:
                 # No filesystem preopen: roots are compiled in or supplied as bytes.
-                command = [str(WASMTIME), 'run', '-S', 'p3', '-S', 'inherit-network=y',
-                           '-S', 'tcp=y', '-W', 'component-model-async=y',
-                           '-W', 'component-model-threading=y', '-W', 'timeout=15s'] + command
+                command = (launcher + ['-S', 'inherit-network=y', '-S', 'tcp=y']) + command
         elif not wasm:
             command = [str(program), str(port), hostname, str(certs / ca)]
         else:
-            command = [str(WASMTIME), 'run', '-S', 'p3', '-S', 'inherit-network=y', '-S', 'tcp=y',
-                       '-W', 'component-model-async=y', '-W', 'component-model-threading=y',
-                       '-W', 'timeout=15s', '--dir', str(certs) + '::/certs',
+            command = [*launcher, '-S', 'inherit-network=y', '-S', 'tcp=y',
+                       '--dir', str(certs) + '::/certs',
                        str(program), str(port), hostname, '/certs/' + ca]
         command += ['accept' if case == 'valid' else 'reject', version]
         command += client_args

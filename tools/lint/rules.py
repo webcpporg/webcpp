@@ -119,7 +119,7 @@ RAW_RULES = {
     'exe': 'webcpp.example, webcpp.run or webcpp.serve',
     'unit-test': 'webcpp.boost-test',
     'link': 'webcpp.link',
-    'link-fail': 'webcpp.link',
+    'link-fail': 'webcpp.link-fail',
 }
 
 # The names b2 loads as a directory's Jamfile.

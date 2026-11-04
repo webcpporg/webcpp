@@ -189,7 +189,7 @@ check() {
         missing=1
     else
         local library
-        for library in url charconv locale cobalt; do
+        for library in url charconv locale cobalt context; do
             [ -d "${prefix}/source/libs/${library}/src" ] || missing=1
         done
     fi

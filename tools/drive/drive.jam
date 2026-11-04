@@ -37,6 +37,7 @@
 # `where` finds it (found): the project, its directory absolute in b2's
 # form, that directory relative to the superproject, the Jamfile relative to
 # the superproject, and the superproject's directory, absolute.
+import "class" : new ;
 import errors ;
 import feature ;
 import generators ;
@@ -56,7 +57,27 @@ import type ;
 # into <name>.test when it was written.
 type.register DRIVEN : driven ;
 type.register DRIVE : : TEST ;
-generators.register-standard webcpp-drive.drive-and-check : EXE : DRIVEN ;
+# A reused executable may also yield symbols, such as MSVC's debug PDB.
+# Prefer that executable to converting the whole set into another EXE.
+class drive-generator : generator
+{
+    import type ;
+
+    rule run ( project name ? : property-set : sources + )
+    {
+        local executables ;
+        for local source in $(sources)
+        {
+            if [ type.is-derived [ $(source).type ] EXE ]
+            {
+                executables += $(source) ;
+            }
+        }
+        if $(executables) { sources = $(executables) ; }
+        return [ generator.run $(project) $(name) : $(property-set) : $(sources) ] ;
+    }
+}
+generators.register [ new drive-generator webcpp-drive.drive-and-check : EXE : DRIVEN ] ;
 generators.register-standard testing.expect-success : DRIVEN : DRIVE ;
 
 # A driven test's script, a file beside its Jamfile, bound in the action as
@@ -71,7 +92,8 @@ toolset.flags webcpp-drive.drive-and-check SCRIPT <webcpp-drive-script> ;
 feature.feature webcpp-drive-timeout : : free incidental ;
 .default-timeout = 30 ;
 
-if [ os.name ] = NT { .python = python ; } else { .python = python3 ; }
+.host = [ os.name ] ;
+if $(.host) = NT { .python = python ; } else { .python = python3 ; }
 
 # The runner, beside this file, as an absolute native path: the action runs
 # in the directory b2 was started in.
@@ -101,15 +123,23 @@ rule drive ( found + : name : sources + : requirements * : script : arguments * 
     $(found[1]).mark-target-as-always $(name) ;
 }
 
-# Each of words as one word of the shell, single-quoted: a ' is written '\'',
-# and nothing else is special there, $ and ` included.
+# Each display name as one shell word. Windows paths and target names cannot
+# contain double quotes; cmd.exe requires those quotes to group their spaces.
+# POSIX uses single quotes: a ' is written '\'', with $ and ` left literal.
 local rule quoted ( words * )
 {
     local result ;
     for local word in $(words)
     {
-        local pieces = [ regex.split $(word) "'" ] ;
-        result += "'$(pieces:J='\\'')'" ;
+        if $(.host) = NT
+        {
+            result += "\"$(word)\"" ;
+        }
+        else
+        {
+            local pieces = [ regex.split $(word) "'" ] ;
+            result += "'$(pieces:J='\\'')'" ;
+        }
     }
     return $(result) ;
 }

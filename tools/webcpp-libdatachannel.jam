@@ -1,0 +1,253 @@
+# Copyright (c) 2026 WebCpp.org
+#
+# Distributed under the Boost Software License, Version 1.0. (See
+# accompanying file LICENSE_1_0.txt or copy at
+# https://www.boost.org/LICENSE_1_0.txt)
+
+import "class" : new ;
+import errors ;
+import feature ;
+import modules ;
+import path ;
+import project ;
+import property-set ;
+import targets ;
+import toolset ;
+import virtual-target ;
+import webcpp-lint-headers ;
+
+feature.feature webcpp-libdatachannel-openssl : : free incidental ;
+
+class libdatachannel-target : basic-target
+{
+    import "class" : new ;
+    import errors ;
+    import modules ;
+    import path ;
+    import property-set ;
+    import set ;
+    import toolset ;
+    import unix ;
+    import virtual-target ;
+
+    rule __init__ ( name : project : sources * : requirements *
+        : default-build * : usage-requirements * )
+    {
+        basic-target.__init__ $(name) : $(project) : $(sources) :
+            $(requirements) : $(default-build) : $(usage-requirements) ;
+    }
+
+    rule construct ( name : source-targets * : properties )
+    {
+        local root = [ modules.peek webcpp-libdatachannel : .root ] ;
+        if ! [ path.exists [ path.native $(root)/third_party/libs/libdatachannel/CMakeLists.txt ] ]
+        {
+            errors.user-error "libdatachannel sources are missing. Run: git submodule update --init --recursive third_party/libs/libdatachannel" ;
+        }
+        local os = [ $(properties).get <target-os> ] ;
+        local provider ;
+        local provider-libraries ;
+        local provider-ssl ;
+        local provider-crypto ;
+        local header-sources ;
+        for local source in $(source-targets)
+        {
+            if [ $(source).name ] in libssl.a libssl.lib
+            {
+                provider-ssl = $(source) ;
+                provider = [ path.root [ path.make [ $(source).path ] ] [ path.pwd ] ] ;
+            }
+            if [ $(source).name ] in libcrypto.a libcrypto.lib
+            {
+                provider-crypto = $(source) ;
+            }
+            if [ $(source).name ] in libssl.a libssl.lib libcrypto.a libcrypto.lib
+            {
+                provider-libraries += $(source) ;
+            }
+            else
+            {
+                header-sources += $(source) ;
+            }
+        }
+        if ! $(provider)
+        {
+            errors.user-error "libdatachannel requires the source-built OpenSSL target as a dependency." ;
+        }
+        local relevant = [ toolset.relevant webcpp-libdatachannel.build ] ;
+        properties = [ $(properties).add $(relevant) ] ;
+        local fingerprint = [ modules.call-in webcpp-libdatachannel : fingerprint $(properties) ] ;
+        properties = [ $(properties).add-raw <webcpp-libdatachannel-openssl>$(provider) ] ;
+        # RTC headers are verified source files. Preparing them needs neither
+        # OpenSSL archives nor a CMake build of the native provider.
+        # OpenSSL also propagates proof and PDB outputs through <dependency>.
+        # Remove only those produced by its archive action; keep generated
+        # headers and every other dependency, and retain the full build's set.
+        local provider-action = [ $(provider-ssl).action ] ;
+        local archive-dependencies ;
+        for local dependency in [ $(properties).get <dependency> ]
+        {
+            if [ $(dependency).action ] = $(provider-action)
+            {
+                archive-dependencies += <dependency>$(dependency) ;
+            }
+        }
+        local header-properties = [ property-set.create
+            [ set.difference [ $(properties).raw ] : $(archive-dependencies) ] ] ;
+        local header-action = [ new action $(header-sources)
+            : webcpp-libdatachannel.prepare-headers : $(header-properties) ] ;
+        local headers ;
+        local directory ;
+        for local header in [ modules.peek webcpp-libdatachannel : .headers ]
+        {
+            local generated = [ new file-target include/rtc/$(header) exact
+                : H : $(self.project) : $(header-action) ] ;
+            if ! $(directory)
+            {
+                directory = [ path.root [ path.make [ $(generated).path ] ] [ path.pwd ] ] ;
+                directory = $(directory)/config-$(fingerprint) ;
+            }
+            $(generated).set-path $(directory) ;
+            generated = [ virtual-target.register $(generated) ] ;
+            headers += $(generated) ;
+            if $(header) = datachannel.hpp
+            {
+                modules.call-in webcpp-lint-headers : register-lint-header
+                    $(directory)/include/rtc/$(header) : $(generated) ;
+            }
+        }
+        # Order the two writers without allowing header preparation to satisfy
+        # any archive or its build record.
+        local action = [ new action $(source-targets) $(headers)
+            : webcpp-libdatachannel.build : $(properties) ] ;
+        local prefix = lib ;
+        local extension = a ;
+        if $(os) = windows { prefix = "" ; extension = lib ; }
+        local archives ;
+        for local library in datachannel juice usrsctp srtp2
+        {
+            local archive = [ new file-target $(prefix)$(library).$(extension) exact
+                : STATIC_LIB : $(self.project) : $(action) ] ;
+            $(archive).set-path $(directory) ;
+            archives += [ virtual-target.register $(archive) ] ;
+        }
+        if $(os) = windows && [ $(properties).get <debug-symbols> ] = "on"
+            && [ $(properties).get <debug-store> ] = database
+        {
+            for local library in datachannel juice usrsctp srtp2
+            {
+                local symbols = [ new file-target webcpp-$(library).pdb exact
+                    : PDB : $(self.project) : $(action) ] ;
+                $(symbols).set-path $(directory) ;
+                headers += [ virtual-target.register $(symbols) ] ;
+            }
+        }
+        unix.set-library-order-aux $(provider-ssl) : $(provider-crypto) ;
+        unix.set-library-order-aux $(archives[1]) : $(archives[2-]) ;
+        unix.set-library-order-aux $(archives) : $(provider-libraries) ;
+        # Keep the one OpenSSL target in the final link after its static users.
+        return [ property-set.create [ $(relevant).raw ] <include>$(directory)/include
+            <dependency>$(headers) ] $(archives) $(provider-libraries) ;
+    }
+}
+
+rule declare ( root : headers * : sources * )
+{
+    .root = $(root) ;
+    .headers = $(headers) ;
+    targets.create-metatarget libdatachannel-target : [ project.current ] : libdatachannel
+        : $(sources) openssl : <link>static <warnings>off <warnings-as-errors>off
+            <conditional>@webcpp-libdatachannel.configuration
+        : : <define>RTC_STATIC <define>RTC_ENABLE_WEBSOCKET=0 <define>RTC_ENABLE_MEDIA=1
+            <target-os>linux:<linkflags>-pthread
+            <target-os>windows:<linkflags>"ws2_32.lib iphlpapi.lib bcrypt.lib" ;
+}
+
+rule configuration ( properties * )
+{
+    local ps = [ property-set.create $(properties) ] ;
+    local os = [ $(ps).get <target-os> ] ;
+    local tool = [ $(ps).get <toolset> ] ;
+    if ! ( ( $(tool) in clang gcc && $(os) in darwin linux )
+        || ( $(tool) = msvc && $(os) = windows ) )
+    {
+        errors.user-error "Source-built libdatachannel requires native Clang/GCC on macOS/Linux or MSVC on Windows." ;
+    }
+    if [ $(ps).get <threading> ] != multi
+    {
+        errors.user-error "Trystero's native backend uses worker threads. Add <threading>multi to the consuming target or pass threading=multi." ;
+    }
+}
+
+toolset.uses-features webcpp-libdatachannel.build : <toolset> <target-os> <architecture> <address-model> <variant> <threading> <optimization> <debug-symbols> <debug-store> <inlining> <runtime-link> <runtime-debugging> <cflags> <cxxflags> <define> <linkflags> <exception-handling> <rtti> <lto> <lto-mode> ;
+toolset.uses-features webcpp-libdatachannel.prepare-headers : <toolset> <target-os> <architecture> <address-model> <variant> <threading> <optimization> <debug-symbols> <debug-store> <inlining> <runtime-link> <runtime-debugging> <cflags> <cxxflags> <define> <linkflags> <exception-handling> <rtti> <lto> <lto-mode> ;
+
+rule compiler-settings ( outputs * : ps )
+{
+    local compiler = [ $(ps).get <toolset> ] ;
+    if $(compiler) = clang
+    {
+        local platform = [ $(ps).get <toolset-clang:platform> ] ;
+        compiler = clang-$(platform) ;
+    }
+    local c-settings = $(outputs[1])-c ;
+    toolset.set-target-variables $(compiler).compile.c $(c-settings) : $(ps) ;
+    toolset.set-target-variables $(compiler).compile.c++ $(outputs) : $(ps) ;
+    if $(compiler) = msvc
+    {
+        DRIVER on $(outputs) = [ on $(outputs[1]) return $(.CC[1]) ] ;
+        C_OPTIONS on $(outputs) = [ on $(c-settings) return $(.CC[2-]) $(OPTIONS) $(CFLAGS) $(USER_CFLAGS) ] ;
+        CXX_OPTIONS on $(outputs) = [ on $(outputs[1]) return $(.CC[2-]) $(OPTIONS) $(CFLAGS) $(C++FLAGS) $(USER_CFLAGS) $(USER_C++FLAGS) $(USER_COMPILEFLAGS) ] ;
+    }
+    else
+    {
+        DRIVER on $(outputs) = [ on $(outputs[1]) return $(CONFIG_COMMAND[1]) ] ;
+        C_OPTIONS on $(outputs) = [ on $(c-settings) return $(OPTIONS) $(USER_OPTIONS) ] ;
+        CXX_OPTIONS on $(outputs) = [ on $(outputs[1]) return $(OPTIONS) $(USER_OPTIONS) ] ;
+    }
+}
+
+rule fingerprint ( ps )
+{
+    if $(.fingerprint.$(ps)) { return $(.fingerprint.$(ps)) ; }
+    local settings = libdatachannel-settings-$(ps) ;
+    compiler-settings $(settings) : $(ps) ;
+    local values = [ on $(settings) return $(DRIVER) $(C_OPTIONS) $(CXX_OPTIONS) $(DEFINES) $(.SETUP) $(.SETUP-SCRIPT) $(.SETUP-OPTIONS) ] ;
+    .fingerprint.$(ps) = [ MD5 "$(values:J=|)" ] ;
+    return $(.fingerprint.$(ps)) ;
+}
+
+rule build-settings ( outputs * : properties * )
+{
+    local ps = [ property-set.create $(properties) ] ;
+    compiler-settings $(outputs) : $(ps) ;
+    if [ $(ps).get <toolset> ] = msvc
+    {
+        modules.call-in msvc : set-setup-command $(outputs) : $(properties) ;
+    }
+    SCRIPT on $(outputs) = [ path.native $(.root)/tools/libdatachannel/build.py ] ;
+    SOURCE on $(outputs) = [ path.native $(.root)/third_party/libs/libdatachannel ] ;
+    OPENSSL on $(outputs) = [ path.native [ $(ps).get <webcpp-libdatachannel-openssl> ] ] ;
+    PLATFORM on $(outputs) = [ $(ps).get <target-os> ] ;
+    VARIANT on $(outputs) = [ $(ps).get <variant> ] ;
+}
+
+rule build ( outputs * : inputs * : properties * )
+{
+    build-settings $(outputs) : $(properties) ;
+}
+
+rule prepare-headers ( outputs * : inputs * : properties * )
+{
+    build-settings $(outputs) : $(properties) ;
+}
+
+actions prepare-headers
+{
+    $(.SETUP) python3 "$(SCRIPT)" "@($(<[1]:W).rsp:E=--headers-only --source "$(SOURCE)" --output "$(<[1]:DW)/../.." --openssl "$(OPENSSL)" --platform "$(PLATFORM)" --variant "$(VARIANT)" --cxx "$(DRIVER)" -- $(C_OPTIONS) -D$(DEFINES) --cxx-flags $(CXX_OPTIONS) -D$(DEFINES))"
+}
+
+actions build
+{
+    $(.SETUP) python3 "$(SCRIPT)" "@($(<[1]:W).rsp:E=--source "$(SOURCE)" --output "$(<[1]:DW)" --openssl "$(OPENSSL)" --platform "$(PLATFORM)" --variant "$(VARIANT)" --cxx "$(DRIVER)" -- $(C_OPTIONS) -D$(DEFINES) --cxx-flags $(CXX_OPTIONS) -D$(DEFINES))"
+}

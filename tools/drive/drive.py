@@ -14,16 +14,17 @@ webcpp.drive gives them: its last word is the program it drives. --program names
 declaration in a message, as webcpp.drive does ("webcpp.drive <name> in <Jamfile>").
 
 The driver runs with its standard input /dev/null, and what it prints is this script's output, the
-action's, which b2 shows and --out-xml records. It is the child of serve.py's keeper (KEEPER), which
-leads a process group of its own: the driver, and the program it starts, are in that group unless
-they leave it. The keeper's standard input is a pipe that only this script holds: when it ends,
-because this script ended, however it ended, a SIGKILL of b2's included, the keeper kills its
-group. Once the driver has ended, its group is killed too, so that a program it left running does
-not outlive the test.
+action's, which b2 shows and --out-xml records. It is the child of the shared process_tree.py
+keeper, which owns a POSIX process group or a Windows Job Object. Its standard input is a pipe
+that only this script holds: when it ends, however this script ended, the keeper stops its whole
+tree. Once the driver has ended, its tree is stopped too, so that a program it left running does
+not outlive the test. On Windows the job is assigned before the driver starts; descendants inherit
+membership, and the keeper's non-inheritable handle closes on exit to terminate them all.
 
 The run is bounded by --timeout, 30 s by default as serve.py's: a driver that has not ended by then,
-because it hangs or waits on a program that hangs, is sent SIGTERM with its whole group, then
-SIGKILL after GRACE seconds, and the run fails, naming the test, the program and the bound.
+because it hangs or waits on a program that hangs, is stopped with its whole tree, and the run
+fails, naming the test, the program and the bound. POSIX sends SIGTERM then SIGKILL after GRACE
+seconds; Windows terminates the keeper, which closes the job and stops its descendants immediately.
 
 Exit with the driver's status, 0 when it passed, which writes the output file (`driven`); 1 when
 the bound passed; 2 on a usage error. On any failure the output file is not left behind.
@@ -33,16 +34,14 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-import os
-import signal
 import subprocess
 import sys
 from pathlib import Path
 
-# serve.py's keeper, beside it in tools/component.
+# Shared process containment, independent of the HTTP runner's POSIX alarms.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'component'))
 
-from serve import KEEPER
+from process_tree import exit_status, start_tree, terminate_tree
 
 # Seconds between the SIGTERM of a group and its SIGKILL, as serve.py waits.
 GRACE = 5
@@ -70,28 +69,19 @@ def parse(argv: list[str]) -> argparse.Namespace:
     return arguments
 
 
-def kill_group(process: subprocess.Popen[bytes], number: int) -> None:
-    """Sends the signal number to process's group, the keeper's; a group that is gone, or that
-    refuses (macOS answers EPERM for a zombie), is left."""
-    with contextlib.suppress(ProcessLookupError, PermissionError):
-        os.killpg(process.pid, number)
-
-
 def main(argv: list[str]) -> int:
     arguments = parse(argv)
     with contextlib.suppress(FileNotFoundError):
         arguments.output.unlink()
     driver = f'the driver of {arguments.words[-1]}'
-    # Tip: os.setpgrp is Popen's process_group=0 of Python 3.11, which Python 3.9 lacks.
-    keeper = subprocess.Popen([sys.executable, '-c', KEEPER, *arguments.words],
-                              stdin=subprocess.PIPE, preexec_fn=os.setpgrp)
+    keeper = start_tree(arguments.words)
     try:
         status = keeper.wait(arguments.timeout)
     except subprocess.TimeoutExpired:
-        kill_group(keeper, signal.SIGTERM)
+        terminate_tree(keeper)
         with contextlib.suppress(subprocess.TimeoutExpired):
             keeper.wait(GRACE)
-        kill_group(keeper, signal.SIGKILL)
+        terminate_tree(keeper, force=True)
         keeper.wait()
         print(f'drive: {arguments.program}: {driver} did not end within {arguments.timeout:g} s; '
               'it was stopped with every process of its group, the program among them',
@@ -99,7 +89,7 @@ def main(argv: list[str]) -> int:
         return 1
     finally:
         # What the driver left running ends with the test.
-        kill_group(keeper, signal.SIGKILL)
+        terminate_tree(keeper, force=True)
         if keeper.stdin is not None:
             keeper.stdin.close()
     if status != 0:
@@ -111,4 +101,4 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == '__main__':
-    sys.exit(main(sys.argv[1:]))
+    sys.exit(exit_status(main(sys.argv[1:])))

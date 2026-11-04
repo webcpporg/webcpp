@@ -10,6 +10,8 @@ import hashlib
 import importlib.machinery
 import importlib.util
 import json
+import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -45,6 +47,9 @@ class Preparation(unittest.TestCase):
             modified = result.stat().st_mtime_ns
             prepare.prepare(source, output, bundle)
             self.assertEqual(result.stat().st_mtime_ns, modified)
+            subprocess.run([sys.executable, str(HERE / 'prepare.py'), '--boost', str(source),
+                            '--output', str(output), '--bundle', str(bundle)],
+                           check=True, capture_output=True)
             stale = output / 'boost/asio/removed.hpp'
             stale.write_text('old patch still shadows Boost\n')
             with self.assertRaisesRegex(ValueError, 'unexpected overlay file'):

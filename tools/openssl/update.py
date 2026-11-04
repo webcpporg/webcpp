@@ -58,7 +58,8 @@ def regenerate(source: Path, pin: dict) -> dict:
     timestamp = subprocess.check_output(
         ['git', '-C', str(source), 'show', '-s', '--format=%ct', pin['commit']], text=True)
     return {**pin, 'source_sha256': inventory_digest(records),
-            'source_date_epoch': int(timestamp.strip()), 'omitted_submodules': omitted}
+            'source_date_epoch': int(timestamp.strip()), 'omitted_submodules': omitted,
+            'executable_files': sorted(name for name, mode, _ in files if mode == '100755')}
 
 
 def main() -> None:

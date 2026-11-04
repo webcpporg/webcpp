@@ -4,7 +4,7 @@
 # accompanying file LICENSE_1_0.txt or copy at
 # https://www.boost.org/LICENSE_1_0.txt)
 
-"""Apply the checked Asio port to private headers, never to installed Boost."""
+"""Apply a checked Asio patch to private headers, never to installed Boost."""
 from __future__ import annotations
 
 import argparse
@@ -29,7 +29,7 @@ def prepare(source: Path, output: Path, bundle: Path) -> None:
     version = (source / 'boost/version.hpp').read_text()
     if not re.search(r'^#define BOOST_VERSION ' + str(manifest['boost_version']) + r'\s*$',
                      version, re.MULTILINE):
-        raise ValueError('this WASIp3 patch requires Boost 1.92; rebase and verify the patch')
+        raise ValueError('this Asio patch requires Boost 1.92; rebase and verify the patch')
     inputs = {}
     for name, hashes in manifest['files'].items():
         path = Path(name)
@@ -37,7 +37,7 @@ def prepare(source: Path, output: Path, bundle: Path) -> None:
             raise ValueError('invalid patch manifest path: ' + name)
         data = (source / path).read_bytes()
         if digest(data) != hashes['before']:
-            raise ValueError('incompatible Boost header: ' + name + '; rebase the WASIp3 patch')
+            raise ValueError('incompatible Boost header: ' + name + '; rebase the Asio patch')
         inputs[name] = data
     # An obsolete patched header would still shadow its upstream replacement.
     # Refuse stale output rather than deleting files from a developer's checkout.
@@ -73,14 +73,15 @@ def main() -> int:
     parser.add_argument('--boost', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--stamp', type=Path)
+    parser.add_argument('--bundle', type=Path, default=Path(__file__).parent)
     arguments = parser.parse_args()
     try:
-        prepare(arguments.boost, arguments.output, Path(__file__).parent)
+        prepare(arguments.boost, arguments.output, arguments.bundle)
     except (ValueError, OSError, subprocess.CalledProcessError) as error:
-        parser.exit(1, f'Asio WASIp3 preparation failed: {error}\n')
+        parser.exit(1, f'Asio preparation failed: {error}\n')
     if arguments.stamp:
         arguments.stamp.parent.mkdir(parents=True, exist_ok=True)
-        arguments.stamp.write_text('Boost.Asio WASIp3 headers verified\n')
+        arguments.stamp.write_text('Boost.Asio patched headers verified\n')
     return 0
 
 

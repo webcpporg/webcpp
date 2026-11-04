@@ -10,6 +10,12 @@
 [#webcpp-0-1-0-new-libraries]
 == New Libraries
 
+* link:{library-pages}asio/{library-page}[asio]: Boost.Asio and Cobalt with
+browser event-loop suspension, WASIp2/P3 networking and optional source-built TLS,
+from R.
+* link:{library-pages}beast/{library-page}[beast]: HTTP messages and WebSocket
+applications for native, WASI and browser targets, with socket transports,
+browser WebSocket and fetch, WASI host HTTP and supplied byte streams, from R.
 * link:{library-pages}config/{library-page}[config]: webcpp's configuration,
 which every library includes first: the target, exceptions and the version,
 from R.
@@ -49,6 +55,26 @@ None.
 [#webcpp-0-1-0-tools-and-build]
 == Tools and build
 
+* Fixed driven-test execution and descendant cleanup on Windows.
+* Fixed driven-test executable reuse for Windows and WASI builds.
+* Improved lint preparation by separating OpenSSL headers from archive builds and upstream tests.
+* Fixed the WASIp2 test launcher interrupting large finite workloads after 60 seconds.
+* Fixed Chrome provisioning and browser/TLS profile coverage in Asio CI lanes.
+* Added source-built OpenSSL and Cobalt SSL targets for WASIp2.
+* Added explicit browser pthread profiles with main-thread handoff tests.
+* Changed lint to verify WASIp3 ABI snapshots before excluding upstream headers.
+* Fixed embedded CA headers using an unowned namespace and include path.
+* Added source-built Boost.Context for native stackful coroutine applications.
+* Added negative link tests and explicit reference-source build discovery.
+* Added hash-verified Beast application inputs and browser CI dependencies.
+* Added isolated CA trust tests with pinned full Chrome and a Wasmtime host fixture.
+* Fixed duplicate source paths selecting conflicting targets in the lint database.
+* Updated Wasmtime to 50.0.1 for every library's WASI targets.
+* Fixed WASIp3 network tests lacking the required runtime capabilities.
+* Fixed OpenSSL source builds with symlinked compilers and Windows checkouts.
+* Fixed serial Windows OpenSSL builds exhausting the parallel-build time budget.
+* Added native MSVC OpenSSL build recipes with B2 runtime settings.
+* Fixed Cobalt lint builds requiring pre-existing generated Boost overlays.
 * Fixed source distributions rejecting pinned site and third-party dependencies.
 * Changed release checks to accept the tested compiler subset.
 * Added agent skills with validated metadata for common contributor workflows.

@@ -15,12 +15,14 @@
 # read as system ones.
 import errors ;
 import feature ;
+import os ;
 import property-set ;
 import sequence ;
 import set ;
 import webcpp-target ;
 
 use-project /webcpp/asio-wasip3 : asio-wasip3 ;
+use-project /webcpp/asio-windows : asio-windows ;
 use-project /webcpp/cobalt-wasip3 : cobalt-wasip3 ;
 use-project /webcpp/cobalt-ssl : cobalt-ssl ;
 use-project /webcpp/cobalt-common : cobalt-common ;
@@ -85,6 +87,107 @@ compiled boost_charconv : [ glob libs/charconv/src/*.cpp ]
   : libs/charconv/src holds no .cpp file
   : <define>BOOST_CHARCONV_SOURCE=1
   : <define>BOOST_CHARCONV_NO_LIB=1 ;
+
+# The pinned Context fcontext recipe keeps its C++ wrapper and assembly
+# together. Windows ARM64 uses upstream's WinFiber default. Wasm has no
+# proven Context backend, independently of JSPI or Asyncify suspension.
+rule context-architecture ( properties * )
+{
+    local architecture = [ feature.get-values <architecture> : $(properties) ] ;
+    if ! $(architecture)
+    {
+        local host = [ os.platform ] ;
+        switch $(host:L)
+        {
+            case arm* : architecture = arm ;
+            case aarch64 : architecture = arm ;
+            case * : architecture = x86 ;
+        }
+    }
+    return $(architecture) ;
+}
+
+rule context-configuration ( properties * )
+{
+    local target = [ webcpp-target.target-of $(properties) ] ;
+    if $(target) != native
+    {
+        errors.user-error "Boost.Context has no verified $(target) backend; stackful"
+            "coroutines remain blocked. JSPI, Asyncify and C++20 awaitables do not"
+            "supply a Boost.Context backend." ;
+    }
+    local architecture = [ context-architecture $(properties) ] ;
+    local model = [ feature.get-values <address-model> : $(properties) ] ;
+    local system = [ feature.get-values <target-os> : $(properties) ] ;
+    local compiler = [ feature.get-values <toolset> : $(properties) ] ;
+    if $(model) && $(model) != 64
+    {
+        errors.user-error "webcpp's Boost.Context recipe currently requires address-model=64" ;
+    }
+    local directory = $(WEBCPP_BOOST_SOURCE)/libs/context/src ;
+    local sources = $(directory)/fcontext.cpp ;
+    local suffix ;
+    if $(system) = windows
+    {
+        sources += $(directory)/windows/stack_traits.cpp ;
+        if $(architecture) = arm
+        {
+            return <source>$(directory)/continuation.cpp <source>$(directory)/fiber.cpp
+                <source>$(directory)/windows/stack_traits.cpp <define>BOOST_USE_WINFIB
+                <define>_WIN32_WINNT=0x0601 ;
+        }
+        if $(architecture) = x86 && $(compiler) = msvc
+        {
+            suffix = x86_64_ms_pe_masm.asm ;
+        }
+        else if $(architecture) = x86
+        {
+            suffix = x86_64_ms_pe_gas.asm ;
+        }
+    }
+    else
+    {
+        sources += $(directory)/posix/stack_traits.cpp ;
+        if $(system) = darwin
+        {
+            suffix = combined_sysv_macho_gas.S ;
+        }
+        else if $(system) = linux && $(architecture) = arm
+        {
+            suffix = arm64_aapcs_elf_gas.S ;
+        }
+        else if $(system) = linux && $(architecture) = x86
+        {
+            suffix = x86_64_sysv_elf_gas.S ;
+        }
+    }
+    if ! $(suffix)
+    {
+        errors.user-error "No Boost.Context recipe for" $(system) $(architecture) $(compiler) ;
+    }
+    for local operation in make jump ontop
+    {
+        sources += $(directory)/asm/$(operation)_$(suffix) ;
+    }
+    return <source>$(sources) ;
+}
+
+rule context-usage ( properties * )
+{
+    if <target-os>windows in $(properties) && [ context-architecture $(properties) ] = arm
+    {
+        return <define>BOOST_USE_WINFIB <define>_WIN32_WINNT=0x0601 ;
+    }
+}
+
+compiled boost_context : [ glob libs/context/src/fcontext.cpp ]
+  : libs/context/src/fcontext.cpp is missing
+  : <conditional>@context-configuration <define>BOOST_CONTEXT_SOURCE
+    <define>BOOST_CONTEXT_STATIC_LINK=1 <define>BOOST_CONTEXT_NO_LIB=1
+    # Upstream's static MSVC recipe removes the MASM PROC export qualifier.
+    <toolset>msvc:<define>BOOST_CONTEXT_EXPORT=
+  : <define>BOOST_CONTEXT_STATIC_LINK=1 <define>BOOST_CONTEXT_NO_LIB=1
+    <conditional>@context-usage ;
 
 # The system's iconv, which macOS keeps in a library of its own; glibc and
 # wasi-libc have it in libc.
@@ -209,7 +312,7 @@ rule cobalt-configuration ( properties * )
 
 rule cobalt-platform-sources ( properties * )
 {
-    if [ webcpp-target.target-of $(properties) ] = wasip3
+    if [ webcpp-target.target-of $(properties) ] in wasip2 wasip3
     {
         local threaded ;
         if <threading>multi in $(properties)
@@ -226,22 +329,25 @@ rule cobalt-platform-sources ( properties * )
 # Boost.Cobalt, with the macros of its own build: its sources see
 # BOOST_COBALT_SOURCE=1 and BOOST_COBALT_IO_SOURCE=1; users see
 # BOOST_COBALT_NO_LIB=1. Emscripten sources and users disable Asio threads
-# consistently, without changing native thread support. Exception handling
-# follows the consumer: result-based programs may disable it without a blanket
-# configuration refusal. This does not guarantee every Cobalt operation works
+# consistently on single threads; worker builds retain thread support. Exception
+# handling follows the consumer: result-based programs may disable it without
+# a blanket configuration refusal. This does not guarantee every operation works
 # without exceptions: moving a pending task creates an exception_ptr in Boost
 # 1.92, which libc++ aborts on when built with -fno-exceptions.
 compiled boost_cobalt : [ cobalt-sources ]
   : libs/cobalt/src holds no .cpp file
   : <define>BOOST_COBALT_SOURCE=1 <define>BOOST_COBALT_IO_SOURCE=1
     <library>/webcpp/cobalt-common//headers
-    <toolset>emscripten:<define>BOOST_ASIO_DISABLE_THREADS
+    <target-os>windows:<library>/webcpp/asio-windows//headers
+    <toolset>emscripten,<threading>single:<define>BOOST_ASIO_DISABLE_THREADS
     <conditional>@cobalt-configuration
     <conditional>@cobalt-platform-sources
   : <define>BOOST_COBALT_NO_LIB=1
     <library>/webcpp/cobalt-common//headers
+    <target-os>windows:<library>/webcpp/asio-windows//headers
+    <toolset>clang-wasip2:<library>/webcpp/cobalt-wasip3//headers
     <toolset>clang-wasip3:<library>/webcpp/cobalt-wasip3//headers
-    <toolset>emscripten:<define>BOOST_ASIO_DISABLE_THREADS ;
+    <toolset>emscripten,<threading>single:<define>BOOST_ASIO_DISABLE_THREADS ;
 
 # Optional TLS wrapper, separate from the archive used by non-TLS consumers.
 alias boost_cobalt_io_ssl : /webcpp/cobalt-ssl//boost_cobalt_io_ssl ;

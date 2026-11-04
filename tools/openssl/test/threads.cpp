@@ -29,12 +29,14 @@ int main() {
                 ready.notify_all();
                 ready.wait(lock, [&] { return release; });
             }
-            if (!contexts[i])
+            if (contexts[i] == nullptr) {
                 return;
+            }
             std::array<unsigned char, 32> buffer{};
             for (int round = 0; round < 16; ++round) {
-                if (RAND_priv_bytes(buffer.data(), buffer.size()) != 1)
+                if (RAND_priv_bytes(buffer.data(), buffer.size()) != 1) {
                     return;
+                }
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
             EVP_PKEY* key = EVP_PKEY_Q_keygen(nullptr, nullptr, "EC", "prime256v1");
@@ -49,19 +51,23 @@ int main() {
         // All workers retain their contexts until comparison is complete.
         for (std::size_t i = 0; i < contexts.size(); ++i) {
             distinct = distinct && contexts[i] != nullptr;
-            for (std::size_t j = 0; j < i; ++j)
+            for (std::size_t j = 0; j < i; ++j) {
                 distinct = distinct && contexts[i] != contexts[j];
+            }
         }
         release = true;
     }
     ready.notify_all();
-    for (auto& worker : workers)
+    for (auto& worker : workers) {
         worker.join();
-    if (!distinct)
+    }
+    if (!distinct) {
         return 1;
+    }
     for (std::size_t i = 0; i < workers.size(); ++i) {
-        if (!passed[i])
+        if (!passed[i]) {
             return 1;
+        }
     }
     std::puts("PASS 4 threads: distinct private DRBG contexts, 64 random requests, 4 EC keys");
 }

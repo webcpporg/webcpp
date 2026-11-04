@@ -1,0 +1,8 @@
+# A probe's main lets an unexpected exception terminate the process and fail
+# the test, as the library tests do. Keep exception-escape checks for noexcept
+# functions, destructors, moves and swaps.
+---
+InheritParentConfig: true
+CheckOptions:
+  - key: bugprone-exception-escape.CheckMain
+    value: 'false'

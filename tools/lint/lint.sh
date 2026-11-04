@@ -134,6 +134,35 @@ for library in libs/*/; do
     fi
 done
 
+# Keep the exact upstream Beast oracle's notices and style. Its pinned inventory
+# must validate before this one directory is excluded; adaptations remain linted.
+beast_corpus_verified=false
+if [ -d libs/beast/example/upstream ]; then
+    rule 'upstream corpus integrity'
+    if python3 libs/beast/test/applications/inventory.py --check; then
+        beast_corpus_verified=true
+    else
+        fail 'the pinned Boost.Beast application corpus failed its integrity check'
+    fi
+fi
+
+# Private libc declarations keep upstream text only after their pinned hashes match.
+verify_wasi_abi() {
+    local profile="$1"
+    [ -d "tools/boost/asio-${profile}/wasi-libc" ] || return 1
+    rule 'WASI ABI declaration integrity'
+    if python3 "tools/boost/asio-${profile}/verify.py"; then
+        return 0
+    else
+        fail 'the pinned wasi-libc declaration snapshot failed its integrity check'
+        return 1
+    fi
+}
+wasi_abi_verified=false
+wasi_p3_abi_verified=false
+if verify_wasi_abi wasip2; then wasi_abi_verified=true; fi
+if verify_wasi_abi wasip3; then wasi_p3_abi_verified=true; fi
+
 # Every file of the repositories that is there, relative to the root, sorted, NUL-separated.
 # The index can name a path a move has not been staged for yet, and a submodule is listed as a
 # directory; neither is a file. A symbolic link is not read either: its text is a path.
@@ -146,6 +175,12 @@ for repository in "${repositories[@]}"; do
               fi
               case "${path}" in
                   third_party/libs/*) continue ;;
+                  tools/boost/asio-wasip2/wasi-libc/*)
+                      if [ "${wasi_abi_verified}" = true ]; then continue; fi ;;
+                  tools/boost/asio-wasip3/wasi-libc/*)
+                      if [ "${wasi_p3_abi_verified}" = true ]; then continue; fi ;;
+                  libs/beast/example/upstream/*)
+                      if [ "${beast_corpus_verified}" = true ]; then continue; fi ;;
               esac
               if [ -f "${path}" ] && [ ! -L "${path}" ]; then
                   printf '%s\0' "${path}"
@@ -386,12 +421,14 @@ self_returns="$(on_files "${work_directory}/sources" awk '
         marked = 0
     }
     pending && code ~ /\{[ ]*$/ { pending = 0; exempt = 1 }
+    pending && code ~ /\{.*\}[ ]*$/ { pending = 0; exempt = 1; inline_body = 1 }
     pending && code ~ /[;}][ ]*$/ { pending = 0 }
     /return \*this;/ {
         if (!exempt && !spared_head(signature)) {
             printf "%s:%d: %s\n", FILENAME, FNR, $0
         }
-    }' || true)"
+    }
+    inline_body { exempt = 0; inline_body = 0 }' || true)"
 if [ -n "${self_returns}" ]; then
     printf '%s\n' "${self_returns}"
     fail 'a function returns *this outside an assignment, a prefix ++ or --, or lint-std'

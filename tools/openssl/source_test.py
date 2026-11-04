@@ -14,6 +14,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from source import check_checkout, stage_source
 from update import regenerate
@@ -84,6 +85,23 @@ class SourceTest(unittest.TestCase):
         for validate in (check_checkout, regenerate):
             with self.assertRaisesRegex(RuntimeError, 'checkout differs'):
                 validate(self.source, self.pin)
+
+    def test_windows_staging_verifies_bytes_without_executable_file_modes(self) -> None:
+        pin = regenerate(self.source, self.pin)
+        (self.source / 'Configure').chmod(0o644)
+        with patch('source.sys.platform', 'win32'):
+            stage_source(self.source, self.root / 'windows', pin)
+            (self.source / 'crypto/input.c').write_text('int tampered;\n')
+            with self.assertRaisesRegex(RuntimeError, 'source tree differs'):
+                stage_source(self.source, self.root / 'tampered', pin)
+
+    def test_windows_staging_normalizes_git_checkout_line_endings(self) -> None:
+        pin = regenerate(self.source, self.pin)
+        self.git('config', 'core.autocrlf', 'true')
+        (self.source / 'Configure').write_bytes(b'#!/usr/bin/env perl\r\n')
+        with patch('source.sys.platform', 'win32'):
+            stage_source(self.source, self.root / 'windows', pin)
+        self.assertEqual((self.root / 'windows/Configure').read_bytes(), b'#!/usr/bin/env perl\n')
 
     def test_checkout_and_generator_reject_dirty_tracked_sources(self) -> None:
         (self.source / 'crypto/input.c').write_text('int changed;\n')

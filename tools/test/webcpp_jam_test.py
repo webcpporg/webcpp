@@ -1070,7 +1070,49 @@ def test_data_the_shell_would_read_is_refused(root):
                        f'{character}')
 
 
+def test_source_only_corpus_is_not_loaded_as_a_build(root):
+    corpus = root / 'libs/demo/example/upstream'
+    corpus.mkdir()
+    (corpus / 'Jamfile').write_text('EXIT upstream-corpus-must-not-be-loaded : 1 ;\n')
+    build = root / 'libs/demo/build.jam'
+    build.write_text(build.read_text() + '\nimport webcpp ;\n'
+                     'webcpp.source-only example/upstream ;\n')
+    for target in ('declared-targets', 'declared-lanes'):
+        harness.expect(harness.run_b2(root, '-d0', target), True)
+    # A similarly named adjacent directory is still scanned.
+    adjacent = corpus.with_name('upstream-adapted')
+    adjacent.mkdir()
+    (adjacent / 'Jamfile').write_text('EXIT adapted-code-must-still-be-loaded : 1 ;\n')
+    harness.expect(harness.run_b2(root, '-d0', 'declared-targets'), False,
+                   'adapted-code-must-still-be-loaded')
+    # A declaration may not hide its own project or a sibling project's sources.
+    for directory in ('.', '../../tools'):
+        build.write_text('project /webcpp/demo ;\nimport webcpp ;\n'
+                         f'webcpp.source-only {directory} ;\n')
+        harness.expect(harness.run_b2(root, '-d0', 'declared-targets'), False,
+                       'webcpp.source-only requires a child directory')
+
+
+def test_link_fail_checks_linking_and_keeps_success_controls(root):
+    harness.add_library(root, 'linkage',
+                        'import webcpp ;\nwebcpp.targets native ;\n'
+                        'webcpp.link-fail mismatch : caller.cpp ;\n'
+                        'webcpp.link matching : caller.cpp provider.cpp ;\n',
+                        {'caller.cpp': 'int supplied(); int main() { return supplied(); }\n',
+                         'provider.cpp': 'int supplied() { return 0; }\n'})
+    result = harness.run_b2(root, 'libs/linkage/test')
+    harness.expect(result, True)
+    assert '(failed-as-expected)' in result.stdout, result.stdout
+    # A definition arriving must make the negative test fail, not silently pass.
+    jamfile = root / 'libs/linkage/test/Jamfile'
+    jamfile.write_text(jamfile.read_text().replace('mismatch : caller.cpp ;',
+                                                  'mismatch : caller.cpp provider.cpp ;'))
+    harness.expect(harness.run_b2(root, 'libs/linkage/test'), False)
+
+
 CASES = [
+    test_link_fail_checks_linking_and_keeps_success_controls,
+    test_source_only_corpus_is_not_loaded_as_a_build,
     test_native_builds_exactly_the_declared_programs,
     test_wasip2_skips_native_only_and_has_exceptions,
     test_wasip3_catches_a_throw,

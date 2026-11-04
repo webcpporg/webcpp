@@ -7,13 +7,19 @@
 import "class" : new ;
 import errors ;
 import feature ;
+import modules ;
 import path ;
 import project ;
 import property-set ;
 import targets ;
 import toolset ;
+import type ;
 import virtual-target ;
+import webcpp-lint-headers ;
 import webcpp-wasi ;
+
+feature.feature webcpp-openssl-tests : on : optional propagated ;
+type.register WEBCPP_OPENSSL_TESTS ;
 
 class openssl-target : basic-target
 {
@@ -42,11 +48,17 @@ class openssl-target : basic-target
         local os = [ $(properties).get <target-os> ] ;
         local tool = [ $(properties).get <toolset> ] ;
         local version = [ $(properties).get <toolset-clang:version> ] ;
-        if ! $(tool) in clang gcc || ! $(os) in darwin linux wasi
-            || ( $(os) = wasi && $(version) != wasip3 )
+        if $(os) = wasi && [ $(properties).get <webcpp-openssl-tests> ] = "on"
         {
-            errors.user-error "Source-built OpenSSL supports native Clang/GCC on macOS/Linux and clang-wasip3."
-                "WASIp2, browser targets, and the MSVC/nmake build are not supported by this recipe." ;
+            errors.user-error "The OpenSSL upstream test harness requires native executables."
+                "WASI uses the separately declared TLS integration tests." ;
+        }
+        if ! ( ( $(tool) in clang gcc && $(os) in darwin linux )
+            || ( $(tool) = clang && $(os) = wasi && $(version) in wasip2 wasip3 )
+            || ( $(tool) = msvc && $(os) = windows ) )
+        {
+            errors.user-error "Source-built OpenSSL supports native Clang/GCC on macOS/Linux, MSVC on Windows, clang-wasip2 and clang-wasip3."
+                "Other targets are not supported by this recipe." ;
         }
         # B2's normal directory omits free flags. Add the effective compiler
         # configuration so changing cflags or a user-config tool cannot reuse
@@ -54,22 +66,57 @@ class openssl-target : basic-target
         local relevant = [ toolset.relevant webcpp-openssl.build ] ;
         properties = [ $(properties).add $(relevant) ] ;
         local fingerprint = [ modules.call-in webcpp-openssl : fingerprint $(properties) ] ;
-        local action = [ new action $(source-targets) : webcpp-openssl.build : $(properties) ] ;
-        local ssl = [ new file-target libssl.a exact : STATIC_LIB : $(self.project) : $(action) ] ;
-        local directory = [ path.root [ path.make [ $(ssl).path ] ] [ path.pwd ] ] ;
-        directory = $(directory)/config-$(fingerprint) ;
-        $(ssl).set-path $(directory) ;
-        ssl = [ virtual-target.register $(ssl) ] ;
-        local crypto = [ new file-target libcrypto.a exact : STATIC_LIB : $(self.project) : $(action) ] ;
-        $(crypto).set-path $(directory) ;
-        crypto = [ virtual-target.register $(crypto) ] ;
+        # Analysis needs the configured headers, but no archives or upstream
+        # suite. Keep generation separate, under the exact same properties.
+        local header-action = [ new action $(source-targets)
+            : webcpp-openssl.generate-headers : $(properties) ] ;
+        local directory ;
         local headers ;
         for local header in [ modules.peek webcpp-openssl : .headers ]
         {
             local generated = [ new file-target include/openssl/$(header) exact
-                : H : $(self.project) : $(action) ] ;
+                : H : $(self.project) : $(header-action) ] ;
+            if ! $(directory)
+            {
+                directory = [ path.root [ path.make [ $(generated).path ] ] [ path.pwd ] ] ;
+                directory = $(directory)/config-$(fingerprint) ;
+            }
             $(generated).set-path $(directory) ;
-            headers += [ virtual-target.register $(generated) ] ;
+            generated = [ virtual-target.register $(generated) ] ;
+            headers += $(generated) ;
+            if $(header) = configuration.h
+            {
+                modules.call-in webcpp-lint-headers : register-lint-header
+                    $(directory)/include/openssl/$(header) : $(generated) ;
+            }
+        }
+        # The complete build publishes into that directory too. Its dependency
+        # on the headers orders both writers and leaves archives/proof pending
+        # after a lint preparation, including on an incremental build.
+        local action = [ new action $(source-targets) $(headers)
+            : webcpp-openssl.build : $(properties) ] ;
+        local extension = a ;
+        if $(os) = windows { extension = lib ; }
+        local ssl = [ new file-target libssl.$(extension) exact : STATIC_LIB : $(self.project) : $(action) ] ;
+        $(ssl).set-path $(directory) ;
+        ssl = [ virtual-target.register $(ssl) ] ;
+        local crypto = [ new file-target libcrypto.$(extension) exact : STATIC_LIB : $(self.project) : $(action) ] ;
+        $(crypto).set-path $(directory) ;
+        crypto = [ virtual-target.register $(crypto) ] ;
+        if [ $(properties).get <webcpp-openssl-tests> ] = "on"
+        {
+            local proof = [ new file-target upstream-tests.json exact
+                : WEBCPP_OPENSSL_TESTS : $(self.project) : $(action) ] ;
+            $(proof).set-path $(directory) ;
+            headers += [ virtual-target.register $(proof) ] ;
+        }
+        if $(os) = windows && [ $(properties).get <debug-symbols> ] = "on"
+            && [ $(properties).get <debug-store> ] = database
+        {
+            local symbols = [ new file-target ossl_static.pdb exact
+                : PDB : $(self.project) : $(action) ] ;
+            $(symbols).set-path $(directory) ;
+            headers += [ virtual-target.register $(symbols) ] ;
         }
         return [ property-set.create [ $(relevant).raw ] <include>$(directory)/include
             <dependency>$(headers) ] $(ssl) $(crypto) ;
@@ -86,14 +133,22 @@ rule declare ( root : headers * : sources * )
         : : <target-os>darwin:<linkflags>-Wl,-dead_strip
             <target-os>linux:<linkflags>-Wl,--gc-sections
             <target-os>linux:<linkflags>-ldl
+            <target-os>windows:<linkflags>"/OPT:REF ws2_32.lib gdi32.lib advapi32.lib crypt32.lib user32.lib"
             <conditional>@webcpp-openssl.configuration
             <target-os>wasi:<linkflags>"-lwasi-emulated-getpid -lwasi-emulated-signal -lwasi-emulated-process-clocks -lwasi-emulated-mman" ;
 }
 
-toolset.uses-features webcpp-openssl.build : <toolset> <target-os> <architecture> <address-model> <variant> <threading> <optimization> <debug-symbols> <inlining> <runtime-link> <cflags> <define> <linkflags> <exception-handling> <lto> <lto-mode> ;
+for local action in build generate-headers
+{
+    toolset.uses-features webcpp-openssl.$(action) : <toolset> <target-os> <architecture> <address-model> <variant> <threading> <optimization> <debug-symbols> <inlining> <runtime-link> <runtime-debugging> <cflags> <define> <linkflags> <exception-handling> <lto> <lto-mode> <webcpp-openssl-tests> ;
+}
 
 rule configuration ( properties * )
 {
+    if <toolset-clang:version>wasip2 in $(properties) && <threading>multi in $(properties)
+    {
+        errors.user-error "WASIp2 OpenSSL requires threading=single; the pinned SDK has no WASIp2 thread backend." ;
+    }
     if <target-os>wasi in $(properties) && <threading>multi in $(properties)
     {
         return [ webcpp-wasi.cooperative $(.root) : $(properties) ] ;
@@ -110,7 +165,7 @@ rule fingerprint ( ps )
     }
     local settings = openssl-settings-$(ps) ;
     compiler-settings $(settings) : $(ps) ;
-    local values = [ on $(settings) return $(CONFIG_COMMAND) $(OPTIONS) $(USER_OPTIONS) $(DEFINES) $(.AR) ] ;
+    local values = [ on $(settings) return $(DRIVER) $(C_OPTIONS) $(DEFINES) $(ARCHIVER) $(.SETUP) $(.SETUP-SCRIPT) $(.SETUP-OPTIONS) ] ;
     .fingerprint.$(ps) = [ MD5 "$(values:J=|)" ] ;
     return $(.fingerprint.$(ps)) ;
 }
@@ -124,20 +179,60 @@ rule compiler-settings ( outputs * : ps )
         compiler = clang-$(platform) ;
     }
     toolset.set-target-variables $(compiler).compile.c $(outputs) : $(ps) ;
-    toolset.set-target-variables $(compiler).archive $(outputs) : $(ps) ;
+    if $(compiler) = msvc
+    {
+        # Both operations inherit MSVC's setup flags. Read the archiver on a
+        # separate target so the setup script and its arguments occur once.
+        local archive-settings = $(outputs[1])-archive ;
+        toolset.set-target-variables msvc.archive $(archive-settings) : $(ps) ;
+        DRIVER on $(outputs) = [ on $(outputs[1]) return $(.CC[1]) ] ;
+        ARCHIVER on $(outputs) = [ on $(archive-settings) return $(.LD[1]) ] ;
+        C_OPTIONS on $(outputs) = [ on $(outputs[1]) return $(.CC[2-]) $(OPTIONS) $(CFLAGS) $(USER_CFLAGS) ] ;
+    }
+    else
+    {
+        toolset.set-target-variables $(compiler).archive $(outputs) : $(ps) ;
+        DRIVER on $(outputs) = [ on $(outputs[1]) return $(CONFIG_COMMAND[1]) ] ;
+        ARCHIVER on $(outputs) = [ on $(outputs[1]) return $(.AR:E=ar) ] ;
+        C_OPTIONS on $(outputs) = [ on $(outputs[1]) return $(OPTIONS) $(USER_OPTIONS) ] ;
+    }
+}
+
+rule build-settings ( outputs * : properties * )
+{
+    local ps = [ property-set.create $(properties) ] ;
+    compiler-settings $(outputs) : $(ps) ;
+    if [ $(ps).get <toolset> ] = msvc
+    {
+        modules.call-in msvc : set-setup-command $(outputs) : $(properties) ;
+    }
+    SCRIPT on $(outputs) = [ path.native $(.root)/tools/openssl/build.py ] ;
+    SOURCE on $(outputs) = [ path.native $(.root)/third_party/libs/openssl ] ;
+    PLATFORM on $(outputs) = [ $(ps).get <target-os> ] ;
+    THREADING on $(outputs) = [ $(ps).get <threading> ] ;
+    VARIANT on $(outputs) = [ $(ps).get <variant> ] ;
+    if [ $(ps).get <webcpp-openssl-tests> ] = "on"
+    {
+        TEST on $(outputs) = --test ;
+    }
 }
 
 rule build ( outputs * : inputs * : properties * )
 {
-    local ps = [ property-set.create $(properties) ] ;
-    compiler-settings $(outputs) : $(ps) ;
-    SCRIPT on $(outputs) = $(.root)/tools/openssl/build.py ;
-    SOURCE on $(outputs) = $(.root)/third_party/libs/openssl ;
-    PLATFORM on $(outputs) = [ $(ps).get <target-os> ] ;
-    THREADING on $(outputs) = [ $(ps).get <threading> ] ;
+    build-settings $(outputs) : $(properties) ;
 }
 
 actions build
 {
-    python3 "$(SCRIPT)" "@($(<[1]).rsp:E=--source "$(SOURCE)" --output "$(<[1]:D)" --platform "$(PLATFORM)" --threading "$(THREADING)" --cc "$(CONFIG_COMMAND[1])" --ar "$(.AR:E=ar)" -- $(OPTIONS) $(USER_OPTIONS) -D$(DEFINES))"
+    $(.SETUP) python3 "$(SCRIPT)" "@($(<[1]:W).rsp:E=--source "$(SOURCE)" --output "$(<[1]:DW)" --platform "$(PLATFORM)" --threading "$(THREADING)" --variant "$(VARIANT)" --cc "$(DRIVER)" --ar "$(ARCHIVER)" $(TEST) -- $(C_OPTIONS) -D$(DEFINES))"
+}
+
+rule generate-headers ( outputs * : inputs * : properties * )
+{
+    build-settings $(outputs) : $(properties) ;
+}
+
+actions generate-headers
+{
+    $(.SETUP) python3 "$(SCRIPT)" "@($(<[1]:W).rsp:E=--source "$(SOURCE)" --output "$(<[1]:DW)/../.." --headers-only --platform "$(PLATFORM)" --threading "$(THREADING)" --variant "$(VARIANT)" --cc "$(DRIVER)" --ar "$(ARCHIVER)" -- $(C_OPTIONS) -D$(DEFINES))"
 }

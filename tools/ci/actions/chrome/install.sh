@@ -5,8 +5,8 @@
 # accompanying file LICENSE_1_0.txt or copy at
 # https://www.boost.org/LICENSE_1_0.txt)
 
-# The step of tools/ci/actions/chrome: Chrome for Testing's chrome-headless-shell at a pinned
-# version, in .local/chrome-headless-shell, and CHROME given to the job's later steps, the Chrome
+# The step of tools/ci/actions/chrome: Chrome for Testing at a pinned
+# version, in .local/<product>, and CHROME given to the job's later steps, the Chrome
 # that a driven test runs when its driver meets a browser (trystero's interop lane), on Linux, X64
 # and ARM64.
 #
@@ -38,48 +38,59 @@
 set -euo pipefail
 
 version=155.0.8059.39
+product="${WEBCPP_CHROME_PRODUCT:-chrome-headless-shell}"
+case "${product}" in
+    chrome-headless-shell|chrome) ;;
+    *) printf 'install.sh: unsupported Chrome product: %s\n' "${product}" >&2; exit 1 ;;
+esac
 base="https://storage.googleapis.com/chrome-for-testing-public/${version}"
 case "${RUNNER_OS-}-${RUNNER_ARCH-}" in
     Linux-X64)
         build=linux64
         sha256=39dcb8c46550632a3d911850ab3b8af840b4e3f6d8622faa2018eb8756278786
+        if [ "${product}" = chrome ]; then
+            sha256=55672d1f392fd3e7b7a08621b6e804e6bcb39d40cf155504abb74b3a021ea8ea
+        fi
         ;;
     Linux-ARM64)
         build=linux-arm64
         sha256=9fb86f7c0b2734c5febc0bbb4e85f37da43553f3f8a7970949828c5713e87e94
+        if [ "${product}" = chrome ]; then
+            sha256=b9d44e5d183260ca941a4c4d8d21c8a437d81ef778a489047ef98968b0475dc5
+        fi
         ;;
     *)
-        printf 'install.sh: no chrome-headless-shell %s is pinned for %s on %s: the action ' \
-            "${version}" "${RUNNER_OS-}" "${RUNNER_ARCH-}" >&2
+        printf 'install.sh: no %s %s is pinned for %s on %s: the action ' \
+            "${product}" "${version}" "${RUNNER_OS-}" "${RUNNER_ARCH-}" >&2
         printf 'runs on Linux, on X64 and ARM64\n' >&2
         exit 1
         ;;
 esac
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-asset="chrome-headless-shell-${build}.zip"
+asset="${product}-${build}.zip"
 "${here}/../../download.sh" "${base}/${build}/${asset}" "${sha256}" "${RUNNER_TEMP}/${asset}"
-rm -rf .local/chrome-headless-shell
-mkdir -p .local/chrome-headless-shell
-unzip -q "${RUNNER_TEMP}/${asset}" -d .local/chrome-headless-shell
+rm -rf ".local/${product}"
+mkdir -p ".local/${product}"
+unzip -q "${RUNNER_TEMP}/${asset}" -d ".local/${product}"
 rm "${RUNNER_TEMP}/${asset}"
-directory="$(cd ".local/chrome-headless-shell/chrome-headless-shell-${build}" && pwd -P)"
-shell="${directory}/chrome-headless-shell"
+directory="$(cd ".local/${product}/${product}-${build}" && pwd -P)"
+shell="${directory}/${product}"
 [ -x "${shell}" ] || {
-    printf 'install.sh: %s holds no chrome-headless-shell-%s/chrome-headless-shell\n' "${asset}" \
-        "${build}" >&2
-    rm -rf .local/chrome-headless-shell
+    printf 'install.sh: %s holds no %s-%s/%s\n' "${asset}" \
+        "${product}" "${build}" "${product}" >&2
+    rm -rf ".local/${product}"
     exit 1
 }
-wrapper="$(cd .local/chrome-headless-shell && pwd -P)/chrome"
+wrapper="$(cd ".local/${product}" && pwd -P)/chrome"
 {
     printf '#!/bin/sh\n'
-    printf '# Written by tools/ci/actions/chrome: chrome-headless-shell %s, without its sandbox ' \
-        "${version}"
+    printf '# Written by tools/ci/actions/chrome: %s %s, without its sandbox ' \
+        "${product}" "${version}"
     printf '(install.sh says why).\n'
     printf 'exec "%s" --no-sandbox "$@"\n' "${shell}"
 } > "${wrapper}"
 chmod 755 "${wrapper}"
 printf 'CHROME=%s\n' "${wrapper}" >> "${GITHUB_ENV}"
-printf 'install.sh: chrome-headless-shell %s in %s, CHROME=%s\n' "${version}" "${directory}" \
+printf 'install.sh: %s %s in %s, CHROME=%s\n' "${product}" "${version}" "${directory}" \
     "${wrapper}"

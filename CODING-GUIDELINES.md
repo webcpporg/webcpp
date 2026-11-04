@@ -90,7 +90,7 @@ Not built yet:
   - every declared lane from scratch: `b2 -a libs/<name>/test
     libs/<name>/example` natively, and with `toolset=clang-wasip2
     testing.launcher=wasmtime` and `toolset=clang-wasip3
-    testing.launcher=wasmtime` where declared, and every own lane the
+    testing.launcher=tools/boost/asio-wasip3/run.sh` where declared, and every own lane the
     library declares, `b2 -a libs/<name>/test/oracle//oracle` for an oracle
     and, on each target it names, `b2 -a toolset=clang-wasip2
     testing.launcher=wasmtime libs/wasi/test//http` for one on wasip2;
@@ -231,8 +231,10 @@ A test's helpers that are shared between tests go in `webcpp::test`
 
 ## 4. The language
 
-- C++20, header-only. The Jamroot sets `<cxxstd>20`, `<warnings>extra` and
-  `<warnings-as-errors>on` for everything.
+- C++20, header-only except the explicitly documented units that must be linked
+  once per program, such as Asio's JavaScript imports and Cobalt entry point
+  (chapter 15). B2 supplies those units; users do not copy them into applications.
+  The Jamroot sets `<cxxstd>20`, `<warnings>extra` and `<warnings-as-errors>on`.
 - **What a library builds on, in this order:** what webcpp already has;
   then Boost (boost.org); then the C++ Alliance's libraries
   ([cppalliance](https://github.com/cppalliance)), whose authors are Boost's;
@@ -297,7 +299,9 @@ A test's helpers that are shared between tests go in `webcpp::test`
     parameter or a `std::pmr::memory_resource`, with no requirement to live
     in a shared segment.
   - Each library's page says which of its types are shareable, and a test
-    that counts allocations proves that none goes elsewhere.
+    counts allocations. An approved exception for runtime or wrapped-library
+    storage is named in chapter 15 and the guide, measured separately where a
+    hook exists, and never hidden by a tolerance for unexplained allocations.
 
   A library ported or written from now on is born with this rule, as pratt
   is: its calculator's environment takes the user's `Allocator`; and as
@@ -307,11 +311,12 @@ A test's helpers that are shared between tests go in `webcpp::test`
   resource, which a counting test
   proves natively and on emscripten. The libraries written before it are
   brought to it by a review (chapter 16).
-- **Asynchronous code is built on xactor.** A library that ports anything
-  asynchronous runs it as actors on xactor, whose scheduler drives every
-  library the same way, deterministically, and in a browser from the page's
-  event loop, which owns the system's events. How such a library meets
-  Boost.Asio and Boost.Cobalt is still to be designed (chapter 16).
+- **Asynchronous code runs on the executor its user supplies.** Libraries use
+  Asio-compatible executors and completion mechanisms without driving the run
+  family internally. A library whose model is actors uses xactor; its application
+  drives that scheduler from its event loop. This records the owner's accepted
+  Asio decision of 2026-10-11, rather than requiring the event loop itself to be
+  implemented as actors.
 - **Text** is passed and held as `std::string_view` where nothing must own
   it; `std::string` only where something does.
 - **A function starts with its guards:** every condition it needs is checked
@@ -367,7 +372,11 @@ exactly its authors' and the program carries only what it calls.
    with another OpenSSL copy. The Asio alias links this dependency explicitly.
    Its headers are upstream's, so this adapter uses B2 dependency ordering and
    exact archive paths instead of injecting canary calls into upstream APIs.
-   Native Clang/GCC recipes cover macOS/Linux; MSVC/nmake is not implemented.
+   Native Clang/GCC recipes cover macOS/Linux. MSVC uses upstream Configure
+   with nmake, explicit B2 runtime/debug flags and static `.lib` outputs;
+   its initial profile uses portable C (`no-asm`) without a NASM dependency.
+   Recipe/staging tests run locally; real Windows compilation remains a
+   separate CI validation, not inferred from a dry run.
    WASIp3 single and cooperative profiles must agree with the consumer's
    threading choice. Keep explicit host entropy seeding and fail-closed tests.
    Other libraries with external dependencies still use `webcpp.external`.
@@ -390,7 +399,11 @@ exactly its authors' and the program carries only what it calls.
 
 ## 6. Exceptions and RTTI
 
-- **Every target builds with exceptions on.** Whether a program uses them is
+- **Every supported target profile with a C++ exception runtime builds with
+  exceptions on.** A threading profile whose SDK supplies no such runtime
+  refuses `exception-handling=on` by name; the feature matrix identifies that
+  limitation. WASI SDK 34's experimental cooperative sysroot is one such
+  profile, to be rechecked on SDK upgrades. Whether a program uses exceptions is
   the choice of whoever builds it, never an imposition of a library or of
   webcpp. Natively the compiler's default holds. On wasip2 and wasip3 the
   Jamroot compiles with `-fwasm-exceptions -mllvm -wasm-use-legacy-eh=false`
@@ -601,6 +614,21 @@ with `lint: failed: <rule>` for each rule that failed.
 A source b2 expects not to compile (`webcpp.compile-fail`), and one that
 must stop with the error it states (`webcpp.compile-diagnostic`), are left
 out of clang-tidy only; every other rule reads them.
+
+The compilation database prepares generated inputs before analysis. Public
+header units prepare their dependencies; programs that select another OpenSSL
+configuration prepare that exact configuration through B2 as well, including
+their exception-off twins. A dedicated preparation target resolves each original
+request with its own defaults and returns only the requested provider headers.
+B2 updates those artifacts and their dependencies even when headers already
+exist, without compiling or running the consumers used to discover the variants.
+OpenSSL has a separate header action using Configure and `make build_generated`
+with the same source verification, compiler properties and configuration as the
+archive action. Header preparation neither builds archives nor runs the upstream
+suite and publishes no build or test proof. Full consumers depend on those headers
+and still require the complete archive action, including `alltests` when requested.
+The compilation database reuses each dry-run result for dependency discovery rather
+than repeating the same full build-graph traversal.
 
 **A library's include boundaries.** Every header compiles alone, so only a
 boundary check sees a part of a library start to depend on another. A
@@ -871,7 +899,8 @@ update --init third_party/libs/<name>`; a build that needs none never looks.
 | Target | What it is | Licence |
 | --- | --- | --- |
 | `ca_certificates` | Dated Mozilla/curl CA data snapshot under `third_party/ca_certificates`, verified against its manifest and embedded by a build-generated header; updated explicitly by `tools/ca_certificates/update.py` | MPL-2.0 |
-| `openssl` | OpenSSL 3.5.9 at `45e844fa2a14ec92d146bd8f5778ac130b6625fb`; static libssl/libcrypto and matching generated headers, built by upstream Configure/Make through B2 for native Clang/GCC and WASIp3 | Apache-2.0 |
+| `libdatachannel` | libdatachannel 0.24.6 at `6b1e2e620f1e37f0eafeee702eaea0043cb305fd`, with pinned libjuice, libsrtp, plog and usrsctp sources; static native archives built by upstream CMake through B2 against the same source-built OpenSSL | MPL-2.0 and the nested dependencies' own licences |
+| `openssl` | OpenSSL 3.5.9 at `45e844fa2a14ec92d146bd8f5778ac130b6625fb`; static libssl/libcrypto and matching generated headers, built by upstream Configure/Make through B2 for native Clang/GCC/MSVC and WASIp3 | Apache-2.0 |
 | `json-schema-test-suite` | the JSON Schema Test Suite at `5b0ee16` (2026-09-21), test data: a test that names it reads the suite at run time from the directory its define `WEBCPP_TEST_JSON_SCHEMA_TEST_SUITE` gives, on every target (wasmtime is given it, `webcpp.data`), and runs again when a file of the suite changes | MIT |
 | `nativejson-benchmark` | Milo Yip's nativejson-benchmark at `478d572` (2022-10-28), test data: document's benchmarks (`libs/document/bench`) read its `data/canada.json`, `data/citm_catalog.json` and `data/twitter.json` at run time under the directory its define `WEBCPP_TEST_NATIVEJSON_BENCHMARK` gives, on every target (wasmtime is given it, `webcpp.data`), and run again when one of them changes; its own submodules are never checked out | MIT |
 
@@ -884,6 +913,17 @@ files. Missing, additional or altered distributable files fail the build.
 After explicitly updating the source commit, regenerate this metadata with
 `python3 tools/openssl/update.py`; never edit the generated inventory by hand.
 The pinned commit timestamp supplies the default reproducible-build epoch.
+
+Libdatachannel follows the same source-integrity boundary with
+`tools/libdatachannel/pin.json`. Its required nested repositories are included
+at their pinned gitlinks in source archives; only the explicitly listed unused
+nested sources are omitted. A checkout needs recursive initialization, while an
+archive builds without Git. B2 invokes upstream CMake for separate static
+archives, with system dependency discovery disabled and the exact OpenSSL
+provider's headers and archive hashes checked first. Native consumers select
+`threading=multi` and matching compiler/runtime settings. This provider decision
+permits Asio, Beast and native Trystero in one program; it does not complete
+Trystero's later API migration or prove libdatachannel's upstream test suite.
 
 The CA bundle is an authorized exception to the source-submodule rule: curl
 publishes dated PEM artifacts, preserved byte-for-byte with source URL, SHA-256,
@@ -1138,10 +1178,13 @@ site's own decisions follow in the next sections.
   Source: `organization/openspec/specs/organization/spec.md` (proposals).
 - **The compiled Boost libraries a library needs, Boost.URL, Boost.Charconv,
   Boost.Locale without ICU and Boost.Cobalt, are built by webcpp from Boost's
-  own source archive, for every target, as `/webcpp//boost_url` and its kin.**
-  Native, wasip2, wasip3 and emscripten then build the same sources with the
-  same macros; an installed Boost cannot be relied on (Homebrew's has no
-  `libs/url/src`), and the sources' version must equal the configured Boost's.
+  own source archive for their supported targets, as `/webcpp//boost_url` and
+  its kin.** Each archive follows its consumer's target, macros and compiler
+  configuration; Cobalt supports the validated P2/P3 WASI profiles. Checked Asio/Cobalt overlays
+  apply only to private copies, with original and patched hashes and an exact
+  Boost-version check (AGENTS.md chapter 1). An installed Boost cannot be
+  relied on for sources (Homebrew's has no `libs/url/src`), and the sources'
+  version must equal the configured Boost's.
   Source: `organization/openspec/changes/archive/2026-10-07-genesis/design.md`
   (proposals).
 - **Boost.JSON's definitions and Boost.Test's header-only framework are
@@ -1166,13 +1209,14 @@ site's own decisions follow in the next sections.
   a lane's toolset from those regions and a page includes them, so that
   neither drifts from the other; bundled toolchains are on the roadmap.
   Source: `AGENTS.md` (webcpp).
-- **A library webcpp does not build yet (trystero's libsecp256k1,
-  libdatachannel and OpenSSL) is declared with `webcpp.external`: a build that
+- **A library webcpp does not build yet (currently trystero's libsecp256k1)
+  is declared with `webcpp.external`: a build that
   does not find it leaves its owner out with one line, and the CI and the
   lint, with `webcpp-require-external=on`, stop instead.** Left out, every
   other library still builds with `b2 test`; required, a library not found
   stops the build rather than leave the library out. The CI's actions build
-  them until webcpp builds them from `third_party/`.
+  that remaining dependency until it moves to `third_party/`. OpenSSL and
+  native libdatachannel already use pinned source targets.
   Source: `AGENTS.md` (webcpp).
 
 **Targets and toolchains.**
@@ -1219,7 +1263,7 @@ site's own decisions follow in the next sections.
   `organization/openspec/changes/archive/2026-10-07-genesis/design.md`
   (proposals).
 - **Every tool has one pinned version: Boost 1.92.0 and the b2 it bootstraps
-  (B2 5.5.3), wasi-sdk 34, wasmtime 47.0.3, wit-bindgen 0.62.0 with the WASI
+  (B2 5.5.3), wasi-sdk 34, wasmtime 50.0.1, wit-bindgen 0.62.0 with the WASI
   WIT of the crates `wasip2` 1.0.4 and `wasip3` 0.9.0, Emscripten 6.0.11,
   MrDocs 2026.9.29 and Node 26.7.0.** The lint takes clang-format and
   clang-tidy from the pinned wasi-sdk so that every machine and the CI lint
@@ -1229,8 +1273,8 @@ site's own decisions follow in the next sections.
 - **Every archive the CI downloads is checked against a recorded SHA-256,
   every third-party action is pinned by its full commit SHA, and a tool
   fetched with git is checked against its pinned commit.** emsdk checks none
-  of its downloads, a tag that moved (libdatachannel's) would otherwise have
-  git fetch from the URLs its `.gitmodules` names, and the interop lanes get a
+  of its downloads itself. Source dependencies also validate their required
+  nested gitlinks before building. The interop lanes get a
   pinned chrome-headless-shell so that a red lane is never a browser nobody
   chose.
   Source: `AGENTS.md` (webcpp).
@@ -1298,6 +1342,19 @@ site's own decisions follow in the next sections.
   Source:
   `organization/openspec/changes/archive/2026-10-07-genesis/reference/research/BOOST_REGRESSION_MATRIX.md`
   (proposals).
+- **A driven test contains its descendants before starting its driver.**
+  The shared keeper uses a POSIX process group or a Windows Job Object with
+  kill-on-close. The owner holds its lifetime pipe; timeout, driver exit and
+  owner termination stop the entire tree. Windows assigns the keeper before
+  spawning children and keeps its job handle non-inheritable. Failure to establish
+  containment fails closed. This avoids POSIX-only signal and process-group APIs
+  in the Windows runner while preserving bounded cleanup. The Windows compiler
+  jobs run the real process-tree regressions, including nested jobs.
+  The build reuses an existing executable with its object dependencies when the
+  producer also returns symbols or component metadata. Extra outputs must not
+  cause the test generator to link a new executable without its fixture code.
+  Source: `tools/component/process_tree.py`, `tools/drive/drive_test.py`,
+  `tools/drive/drive.jam` (webcpp).
 - **What an ordinary lane must not run is an own lane of its library
   (`webcpp.lane`): an oracle, a served component, a driven test or the check
   of generated files; a lane-only program in no lane stops the CI's plan.** An
@@ -3259,7 +3316,7 @@ built, is recorded apart.
   recorded)
   Source: `doc/build.adoc` (libs/wasi).
 - **wasi targets `wasi:http` 0.2.12 and 0.3.0 alone, as measured with
-  wasi-sdk 34, wit-bindgen 0.62.0 and wasmtime 47.0.3, and the page names
+  wasi-sdk 34, wit-bindgen 0.62.0 and wasmtime 50.0.1, and the page names
   each version as measured.** WASI 0.3 is young: a toolchain update may move
   the names the bindings' glue calls.
   Source:
@@ -3337,8 +3394,8 @@ built, is recorded apart.
   the version is not recorded.
   Source: `include/webcpp/wasi/http/entrypoint.hpp` (libs/wasi).
 - **A component is linked as a reactor, `-mexec-model=reactor`.** It exports
-  a handler and has no C `main`; wasmtime 47 also serves it linked as a
-  command, but webcpp builds and tests reactors.
+  a handler and has no C `main`. Historical tests with wasmtime 47 also
+  served it linked as a command; current webcpp builds and tests reactors.
   Source: `doc/build.adoc` (libs/wasi).
 - **b2 looks for wit-bindgen, the `wasi:http` WIT and wasmtime only when a
   target needs them, each at its `-s` variable first, then under `.local/`
@@ -3382,8 +3439,9 @@ built, is recorded apart.
   Source: `include/webcpp/wasi/http/entrypoint.hpp` (libs/wasi).
 - **On wasip3 the handler returns the response, then writes to the body's
   stream until the stream has taken every byte, then resolves the trailers
-  future.** wasmtime 47 takes a whole body, 1 MiB too, in one write; the loop
-  stands for a host that takes less per write.
+  future.** Historical tests with wasmtime 47 took a whole body, 1 MiB too,
+  in one write; the loop stands for a host that takes less per write. The
+  50.0.1 regression verifies delivery, not a particular number of writes.
   Source: `doc/guarantees.adoc` (libs/wasi).
 - **On wasip3 the future of whether the host sent the response is dropped
   unread.** The guest could change nothing about a response already sent.
@@ -3407,7 +3465,7 @@ built, is recorded apart.
 **Exceptions and configuration.**
 
 - **The handler throws, tries and catches nothing: an exception that escapes
-  the main traps the instance, and wasmtime 47 answers its own HTML 500 and
+  the main traps the instance, and wasmtime 50.0.1 answers its own HTML 500 and
   keeps serving.** The owner decided it on 2026-10-08, settling the open
   item of catching `std::exception` in the handler to print its `what()`:
   the host answers, and wasi needs neither exceptions nor RTTI and imposes
@@ -3418,11 +3476,13 @@ built, is recorded apart.
 - **wasi's programs, and the by-hand commands its page shows, build wasip2
   with exceptions as wasip3: `-fwasm-exceptions -mllvm
   -wasm-use-legacy-eh=false`, linked with `-fwasm-exceptions -lunwind`.**
-  Measured for wasi: wasmtime 47 runs the exnref encoding with its default
-  flags and refuses the legacy one wasi-sdk 34 emits by default, and
-  exceptions cost about 20% of a stripped component and nothing at a warm
-  start, while their absence cost Boost.Locale, a second Boost configuration
-  and a wasip2-only path in every header.
+  Wasmtime 50.0.1 runs the exnref encoding with its default flags. Historical
+  measurements with wasmtime 47 showed rejection of the legacy encoding
+  wasi-sdk 34 emits by default, about 20% extra stripped component size
+  with exceptions and no measured warm-start cost. Those measurements were
+  not repeated for the runtime upgrade. The absence of exceptions cost
+  Boost.Locale, a second Boost configuration and a wasip2-only path in
+  every header.
   Source:
   `libraries/wasi/openspec/changes/archive/2026-10-08-genesis/reference/research/WASIP2_EXCEPTIONS_SPIKE.md`
   (proposals).
@@ -3481,7 +3541,7 @@ built, is recorded apart.
   pass only on the guard's own error (`expected-error` of clang's
   `-verify`).** A compile that fails for another reason fails the test.
   Source: `libraries/wasi/openspec/specs/wasi/spec.md` (proposals).
-- **`http_bad_status` and `http_bad_content_type` hold wasmtime 47's HTML
+- **`http_bad_status` and `http_bad_content_type` hold wasmtime 50.0.1's HTML
   500 verbatim.** They fail when wasmtime changes how it answers an internal
   error, and are regenerated knowingly.
   Source:
@@ -5425,6 +5485,21 @@ which includes the change `shared-connection` (trystero `2e2dcd4`, webcpp
   any room frame, on libdatachannel's thread, before it is posted.** Neither
   can be a frame.
   Source: `doc/native.adoc` (libs/trystero).
+- **Valid native frames received before the message handler is installed wait
+  in a FIFO bounded by 64 frames and 10 seconds.** These are the original
+  Trystero peer's pending-data bounds. Overflow or expiry closes the channel;
+  a close releases the retained frames. Installing a handler schedules delivery
+  on the executor, preserving order with later arrivals and rechecking the
+  current handler and channel after each callback. It never calls a message
+  handler synchronously from `set_handlers`, where adoption may still be
+  initializing the shared connection. Queued frames use the supplied resource.
+  Source: `doc/native.adoc` (libs/trystero).
+- **A channel that closes during adoption before a room binds clears that
+  room's negotiation and restarts its announcements.** No binding exists for
+  the later connection-end callback to remove. Keeping the negotiation marked
+  connected would prevent the room from ever reconnecting.
+  Source: `include/webcpp/trystero/room.hpp` and `test/shared_test.cpp`
+  (libs/trystero).
 - **The native timer numbers its waits, so that a wait cancelled, restarted or
   destroyed never fires.** Asio may already have queued its expiry as a
   success.
@@ -5943,12 +6018,14 @@ which includes the change `shared-connection` (trystero `2e2dcd4`, webcpp
   includes the native backend, so `/webcpp/trystero//trystero` depends on
   neither, as OpenSSL is optional for Asio.
   Source: `doc/design.adoc` (libs/trystero).
-- **The external libraries are found where `-s<NAME>_ROOT` on b2's command
-  line says, else in the superproject's `.local/`, else natively in
-  `/usr/include` or `/usr/local/include`; the environment is never read.**
-  `.local/` is where webcpp's CI installs them, until webcpp builds them from
-  `third_party/`, and a variable a shell keeps from another day must never
-  replace `.local/` without a word.
+- **Only libsecp256k1 is externally provisioned, through command-line
+  `SECP256K1_ROOT` / `SECP256K1_EMSCRIPTEN_ROOT`, then `.local/`, then native
+  system paths outside Windows; the environment is never read.** Native
+  libdatachannel and its nested dependencies are now pinned source targets,
+  built statically against the same OpenSSL provider as Asio and Beast.
+  Native Trystero requires `threading=multi` and exceptions because its backend
+  uses worker threads. These dependency changes prepare the later migration;
+  they do not claim that Trystero already uses the webcpp facades.
   Source: `doc/building.adoc` (libs/trystero).
 - **A library found nowhere leaves trystero out with one message, unless
   `webcpp-require-external=on`, as the CI builds, stops the build.** `b2 test`
@@ -5963,9 +6040,9 @@ which includes the change `shared-connection` (trystero `2e2dcd4`, webcpp
   requirements (measured: a program then fails to link,
   `_embind_register_function` undefined).
   Source: `build.jam` (libs/trystero).
-- **On MSVC the libraries take CMake's and Shining Light's names
-  (`libsecp256k1` with `SECP256K1_STATIC`, `libssl`, `libcrypto`, also in
-  `lib/VC/x64/MD`), and the tests and examples add `/bigobj`.** A static
+- **On MSVC the external library is `libsecp256k1` with
+  `SECP256K1_STATIC`, the source providers export their static `.lib` archives
+  with the consumer's runtime settings, and tests and examples add `/bigobj`.** A static
   libsecp256k1 on Windows declares every function imported from a DLL without
   the define, and a test of rooms over Asio holds more sections than the
   default object format allows (C1128).
@@ -6083,33 +6160,36 @@ which includes the change `shared-connection` (trystero `2e2dcd4`, webcpp
   example needs the public relays or a browser.
   Source: `doc/differences.adoc` (libs/trystero).
 
-### asio (Boost.Asio and Cobalt on native, Emscripten and WASIp3; integrated locally on 2026-11-02)
+### asio (Boost.Asio and Cobalt on native, Emscripten and WASIp2/P3; implemented for 0.1.0 in preparation)
 
-webcpp::asio is a header-only C++20 wrapper over Boost.Asio: natively it is
+webcpp::asio is a C++20 wrapper over Boost.Asio: natively it is
 Boost.Asio itself, and on Emscripten it is Boost's own `io_context`, whose run
 family suspends into the browser's event loop and yields to it after every
 turn of `max_handlers_per_turn` handlers, with a bridge through which browser
 events post, promises and DOM events as Asio operations, sockets and a
 resolver that fail as values, and Boost.Cobalt's `co_main` on that loop. The
 implementation, source-built OpenSSL, embedded CAs and Cobalt SSL are integrated
-locally with the owner's authorization. The verification and integration record
-is [the local closeout](docs/superpowers/plans/2026-11-02-local-integration.md).
-No CI validation is claimed. The remaining proposal-wide documentation and
-conformance items of tasks 22 and 23 are separate from this integration; the
-unresolved items in chapter 19 remain open.
+with the owner's authorization in superproject `2ba5116`. The published library
+repository is `webcpporg/asio`. The original integration record is
+[the local closeout](docs/superpowers/plans/2026-11-02-local-integration.md);
+[the joint closure](docs/superpowers/plans/2026-11-03-asio-beast-closure.md) covers
+tasks 22/23, the complete review and final CI. Version 0.1.0 is in preparation,
+not a published release. Pending gates are not claimed complete here.
 
 The source labels below retain the design inventory read on 2026-10-26:
 `genesis/` means `libraries/asio/openspec/changes/genesis/` in proposals;
 (asio) was `f5fd7a8`, (superproject branch) was `d159022`, and (main) was
-`ddb6cb2`. References labelled "uncommitted" describe that historical working
-tree, subsequently committed as Asio `6a7f3fe` and superproject `c07c212`.
-The dated observations are not the current Git status.
+`ddb6cb2`. Those historical sources were subsequently committed as Asio `6a7f3fe` and
+superproject `c07c212`. Current contracts below include the owner's 2026-11-03
+amendments; old dates and commits identify evidence, not the current Git status.
+Baseline CI 41597577370 at root `55a72c0` does not validate the closure tree.
+Asio's first library-main CI and the final joint candidate remain separate gates.
 
 **Decided.**
 
 **Interface and names.**
 
-- **`webcpp::asio::io_context` derives from `boost::asio::io_context` on both
+- **`webcpp::asio::io_context` derives from `boost::asio::io_context` on its supported
   targets, shares its executor type and converts to
   `boost::asio::io_context&`; the timers are aliases of Boost's, and a program
   keeps naming `post`, `co_spawn`, `use_awaitable` and `bind_executor` from
@@ -6130,25 +6210,32 @@ The dated observations are not the current Git status.
   of the rest should not pay for.
   Source: `genesis/specs/asio/spec.md`, Library: Convenience header
   (proposals).
-- **`<webcpp/asio/config.hpp>` includes `<boost/config.hpp>` and defines
-  `WEBCPP_ASIO_NO_EXCEPTIONS` exactly when `BOOST_NO_EXCEPTIONS` is defined,
-  keeping a developer's own definition; an API that throws sits behind it and
-  raises through `boost::throw_exception`.** Code that uses a throwing API
-  then does not compile without exceptions.
+- **`<webcpp/asio/config.hpp>` includes `<webcpp/config.hpp>` first and
+  derives `WEBCPP_ASIO_NO_EXCEPTIONS` from the collection's exception policy,
+  preserving an explicit library override.** The public target and browser
+  source target depend on `/webcpp/config//config`. `WEBCPP_NO_EXCEPTIONS`
+  and compiler exception settings agree with the library macro; `config_all_off`
+  exercises a real global-disable consumer. Public headers include config first,
+  and public platform selections use the collection's target macros.
+  The compiler-forced `src/openssl_on_webassembly.hpp` refusal intentionally
+  tests the compiler macro before normal configuration headers are available.
+  Throwing APIs stay guarded and raise through `boost::throw_exception`.
   Source: `genesis/specs/asio/spec.md`, Library: Configuration header
   (proposals).
-- **On Emscripten `/webcpp/asio//asio` gives every translation unit,
-  `browser-src` included, `BOOST_ASIO_DISABLE_THREADS`, and links embind,
-  `browser-src`, the variant's link flags and the tag rule.** Without the
-  define Asio decides it has threads and stops at "Only Windows and POSIX are
-  supported!"; its inline namespace differs with and without threads, so a
-  unit that missed it fails at link, never silently.
+- **On single-thread Emscripten `/webcpp/asio//asio` gives every translation
+  unit, `browser-src` included, `BOOST_ASIO_DISABLE_THREADS`; explicit pthread
+  builds retain Boost's POSIX thread configuration.** Both link embind,
+  `browser-src`, the variant's link flags and the tag rule. Boost's inline
+  namespace differs with and without threads, so every compiled dependency
+  must use the consumer's profile. A silent switch from multi to single is
+  forbidden. Browser runtime isolation remains a host requirement.
   Source: `genesis/specs/asio/spec.md`, Build (proposals).
-- **The library's targets are native and Emscripten, and a library built on it
-  declares native and Emscripten at most.** Boost.Asio 1.92 does not compile
-  for wasm32-wasip2 or wasm32-wasip3 with wasi-sdk 34; a WASI backend is a
-  later increment with its own specification. The local WASIp3 port departs
-  from this (below).
+- **The library supports native, Emscripten and WASIp2/P3 through the checked
+  Boost 1.92 overlay; WASI supports guest TCP/UDP and optional source-built TLS.** A library
+  may declare only the targets its actual APIs support. Beast's portable
+  messages and WASI host HTTP do not require guest sockets. xactor's existing
+  Asio driver stays native until separately adapted; Asio's port does not
+  silently extend that driver's target set.
   Source: `genesis/design.md`, D16 (proposals).
 - **A library built on webcpp::asio is given an executor and never calls
   `run`, `run_one` or `run_for`; a program's own call says why after
@@ -6158,6 +6245,15 @@ The dated observations are not the current Git status.
   user of asio, not a dependency.
   Source: `genesis/specs/asio/spec.md`, Run, and `genesis/proposal.md`
   (proposals).
+
+- **Asio capabilities are read-only 0/1 macros in `config.hpp`; optional
+  dependency selection is separate from target availability.** Explicit
+  `WEBCPP_ASIO_REQUIRE_*` switches reject compiler-visible unsupported needs;
+  feature headers diagnose wrong targets. Network grants, trust roots, actual
+  browser isolation and blocking host imports remain runtime conditions.
+  The owner approved implementation completion and external-boundary guards on
+  2026-11-03. Do not reclassify missing WebCPP code as a platform limitation.
+  Source: `docs/superpowers/specs/2026-11-03-asio-capability-completion-design.md`.
 
 **The run family and the turn limit.**
 
@@ -6368,10 +6464,11 @@ The dated observations are not the current Git status.
   claims no safety.
   Source: `genesis/reference/STATUS.md` (proposals); `AGENTS.md`, chapter 1
   (superproject branch).
-- **Exception-free Cobalt consumers suppress Clang's
-  `coroutine-missing-unhandled-exception` diagnostic, and no other.** Boost
-  omits `main_promise::unhandled_exception` without exceptions.
-  Source: `build.jam`, `AGENTS.md` (asio).
+- **The checked common Cobalt overlay supplies `unhandled_exception` for
+  main and thread promises when exceptions are disabled.** Boost 1.92 omits
+  these hooks; the overlay uses `std::terminate` for the unreachable exception
+  path, keeping strict compiler diagnostics and actual worker/join tests.
+  Source: `tools/boost/cobalt-common/boost-1.92.patch` (superproject).
 
 **Allocation.**
 
@@ -6396,10 +6493,10 @@ The dated observations are not the current Git status.
 
 **Timers, promises and events.**
 
-- **Timers are Boost's on both targets, in the reactor's timer queue: Beast's
-  timeouts fire, and an idle program holds the reactor's one `setTimeout`, of
-  at most 300 s, and schedules nothing else.** The program's code runs only
-  when the browser delivers an event, never by polling.
+- **Timers are Boost's on every supported target, in the reactor's timer
+  queue: Beast's timeouts fire.** On Emscripten an idle program holds the
+  reactor's one `setTimeout`, of at most 300 s, and schedules nothing else.
+  Its code resumes when the browser delivers an event, never by polling.
   Source: `genesis/specs/asio/spec.md`, Timers and Browser (proposals).
 - **`async_await(executor, promise, token)` and
   `async_wait_event(executor, target, type, token)` initiate through
@@ -6438,19 +6535,19 @@ The dated observations are not the current Git status.
   not forwarded and moved-from transports unusable.
   Source: `genesis/design.md`, D13, and `genesis/reference/STATUS.md`
   (proposals).
-- **The resolver resolves nothing (option A): one entry with the host and
+- **The browser resolver resolves nothing (option A): one entry with the host and
   service names, an unspecified address and the service's port; reverse
   resolution, and a plain socket's connect on the entry, fail with
   `operation_not_supported`.** Only webcpp::beast's browser streams accept the
   entry, so Beast's layered client code runs unchanged; a resolver that failed
   like the sockets would change a line of every Beast client.
   Source: `genesis/design.md`, D14 (proposals).
-- **`<webcpp/asio/ssl.hpp>` is Boost's `ssl` natively and on Emscripten a
-  record of the program's TLS settings, its host name in `std::pmr` storage,
-  which only webcpp::beast's browser streams read; a program names
-  `/webcpp/asio//openssl` for its native builds alone, and naming it for
-  WebAssembly stops the compile with an instruction.** The browser owns TLS
-  there, and the owner rejected ignoring the target on WebAssembly.
+- **`<webcpp/asio/ssl.hpp>` is Boost's `ssl` on native and WASI; on
+  Emscripten it records TLS settings and a host name in `std::pmr` storage
+  for webcpp::beast's browser streams.** Guest TLS explicitly names
+  `/webcpp/asio//openssl` on native or WASI. Naming that source provider for
+  Emscripten fails with an instruction; the browser owns TLS in its profile.
+  WASI host HTTP continues to use the host's independent TLS implementation.
   Source: `genesis/design.md`, D15 (proposals); `include/webcpp/asio/ssl.hpp`
   (asio).
 
@@ -6459,7 +6556,8 @@ The dated observations are not the current Git status.
 - **Cobalt's `main_promise::run_main` and `final_suspend` are webcpp's
   (`src/cobalt_main.cpp`, `/webcpp/asio//cobalt`), with Cobalt's steps over a
   `webcpp::asio::io_context{BOOST_ASIO_CONCURRENCY_HINT_1}`, and
-  `/webcpp//boost_cobalt` compiles every Cobalt source but `main.cpp`.**
+  `/webcpp//boost_cobalt` excludes `main.cpp` and the optional `io/ssl.cpp`,
+  with additional unsupported sources omitted for WASI as listed below.**
   `co_main` cannot be replaced from a header: `main` is a hidden friend that
   calls `run_main`, compiled in Cobalt's `src/main.cpp`, which calls Boost's
   `run`; compiling against the pinned Boost probes the private members it
@@ -6487,62 +6585,69 @@ The dated observations are not the current Git status.
   pipeline.
   Source: `genesis/reference/STATUS.md`, task 14 (proposals);
   `doc/guarantees.adoc` (asio).
-- **Nothing is published before the whole-branch review is fixed and the owner
-  has taken the three gates (G1 the repository, G2 the submodule, G3 the
-  library pushed before the superproject); no agent pushes, creates a
-  repository or changes a GitHub setting.** The rulebook's checklist makes the
-  repository and the submodule the owner's.
-  Source: `genesis/specs/asio/spec.md`, Release (proposals).
+- **The release record distinguishes repository integration, CI and a
+  published release.** The repository and submodule exist, and the owner
+  authorized the joint closure's pushes and merges on 2026-11-03. That does
+  not authorize a release tag. Final review and CI must describe the exact
+  candidate, with root workflow integration before library-main CI because
+  those workflows consume `library.yml@main`. Baseline CI is not evidence for
+  later edits. The AsciiDoc changelog and 0.1.0 New Libraries entry remain
+  preparation metadata until a release is requested.
+  Source: `docs/superpowers/plans/2026-11-03-asio-beast-closure.md` (superproject).
 
-**Departures the owner approved.** The owner approved all five on 2026-10-11;
-recording that approval in the ledger is task 23.4, open.
+**Earlier approved departures and their current scope.** The owner approved
+five bounded departures on 2026-10-11. The later source-provider decision
+supersedes the temporary system-OpenSSL choice; it does not reopen every rule.
 
-- **1. The own lane `asyncify` runs on every push, not at the nightly and
-  release levels the spec settled.** The CI's levels do not exist, and no
-  Asyncify in the CI would break the owner's "every variant tested"; running
-  it on every push tests more, not less. Status: in effect in `test/Jamfile`;
-  no CI has run it; it moves when the levels come, which task 22 writes into
-  the roadmap (chapter 16).
-  Source: `genesis/reference/plan.md`, Departures from the spec, and
-  `genesis/tasks.md` (proposals).
-- **2. `io_context` has two constructors more than the spec's three,
-  forwarding Boost's concurrency hint with and without an allocator.** Boost's
-  idiom `io_context io{1}` compiles, and webcpp's Cobalt `run_main` keeps
-  Cobalt's `BOOST_ASIO_CONCURRENCY_HINT_1`. Status: implemented in task 4
-  (`names_test`), used by task 16.
-  Source: `genesis/reference/plan.md`, Departures from the spec (proposals).
-- **3. `/webcpp//boost_cobalt` leaves out Cobalt's `io/ssl.cpp`.** It needs
-  OpenSSL, which the program names, so `boost::cobalt::io::ssl_stream` does
-  not link until Cobalt's TLS sources are built against the program's OpenSSL.
-  Status: implemented in superproject `8829e99`; the uncommitted
-  `/webcpp//boost_cobalt_io_ssl` of 2026-10-16 now builds that source as a
-  library of its own, natively and on WASIp3.
-  Source: `genesis/reference/plan.md`, Departures from the spec (proposals);
-  `tools/boost/cobalt-ssl/Jamfile` (superproject, uncommitted).
-- **4. `/webcpp/asio//openssl` links the system's OpenSSL, shared, with no
-  static choice, until webcpp::crypto's `/third_party//openssl` exists, and
-  the target is refused on WebAssembly.** The shared-or-static feature of
-  chapter 5's rule 7 comes with `/third_party//openssl`, which
-  webcpp::crypto's plan builds; the owner approved this part a and rejected
-  ignoring the target on WebAssembly. Status: implemented in `d438a61` through
-  `webcpp.external`; superseded in the uncommitted tree by OpenSSL 3.5.9 built
-  from source, static only, natively and on WASIp3, without webcpp::crypto.
-  Source: `genesis/reference/plan.md`, Departures from the spec (proposals);
-  `build.jam` (asio, uncommitted).
-- **5. Native suites without exceptions run only on Emscripten for now.**
-  Native runs without exceptions wait for the CI's native no-exceptions lane,
-  a levels item, while every browser test has its no-exceptions twins and the
-  lint analyses every native program without exceptions. Status: in effect;
-  `flag_scope_no_exceptions`, `ssl_no_exceptions` and the Cobalt programs
-  already run natively without exceptions, and the local matrices of
-  2026-10-16 ran native profiles with exceptions off.
-  Source: `genesis/reference/plan.md`, Departures from the spec (proposals);
-  `test/Jamfile` (asio).
+- The `asyncify` own lane runs on every push while nightly/release CI levels
+  remain roadmap work. Declaring it does not establish that Asio main has run it.
+- The concurrency-hint `io_context` constructors remain intentional extensions,
+  with and without an allocator, including Cobalt's `io_context{1}` use.
+- Plain `/webcpp//boost_cobalt` omits `io/ssl.cpp`; the explicit
+  `/webcpp//boost_cobalt_io_ssl` target now supplies it for native and WASIp3.
+- The former shared system OpenSSL/native-only bridge is superseded by the
+  pinned static source provider on native and WASIp3, without waiting for crypto.
+  Chapter 5 rule 7 retains its Configure/Make and exact-archive canary exception.
+- Dedicated no-exceptions programs and local complete suites run natively;
+  the general CI-level expansion remains chapter 16 work. Do not mistake those
+  programs for proof of every native compiler and profile.
+
+**Compatibility and allocation boundaries.** The existing
+`webcpp.asio.tls` category and `tls_context_error` values 1 to 3 remain public
+identities alongside `webcpp.asio`. Preserving callers' comparisons is a bounded
+compatibility departure from chapter 4's single-category naming convention;
+merging or renumbering those errors is not an approved cleanup.
+TLS category identity uses the fixed Boost.System ID `0x6173696f2e746c73`
+(ASCII `asio.tls`), so codes compare equally across hidden native shared-library
+boundaries. This does not make category virtual functions safe after a provider
+library is unloaded; callers retain that library while using its error values.
+
+The browser resolver owns host/service copies through the completion token's
+associated allocator, captured when `async_resolve` creates the operation. It
+still resolves inside initiation, so deferred tokens remain lazy and inputs
+survive caller mutation. A deferred operation needs its allocator bound at
+creation; binding only when starting it cannot retroactively select storage.
+Boost resolver result entries have no allocator hook and remain a named boundary,
+as do Emscripten's select poll storage and Asyncify unwind storage. OpenSSL's
+process-global allocator is a separate boundary below, never installed by the
+TLS context factory.
+
+Allocation witnesses now execute on WASIp3 single with exceptions on/off and
+cooperative with exceptions off. They distinguish supplied allocator storage,
+global C++ allocation and wrapped C allocation. The narrowly attributed wasi-libc
+pipe creation and writes to tracked pipe descriptors have positive controls;
+the witness does not classify arbitrary Boost allocations as runtime storage.
+This proves the exercised operations, not all possible library paths.
+The `threads` own lane contains `cobalt_thread`, `wasi_core_threads` and the
+threaded allocation witness on native/WASIp3. Real exception unwinding in the
+single profile and standalone `ssl.hpp` are also tested on WASIp3.
 
 **WASIp3 and TLS beyond the original proposal.** These increments were
 implemented with local specs and plans under `docs/superpowers/` and integrated
 on 2026-11-02 after the owner's instruction to finish the remaining integration.
-The original proposal has not been amended and no CI ran.
+The owner ratified these additions to the proposal on 2026-11-03. Its amended
+D15/D16 now distinguish WASIp3 sockets and guest TLS from the browser adapters.
+The closure record distinguishes the baseline CI from validation of later changes.
 
 - **Asio runs on WASIp3 (`clang-wasip3`) through a checked patch of Boost
   1.92's platform layer, applied to private headers under
@@ -6552,12 +6657,11 @@ The original proposal has not been amended and no CI ran.
   untouched, and the preparation refuses another Boost version or a modified
   input rather than compile unpatched headers.
   Source: `docs/superpowers/specs/2026-10-15-asio-wasip3.md`,
-  `tools/boost/asio-wasip3/README.md` (superproject, uncommitted).
+  `tools/boost/asio-wasip3/README.md` (superproject).
 - **On WASIp3 the io_context uses Boost's own run family, with no turn limit,
   bridge or yield.** Its system calls suspend through wasi-libc and the host's
   Component Model.
-  Source: `doc/capabilities.adoc`, `include/webcpp/asio/io_context.hpp` (asio,
-  uncommitted).
+  Source: `doc/capabilities.adoc`, `include/webcpp/asio/io_context.hpp` (asio).
 - **`threading=single` disables Asio's threads, with exceptions on or off;
   `threading=multi` selects wasi-sdk's experimental cooperative sysroot with
   `-pthread`, exceptions off, and a combination the SDK cannot supply stops
@@ -6565,37 +6669,40 @@ The original proposal has not been amended and no CI ran.
   implementation in silence, and wasi-sdk 34's cooperative sysroot has no C++
   exception runtime.
   Source: `docs/superpowers/specs/2026-10-15-asio-wasip3.md`,
-  `tools/webcpp-wasi.jam` (superproject, uncommitted).
-- **The WASIp3 tests run under Wasmtime 49.0.3 through the launcher
-  `tools/boost/asio-wasip3/run.sh`, which grants network and name lookup and
-  bounds a run to 15 s.** Wasmtime 47.0.3 cannot load the cooperative
-  component, and the loopback tests need the network; the launcher is no
-  production capability policy.
-  Source: `tools/boost/asio-wasip3/README.md` (superproject, uncommitted).
-- **UDP `send_to` and `async_send_to` gather several nonempty buffers into one
-  datagram, in storage from the context's allocator (synchronous) or the
-  handler's (asynchronous), released before the handler runs; a receive or a
-  connected send of several nonempty buffers fails with
-  `operation_not_supported`.** wasi-libc has no `sendmsg`, datagram boundaries
-  never change to make a buffer sequence compile, and no hidden allocation
-  emulates scatter/gather.
-  Source: `docs/superpowers/specs/2026-10-15-asio-wasip3.md` (superproject,
-  uncommitted); `AGENTS.md` (asio, uncommitted).
+  `tools/webcpp-wasi.jam` (superproject).
+- **The WASIp2/P3 tests use the project-pinned Wasmtime 50.0.1 through the
+  corresponding `tools/boost/asio-wasip2/run.sh` or `asio-wasip3/run.sh`
+  launcher, which grants network and name lookup and defaults to 600 s per
+  process.** These launchers serve the global lanes, including large finite
+  parsing workloads that exceed a focused networking test's 60 s budget.
+  `WEBCPP_WASIP2_TEST_TIMEOUT` and `WEBCPP_WASIP3_TEST_TIMEOUT` can select another
+  positive finite bound for their target. Wasmtime 47.0.3 cannot load the
+  cooperative component. These grants and limits are test-harness settings;
+  they neither configure production capabilities nor enforce network isolation.
+  Source: `tools/boost/asio-wasip3/README.md` (superproject).
+- **WASI UDP sends gather several nonempty buffers into one datagram,
+  connected or unconnected; receives scatter one datagram into the destination
+  sequence.** Temporary storage uses the context allocator synchronously or
+  the handler's allocator asynchronously and is released before completion.
+  Truncation, empty datagrams and cancellation preserve datagram boundaries.
+  The pinned libc lacks `sendmsg`/`recvmsg`; this adaptation belongs to the
+  checked Boost overlay, not the installed SDK.
+  Source: `docs/superpowers/specs/2026-10-15-asio-wasip3.md` (superproject); `AGENTS.md` (asio).
 - **What WASI lacks is explicit: Asio's `shut_down` error maps to `EPIPE`,
   interface-name scopes are refused, a missing socket option reports
-  `operation_not_supported`, and an asynchronous resolve without threads posts
-  `operation_not_supported`.** WASI has no `ESHUTDOWN`, no interface names
-  and, in the single profile, no thread for Boost's resolver; the port does
-  not pretend those entry points exist.
-  Source: `doc/capabilities.adoc` (asio, uncommitted).
-- **The library's test and example Jamfiles declare `wasip3` beside native and
-  Emscripten, Cobalt and OpenSSL refuse WASIp2 by name, and
+  `operation_not_supported`, and reverse/canonical lookup policies remain
+  unsupported.** Forward asynchronous resolution uses native P2 pollables or
+  P3 async subtasks/waitables in both supported thread profiles. It never
+  blocks initiation, starts a hidden worker or scans DNS with periodic timers.
+  Private libc descriptor APIs require the checked SDK/revision/hash manifest.
+  Source: `doc/capabilities.adoc` (asio).
+- **The library's applicable test and example Jamfiles declare WASIp2/P3
+  beside native and Emscripten; Cobalt and OpenSSL support WASIp2 S, and
   `doc/capabilities.adoc` with `doc/feature-matrix.adoc` is kept current for
   every feature, target and variant, telling unavailable from unverified.**
   The owner approved an AsciiDoc feature matrix that links its evidence.
-  Source: `docs/superpowers/specs/2026-10-15-asio-wasip3.md` (superproject,
-  uncommitted); `AGENTS.md` (asio, uncommitted).
-- **`/webcpp/asio//cobalt` builds on WASIp3 from a checked patch of private
+  Source: `docs/superpowers/specs/2026-10-15-asio-wasip3.md` (superproject); `AGENTS.md` (asio).
+- **`/webcpp/asio//cobalt` builds on WASIp2/P3 from a checked patch of private
   copies of Cobalt's headers and sources (`tools/boost/cobalt-wasip3`): its
   signal, serial-port and seqpacket sources are left out, `thread.cpp` comes
   only with threads, and the archive and its consumers share the Asio overlay
@@ -6603,15 +6710,17 @@ The original proposal has not been amended and no CI ran.
   ports must not break the IP APIs, and an archive and its program must agree
   about headers, threads and exceptions.
   Source: `docs/superpowers/plans/2026-10-16-cobalt-wasip3.md`,
-  `tools/boost/Jamfile` (superproject, uncommitted).
-- **On WASIp3 `run_main` sets the promise's `signal_set` to null and includes
+  `tools/boost/Jamfile` (superproject).
+- **On WASIp2/P3 `run_main` sets the promise's `signal_set` to null and includes
   no POSIX signal service, keeping the executor, the initial post, the status
-  and Cobalt's internal cancellation.** WASIp3 delivers no process signal; a
+  and Cobalt's internal cancellation.** WASI delivers no process signal; a
   host's graceful shutdown needs a protocol of the program's.
-  Source: `src/cobalt_main.cpp`, `AGENTS.md` (asio, uncommitted).
+  Source: `src/cobalt_main.cpp`, `AGENTS.md` (asio).
 - **On WASIp3 the Cobalt status driver expects host exit status 1 for a
-  nonzero `co_return`.** (reason not recorded)
-  Source: `test/cobalt_status_driver.mjs` (asio, uncommitted).
+  nonzero `co_return`.** The component command reports failure to the host;
+  the driver verifies that outcome rather than assuming a native integer exit
+  status is preserved by the component interface.
+  Source: `test/cobalt_status_driver.mjs` (asio).
 - **OpenSSL 3.5.9 (`45e844f`) is a pinned, unmodified submodule at
   `third_party/libs/openssl`, built as static `libssl.a` and `libcrypto.a`
   with their generated headers by upstream Configure and `make build_libs`,
@@ -6620,44 +6729,48 @@ The original proposal has not been amended and no CI ran.
   own manifests, which B2 would otherwise duplicate, and the headers and
   archives of one configuration must stay paired.
   Source: `docs/superpowers/plans/2026-10-16-openssl-source-build.md`,
-  `tools/webcpp-openssl.jam` (superproject, uncommitted).
+  `tools/webcpp-openssl.jam` (superproject).
 - **The OpenSSL recipe covers native Clang and GCC on macOS and Linux and
-  WASIp3, single and cooperative; WASIp2, Emscripten and MSVC stop the build,
-  and a host OpenSSL is never a fallback.** Windows needs an nmake integration
-  of its own, and a silent system fallback could link a second copy.
+  WASIp2 single, WASIp3 single/cooperative, and native MSVC using Configure/nmake;
+  Emscripten stops the build, and a host OpenSSL is never a fallback.**
+  Windows recipes preserve B2 runtime settings. Windows runtime results must
+  be tied to their tested candidate, not inferred from recipe tests or older
+  CI. A silent system fallback could link a second copy.
   Source: `docs/superpowers/plans/2026-10-16-openssl-source-build.md`
-  (superproject, uncommitted).
-- **On WASIp3 OpenSSL uses the external Configure target `webcpp-wasip3` (no
+  (superproject).
+- **On WASIp2/P3 OpenSSL uses the external Configure targets `webcpp-wasip2`
+  and `webcpp-wasip3` (no
   assembly, no DSO, no QUIC, `getrandom` seeding) and fails closed when host
   entropy fails.** wasi-libc's `getentropy` reaches `wasi:random`; the tests
   show entropy is requested and that its failure stops key generation, not its
   quality.
-  Source: `tools/openssl/wasip3.conf`, `tools/openssl/build.py` (superproject,
-  uncommitted); `doc/building.adoc` (asio, uncommitted).
+  Source: `tools/openssl/wasip3.conf`, `tools/openssl/build.py` (superproject); `doc/building.adoc` (asio).
 - **`/webcpp/asio//openssl` forwards `/webcpp/third_party//openssl` with
-  `WEBCPP_ASIO_HAS_OPENSSL` natively and on WASIp3, Emscripten keeps the
+  `WEBCPP_ASIO_HAS_OPENSSL` natively and on WASIp2/P3, Emscripten keeps the
   forced-include refusal, and asio's tests that need OpenSSL fail rather than
   being left out.** A missing checkout is named
   (`git submodule update --init third_party/libs/openssl`), never skipped.
-  Source: `build.jam`, `doc/building.adoc` (asio, uncommitted).
+  Source: `build.jam`, `doc/building.adoc` (asio).
 - **The OpenSSL build copies the unchanged sources to a temporary directory
   before Configure, and caches its configuration fingerprint per property
   set.** Configure canonicalizes source symlinks, which would bring a checkout
   path with spaces into the Makefiles, and an uncached fingerprint built two
   archives for one configuration, two OpenSSL copies in one program.
   Source: `docs/superpowers/plans/2026-10-16-openssl-source-build.md`,
-  `docs/superpowers/plans/2026-10-16-cobalt-ssl.md` (superproject,
-  uncommitted).
+  `docs/superpowers/plans/2026-10-16-cobalt-ssl.md` (superproject).
 - **A dated curl export of Mozilla's root certificates (2026-09-25, 121 CAs)
   is checked in under `third_party/ca_certificates`, with a manifest of its
   URL, SHA-256 and DER fingerprints and its MPL-2.0 licence, verified and
   embedded as a generated header by `/webcpp/third_party//ca_certificates`,
-  and changed only by `tools/ca_certificates/update.py`.** It is a published
+  and changed only by `tools/ca_certificates/update.py`.** Its generated private
+  header is `<webcpp/asio/detail/ca_certificates.hpp>` and its namespace is
+  `webcpp::asio::detail::ca_certificates`, in build and installed consumers.
+  It is a published
   data artifact, not implementation code, so a snapshot rather than a
   submodule; builds need no network, and an update is a reviewed trust-policy
   change that lists removals beside additions.
   Source: `docs/superpowers/plans/2026-10-16-ca-certificates.md`,
-  `third_party/ca_certificates/README.md` (superproject, uncommitted).
+  `third_party/ca_certificates/README.md` (superproject).
 - **`/webcpp/asio//tls` and `make_tls_client_context()` return a
   `boost::system::result<ssl::context>` that verifies peers, requires TLS 1.2
   or newer and trusts the embedded roots, never the system's; the
@@ -6666,13 +6779,16 @@ The original proposal has not been amended and no CI ran.
   `unsupported_target`.** Replacing roots must remove public trust, not add to
   it, and the browser owns trust there; hostname verification and SNI stay the
   program's, per connection.
-  Source: `include/webcpp/asio/tls_client_context.hpp` (asio, uncommitted);
-  `docs/superpowers/plans/2026-10-16-ca-certificates.md` (superproject,
-  uncommitted).
+  Source: `include/webcpp/asio/tls_client_context.hpp` (asio);
+  `docs/superpowers/plans/2026-10-16-ca-certificates.md` (superproject).
 - **The TLS client context and its trust store allocate through OpenSSL, not
-  through an Asio allocator.** (reason not recorded)
+  through an Asio allocator.** OpenSSL's allocation hook is process-global and
+  must be selected before its first allocation. Installing it from a context
+  factory would mutate other users' policy and cannot honor independent
+  per-operation allocators. The factory therefore states the allocation boundary;
+  a future explicit process-wide crypto policy is separate work.
   Source: `docs/superpowers/plans/2026-10-16-ca-certificates.md`
-  (superproject, uncommitted).
+  (superproject).
 - **`/webcpp//boost_cobalt_io_ssl` compiles Cobalt's `io/ssl.cpp` as a library
   of its own with a checked patch (`tools/boost/cobalt-ssl`), and
   `/webcpp/asio//cobalt_ssl` adds it and `/webcpp/asio//tls` to
@@ -6681,23 +6797,23 @@ The original proposal has not been amended and no CI ran.
   handshake with `secure` false and then wrote plaintext, and its verification
   callback's constraint named `ssl::context` for `ssl::verify_context`; the
   patch fixes both and adds the borrowed `native_ssl_handle()` for SNI.
-  Source: `docs/superpowers/plans/2026-10-16-cobalt-ssl.md` (superproject,
-  uncommitted).
+  Source: `docs/superpowers/plans/2026-10-16-cobalt-ssl.md` (superproject).
 - **Cobalt's SSL stream allows plaintext only before the first TLS attempt: a
   failed or cancelled handshake and a completed shutdown block application
   I/O, and the wrapper keeps the handler's associations.** A failed handshake
   must never fall back to plaintext, and an unbound lambda in their place
   would lose cancellation.
-  Source: `docs/superpowers/plans/2026-10-16-cobalt-ssl.md` (superproject,
-  uncommitted).
+  Source: `docs/superpowers/plans/2026-10-16-cobalt-ssl.md` (superproject).
 - **Every Cobalt target, native and Emscripten included, uses the checked
   overlay `tools/boost/cobalt-common`, whose composition promise connects its
   cancellation source to the handler's slot.** Reproduced: a composed read's
   cancellation hung, because Boost 1.92's composition promise did not attach
   to the received handler's slot; the overlay pins the integration to Boost
-  1.92 until the patch is rebased and verified.
+  1.92 until the patch is rebased and verified. The overlay also supplies the
+  required main/thread promise exception hooks in no-exceptions builds;
+  thread coroutine runtime tests cover worker dispatch and join.
   Source: `docs/superpowers/plans/2026-10-16-cobalt-ssl-cancellation.md`
-  (superproject, uncommitted).
+  (superproject).
 - **TLS transfer cancellation is terminal: the connection is closed
   afterwards, with no promise of rollback or reuse, and the tests require a
   real `operation_aborted` from a Cobalt promise, one write per cancellable
@@ -6706,14 +6822,97 @@ The original proposal has not been amended and no CI ran.
   review reproduced, and an abort manufactured from coroutine state would
   prove nothing.
   Source: `docs/superpowers/plans/2026-10-16-cobalt-ssl-cancellation.md`
-  (superproject, uncommitted).
+  (superproject).
 - **The superproject's README names Crossbind's OpenSSL recipe as an
   engineering reference for WASIp3 builds.** Its source-based recipes and WASI
   ports help to bring low-level libraries to the web; webcpp still validates
   the toolchain, the entropy and the features itself.
-  Source: `README.md` (superproject, uncommitted).
+  Source: `README.md` (superproject).
 
-Its conflicts with chapters 1 to 13 are in chapter 19.
+Windows uses the checked `tools/boost/asio-windows` allocator overlay for
+IOCP worker and timer thread state; installed Boost remains untouched, and the
+same headers reach Cobalt sources and consumers.
+
+The `tls-integration` own lane drives real TLS, embedded trust, Cobalt state and
+cancellation fixtures on native and WASIp3 profiles. The native
+`openssl-upstream` lane opts into `webcpp-openssl-tests=on`, which runs the full
+upstream `alltests` suite against the exact archive configuration before linking
+the consumer. The `openssl-upstream-msvc-14.3` and
+`openssl-upstream-msvc-14.5` aliases select the matching Windows CI toolsets;
+real execution on the final Windows candidate remains a validation gate.
+OpenSSL's upstream harness is unavailable on WASIp3, and the integration
+witnesses do not claim to replace it. Native combined-provider
+coverage belongs to Trystero's `test/provider//provider-integration`, where its
+external secp256k1 dependency is provisioned. Final-candidate CI and remaining
+coverage limitations are tracked in chapter 19.
+
+### beast (Boost.Beast portability facade)
+
+The owner's expanded Beast genesis proposal in
+`libraries/beast/openspec/changes/genesis` governs this implementation. The
+library is the `webcpporg/beast` submodule at `libs/beast`. The proposal records
+source compatibility, explicit environment counterparts and unavailable
+facilities separately; a successful compile never proves runtime parity.
+
+- The existing `webcpp.beast.wasi` category and its enum values remain public
+  identities beside `webcpp.beast`. As with Asio's TLS category, preserving
+  error comparisons is a bounded compatibility departure from chapter 4;
+  it does not authorize renumbering or merging categories.
+- Portable HTTP messages, parsers and serializers reuse Boost.Beast 1.92.
+  `http.hpp` remains independent of a socket reactor. Byte-stream algorithms
+  are explicit `http/read.hpp` and `http/write.hpp` includes.
+- Native and WASIp3 guest sockets use webcpp::asio. Guest TLS is optional and
+  explicitly links the project's source-built OpenSSL through `//tls`.
+  `set_server_name` sets SNI only; peer verification and hostname validation
+  remain explicit. Native and WASIp3 stream internals retain upstream Beast's
+  allocation behavior, even when accepting the portable allocator constructor.
+- The browser backend uses JavaScript WebSocket and fetch. Its TCP-shaped
+  lowest layer records an authority rather than opening a raw socket, and its
+  TLS-shaped layer records intent rather than running guest OpenSSL. The
+  browser owns trust, handshake headers, framing, DNS and redirects.
+- Browser stream state, retained metadata and payloads use the stream allocator;
+  operation completions use their associated allocator and executor. The
+  intrusive Asio bridge registration avoids an independent lookup allocation.
+  Receive limits account for retained message records as well as payloads,
+  including browser arrivals before the application drains its executor.
+  Terminal registrations and queued events are scoped to one connection or
+  request generation, so cancellation and reuse cannot deliver stale results.
+- `browser::http_byte_stream` is an explicit synthetic HTTP/1.1 adapter for
+  algorithms that require bytes. Fetch has already decoded the body. Its
+  internal parser, fields and body use the stream resource; synthetic chunk
+  sizes use fixed storage because upstream's helper has no allocator hook.
+- The propagated B2 feature `webcpp-beast-unsupported=error|ignore` selects the
+  unsupported-setting policy, defaulting to error. Translation units with
+  different policies must fail to link. Ignoring a setting never enables an
+  unavailable transport or conceals an operational network failure.
+- WASI host HTTP is independent of guest sockets and OpenSSL. The `//wasi-http`
+  target uses webcpp::wasi's independent host bindings on P2/P3, preserving
+  full messages, trailers, cancellation and explicit host ownership. Supplied
+  stdin/stdout streams are meaningful counterparts for local-socket examples;
+  they do not supply Unix-domain addressing. Host HTTP does not provide a
+  WebSocket upgrade or a guest TCP listener.
+  Posted completions release their associated allocation before user code runs;
+  a per-operation PMR resource may be destroyed inside that callback. Supplied
+  HTTP reads respect the remaining DynamicBuffer maximum capacity and report
+  `http::error::buffer_overflow` when an incomplete parser exhausts it.
+- The immutable upstream application corpus contains all 53 executable
+  definitions at its pinned commit. Inventory checks validate original hashes,
+  Jamfiles, CMake definitions and entry points. All adaptations are generated
+  by checked-in generators and inspectable patches; never edit their output.
+  Preserve each application's algorithm where possible, and record every
+  scheduling, resolver, transport or error-handling adaptation explicitly.
+- Feature and application matrices in the guide keep compilation and execution
+  separate for every target, exception mode and supported threading profile.
+  Unavailable stackful Wasm coroutines, browser listeners and cooperative
+  WASIp3 exceptions remain unavailable, never counted as passes. WASIp2 guest
+  socket examples remain application-integration work in Beast; Asio now provides
+  that backend, so they are not a platform impossibility.
+- Native upstream programs are the oracle. Browser validation runs in real
+  Chrome with a disposable CA profile, independently of Node. WASI host HTTPS
+  uses a pinned Wasmtime host fixture with normal trust and hostname checks;
+  guest TLS evidence cannot substitute for it. Positive and negative trust
+  controls accompany TLS application evidence. Documentation follows Diataxis
+  in AsciiDoc with MrDocs API reference and executable examples.
 
 ## 16. Roadmap
 
@@ -6736,17 +6935,15 @@ What webcpp does not have yet, and the chapters that mention it:
   library of a kind, wrapped outside libraries, and fixed-width types
   (chapter 4); the lint then checks the last (no plain `int`, `long`,
   `short` or `unsigned` in a public header where no interface asks for it).
-- **Asynchronous libraries on xactor with Boost.Asio and Boost.Cobalt.** An
-  example library shows how a library built on xactor's scheduler meets
-  Boost.Asio and Boost.Cobalt, so that asynchronous libraries are easy to
-  write and are all driven from the browser's event loop (chapter 4); its
-  design is still to be done.
-- **webcpp::asio, webcpp::beast, webcpp::webrtc, webcpp::crypto.** Boost.Asio
-  and Boost.Beast natively, and their interfaces over the browser's event
-  loop, `WebSocket` and `fetch` on emscripten; WebRTC peer connections and
-  data channels on both; authenticated encryption and randomness in C++ on
-  every target. trystero then holds only its protocol. Their specifications
-  are in review.
+- **Trystero on Asio and Beast.** Asio's executor integration and Beast's
+  native/WASI/browser adapters are implemented for 0.1.0 in preparation. The
+  owner reiterated on 2026-11-03 that they are foundations for Trystero's later
+  migration. Their coexistence is required; dependency provenance must not be
+  addressed by prohibiting a combined program. Actor-based libraries use
+  xactor's scheduler through an application-owned loop.
+- **webcpp::webrtc and webcpp::crypto.** WebRTC peer connections and data
+  channels, and authenticated encryption/randomness, remain separate proposals.
+  Trystero can then retain its protocol over those shared facilities.
 - **The libraries web developers use most,** brought to C++: a JavaScript
   interpreter (QuickJS), libp2p, HTTP fetch.
 - **The site, increments 2 to 8.** Increment 1 is done: the site's
@@ -6771,12 +6968,11 @@ What webcpp does not have yet, and the chapters that mention it:
 - **Documentation for web developers and for AI developers,** beside the
   documentation for C++ developers every library has today, and webcpp's
   integrations with the AIs.
-- **External libraries built from `third_party/`.** trystero needs
-  libsecp256k1, libdatachannel and OpenSSL, which webcpp does not build: a
-  machine installs them by hand and the CI's actions build them, each found
-  where a variable names it, else in `.local/` (`AGENTS.md` chapters 1 and 4),
-  until webcpp builds them from `third_party/`, each pinned there by a commit
-  or a SHA-256.
+- **External libraries built from `third_party/`.** Only trystero's
+  libsecp256k1 remains externally provisioned. OpenSSL and native libdatachannel,
+  including its required nested dependencies, now build from pinned sources
+  against one OpenSSL provider. Moving secp256k1 into `third_party/` remains
+  future work; this closure does not implement crypto or WebRTC.
 - **Every library on `<webcpp/config.hpp>`.** Each library's `config.hpp`
   includes it first: trystero (held with config's publication), and wasi with
   its redesign, which brings Boost into it.
@@ -6821,6 +7017,16 @@ integrated into `main`) and asio's Task 2 (`webcpp::test::exit_status`), and
 on the owner's gates G1 and G2 (the repository and its submodule), O2 (the
 CI's nightly level), O3 (NIST's archives), O5 (the departures C14, C16 and
 C17, and `brew install botan`) and G4 (every push).
+
+**Provider amendment, 2026-11-03.** The owner's explicit source-build request
+supersedes this accepted design's old OpenSSL provisioning and default-link
+choices (D15 and reference sections 3.3/4.4). Future crypto uses the shared
+pinned `/webcpp/third_party//openssl` provider, whose current support is native
+and WASIp3, static, with chapter 5 rule 7's exact-archive boundary. Statements
+below about finding a machine OpenSSL, refusing all WebAssembly or defaulting
+to shared linkage record the older design, not current provider requirements.
+Botan's provisioning, future algorithms, APIs and explicit allocator policy
+are unchanged. No crypto implementation or new backend coverage is claimed.
 
 **Scope.**
 
@@ -8061,93 +8267,6 @@ The proposals not yet decided, each briefly, with the questions they leave
 for the owner. A draft decides nothing: it is here so that a contributor sees
 what is coming, and its proposal holds it in full.
 
-### beast (draft, not decided)
-
-webcpp::beast would be a header-only C++20 wrapper over Boost.Beast and
-webcpp::asio, for native and Emscripten only: Boost.Beast itself natively, and
-in the browser the same names and layered code driving `WebSocket`
-(increment 1) and `fetch` (increment 2). What exists is the draft
-specification of 2026-10-10 (`reference/spec.md`) with four decisions of the
-owner of that day; there is no plan and no reference code, and both are
-required before the proposal can be accepted.
-
-- **webcpp::beast is a library of its own on webcpp::asio, not a part of it:
-  the WebSocket client first, then the HTTP client in the browser.** Beast is
-  a library on Asio, so webcpp::beast is a library on webcpp::asio (the
-  owner's decision 1 of 2026-10-10).
-  Source: `libraries/beast/openspec/changes/genesis/design.md` D1 (proposals).
-- **Natively it is Boost.Beast (aliases of Beast's types, and a
-  `websocket::stream` derived from Beast's that adds an allocator
-  constructor); the browser classes exist only on Emscripten; every name that
-  touches no network is Beast's own on both targets.** Natively there is no
-  cost and no difference: Beast's own types, one derived class and two
-  functions; the derived stream gives the two targets one constructor set.
-  Source: `libraries/beast/openspec/changes/genesis/design.md` D2 (proposals).
-- **What the browser cannot honour fails as a value,
-  `boost::asio::error::operation_not_supported` at the operation that depends
-  on it, under the default `WEBCPP_BEAST_UNSUPPORTED_ERROR`;
-  `WEBCPP_BEAST_UNSUPPORTED_IGNORE` ignores it; every setting is classified
-  honoured, unsupported, or ignored with its reason.** Silent divergence was
-  rejected: a program that asks for a client certificate or a ping must learn
-  so (the owner's decision 2).
-  Source: `libraries/beast/openspec/changes/genesis/design.md` D3 (proposals).
-- **On Emscripten the resolver is webcpp::asio's: it completes with one entry
-  that carries the host and the service and an unspecified endpoint, which
-  only webcpp::beast's browser streams accept.** A resolver of webcpp::beast's
-  own, with webcpp::asio's failing like its sockets, was rejected: every Beast
-  client would change a line (the owner's decision 4).
-  Source: `libraries/beast/openspec/changes/genesis/design.md` D4 (proposals).
-- **The layers record and the last one opens: `async_connect` records the host
-  and service, the TLS handshake judges the recorded settings, and
-  `async_handshake(host, target)` calls `new WebSocket(url, subprotocols)`.**
-  It is the only way to keep Beast's code shape, because the browser has one
-  call that does resolution, connection, TLS and the upgrade together.
-  Source: `libraries/beast/openspec/changes/genesis/design.md` D5 (proposals).
-- **Back-pressure is the library's: a bound on `bufferedAmount` (default 4
-  MiB) fails a write with `error::send_limit`, and a bounded receive queue in
-  the stream's allocator closes the stream past its bound, the next read
-  completing with `error::receive_limit`.** The browser's `send` never blocks
-  and messages arrive whether a read is pending or not, and the goal is
-  bounded memory in the browser; `WebSocketStream`, which would pause
-  receiving, exists in Chromium only and doubles the surface, so it is a later
-  increment.
-  Source: `libraries/beast/openspec/changes/genesis/design.md` D7 (proposals).
-- **The HTTP client reuses Beast's algorithms by making the browser
-  `tcp_stream` a byte stream: the bytes Beast's serializer writes are parsed
-  back, sent as one `fetch` per whole request, and the response is serialized
-  into the bytes the reads yield.** webcpp::beast then overloads no HTTP
-  algorithm; the cost is one parse and one serialization per message, for
-  Beast's code unchanged.
-  Source: `libraries/beast/openspec/changes/genesis/design.md` D8 (proposals).
-- **The unsupported setting is read once, in `<webcpp/beast/config.hpp>`, both
-  macros defined is an `#error`, a propagated b2 feature
-  `webcpp-beast-unsupported` sets it for a whole program, and the browser
-  classes live in an inline namespace named after the setting.** The two
-  macros change inline code, so translation units that disagree would break
-  the one definition rule; in the inline namespace they name different types
-  and fail at link, never silently.
-  Source: `libraries/beast/openspec/changes/genesis/reference/spec.md` section
-  7 (proposals).
-
-**Open questions for the owner.**
-
-- O1, the header layout: the public headers and the convenience header, and
-  whether `<webcpp/beast.hpp>` leaves `ssl` out natively, as webcpp::asio's
-  convenience header does because it brings OpenSSL.
-- O2, the default bound of the receive queue (the send bound is 4 MiB) and the
-  names of the two options, to measure and decide in the plan.
-- O3, how the decorator is called on an empty `websocket::request_type`:
-  whether any field other than `User-Agent` can be told apart by name alone,
-  or every field but the subprotocols is unsupported, as the specification
-  says (to confirm with a test).
-- O4, streaming request bodies: the specification buffers a body whole before
-  the `fetch`; a streaming upload (Chromium only) belongs to a later change.
-- O5, the proposal to Boost, made when both webcpp::asio and webcpp::beast
-  have run in real programs, trystero first.
-
-Source: `libraries/beast/openspec/changes/genesis/design.md` Open Questions
-(proposals).
-
 ### webrtc (draft, not decided)
 
 webcpp::webrtc would be a header-only C++20 library of webcpp's own
@@ -8561,158 +8680,57 @@ Source: `libraries/trystero/openspec/changes/bounded-json-parse/design.md`
 
 ## 19. Conflicts and open questions
 
-What this chapter lists breaks a rule of chapters 1 to 13, or makes a design
-document disagree with the tree it describes. Each was found on 2026-10-26,
-when this file was written, by reading the superproject at `ddb6cb2`, each
-library at the commit 0.1.0 pins, asio at its local branch and the open
-proposals; each names where it is. None is resolved here. A conflict of a
-proposal is the owner's to decide, in that proposal; a library that does not
-keep a rule is brought to it, or the rule records an exemption with its
-reason; a text that is wrong is corrected by a change of its own. The change
-that resolves an entry removes it from this chapter.
+This chapter records unresolved rule conflicts, design discrepancies and
+validation gates. The original inventory was read on 2026-10-26 at superproject
+`ddb6cb2` and the then-current library/proposal snapshots. The Asio/Beast portion
+was reconciled against the owner's 2026-11-03 decisions and current code;
+unrelated entries below retain their dated scope. A recommendation in an audit
+is not an approval. Fixed discrepancies leave the active inventory; a bounded
+compatibility departure belongs with its rationale in chapter 15.
 
-### asio and the work beyond its proposal
+### Asio/Beast closure: remaining gates and limits
 
-asio's proposal (chapter 15) and the local work of 2026-10-15 and 2026-10-16
-beyond it break these rules, each approved by the owner or not as it says.
-Paths are asio's or the superproject branch's, as chapter 15's entry gives
-them.
+Chapter 15 now records the implemented configuration, allocator and private-header
+corrections, native/Emscripten/WASIp2/P3 target contract, default turn limit 100,
+Diataxis guide, source-built OpenSSL, checked Boost overlays and recurring thread
+and TLS lanes. Chapter 4's executor contract and compiled-unit exceptions and
+chapter 6's SDK-limited exception profiles reflect the existing approvals.
+Public `webcpp.asio.tls` and `webcpp.beast.wasi` identities remain compatible.
+The proposed resolver eager-evaluation workaround, category renumbering,
+Asio/Beast/Trystero combination ban and new OpenSSL canary requirement were not
+adopted. Chapter 5 rule 7's existing exact-archive exception stays in force.
 
-The remaining entries preserve the 2026-10-26 audit and its proposal references.
-The source snapshots it called "uncommitted" were committed as Asio `6a7f3fe`
-and superproject `c07c212`, then integrated locally on 2026-11-02. Statements
-about what was absent from main describe that audit date; they do not imply
-that the current implementation is unpublished. This integration resolves the
-entries explicitly removed from this list, but does not complete proposal
-tasks 22/23 or approve the remaining conformance departures.
+- **Final candidate and main CI.** Root `55a72c0` / baseline CI 41597577370
+  predates closure edits. Local passes and lane registration do not prove the
+  final candidate or Asio's first library-main CI. The whole-branch review,
+  proposal gates and integration sequence remain explicit in
+  `docs/superpowers/plans/2026-11-03-asio-beast-closure.md`. Keep 0.1.0 in
+  preparation until a separately authorized release.
+- **Upstream dependency test coverage.** Native `openssl-upstream` runs
+  upstream's full suite when `webcpp-openssl-tests=on`. WASIp3 cannot execute
+  that upstream harness; real TLS/entropy integration is narrower evidence.
+  This is an explicit remaining limit against chapter 5 rule 11, not a claim
+  that the rule has been satisfied on WASI or an approved general exemption.
+  Libdatachannel's source recipe currently disables its upstream tests;
+  OpenSSL and combined-consumer witnesses do not prove that C++ library's own
+  suite or every nested C dependency's suite. Keep that distinction in closure
+  and CI reports without broadening this change to unrelated library work.
+- **Upstream overlay follow-up.** Checked input/output hashes, version refusal
+  and runtime witnesses bound the Asio/Cobalt corrections. They do not prove
+  that every patch has an upstream issue or has been accepted there. Preserve
+  existing issue references and verify provenance when rebasing; do not invent
+  an upstream acceptance claim. Cobalt's pending-task no-exceptions limitation
+  remains the separately documented warning for issue 287.
+- **Historical subjects.** Earlier commits use conventional subjects rather
+  than chapter 2's part convention. Retain history; the current work follows
+  the convention for new commits. This observation does not justify rewriting
+  already published commits or changing the general rule.
 
-- **Asynchronous code on xactor.** Chapter 4: "A library that ports anything
-  asynchronous runs it as actors on xactor"; chapter 4 and the roadmap
-  (chapter 16) leave the meeting with Boost.Asio and Cobalt to be designed.
-  asio makes Boost.Asio's own `io_context`, suspended into the page, the event
-  loop, and xactor a user (its `asio_driver`), not a dependency
-  (`genesis/proposal.md`, Impact). Approved: the owner's decision 4 of
-  2026-10-10 limits xactor's scheduler to "where a library has actors"
-  (`genesis/reference/spec.md`, section 2), accepted with the spec on
-  2026-10-11; the amendment of chapter 4's item is planned in
-  `genesis/reference/plan.md`, task 22, not made. Chapter 16 still calls
-  asio's specification "in review".
-- **Header-only.** Chapter 4: "C++20, header-only." asio compiles
-  `src/browser_src.cpp`, an object every Emscripten program links, and
-  `src/cobalt_main.cpp`, the static library `cobalt-main` of every Cobalt
-  program. Approved: the spec's requirement "Header-only library in its
-  namespace" names both units (`genesis/specs/asio/spec.md`), accepted
-  2026-10-11.
-- **`config.hpp` on `<webcpp/config.hpp>`.** Chapter 3: "which includes
-  `<webcpp/config.hpp>` first"; chapters 10, 6 and 16 add config's
-  b2 target, `WEBCPP_NO_EXCEPTIONS` and the test `config_all_off`. asio's
-  `config.hpp` includes `<boost/config.hpp>` alone, ignores
-  `WEBCPP_NO_EXCEPTIONS`, builds its test twice, and `build.jam` names no
-  `/webcpp/config//config`. Not approved: the spec's requirement
-  "Configuration header" omits it, and the rule's commit `a369f7a` is of
-  2026-10-11, the day the plan was approved.
-- **`config.hpp` first.** Chapter 3: "which every public header includes
-  first". `browser/async_await.hpp`, `browser/async_wait_event.hpp` and
-  `browser/error.hpp` (asio) and `tls_client_context.hpp` (asio, uncommitted)
-  include Boost and standard headers before it. Not approved; asio's own spec
-  requires it first.
-- **The changelog.** Chapter 10: "`doc/changelog.adoc` (its changelog, the
-  page's last appendix". asio has no `doc/changelog.adoc`, and its spec's list
-  of repository files omits it. Not approved.
-- **The error category.** Chapter 4: "an error category of the
-  library's own (`webcpp.<name>`)". `tls_client_context.hpp` (asio,
-  uncommitted) defines a second category, `webcpp.asio.tls`, values 1 to 3,
-  beside `webcpp.asio`. Not approved: the CA plan names no category.
-- **Namespaces and headers.** Chapter 3: namespace "`webcpp::<name>`",
-  headers "`<webcpp/<name>/...>`". The generated
-  `<webcpp_ca_certificates.hpp>` declares `webcpp::detail::ca_certificates`,
-  outside any library's namespace (`tools/ca_certificates/generate.py`,
-  superproject, uncommitted). Not approved.
-- **Allocation, the runtime's own.** Chapter 4: "routes every
-  allocation through an allocator its user gives", and a test "proves that
-  none goes elsewhere". asio names three allocations it cannot route:
-  Emscripten's `select` poll array, Asyncify's unwind data,
-  `basic_resolver_results`' entries (`doc/allocation.adoc`). Approved with the
-  spec (requirement "The counters see an unbound handler and the runtime's own
-  allocations are named"), 2026-10-11.
-- **Allocation, the resolver's names.** The same rule. The Emscripten
-  resolver's asynchronous form copies the host and service names with the
-  standard allocator, not the handler's (`doc/allocation.adoc`, commit
-  `557d452`). Not approved: the spec names only the result entries.
-- **Allocation, OpenSSL.** The same rule. The TLS client context and its
-  trust store allocate through OpenSSL (`tls_client_context.hpp`, asio,
-  uncommitted), and webcpp::crypto's accepted D16 offers a memory resource for
-  OpenSSL that asio does not use. Approved locally: "OpenSSL owns its
-  allocations" is in the CA plan's contract
-  (`docs/superpowers/plans/2026-10-16-ca-certificates.md`); not in main.
-- **Allocation, unproven on WASIp3.** Chapter 4: a test "proves that
-  none goes elsewhere". `allocation_test` runs natively and on Emscripten
-  only, and `doc/capabilities.adoc` (asio, uncommitted) marks WASIp3's
-  counters "unverified". Not approved.
-- **Exceptions, WASIp3 cooperative.** Chapter 6: "Every target builds with
-  exceptions on." `threading=multi` on WASIp3 refuses `exception-handling=on`
-  (`tools/webcpp-wasi.jam`), for asio, Cobalt, OpenSSL and TLS alike. Approved
-  locally: the WASIp3 spec makes exceptions "subject to the runtimes actually
-  supplied by the SDK"; not in main.
-- **A WASI target.** `AGENTS.md` chapter 4 (xactor's Jamfile): "Boost.Asio
-  1.92 does not compile for wasm32-wasip2 or wasm32-wasip3"; `AGENTS.md`
-  chapter 1: `xactor_asio` native only. asio's own D16 and spec ("MUST NOT
-  declare wasm32-wasip2 or wasm32-wasip3") agree, yet `test/Jamfile`,
-  `example/Jamfile` and `example/tls/Jamfile` (asio, uncommitted) declare
-  `wasip3` over patched Asio headers. Approved locally: "The owner approved
-  implementation, local tests, and an AsciiDoc feature matrix"
-  (`docs/superpowers/specs/2026-10-15-asio-wasip3.md`); no proposal amends
-  D16.
-- **The WASI runtime and launcher.** `AGENTS.md` chapter 1: "wasi-sdk 34 and
-  wasmtime 47 (47.0.3 measured)"; `AGENTS.md` chapter 4: a WASI lane "adds
-  `testing.launcher=wasmtime`". The WASIp3 tests need Wasmtime 49.0.3 and
-  `testing.launcher=tools/boost/asio-wasip3/run.sh`, which grants network
-  access. Not approved beyond the plan's record of the tested configuration.
-- **Tests run on every declared target.** Chapter 8: "Every test runs on every
-  target its Jamfile declares." `cobalt_thread` and `wasi_core_threads` (asio,
-  uncommitted) are explicit, in no lane, so only a request by name runs them.
-  Not approved.
-- **Boost from Boost's own sources.** `AGENTS.md` chapter 1: "built from
-  Boost's own sources, for every target". Asio's headers on WASIp3 and Cobalt
-  on every target compile from patched private copies
-  (`tools/boost/asio-wasip3`, `cobalt-common`, `cobalt-wasip3`, `cobalt-ssl`,
-  superproject, uncommitted). Approved locally by the WASIp3 spec, the Cobalt
-  SSL plan and the cancellation plan's ruling; not in main.
-- **OpenSSL found, not built.** Chapter 5: "found by
-  `webcpp.external`, linked shared or static by a propagated feature, refused
-  on WebAssembly". OpenSSL 3.5.9 is built from source, static only, natively
-  and for WASIp3 (`tools/webcpp-openssl.jam`; `build.jam`, asio, uncommitted),
-  which also supersedes departure 4 and contradicts webcpp::crypto's accepted
-  D15 ("OpenSSL and Botan are found, not built", native only). Approved
-  locally: the OpenSSL plan's "Approved scope and design" and the rewritten
-  rule 7 of the uncommitted `AGENTS.md`; departure 4 and crypto's D15 are not
-  amended.
-- **A C library built file by file, on every target.** Chapter 5:
-  "builds it from its own sources, file by file" and "on every target and with
-  every file". Upstream Configure and Make compile OpenSSL; WASIp2, Emscripten
-  and MSVC are refused. Approved locally: the uncommitted rule 7 calls it "a
-  deliberate exception to spelling out its source list in B2".
-- **The link-time canary.** Chapter 5: "every function that calls the
-  C library references a canary". OpenSSL has none; B2 ordering and exact
-  archive paths stand in (uncommitted `AGENTS.md`, rule 7). Approved only by
-  that uncommitted text.
-- **The C library's own tests.** Chapter 5: "the C library's own tests
-  pass on webcpp's build". OpenSSL is configured `no-tests`, and its suite is
-  not run (`docs/superpowers/plans/2026-10-16-openssl-source-build.md`,
-  "Explicit limits"). Not approved.
-- **One copy per program.** Chapter 5: "webcpp's build of a C library
-  is never linked together with another copy of it." asio links the
-  source-built OpenSSL while trystero's native backend links the system's
-  through `webcpp.external` (`libs/trystero/build.jam`, line 38, main), so a
-  program on both carries two copies, which asio's `doc/building.adoc`
-  (uncommitted) forbids without a remedy. Not approved; unresolved.
-
-Open for the owner: whether asynchronous code is built on Boost.Asio's model
-rather than on xactor (chapter 4's item, which asio's task 22 is to amend);
-whether a proposal is written for the WASIp3 port, OpenSSL built from source
-and the CA bundle, which no proposal holds, and whether it amends asio's D15,
-D16 and departure 4, crypto's D15, and chapter 5's rules 1, 2, 6, 7, 10 and
-11; and how a program that uses asio and trystero together holds one OpenSSL.
+The global WASIp2/P3 launchers grant network/name lookup and default to 600 seconds
+for tests; it establishes no production capability policy. Native Trystero
+requires multiple threads and uses the same source-built OpenSSL through pinned
+libdatachannel. Its later migration onto Asio/Beast remains roadmap work, and
+coexistence is required now.
 
 ### The libraries against the rules
 
@@ -8740,19 +8758,18 @@ it says.
 - **What a library builds on (chapter 4).** document hashes with an FNV-1a of
   its own rather than Boost.Hash2's; lexical has a UTF-8 decoder of its own in
   `detail`, the third in webcpp.
-- **Asynchronous code on xactor (chapter 4).** trystero runs on Asio's
-  executors, which its genesis ruling 6 defers; document's
-  `<webcpp/document/asio.hpp>` is on Asio, not xactor; xactor itself declares
-  no Emscripten target (`test/Jamfile:11`), with no reason recorded, although
-  chapter 4 has asynchronous code run in a browser from the page's event
-  loop. asio's entry above holds the decision these wait on.
+- **xactor's browser target.** xactor still declares no Emscripten target
+  (`test/Jamfile:11`), with no reason recorded. Executor-based Trystero and
+  document adapters are no longer conflicts merely because they use Asio:
+  chapter 4 now distinguishes executors from libraries that contain actors.
 - **Errors as values (chapter 4).** lexical has no error category of its own.
 - **Text (chapter 4).** lexical passes text as `boost::core::string_view`,
   where the rule asks for `std::string_view`.
-- **Bringing a C library (chapter 5).** trystero's libsecp256k1 and
-  libdatachannel are not submodules under `third_party/libs/`, and have no
-  `HAS` define and no canary (`build.jam:31-38`); the roadmap's external
-  libraries built from `third_party/` covers it.
+- **Bringing a C library (chapter 5).** trystero's libsecp256k1 remains
+  externally provisioned, without the source-target `HAS`/canary contract;
+  the roadmap retains that migration. Libdatachannel is now a pinned C++
+  source target with nested dependencies; its remaining upstream-test limit
+  is recorded above, not confused with the external secp256k1 case.
 - **Exceptions (chapter 6).** lexical's throwing IRI functions
   (`uri.hpp:281-325`) and document's throwing conveniences are not behind
   their library's `NO_EXCEPTIONS` macro; xstate's `machine.hpp:1213,1233`
@@ -8888,20 +8905,12 @@ says what the tree does.
   shorthand, `C/`, for Trystero's source files. The draft bounded parse
   (chapter 18) claims guarantee 9, which 9 to 11 now hold, rebases on
   `160f431`, and says "about sixty times" where its own figures give 87.
-- **asio.** The proposal's design, specification and impact give the default
-  turn limit as 1000; the tree's is 100 (`24c1e2c`). They cite library and
-  superproject commits (`7cfd449`, `df52767`) that the re-import replaced
-  (tip `f5fd7a8`), and `STATUS.md` a superproject commit (`063343d`) behind
-  the branch (`d159022`). Its open questions on task 9's re-review, the
-  Chrome measurement and Cobalt's stack are answered. D16 and the
-  specification have no WASI target; the uncommitted Jamfiles declare
-  `wasip3`. D15 and departure 4 link the system's shared OpenSSL; the
-  uncommitted `build.jam` links one built from source, statically. Three
-  headers do not include `config.hpp` first; `doc/allocation.adoc` names
-  allocations beyond the specification's three; four examples are
-  Emscripten-only, against the specification, and the TLS examples have no
-  page variants; the lanes `cobalt`, `cobalt_asyncify` and `cobalt_wasip3`
-  are added; on WASIp3 Cobalt's `co_main` drops SIGINT and SIGTERM.
+- **asio.** The 2026-11-03 amendment reconciles default turn limit 100,
+  supported targets, source-built TLS, private configuration/allocation fixes
+  and guide order. Proposal source snapshots must name the final committed
+  library/root trees, and archive/status gates must wait for their actual
+  integration and CI evidence. Historical snapshot commits remain provenance,
+  never substitutes for validation of the current candidate.
 - **The site.** The site's specification names `.htmlvalidate*.json`, which
   the site's `d113e38` renamed, and that commit broke the wrapping of
   `site/Jamfile`'s comments. The proposal of increments 4 and 5 (chapter 17)
