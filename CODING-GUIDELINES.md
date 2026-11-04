@@ -6655,11 +6655,13 @@ The closure record distinguishes the baseline CI from validation of later change
   exception runtime.
   Source: `docs/superpowers/specs/2026-10-15-asio-wasip3.md`,
   `tools/webcpp-wasi.jam` (superproject).
-- **The WASIp3 tests use the project-pinned Wasmtime 50.0.1 through the launcher
-  `tools/boost/asio-wasip3/run.sh`, which grants network and name lookup and
-  defaults to 600 s per process.** This launcher is used by the global WASIp3
-  lanes, including non-network workloads. `WEBCPP_WASIP3_TEST_TIMEOUT` can
-  select another positive finite bound. Wasmtime 47.0.3 cannot load the
+- **The WASIp2/P3 tests use the project-pinned Wasmtime 50.0.1 through the
+  corresponding `tools/boost/asio-wasip2/run.sh` or `asio-wasip3/run.sh`
+  launcher, which grants network and name lookup and defaults to 600 s per
+  process.** These launchers serve the global lanes, including large finite
+  parsing workloads that exceed a focused networking test's 60 s budget.
+  `WEBCPP_WASIP2_TEST_TIMEOUT` and `WEBCPP_WASIP3_TEST_TIMEOUT` can select another
+  positive finite bound for their target. Wasmtime 47.0.3 cannot load the
   cooperative component. These grants and limits are test-harness settings;
   they neither configure production capabilities nor enforce network isolation.
   Source: `tools/boost/asio-wasip3/README.md` (superproject).
@@ -8709,7 +8711,7 @@ adopted. Chapter 5 rule 7's existing exact-archive exception stays in force.
   the convention for new commits. This observation does not justify rewriting
   already published commits or changing the general rule.
 
-The global WASIp3 launcher grants network/name lookup and defaults to 600 seconds
+The global WASIp2/P3 launchers grant network/name lookup and default to 600 seconds
 for tests; it establishes no production capability policy. Native Trystero
 requires multiple threads and uses the same source-built OpenSSL through pinned
 libdatachannel. Its later migration onto Asio/Beast remains roadmap work, and

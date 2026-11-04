@@ -1262,11 +1262,12 @@ scratch, and records what it built and ran:
 b2 -a --dump-tests --out-xml=<lane>.xml toolset=<toolset> libs/<library>/test libs/<library>/example
 ```
 
-A wasip2 lane adds `testing.launcher=wasmtime`; a wasip3 lane adds
-`testing.launcher=tools/boost/asio-wasip3/run.sh`. The latter is the global
-WASIp3 test launcher: it grants inherited network and IP name lookup, enables
-component async/threading support, and defaults to 600 seconds per process.
-`WEBCPP_WASIP3_TEST_TIMEOUT` overrides that finite bound with a positive integer.
+A wasip2 lane adds `testing.launcher=tools/boost/asio-wasip2/run.sh`; a wasip3
+lane adds `testing.launcher=tools/boost/asio-wasip3/run.sh`. Both global test
+launchers grant inherited network and IP name lookup and default to 600 seconds
+per process, including the large finite parsing workloads. WASIp3 also enables
+component async/threading support. `WEBCPP_WASIP2_TEST_TIMEOUT` and
+`WEBCPP_WASIP3_TEST_TIMEOUT` override their finite bounds with positive integers.
 These are test-harness settings, not production permissions or a guarantee that
 tests never contact an external host. Both launchers apply to every toolset of
 one b2 request, so a lane is always one toolset. An
