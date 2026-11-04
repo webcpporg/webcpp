@@ -269,7 +269,11 @@ def build_source(args: argparse.Namespace, output: Path, pin: dict, scratch: Pat
     if args.headers_only:
         run([*make, *jobs, 'build_generated'], cwd=build, env=env,
             log=output / 'headers.log')
-        copy_headers(scratch / 'source', build, output / 'include/openssl', windows)
+        headers = copy_headers(scratch / 'source', build, output / 'include/openssl', windows)
+        # This is B2's header-producing action. Even unchanged headers must
+        # become newer than its prerequisites, without disturbing mapped bytes.
+        for header in headers:
+            header.touch()
         print(f'OpenSSL {pin["version"]}: {args.platform}/{args.threading} headers generated '
               f'in {time.monotonic() - started:.1f}s', flush=True)
         return
@@ -302,9 +306,11 @@ def build_source(args: argparse.Namespace, output: Path, pin: dict, scratch: Pat
             shutil.copyfile(symbols, output / symbols.name)
     else:
         run([*make, 'install_dev'], cwd=build, env=env, log=output / 'install.log')
-    # Copy headers before archives: consumers cannot compile against a
-    # different configuration while the new archives are being produced.
-    shutil.copytree(install / 'include', output / 'include', dirs_exist_ok=True)
+    # Headers were already prepared with this configuration. Keep identical
+    # files untouched: consumers can be compiling with them during this action.
+    # Publish any changed headers atomically before making archives available.
+    shutil.copytree(install / 'include', output / 'include', dirs_exist_ok=True,
+                    copy_function=publish_header)
     names = ('libssl.lib', 'libcrypto.lib') if windows else ('libssl.a', 'libcrypto.a')
     for name in names:
         staged = output / (name + '.new')
@@ -323,15 +329,37 @@ def build_source(args: argparse.Namespace, output: Path, pin: dict, scratch: Pat
           f'in {record["seconds"]:.1f}s', flush=True)
 
 
-def copy_headers(source: Path, build: Path, output: Path, windows: bool) -> None:
+def copy_headers(source: Path, build: Path, output: Path, windows: bool) -> list[Path]:
     """Publish the public headers in upstream install_dev's source/generated order."""
     output.mkdir(parents=True, exist_ok=True)
+    headers = {}
     for directory in (source / 'include/openssl', build / 'include/openssl'):
         for header in directory.glob('*.h'):
             if not header.name.startswith('__DECC_'):
-                shutil.copyfile(header, output / header.name)
+                headers[header.name] = header
     if windows:
-        shutil.copyfile(source / 'ms/applink.c', output / 'applink.c')
+        headers['applink.c'] = source / 'ms/applink.c'
+    for name, header in headers.items():
+        publish_header(header, output / name)
+    return [output / name for name in headers]
+
+
+def publish_header(source: str | Path, destination: str | Path) -> str:
+    """Replace changed headers without truncating files a compiler may have mapped."""
+    source, destination = Path(source), Path(destination)
+    if destination.is_file() and source.read_bytes() == destination.read_bytes():
+        return str(destination)
+    with tempfile.NamedTemporaryFile(prefix=f'.{destination.name}.',
+                                     dir=destination.parent, delete=False) as stream:
+        staged = Path(stream.name)
+    try:
+        # Retain source permissions, but give changed build outputs a fresh
+        # timestamp rather than the checkout's potentially older timestamp.
+        shutil.copy(source, staged)
+        staged.replace(destination)
+    finally:
+        staged.unlink(missing_ok=True)
+    return str(destination)
 
 
 if __name__ == '__main__':

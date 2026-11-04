@@ -627,6 +627,12 @@ with the same source verification, compiler properties and configuration as the
 archive action. Header preparation neither builds archives nor runs the upstream
 suite and publishes no build or test proof. Full consumers depend on those headers
 and still require the complete archive action, including `alltests` when requested.
+The archive action leaves identical headers untouched and replaces changed files
+atomically before publishing archives. A compiler may already have mapped a header
+from the preparation action; truncating that file during the archive action can
+invalidate the mapping and crash the compiler. After successful header preparation,
+that action refreshes its output timestamps without rewriting identical bytes, so
+B2 can record that changed prerequisites have been processed.
 The compilation database reuses each dry-run result for dependency discovery rather
 than repeating the same full build-graph traversal.
 
