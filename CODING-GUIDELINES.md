@@ -5485,6 +5485,21 @@ which includes the change `shared-connection` (trystero `2e2dcd4`, webcpp
   any room frame, on libdatachannel's thread, before it is posted.** Neither
   can be a frame.
   Source: `doc/native.adoc` (libs/trystero).
+- **Valid native frames received before the message handler is installed wait
+  in a FIFO bounded by 64 frames and 10 seconds.** These are the original
+  Trystero peer's pending-data bounds. Overflow or expiry closes the channel;
+  a close releases the retained frames. Installing a handler schedules delivery
+  on the executor, preserving order with later arrivals and rechecking the
+  current handler and channel after each callback. It never calls a message
+  handler synchronously from `set_handlers`, where adoption may still be
+  initializing the shared connection. Queued frames use the supplied resource.
+  Source: `doc/native.adoc` (libs/trystero).
+- **A channel that closes during adoption before a room binds clears that
+  room's negotiation and restarts its announcements.** No binding exists for
+  the later connection-end callback to remove. Keeping the negotiation marked
+  connected would prevent the room from ever reconnecting.
+  Source: `include/webcpp/trystero/room.hpp` and `test/shared_test.cpp`
+  (libs/trystero).
 - **The native timer numbers its waits, so that a wait cancelled, restarted or
   destroyed never fires.** Asio may already have queued its expiry as a
   success.
