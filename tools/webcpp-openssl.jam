@@ -66,22 +66,21 @@ class openssl-target : basic-target
         local relevant = [ toolset.relevant webcpp-openssl.build ] ;
         properties = [ $(properties).add $(relevant) ] ;
         local fingerprint = [ modules.call-in webcpp-openssl : fingerprint $(properties) ] ;
-        local action = [ new action $(source-targets) : webcpp-openssl.build : $(properties) ] ;
-        local extension = a ;
-        if $(os) = windows { extension = lib ; }
-        local ssl = [ new file-target libssl.$(extension) exact : STATIC_LIB : $(self.project) : $(action) ] ;
-        local directory = [ path.root [ path.make [ $(ssl).path ] ] [ path.pwd ] ] ;
-        directory = $(directory)/config-$(fingerprint) ;
-        $(ssl).set-path $(directory) ;
-        ssl = [ virtual-target.register $(ssl) ] ;
-        local crypto = [ new file-target libcrypto.$(extension) exact : STATIC_LIB : $(self.project) : $(action) ] ;
-        $(crypto).set-path $(directory) ;
-        crypto = [ virtual-target.register $(crypto) ] ;
+        # Analysis needs the configured headers, but no archives or upstream
+        # suite. Keep generation separate, under the exact same properties.
+        local header-action = [ new action $(source-targets)
+            : webcpp-openssl.generate-headers : $(properties) ] ;
+        local directory ;
         local headers ;
         for local header in [ modules.peek webcpp-openssl : .headers ]
         {
             local generated = [ new file-target include/openssl/$(header) exact
-                : H : $(self.project) : $(action) ] ;
+                : H : $(self.project) : $(header-action) ] ;
+            if ! $(directory)
+            {
+                directory = [ path.root [ path.make [ $(generated).path ] ] [ path.pwd ] ] ;
+                directory = $(directory)/config-$(fingerprint) ;
+            }
             $(generated).set-path $(directory) ;
             generated = [ virtual-target.register $(generated) ] ;
             headers += $(generated) ;
@@ -91,6 +90,19 @@ class openssl-target : basic-target
                     $(directory)/include/openssl/$(header) : $(generated) ;
             }
         }
+        # The complete build publishes into that directory too. Its dependency
+        # on the headers orders both writers and leaves archives/proof pending
+        # after a lint preparation, including on an incremental build.
+        local action = [ new action $(source-targets) $(headers)
+            : webcpp-openssl.build : $(properties) ] ;
+        local extension = a ;
+        if $(os) = windows { extension = lib ; }
+        local ssl = [ new file-target libssl.$(extension) exact : STATIC_LIB : $(self.project) : $(action) ] ;
+        $(ssl).set-path $(directory) ;
+        ssl = [ virtual-target.register $(ssl) ] ;
+        local crypto = [ new file-target libcrypto.$(extension) exact : STATIC_LIB : $(self.project) : $(action) ] ;
+        $(crypto).set-path $(directory) ;
+        crypto = [ virtual-target.register $(crypto) ] ;
         if [ $(properties).get <webcpp-openssl-tests> ] = "on"
         {
             local proof = [ new file-target upstream-tests.json exact
@@ -201,7 +213,10 @@ rule declare ( root : headers * : sources * )
             <target-os>wasi:<linkflags>"-lwasi-emulated-getpid -lwasi-emulated-signal -lwasi-emulated-process-clocks -lwasi-emulated-mman" ;
 }
 
-toolset.uses-features webcpp-openssl.build : <toolset> <target-os> <architecture> <address-model> <variant> <threading> <optimization> <debug-symbols> <inlining> <runtime-link> <runtime-debugging> <cflags> <define> <linkflags> <exception-handling> <lto> <lto-mode> <webcpp-openssl-tests> ;
+for local action in build generate-headers
+{
+    toolset.uses-features webcpp-openssl.$(action) : <toolset> <target-os> <architecture> <address-model> <variant> <threading> <optimization> <debug-symbols> <inlining> <runtime-link> <runtime-debugging> <cflags> <define> <linkflags> <exception-handling> <lto> <lto-mode> <webcpp-openssl-tests> ;
+}
 
 rule configuration ( properties * )
 {
@@ -258,7 +273,7 @@ rule compiler-settings ( outputs * : ps )
     }
 }
 
-rule build ( outputs * : inputs * : properties * )
+rule build-settings ( outputs * : properties * )
 {
     local ps = [ property-set.create $(properties) ] ;
     compiler-settings $(outputs) : $(ps) ;
@@ -277,7 +292,22 @@ rule build ( outputs * : inputs * : properties * )
     }
 }
 
+rule build ( outputs * : inputs * : properties * )
+{
+    build-settings $(outputs) : $(properties) ;
+}
+
 actions build
 {
     $(.SETUP) python3 "$(SCRIPT)" "@($(<[1]:W).rsp:E=--source "$(SOURCE)" --output "$(<[1]:DW)" --platform "$(PLATFORM)" --threading "$(THREADING)" --variant "$(VARIANT)" --cc "$(DRIVER)" --ar "$(ARCHIVER)" $(TEST) -- $(C_OPTIONS) -D$(DEFINES))"
+}
+
+rule generate-headers ( outputs * : inputs * : properties * )
+{
+    build-settings $(outputs) : $(properties) ;
+}
+
+actions generate-headers
+{
+    $(.SETUP) python3 "$(SCRIPT)" "@($(<[1]:W).rsp:E=--source "$(SOURCE)" --output "$(<[1]:DW)/../.." --headers-only --platform "$(PLATFORM)" --threading "$(THREADING)" --variant "$(VARIANT)" --cc "$(DRIVER)" --ar "$(ARCHIVER)" -- $(C_OPTIONS) -D$(DEFINES))"
 }

@@ -126,8 +126,12 @@ def main() -> None:
     parser.add_argument('--variant', default='release')
     parser.add_argument('--test', action='store_true',
                         help='run the complete native upstream suite before publishing libraries')
+    parser.add_argument('--headers-only', action='store_true',
+                        help='generate public headers without building archives or running tests')
     parser.add_argument('flags', nargs=argparse.REMAINDER)
     args = parser.parse_args(arguments)
+    if args.headers_only and args.test:
+        raise RuntimeError('header preparation cannot certify an upstream test run')
     if args.test and args.platform == 'wasi':
         raise RuntimeError('the OpenSSL upstream test harness requires native executables; '
                            'WASI uses the separately declared TLS integration tests')
@@ -262,6 +266,13 @@ def build_source(args: argparse.Namespace, output: Path, pin: dict, scratch: Pat
          '--prefix=' + str(install)], cwd=build, env=env, log=output / 'configure.log')
     make = ['nmake', '/nologo'] if windows else ['make']
     jobs = [] if windows else ['-j2']
+    if args.headers_only:
+        run([*make, *jobs, 'build_generated'], cwd=build, env=env,
+            log=output / 'headers.log')
+        copy_headers(scratch / 'source', build, output / 'include/openssl', windows)
+        print(f'OpenSSL {pin["version"]}: {args.platform}/{args.threading} headers generated '
+              f'in {time.monotonic() - started:.1f}s', flush=True)
+        return
     # nmake builds one translation unit at a time. Windows CI exceeded ten
     # minutes while still compiling normally; retain a bounded thirty-minute
     # budget for this phase. Parallel Make retains the shorter budget.
@@ -282,13 +293,7 @@ def build_source(args: argparse.Namespace, output: Path, pin: dict, scratch: Pat
         # Upstream install_dev requires an external PDB even with B2's /Z7
         # embedded symbols or debug-symbols=off. Stage exactly its public and
         # generated headers and archives, without the unrelated exporters.
-        headers = install / 'include/openssl'
-        headers.mkdir(parents=True)
-        for directory in (scratch / 'source/include/openssl', build / 'include/openssl'):
-            for header in directory.glob('*.h'):
-                if not header.name.startswith('__DECC_'):
-                    shutil.copyfile(header, headers / header.name)
-        shutil.copyfile(scratch / 'source/ms/applink.c', headers / 'applink.c')
+        copy_headers(scratch / 'source', build, install / 'include/openssl', windows)
         (install / 'lib').mkdir()
         for name in ('libssl.lib', 'libcrypto.lib'):
             shutil.copyfile(build / name, install / 'lib' / name)
@@ -316,6 +321,17 @@ def build_source(args: argparse.Namespace, output: Path, pin: dict, scratch: Pat
               f'{suite["tests"]} tests', flush=True)
     print(f'OpenSSL {pin["version"]}: {args.platform}/{args.threading} built from source '
           f'in {record["seconds"]:.1f}s', flush=True)
+
+
+def copy_headers(source: Path, build: Path, output: Path, windows: bool) -> None:
+    """Publish the public headers in upstream install_dev's source/generated order."""
+    output.mkdir(parents=True, exist_ok=True)
+    for directory in (source / 'include/openssl', build / 'include/openssl'):
+        for header in directory.glob('*.h'):
+            if not header.name.startswith('__DECC_'):
+                shutil.copyfile(header, output / header.name)
+    if windows:
+        shutil.copyfile(source / 'ms/applink.c', output / 'applink.c')
 
 
 if __name__ == '__main__':

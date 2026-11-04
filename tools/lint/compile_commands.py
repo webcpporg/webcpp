@@ -275,12 +275,12 @@ def declared_lanes(root: str) -> dict[str, list[str]]:
 
 
 def target_run(root: str, target: str, libraries: list[str],
-               lanes: list[str]) -> list[list[str]]:
-    """The compile commands of the dry run of every library's programs for target, which the
+               lanes: list[str]) -> list[str]:
+    """The lines of the dry run of every library's programs for target, which the
     libraries named declare, and of the own lanes given; a dry run that fails names the target
     and its toolset."""
     try:
-        return compiles(dry_run(root, [*TARGETS[target], *PROGRAMS, *lanes]))
+        return dry_run(root, [*TARGETS[target], *PROGRAMS, *lanes])
     except Failure as failure:
         if target == 'native':
             raise
@@ -607,7 +607,8 @@ def prepare_boost_overlays(root: str, target: str, commands: list[list[str]]) ->
                       'while preparing checked Boost overlays')
 
 
-def prepare_openssl_headers(root: str, request: list[str], commands: list[list[str]]) -> None:
+def prepare_openssl_headers(root: str, request: list[str], commands: list[list[str]],
+                            lines: list[str]) -> None:
     """Build each program's configured OpenSSL headers without executing its test target."""
     includes: set[Path] = set()
     for words in commands:
@@ -628,7 +629,7 @@ def prepare_openssl_headers(root: str, request: list[str], commands: list[list[s
     # libdatachannel also publishes config-*/include. Identify the provider from
     # its actual B2 action, rather than assuming every configured directory is TLS.
     headers: set[str] = set()
-    for line in dry_run(root, request):
+    for line in lines:
         built = re.fullmatch(r'webcpp-openssl\.build (.+[/\\])libssl\.(?:a|lib)', line)
         if built:
             directory = Path(root, built.group(1), 'include')
@@ -659,10 +660,10 @@ def source_path(root: str, source: str) -> str:
     return os.path.relpath(os.path.realpath(os.path.join(root, source)), os.path.realpath(root))
 
 
-def read(root: str, target: str, commands: list[list[str]], entries: list[dict[str, object]],
+def read(root: str, target: str, lines: list[str], entries: list[dict[str, object]],
          seen: set[tuple[str, ...]], earlier: set[str],
          wasi_clang: str | None, request: list[str]) -> tuple[Units, set[str]]:
-    """Adds to entries each command of commands, compiled for target, that compiles a .cpp file of
+    """Adds to entries each command of lines, compiled for target, that compiles a .cpp file of
     the source tree that is not in earlier, a source an earlier target compiles, and that is not
     in seen, as the lint analyses it (analysed); a WebAssembly command of a compiler other than
     wasi-sdk's clang++ or, on emscripten, Emscripten's em++ fails. Returns the commands of the
@@ -671,7 +672,7 @@ def read(root: str, target: str, commands: list[list[str]], entries: list[dict[s
     units: Units = {}
     sources: set[str] = set()
     selected: list[list[str]] = []
-    for words in commands:
+    for words in compiles(lines):
         source = words[-1]
         unit = ALONE.match(source)
         if unit:
@@ -689,7 +690,7 @@ def read(root: str, target: str, commands: list[list[str]], entries: list[dict[s
         entries.append({'directory': root, 'file': os.path.join(root, source),
                         'arguments': analysed(target, source, words, wasi_clang)})
     prepare_boost_overlays(root, target, selected)
-    prepare_openssl_headers(root, request, selected)
+    prepare_openssl_headers(root, request, selected, lines)
     return units, sources
 
 
@@ -789,7 +790,8 @@ def twins(root: str, target: str, chosen: dict[str, list[Aggregate]], units: Uni
     compiled: set[str] = set()
     selected: list[list[str]] = []
     request = [*TARGETS[target], WITHOUT_EXCEPTIONS, *PROGRAMS, *lanes, *handler, *requested]
-    for words in compiles(dry_run(root, request)):
+    lines = dry_run(root, request)
+    for words in compiles(lines):
         source = words[-1]
         unit = ALONE.match(source)
         if unit:
@@ -812,7 +814,7 @@ def twins(root: str, target: str, chosen: dict[str, list[Aggregate]], units: Uni
         entries.append({'directory': root, 'file': os.path.join(root, source),
                         'arguments': analysed(target, source, words, wasi_clang)})
     prepare_boost_overlays(root, target, selected)
-    prepare_openssl_headers(root, request, selected)
+    prepare_openssl_headers(root, request, selected, lines)
     twinned.programs |= kept - compiled
     for library, theirs in aggregates.items():
         index = next(index for index, aggregate in enumerate(theirs)

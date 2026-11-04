@@ -57,6 +57,7 @@ None.
 
 * Fixed driven-test execution and descendant cleanup on Windows.
 * Fixed driven-test executable reuse for Windows and WASI builds.
+* Separated OpenSSL header preparation from archive builds and upstream tests during lint.
 * Fixed Chrome provisioning and browser/TLS profile coverage in Asio CI lanes.
 * Added source-built OpenSSL and Cobalt SSL targets for WASIp2.
 * Added explicit browser pthread profiles with main-thread handoff tests.

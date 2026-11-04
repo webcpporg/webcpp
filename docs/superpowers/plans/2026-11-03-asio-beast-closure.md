@@ -57,7 +57,7 @@ coordinate any cooperative SDK provisioning changes before changing CI.
 
 ### 3. Reconcile TLS and dependency contracts
 
-- [ ] Generate embedded CA data under the owning library's private namespace and path;
+- [x] Generate embedded CA data under the owning library's private namespace and path;
   prove build-tree and installed consumers work.
 - [x] Preserve public error identities and document any bounded compatibility departure.
 - [x] Inspect the claimed Cobalt SSL state defect against the existing overlay and tests.

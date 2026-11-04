@@ -434,35 +434,82 @@ def test_compile_database_prepares_program_openssl_variants(root):
                                  'webcpp.run tls_program : tls_program.cpp\n'
                                  '  : <library>/webcpp/third_party//openssl\n'
                                  '    <define>WEBCPP_TEST_TLS_PROGRAM ;\n'
-                                 'webcpp.lane tls-variant : tls_program : native ;\n')
+                                 'webcpp.run tls_upstream : tls_upstream.cpp\n'
+                                 '  : <library>/webcpp/third_party//openssl\n'
+                                 '    <define>WEBCPP_TEST_TLS_PROGRAM\n'
+                                 '    <webcpp-openssl-tests>on ;\n'
+                                 'webcpp.lane tls-variant : tls_program tls_upstream : native ;\n')
     source = lane / 'tls_program.cpp'
     source.write_text(CPP + '\n#include <openssl/ssl.h>\n'
                       'int main() { return SSL_ERROR_NONE; }\n')
+    (lane / 'tls_upstream.cpp').write_text(source.read_text())
+    # Both ordinary and upstream-tested consumers must have a preparation
+    # graph containing only generation, including their exception-free twins.
+    request = 'libs/tls_user/test/release//tls-variant'
+    planned = harness.run_b2(root, '-n', 'exception-handling=on,off', request)
+    assert planned.returncode == 0, planned.stdout[-6000:]
+    directories = re.findall(r'^webcpp-openssl\.build (.+)[/\\]libssl\.(?:a|lib)$',
+                             planned.stdout, re.MULTILINE)
+    assert len(directories) == 4, planned.stdout[-6000:]
+    preparation = harness.run_b2(
+        root, '-n', f'--webcpp-lint-source={request}',
+        '--webcpp-lint-property=exception-handling=on,off',
+        *(f'--webcpp-lint-header={directory}/include/openssl/configuration.h'
+          for directory in directories), 'lint-openssl-headers')
+    assert preparation.returncode == 0, preparation.stdout[-6000:]
+    assert not re.search(r'^webcpp-openssl\.build ', preparation.stdout, re.MULTILINE), (
+        preparation.stdout[-6000:])
     completed = compile_database(root)
     assert completed.returncode == 0, completed.stdout[-6000:]
     entries = json.loads((root / 'compile database/compile_commands.json').read_text())
-    commands = [entry['arguments'] for entry in entries if Path(entry['file']) == source]
-    assert len(commands) == 2, commands
+    commands = [entry['arguments'] for entry in entries if Path(entry['file']).parent == lane]
+    assert len(commands) == 4, commands
     for command in commands:
         # The preparation target must preserve the own lane's release default,
         # rather than propagate its own debug default into the consumer.
         assert any('/release/' in word for word in command), command
-        said = compile_commands.compiles_aggregate(str(root), command, str(source))
+        said = compile_commands.compiles_aggregate(str(root), command, command[-1])
         assert not said, said
+    # Analysis needs configured headers, never archives or an upstream suite.
+    assert not list((root / 'bin/third_party').rglob('libssl.a'))
+    assert not list((root / 'bin/third_party').rglob('libssl.lib'))
+    assert not list((root / 'bin/third_party').rglob('build.json'))
+    assert not list((root / 'bin/third_party').rglob('upstream-tests.log'))
     # Preparation may build dependencies, but must not execute consumer programs.
     assert not list((root / 'bin').rglob('*.run'))
     # Existing generated headers must not turn an incremental analysis into
     # an execution of the consumer targets used to discover their variants.
     repeated = compile_database(root)
     assert repeated.returncode == 0, repeated.stdout[-6000:]
+    assert json.loads((root / 'compile database/compile_commands.json').read_text()) == entries
     assert not list((root / 'bin').rglob('*.run'))
+    assert not list((root / 'bin/third_party').rglob('build.json'))
+    # Every public upstream header must be present, with the same bytes as a
+    # subsequent real archive build. Preparing headers cannot satisfy its action.
+    upstream = root / 'third_party/libs/openssl/include/openssl'
+    names = {path.name for path in upstream.glob('*.h')}
+    names |= {path.name.removesuffix('.in') for path in upstream.glob('*.h.in')}
+    before = {}
+    for configured in (root / 'bin/third_party').rglob('configuration.h'):
+        assert names <= {path.name for path in configured.parent.iterdir()}, configured
+        before.update({path: path.read_bytes() for path in configured.parent.glob('*.h')})
+    built = harness.run_b2(root, 'libs/tls_user/test/release//tls_program')
+    assert built.returncode == 0, built.stdout[-6000:]
+    assert 'webcpp-openssl.build ' in built.stdout, built.stdout[-6000:]
+    assert len(list((root / 'bin/third_party').rglob('build.json'))) == 1
+    assert all(path.read_bytes() == contents for path, contents in before.items())
+    # The tested variant still requires the full archive action and upstream
+    # suite when a real consumer asks for it. This dry run executes neither.
+    tested = harness.run_b2(root, '-n', 'libs/tls_user/test/release//tls_upstream')
+    assert tested.returncode == 0, tested.stdout[-6000:]
+    assert 'webcpp-openssl.build ' in tested.stdout and '--test' in tested.stdout
     # A missing header and an existing, stale variant must both be updated.
     # Inspect B2's actual actions without rebuilding OpenSSL a third time.
     # B2 roots output paths at its actual cwd. Preserve the bin symlink while
     # resolving the parent's /var alias on macOS, just as its dry run does.
     headers = sorted(root.resolve() / header.relative_to(root)
                      for header in (root / 'bin/third_party').rglob('configuration.h'))
-    assert len(headers) == 2, headers
+    assert len(headers) == 4, headers
     changed = max(header.stat().st_mtime for header in headers) + 1
     os.utime(root / 'tools/openssl/build.py', (changed, changed))
     headers[0].unlink()
@@ -471,8 +518,10 @@ def test_compile_database_prepares_program_openssl_variants(root):
         '--webcpp-lint-property=exception-handling=on,off',
         *(f'--webcpp-lint-header={header}' for header in headers), 'lint-openssl-headers')
     assert pending.returncode == 0, pending.stdout[-6000:]
-    assert len(re.findall(r'^webcpp-openssl\.build ', pending.stdout, re.MULTILINE)) == 2, (
+    assert len(re.findall(r'^webcpp-openssl\.generate-headers ', pending.stdout,
+                          re.MULTILINE)) == 4, (
         pending.stdout[-6000:])
+    assert not re.search(r'^webcpp-openssl\.build ', pending.stdout, re.MULTILINE)
     assert 'testing.capture-output' not in pending.stdout, pending.stdout[-6000:]
     assert not re.search(r'^\S+\.compile', pending.stdout, re.MULTILINE), pending.stdout[-6000:]
 

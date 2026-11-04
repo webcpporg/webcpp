@@ -262,6 +262,9 @@ Jamroot is its build configuration, and `libs/<name>` is its repository.
   libdatachannel uses that same provider. Neither `OPENSSL_ROOT` nor
   `LIBDATACHANNEL_ROOT` selects a separate installed copy. Source archives
   contain the required sources and do not require Git for these builds.
+  The lint prepares the matching headers through a separate Configure and
+  `make build_generated` action. Archives and upstream test proofs still require
+  the full provider action (`CODING-GUIDELINES.md` chapter 9).
 
 Each toolchain is installed by hand and configured in `user-config.jam`, until
 webcpp bundles the toolchains (`CODING-GUIDELINES.md` chapter 16). b2 reads

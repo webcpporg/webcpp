@@ -622,6 +622,13 @@ their exception-off twins. A dedicated preparation target resolves each original
 request with its own defaults and returns only the requested provider headers.
 B2 updates those artifacts and their dependencies even when headers already
 exist, without compiling or running the consumers used to discover the variants.
+OpenSSL has a separate header action using Configure and `make build_generated`
+with the same source verification, compiler properties and configuration as the
+archive action. Header preparation neither builds archives nor runs the upstream
+suite and publishes no build or test proof. Full consumers depend on those headers
+and still require the complete archive action, including `alltests` when requested.
+The compilation database reuses each dry-run result for dependency discovery rather
+than repeating the same full build-graph traversal.
 
 **A library's include boundaries.** Every header compiles alone, so only a
 boundary check sees a part of a library start to depend on another. A
