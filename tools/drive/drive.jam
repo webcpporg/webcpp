@@ -92,7 +92,8 @@ toolset.flags webcpp-drive.drive-and-check SCRIPT <webcpp-drive-script> ;
 feature.feature webcpp-drive-timeout : : free incidental ;
 .default-timeout = 30 ;
 
-if [ os.name ] = NT { .python = python ; } else { .python = python3 ; }
+.host = [ os.name ] ;
+if $(.host) = NT { .python = python ; } else { .python = python3 ; }
 
 # The runner, beside this file, as an absolute native path: the action runs
 # in the directory b2 was started in.
@@ -122,15 +123,23 @@ rule drive ( found + : name : sources + : requirements * : script : arguments * 
     $(found[1]).mark-target-as-always $(name) ;
 }
 
-# Each of words as one word of the shell, single-quoted: a ' is written '\'',
-# and nothing else is special there, $ and ` included.
+# Each display name as one shell word. Windows paths and target names cannot
+# contain double quotes; cmd.exe requires those quotes to group their spaces.
+# POSIX uses single quotes: a ' is written '\'', with $ and ` left literal.
 local rule quoted ( words * )
 {
     local result ;
     for local word in $(words)
     {
-        local pieces = [ regex.split $(word) "'" ] ;
-        result += "'$(pieces:J='\\'')'" ;
+        if $(.host) = NT
+        {
+            result += "\"$(word)\"" ;
+        }
+        else
+        {
+            local pieces = [ regex.split $(word) "'" ] ;
+            result += "'$(pieces:J='\\'')'" ;
+        }
     }
     return $(result) ;
 }
