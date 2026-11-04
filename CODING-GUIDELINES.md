@@ -1384,6 +1384,21 @@ site's own decisions follow in the next sections.
   there, which every library's tests hold and trystero's guarantee 6 rests on;
   the snapshot makes one Dockerfile one set of packages.
   Source: `AGENTS.md` (webcpp).
+- **CI preparation is explicit and separate from ordinary pull-request tests.**
+  A trusted dispatch publishes native and Linux-X64 tool images, then separate
+  jobs verify anonymous digest pulls and smoke checks. Reviewed generated pins
+  bind the images to their recipes. Ordinary jobs neither build missing images
+  nor run apt; only their two container consumers need the native image.
+  The full lane set and report still fail on missing test results.
+- **Tool caches hold verified input archives, never test verdicts.** Each cache
+  read verifies SHA-256 and each write is atomic. Linux-X64 wasi-sdk, Wasmtime,
+  wit-bindgen, WASI WIT and MrDocs cold caches use prepared public bundles and
+  installation stays offline. Other hosts and Chrome retain checked upstream
+  downloads with bounded retries. Chrome binaries are not republished as public
+  packages; their terms differ from the CfT repository's license. Every original
+  installer still runs, so PATH, environment exports and version checks remain.
+  Source: `tools/ci/environment.py`, `tools/ci/download.sh`,
+  `.github/workflows/prepare-environments.yml`, `AGENTS.md` (webcpp).
 - **The native lanes are GCC 14 and 15, Clang 18 and 22 on libstdc++, Apple
   Clang and MSVC 14.3 and 14.5, beside one lane each for emscripten, wasip2
   and wasip3.** The Clang lanes on libstdc++ stay because a regression of

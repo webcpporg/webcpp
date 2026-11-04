@@ -1516,11 +1516,6 @@ jobs:
   `--library` it says whether any library of `libs/` needs them: the plan's
   output `lint-external`, on which the lint job, which analyses every
   library, installs them.
-- **container:** when the plan has a container lane (its output
-  `has-container`), the `container` action on ubuntu-24.04, which builds
-  the container lanes' image when the cache does not hold it and saves it
-  there, once per run; every lane's job waits for it (`needs: [plan,
-  container]`), and runs when it succeeded or was skipped.
 - **lanes,** one job each, which run `matrix.py lane <entry>`: it registers
   the lane's toolset in `.local/user-config.jam` with its version, prints the
   lane command and runs it, and the job uploads `<lane>.xml`:
@@ -1568,13 +1563,13 @@ jobs:
   produced incompatible OpenSSL package versions; the image keeps all packages
   on the same snapshot. Consumer OpenSSL is now built from the pinned sources.
   Ubuntu keeps no snapshot of `ports.ubuntu.com`, so the image builds for
-  x86-64 alone (measured: apt 2.8.3 refuses arm64's sources). It is tagged
-  `webcpp-lane:<the first 16 hex digits of the Dockerfile's SHA-256>`. The
-  `container` job, which every lane waits for, runs the `container` action
-  once per run, which builds it when the cache does not hold it and saves it
-  there under that digest; each container lane's job runs the action too,
-  which then loads it, and `matrix.py lane` builds it only when no image of
-  that tag is there. Then it runs b2 by its path, `docker run --rm --network
+  x86-64 alone (measured: apt 2.8.3 refuses arm64's sources).
+  `tools/ci/environments.json` pins the public GHCR image by its full digest
+  and binds it to the Dockerfile recipe. The container action pulls that
+  digest; a missing or stale pin fails with preparation instructions. It
+  never runs apt or builds an image during an ordinary lane. Every lane
+  depends only on the plan, so an unavailable image blocks its two consumers
+  while the other configurations continue. Then it runs b2 by its path, `docker run --rm --network
   none`, as the runner's user, with the superproject and b2's prefix, where
   the Boost action installs Boost's headers too, mounted at their own paths,
   and the variables of the external libraries passed on; the XML is the
@@ -1807,12 +1802,53 @@ wrapper each quoted as one word of Jam.
   isolated profile trust store. Test CAs are installed only in disposable
   profiles; no host trust store or certificate-validation bypass is used.
   The drivers disable background networking and operate against local fixtures.
-- `container` gives a job the container lanes' image (above): built from
-  `tools/ci/container/Dockerfile` when the cache does not hold it, saved
-  there under the Dockerfile's digest, and loaded from there otherwise.
-- `tools/ci/download.sh <url> <sha256> <file>` downloads each pinned file,
-  and leaves no file and exits 1 when the download fails or the digest
-  differs.
+- `container` gives a job the checked immutable image above. Registry access
+  happens before the lane; the test container still has `--network none`.
+- `tool-archives` restores the SHA-256 addressed archives for wasi-sdk,
+  Wasmtime, wit-bindgen, WASI WIT, MrDocs and Chrome. The installer still runs
+  on every job, preserving its version checks and environment exports.
+  Cache service failures do not fail a job: a miss uses the prepared bundle,
+  and a failed save leaves the validated installation usable.
+  Linux-X64 cold caches for the five open-source tools come from the prepared
+  public OCI bundles. The bundle is copied from a stopped container and every
+  file is verified before publication in the local cache. Normal installations
+  of those tools require verified cache entries and never fall back to upstream.
+  Other supported hosts keep their checked upstream downloads. Chrome uses its
+  official download and the same verified cache, without public redistribution
+  of its binaries: the upstream maintainer distinguishes the binary terms from
+  the repository license in
+  [issue 21](https://github.com/GoogleChromeLabs/chrome-for-testing/issues/21).
+- `tools/ci/download.sh <url> <sha256> <file>` verifies downloaded or cached
+  bytes, publishes complete files atomically, and leaves no output after failure.
+  `WEBCPP_DOWNLOAD_CACHE` selects a content-addressed cache;
+  `WEBCPP_DOWNLOAD_OFFLINE=1` forbids curl on a missing or corrupt entry.
+  Connection, transfer and retry windows are bounded. No test verdict is cached.
+
+**Preparing and updating environments.** An owner explicitly dispatches CI
+with `prepare-environment=true` at the reviewed source commit. The preparation
+workflow builds the native image from the dated Ubuntu snapshot and downloads
+the pinned tool archives afresh. Only its publisher has `packages: write`.
+The package `ghcr.io/webcpporg/ci-environment` must be made public once after
+initial creation; a public repository does not imply public package visibility.
+Separate runners prove anonymous digest pulls, offline tool installation and
+native C++20 compilation before producing the `ci-environments` artifact.
+Download that artifact's generated `environments.json` into `tools/ci/`, review
+and commit it with the recipe changes, then run the complete normal CI. Do not
+edit generated digests or merge a recipe without its verified pins. A failed
+preparation leaves the previous checked-in environments in use.
+
+```sh
+gh workflow run ci.yml --repo webcpporg/webcpp --ref <reviewed-branch> \
+  -f prepare-environment=true
+gh run download <successful-preparation-run> --repo webcpporg/webcpp \
+  --name ci-environments --dir tools/ci
+```
+
+This isolates the covered tools from upstream availability during ordinary CI,
+not every dependency. Checkout, the GitHub registry/cache, setup-node and npm,
+Emscripten's source fetch and the Rust/Cargo fixture remain prerequisites.
+The full lane set, `b2 -a`, fresh XML and missing-result checks remain mandatory.
+
 - `tools/ci/helpers.sh` holds what the actions share, which each
   `install.sh` sources beside `download.sh`: `digest`, the SHA-256 of files
   one after the other; `mixed`, a path as Windows programs read it;
@@ -1832,7 +1868,10 @@ unpinned, and an emcc that is not 6.0.11; the emsdk action's node wrapper,
 `EM_CACHE`, warmed cache and system libraries; libsecp256k1's pinned archive,
 compiler settings, install prefixes, exports, cache key and Windows runtime;
 the chrome action's shell and its `--no-sandbox` wrapper; and the container
-image, built and saved once, then loaded. Their refusal tests cover bad hashes
+image, pulled by an immutable digest without a build fallback.
+`tools/ci/environment_test.py` checks recipe identity, archive restoration and
+publication boundaries; `tools/ci/download_cache_test.py` checks offline reuse,
+corruption, interrupted transfers and atomic output. Their refusal tests cover bad hashes
 and unsupported runners. Source-provider tests live in
 `tools/openssl/build_test.py`, `tools/test/openssl_test.py` and
 `tools/test/libdatachannel_test.py`: they cover source pins, staged content,

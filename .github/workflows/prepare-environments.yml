@@ -1,0 +1,143 @@
+# Copyright (c) 2026 WebCpp.org
+#
+# Distributed under the Boost Software License, Version 1.0. (See
+# accompanying file LICENSE_1_0.txt or copy at
+# https://www.boost.org/LICENSE_1_0.txt)
+
+# Invoked explicitly through CI's prepare-environment input. Normal pull requests
+# never publish packages or build images. Verified output is promoted in a source PR.
+name: Prepare CI environments
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  publish:
+    name: Publish ${{ matrix.key }}
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'webcpporg/webcpp'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix: &environments
+        include:
+          - {key: native-linux-x64, tool: '', variant: ''}
+          - {key: wasi-sdk-linux-x64, tool: wasi-sdk, variant: ''}
+          - {key: wasmtime-linux-x64, tool: wasmtime, variant: ''}
+          - {key: wit-bindgen-linux-x64, tool: wit-bindgen, variant: ''}
+          - {key: wasi-wit-linux-x64, tool: wasi-wit, variant: ''}
+          - {key: mrdocs-linux-x64, tool: mrdocs, variant: ''}
+    env:
+      WEBCPP_PREPARE_ENVIRONMENT: '1'
+      TOOL: ${{ matrix.tool }}
+      VARIANT: ${{ matrix.variant }}
+      KEY: ${{ matrix.key }}
+      WEBCPP_DOWNLOAD_CACHE: .local/environment-archives
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Deliberately no cache restore in the publisher. It verifies upstream bytes afresh.
+      - name: Fetch and exercise the pinned installer
+        if: matrix.tool != ''
+        env:
+          WEBCPP_CHROME_PRODUCT: ${{ matrix.variant }}
+        run: bash "tools/ci/actions/$TOOL/install.sh"
+
+      - name: Authenticate the publisher
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+
+      - name: Publish candidate
+        run: >-
+          python3 tools/ci/environment.py publish --tool "$TOOL" --variant "$VARIANT"
+          --cache "$WEBCPP_DOWNLOAD_CACHE" --out ".local/environment-candidates/$KEY.json"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: candidate-${{ matrix.key }}
+          path: .local/environment-candidates/${{ matrix.key }}.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Remove registry credentials
+        if: always()
+        run: docker logout ghcr.io
+
+  # These fresh runners have no publishing credentials. GHCR must be public before
+  # this succeeds; linking a package to a public repository does not make it public.
+  verify:
+    name: Verify ${{ matrix.key }} anonymously
+    needs: publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix: *environments
+    env:
+      TOOL: ${{ matrix.tool }}
+      VARIANT: ${{ matrix.variant }}
+      KEY: ${{ matrix.key }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: candidate-${{ matrix.key }}
+          path: .local/environment-candidates
+
+      - name: Verify anonymous pull and offline installation
+        run: >-
+          python3 tools/ci/environment.py verify --tool "$TOOL" --variant "$VARIANT"
+          --cache "$RUNNER_TEMP/verified-archives"
+          --candidate ".local/environment-candidates/$KEY.json"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: verified-${{ matrix.key }}
+          path: .local/environment-candidates/${{ matrix.key }}.json
+          if-no-files-found: error
+          retention-days: 30
+
+  manifest:
+    name: Assemble verified environment pins
+    needs: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: verified-*
+          path: .local/environment-candidates
+          merge-multiple: true
+
+      - name: Assemble pins for review
+        run: >-
+          python3 tools/ci/environment.py merge --directory .local/environment-candidates
+          --out .local/prepared/environments.json
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ci-environments
+          path: .local/prepared/environments.json
+          if-no-files-found: error
+          retention-days: 30

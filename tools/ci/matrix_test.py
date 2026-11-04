@@ -22,15 +22,13 @@ the docs and lint jobs install emsdk on, without its system libraries; a lane an
 library that needs libraries webcpp does not build say external, with the compilers to build them
 with, also through a library that uses one, `external` says whether a library needs them, or
 any library, and every job installs them by the actions of their names; an own lane whose driver
-meets a browser has the pinned chrome-headless-shell; and a container lane builds its image of
-the Dockerfile's tag unless it is there, which the container action restores, and runs its b2
-there with no network, or fails when the image does not build. Each
+meets a browser has the pinned chrome-headless-shell; and a container lane pulls its checked
+immutable image and runs its b2 there with no network, or fails when that image is unavailable. Each
 case runs the scratch superproject's own copy of matrix.py, with the fixture library demo, and
 browser_demo where it says so. Run with the names of some cases to run only those."""
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import re
@@ -46,6 +44,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'test'))
 
 import harness
 import matrix
+import environment as prepared_environment
 
 NATIVE = ['gcc-14', 'gcc-15', 'clang-18', 'clang-22', 'apple-clang', 'msvc-14.3', 'msvc-14.5']
 
@@ -1182,22 +1181,13 @@ def test_the_jobs_install_the_external_dependencies(_):
     assert 'emscripten: ${{ needs.plan.outputs.has-emscripten }}' in lint_secp256k1
 
 
-def test_a_container_lane_has_its_image_from_the_cache(_):
-    # The container job builds the image once per run, and caches it, before any lane: the lanes
-    # wait for it, and their container action restores the image of this Dockerfile before the
-    # lane runs, which then builds nothing. The plan says whether a container lane is planned.
+def test_container_availability_does_not_block_other_lanes(_):
+    # A missing native image blocks only its own lanes; every other lane can start after plan.
     jobs = workflow_jobs()
-    plan = jobs['plan']
-    assert 'has-container: ${{ steps.plan.outputs.has-container }}' in plan, plan
-    container_job = jobs['container']
-    assert re.search(r'^    needs: plan$', container_job, re.MULTILINE), container_job
-    assert "if: needs.plan.outputs.has-container == 'true'" in container_job, container_job
-    assert len([step for step in job_steps(container_job)
-                if 'uses: ./tools/ci/actions/container' in step]) == 1, container_job
+    assert 'container' not in jobs, 'ordinary lanes still wait for an image builder'
     lanes_job = jobs['lanes']
-    assert re.search(r'^    needs: \[plan, container\]$', lanes_job, re.MULTILINE), lanes_job
-    assert ("needs.container.result == 'success' || needs.container.result == 'skipped'"
-            in lanes_job), lanes_job
+    assert re.search(r'^    needs: plan$', lanes_job, re.MULTILINE), lanes_job
+    assert 'needs.container' not in lanes_job, lanes_job
     steps = job_steps(lanes_job)
     container = [index for index, step in enumerate(steps)
                  if 'uses: ./tools/ci/actions/container' in step]
@@ -1291,6 +1281,15 @@ def test_browser_contract_lanes_build_a_native_beast_peer(root):
 # A stand-in of docker: each call's words to docker.log, quoted as a shell reads them, one line
 # each; `image inspect` succeeds when STAND_IN_IMAGE_PRESENT is set, `build` builds nothing, and
 # `run` runs, on the host, the command after the image.
+TEST_IMAGE = 'ghcr.io/webcpporg/ci-environment@sha256:' + 'a' * 64
+
+
+def pin_test_image(root: Path) -> None:
+    prepared_environment.write_manifest(root / 'tools/ci/environments.json', {
+        'native-linux-x64': {'image': TEST_IMAGE, 'recipe': prepared_environment.recipe(),
+                             'source': 'b' * 40, 'archives': []}})
+
+
 FAKE_DOCKER = r"""#!/usr/bin/env bash
 set -euo pipefail
 { printf '%q ' docker "$@"; printf '\n'; } >> "${STAND_IN_DOCKER_LOG}"
@@ -1328,7 +1327,7 @@ def test_container_apt_get_retries_transient_failures(root):
 
 
 def test_a_container_lane_runs_b2_with_no_network(root):
-    # A container lane builds its image from tools/ci/container/Dockerfile, then runs the lane
+    # A container lane pulls its prepared Dockerfile image, then runs the lane
     # command's b2 by its path in it, as the user who runs the lane, with no network but the
     # loopback, the superproject and b2's prefix (the Boost action's, with Boost's headers)
     # mounted at their own paths, and the external dependencies' variables passed on. The XML is
@@ -1336,7 +1335,7 @@ def test_a_container_lane_runs_b2_with_no_network(root):
     dockerfile = (matrix.ROOT / 'tools/ci/container/Dockerfile').read_text()
     assert re.search(r'^FROM ubuntu:24\.04@sha256:[0-9a-f]{64}$', dockerfile, re.MULTILINE), (
         dockerfile)
-    # Its packages from Ubuntu's snapshot at one date, and its tag that of this Dockerfile.
+    # Its packages come from Ubuntu's snapshot at one date; the pin names this recipe.
     assert re.search(r'^ARG SNAPSHOT=\d{8}T\d{6}Z$', dockerfile, re.MULTILINE), dockerfile
     # Every package from the snapshot, ca-certificates included: each apt-get update and install
     # names it, and none reads the live archive.
@@ -1346,8 +1345,7 @@ def test_a_container_lane_runs_b2_with_no_network(root):
     assert len(calls) == 4, calls
     assert all('--snapshot "${SNAPSHOT}"' in call for call in calls), calls
     assert re.search(r'install[^&]*--snapshot "\$\{SNAPSHOT\}" ca-certificates', code), code
-    digest = hashlib.sha256(dockerfile.encode()).hexdigest()
-    assert matrix.CONTAINER_IMAGE == f'webcpp-lane:{digest[:16]}', matrix.CONTAINER_IMAGE
+    pin_test_image(root)
     for package in ('g++-14', 'clang-18', 'python3', 'git', 'make', 'perl', 'cmake', 'pkg-config'):
         assert re.search(r'install\b[^&]*\s' + re.escape(package) + r'(?=\s|$)', code), (
             package, code)
@@ -1368,7 +1366,7 @@ def test_a_container_lane_runs_b2_with_no_network(root):
     for name in matrix.EXTERNAL_VARIABLES:
         environment.pop(name, None)
     environment.update(PATH=f'{tools}:{environment["PATH"]}', STAND_IN_DOCKER_LOG=str(log),
-                       STAND_IN_IMAGE=matrix.CONTAINER_IMAGE, SECP256K1_ROOT='/somewhere')
+                       STAND_IN_IMAGE=TEST_IMAGE, SECP256K1_ROOT='/somewhere')
     result = subprocess.run([sys.executable, str(root / 'tools/ci/matrix.py'), 'lane',
                              json.dumps(entry), '--', '--build-dir=bin/lane'], cwd=root,
                             env=environment, capture_output=True, text=True, check=False,
@@ -1377,13 +1375,12 @@ def test_a_container_lane_runs_b2_with_no_network(root):
     b2 = Path(shutil.which('b2', path=environment['PATH']) or 'b2').resolve()
     resolved = root.resolve()
     calls = [shlex.split(line) for line in log.read_text().splitlines()]
-    # The image is built only when no image of this Dockerfile's tag is there.
-    assert calls[0] == ['docker', 'image', 'inspect', matrix.CONTAINER_IMAGE], calls
-    assert calls[1] == ['docker', 'build', '--tag', matrix.CONTAINER_IMAGE,
-                        f'{resolved}/tools/ci/container'], calls
+    # Only an immutable registry pull is allowed when the image is absent.
+    assert calls[0] == ['docker', 'image', 'inspect', TEST_IMAGE], calls
+    assert calls[1] == ['docker', 'pull', TEST_IMAGE], calls
     assert len(calls) == 3 and calls[2][0] == 'docker', calls
     run_words = calls[2][1:]
-    image = run_words.index(matrix.CONTAINER_IMAGE)
+    image = run_words.index(TEST_IMAGE)
     options, command = run_words[:image], run_words[image + 1:]
     assert options[:4] == ['run', '--rm', '--network', 'none'], options
     assert ['--user', f'{os.getuid()}:{os.getgid()}'] == options[4:6], options
@@ -1403,7 +1400,7 @@ def test_a_container_lane_runs_b2_with_no_network(root):
     version = matrix.major_version('clang++')
     system = 'darwin' if sys.platform == 'darwin' else 'linux'
     assert (resolved / f'bin/ci/clang-{system}-{version}.xml').is_file()
-    # With the image there, as the container action loads it from its cache, nothing is built.
+    # With the immutable image present, no pull or build is needed.
     log.unlink()
     result = subprocess.run([sys.executable, str(root / 'tools/ci/matrix.py'), 'lane',
                              json.dumps(entry), '--', '--build-dir=bin/lane'], cwd=root,
@@ -1423,7 +1420,8 @@ def test_a_container_lane_runs_b2_with_no_network(root):
     assert not log.exists(), log.read_text()
 
 
-def test_a_container_lane_whose_image_does_not_build_fails(root):
+def test_an_unavailable_container_image_fails_without_a_build(root):
+    pin_test_image(root)
     entry = host_lane(root)
     entry['container'] = True
     boost_only(root)
@@ -1439,9 +1437,8 @@ def test_a_container_lane_whose_image_does_not_build_fails(root):
                              json.dumps(entry)], cwd=root, env=environment, capture_output=True,
                             text=True, check=False, timeout=harness.TIMEOUT)
     assert result.returncode == 1, (result.returncode, result.stdout[-2000:], result.stderr)
-    build = shlex.join(['docker', 'build', '--tag', matrix.CONTAINER_IMAGE,
-                        f'{root.resolve()}/tools/ci/container'])
-    assert f'matrix.py: {build} exited 1' in result.stderr, result.stderr
+    assert 'docker pull failed' in result.stderr, result.stderr
+    assert 'prepare-environments' in result.stderr, result.stderr
     assert not (root / 'bin/ci').exists() or not list((root / 'bin/ci').iterdir())
 
 
@@ -1479,14 +1476,14 @@ CASES = [
     test_a_lane_of_a_library_with_external_dependencies_says_so,
     test_whether_a_library_has_external_dependencies,
     test_the_jobs_install_the_external_dependencies,
-    test_a_container_lane_has_its_image_from_the_cache,
+    test_container_availability_does_not_block_other_lanes,
     test_asio_browser_lane_receives_chrome,
     test_a_browser_lane_has_the_pinned_chrome,
     test_host_tls_fixture_is_isolated_to_its_own_lane,
     test_browser_contract_lanes_build_a_native_beast_peer,
     test_container_apt_get_retries_transient_failures,
     test_a_container_lane_runs_b2_with_no_network,
-    test_a_container_lane_whose_image_does_not_build_fails,
+    test_an_unavailable_container_image_fails_without_a_build,
 ]
 
 

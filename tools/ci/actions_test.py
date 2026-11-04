@@ -1440,67 +1440,47 @@ def test_chrome_refuses_a_shell_it_does_not_pin_or_a_runner_it_has_none_for(scra
 
 CONTAINER = CI / 'actions/container/install.sh'
 
-# A stand-in of docker for the container action: each call's words to stand-in.log; `save
-# --output <file> <tag>` writes the file, `load --input <file>` reads it and remembers the tag
-# it held, and `image inspect <tag>` succeeds when that tag was loaded or built.
+# A controlled Docker boundary: ordinary actions may inspect and pull, never build.
 FAKE_IMAGE_DOCKER = r"""#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "docker $*" >> "${STAND_IN_LOG}"
-images="${STAND_IN_LOG}.images"
 case "$1" in
-    build) printf '%s\n' "$3" >> "${images}" ;;
-    save) printf '%s\n' "${@: -1}" > "$3" ;;
-    load) cat "$3" >> "${images}" ;;
-    image) grep -qx "$3" "${images}" 2>/dev/null ;;
-    *) exit 1 ;;
+    image) exit 1 ;;
+    pull) exit "${STAND_IN_PULL_STATUS:-0}" ;;
+    *) exit 2 ;;
 esac
 """
 
 
-def container_tree(scratch: Path) -> tuple[Path, dict[str, str]]:
-    """The container action where it lives, the Dockerfile beside it, a stand-in docker, and a
-    runner's variables."""
+def test_container_pulls_the_pinned_image_without_building(scratch: Path) -> None:
+    # The historical build/load path is replaced by consumption of the checked immutable pin.
     directory = scratch / 'tools/ci/actions/container'
     directory.mkdir(parents=True)
     for name in ('install.sh', 'action.yml'):
         shutil.copy2(CONTAINER.parent / name, directory / name)
     place_helpers(scratch)
+    shutil.copy2(CI / 'environment.py', scratch / 'tools/ci/environment.py')
     (scratch / 'tools/ci/container').mkdir()
     shutil.copy2(CI / 'container/Dockerfile', scratch / 'tools/ci/container/Dockerfile')
-    tools = stand_ins(scratch, {'docker': FAKE_IMAGE_DOCKER})
-    return directory / 'install.sh', dependency_runner(scratch, 'Linux', 'X64', tools)
-
-
-def test_container_builds_the_image_once_and_loads_it_after(scratch: Path) -> None:
-    # The key and the tag are the Dockerfile's, as tools/ci/matrix.py tags the image; on a miss
-    # the image is built and saved where the action caches it, and on a hit loaded from there.
-    script, runner = container_tree(scratch)
-    result = dependency_step(scratch, script, runner, 'key')
-    assert result.returncode == 0, (result.returncode, result.stderr)
-    digest = hashlib.sha256((CI / 'container/Dockerfile').read_bytes()).hexdigest()[:16]
-    tag = f'webcpp-lane:{digest}'
     sys.path.insert(0, str(CI))
-    import matrix
-    assert matrix.CONTAINER_IMAGE == tag, (matrix.CONTAINER_IMAGE, tag)
-    assert (scratch / 'github-output').read_text() == (
-        f'tag={tag}\nkey=container-{digest}-ubuntu24-X64\n'), (
-            (scratch / 'github-output').read_text())
-    result = dependency_step(scratch, script, runner, 'build')
+    import environment as prepared_environment
+    image = 'ghcr.io/webcpporg/ci-environment@sha256:' + 'a' * 64
+    prepared_environment.write_manifest(scratch / 'tools/ci/environments.json', {
+        'native-linux-x64': {'image': image, 'recipe': prepared_environment.recipe(),
+                            'source': 'b' * 40, 'archives': []}})
+    tools = stand_ins(scratch, {'docker': FAKE_IMAGE_DOCKER})
+    runner = dependency_runner(scratch, 'Linux', 'X64', tools)
+    script = directory / 'install.sh'
+    result = dependency_step(scratch, script, runner)
     assert result.returncode == 0, (result.returncode, result.stderr)
-    archive = '.local/container/image.tar'
-    assert logged(scratch) == [f'docker build --tag {tag} tools/ci/container',
-                               f'docker save --output {archive} {tag}'], logged(scratch)
+    assert logged(scratch) == [f'docker image inspect {image}', f'docker pull {image}']
     (scratch / 'stand-in.log').unlink()
-    (scratch / 'stand-in.log.images').unlink()
-    result = dependency_step(scratch, script, runner, 'load')
-    assert result.returncode == 0, (result.returncode, result.stderr)
-    assert logged(scratch) == [f'docker load --input {archive}', f'docker image inspect {tag}']
-    # An archive that holds another image fails the load, naming the tag it lacks.
-    (scratch / archive).write_text('webcpp-lane:0000000000000000\n')
-    (scratch / 'stand-in.log.images').unlink()
-    result = dependency_step(scratch, script, runner, 'load')
+    result = dependency_step(scratch, script, {**runner, 'STAND_IN_PULL_STATUS': '1'})
     assert result.returncode == 1, (result.returncode, result.stderr)
-    assert f'install.sh: {archive} holds no image {tag}' in result.stderr, result.stderr
+    assert 'prepare-environments' in result.stderr, result.stderr
+    assert logged(scratch) == [f'docker image inspect {image}', f'docker pull {image}']
+    action = (directory / 'action.yml').read_text()
+    assert 'actions/cache' not in action and 'install.sh build' not in action, action
 
 
 def test_the_shared_helpers(scratch: Path) -> None:
@@ -1583,7 +1563,7 @@ CASES: list[Callable[[Path], None]] = [
     test_secp256k1_on_windows_builds_debug_with_visual_studio,
     test_secp256k1_refuses_an_archive_it_does_not_pin,
     test_secp256k1_refuses_a_runner_it_builds_nothing_for,
-    test_container_builds_the_image_once_and_loads_it_after,
+    test_container_pulls_the_pinned_image_without_building,
     test_chrome_installs_the_pinned_headless_shell,
     test_chrome_installs_full_chrome_for_isolated_certificate_trust,
     test_chrome_refuses_a_shell_it_does_not_pin_or_a_runner_it_has_none_for,

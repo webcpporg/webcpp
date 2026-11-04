@@ -1,0 +1,61 @@
+# Copyright (c) 2026 WebCpp.org
+#
+# Distributed under the Boost Software License, Version 1.0. (See
+# accompanying file LICENSE_1_0.txt or copy at
+# https://www.boost.org/LICENSE_1_0.txt)
+
+name: Tool archives
+description: Restore verified archives for one tool, then run its pinned installer.
+
+inputs:
+  tool:
+    description: The pinned tool action whose installer runs.
+    required: true
+  variant:
+    description: The Chrome product, or empty for another tool.
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Archive cache key
+      id: key
+      shell: bash
+      env:
+        TOOL: ${{ inputs.tool }}
+        VARIANT: ${{ inputs.variant }}
+      run: bash tools/ci/actions/tool-archives/cache.sh key "$TOOL" "$VARIANT"
+
+    - name: Restore tool archives
+      continue-on-error: true
+      id: restore
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ steps.key.outputs.directory }}
+        key: ${{ steps.key.outputs.key }}
+
+    - name: Restore prepared tool archives
+      if: steps.restore.outputs.cache-hit != 'true' && env.WEBCPP_PREPARE_ENVIRONMENT != '1'
+      shell: bash
+      env:
+        TOOL: ${{ inputs.tool }}
+        VARIANT: ${{ inputs.variant }}
+        CACHE: ${{ steps.key.outputs.directory }}
+      run: >-
+        python3 tools/ci/environment.py restore-tool
+        --tool "$TOOL" --variant "$VARIANT" --cache "$CACHE"
+
+    - name: Install the pinned tool
+      shell: bash
+      env:
+        TOOL: ${{ inputs.tool }}
+        VARIANT: ${{ inputs.variant }}
+      run: bash tools/ci/actions/tool-archives/cache.sh install "$TOOL" "$VARIANT"
+
+    - name: Save tool archives
+      continue-on-error: true
+      if: steps.restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ steps.key.outputs.directory }}
+        key: ${{ steps.key.outputs.key }}

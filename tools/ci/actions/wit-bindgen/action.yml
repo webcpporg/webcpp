@@ -14,5 +14,6 @@ runs:
   using: composite
   steps:
     - name: Install wit-bindgen 0.62.0
-      shell: bash
-      run: bash tools/ci/actions/wit-bindgen/install.sh
+      uses: ./tools/ci/actions/tool-archives
+      with:
+        tool: wit-bindgen

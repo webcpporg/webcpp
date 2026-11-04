@@ -13,5 +13,6 @@ runs:
   using: composite
   steps:
     - name: Install MrDocs 2026.9.29
-      shell: bash
-      run: bash tools/ci/actions/mrdocs/install.sh
+      uses: ./tools/ci/actions/tool-archives
+      with:
+        tool: mrdocs

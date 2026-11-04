@@ -13,5 +13,6 @@ runs:
   using: composite
   steps:
     - name: Install wasi-sdk 34.0
-      shell: bash
-      run: bash tools/ci/actions/wasi-sdk/install.sh
+      uses: ./tools/ci/actions/tool-archives
+      with:
+        tool: wasi-sdk
