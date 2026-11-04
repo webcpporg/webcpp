@@ -4,13 +4,17 @@
 # Distributed under the Boost Software License, Version 1.0. (See
 # accompanying file LICENSE_1_0.txt or copy at
 # https://www.boost.org/LICENSE_1_0.txt)
-"""Check build orchestration at the unavailable native Windows tool boundary."""
+"""Check header publication and orchestration at unavailable tool boundaries."""
 from __future__ import annotations
 
+import argparse
+import builtins
 import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -19,6 +23,148 @@ from unittest.mock import patch
 
 import build
 from source import inventory_digest
+
+
+class HeaderPublicationTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory(prefix='openssl publication ')
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        self.source = self.root / 'source'
+        self.generated = self.root / 'generated'
+        self.output = self.root / 'output'
+        self.header = self.output / 'include/openssl/configuration.h'
+        self.original = b'/* configured header */\n' * 8192
+        for directory in (self.source, self.generated, self.output):
+            (directory / 'include/openssl').mkdir(parents=True)
+        (self.source / 'include/openssl/configuration.h').write_bytes(b'/* source fallback */\n')
+        (self.generated / 'include/openssl/configuration.h').write_bytes(self.original)
+        self.header.write_bytes(self.original)
+
+    def publish(self, full: bool) -> None:
+        scratch = Path(tempfile.mkdtemp(dir=self.root))
+        shutil.copytree(self.source, scratch / 'source')
+
+        def command(command: list[str], *, cwd: Path, env: dict, log: Path,
+                    timeout: float = 600) -> None:
+            log.write_text('completed\n')
+            if command[-1] == 'build_generated':
+                shutil.copytree(self.generated / 'include', cwd / 'include')
+            if command[-1] == 'install_dev':
+                shutil.copytree(self.generated / 'include', scratch / 'install/include')
+                (scratch / 'install/lib').mkdir()
+                for name in ('libssl.a', 'libcrypto.a'):
+                    (scratch / 'install/lib' / name).write_bytes(b'archive fixture\n')
+
+        args = argparse.Namespace(cc=sys.executable, ar='ar', platform='wasi',
+                                  threading='single', variant='release', test=False,
+                                  headers_only=not full, flags=['--target=wasm32-wasip3'])
+        with patch.object(build, 'run', side_effect=command):
+            build.build_source(args, self.output,
+                               {'version': 'fixture', 'source_date_epoch': 1700000000}, scratch)
+
+    def test_full_build_keeps_identical_headers_inode_timestamp_and_permissions(self) -> None:
+        self.header.chmod(0o644)
+        os.utime(self.header, ns=(1700000000000000000, 1700000000000000000))
+        before = self.header.stat()
+        self.publish(True)
+        after = self.header.stat()
+        self.assertEqual(self.header.read_bytes(), self.original)
+        self.assertEqual((after.st_ino, after.st_mtime_ns, after.st_mode),
+                         (before.st_ino, before.st_mtime_ns, before.st_mode))
+
+    def test_header_action_refreshes_identical_headers_without_replacing_them(self) -> None:
+        os.utime(self.header, ns=(1700000000000000000, 1700000000000000000))
+        before = self.header.stat()
+        self.publish(False)
+        after = self.header.stat()
+        self.assertEqual(self.header.read_bytes(), self.original)
+        self.assertEqual((after.st_ino, after.st_mode), (before.st_ino, before.st_mode))
+        self.assertGreater(after.st_mtime_ns, before.st_mtime_ns)
+
+    @unittest.skipIf(sys.platform == 'win32', 'POSIX permits replacement of mapped files')
+    def test_republication_keeps_existing_mapped_readers_valid(self) -> None:
+        # Pause at the real write-open boundary, before shutil copies any bytes.
+        # Truncating the published inode here used to kill this reader with SIGBUS.
+        for full, changed in ((False, False), (False, True), (True, False), (True, True)):
+            with self.subTest(full=full, changed=changed):
+                self.header.write_bytes(self.original)
+                replacement = b'/* updated configuration */\n' * 8192 if changed else self.original
+                (self.generated / 'include/openssl/configuration.h').write_bytes(replacement)
+                reader = subprocess.Popen(
+                    [sys.executable, '-u', '-c',
+                     'import hashlib, mmap, resource, signal, sys; signal.alarm(10); '
+                     'resource.setrlimit(resource.RLIMIT_CORE, (0, 0)); '
+                     'f = open(sys.argv[1], "rb"); '
+                     'm = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ); '
+                     'print("mapped", flush=True); sys.stdin.readline(); '
+                     'print(hashlib.sha256(m).hexdigest())', str(self.header)],
+                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                    text=True)
+                original_open = builtins.open
+                result = []
+
+                def inspect_open(path, mode='r', *args, **kwargs):
+                    stream = original_open(path, mode, *args, **kwargs)
+                    if (isinstance(path, (str, Path)) and Path(path) == self.header
+                            and mode == 'wb' and not result):
+                        result.append(reader.communicate(input='read\n', timeout=15))
+                    return stream
+
+                try:
+                    assert reader.stdout is not None
+                    self.assertEqual(reader.stdout.readline(), 'mapped\n')
+                    with patch('builtins.open', side_effect=inspect_open):
+                        self.publish(full)
+                    if not result:
+                        result.append(reader.communicate(input='read\n', timeout=15))
+                    self.assertEqual(reader.returncode, 0, result[0][1])
+                    self.assertEqual(result[0][0].strip(),
+                                     hashlib.sha256(self.original).hexdigest())
+                    self.assertEqual(self.header.read_bytes(), replacement)
+                finally:
+                    if reader.poll() is None:
+                        reader.kill()
+                    reader.communicate(timeout=15)
+
+    def test_changed_headers_keep_source_permissions(self) -> None:
+        source = self.generated / 'include/openssl/configuration.h'
+        source.write_bytes(b'/* updated configuration */\n')
+        source.chmod(0o644)
+        self.header.chmod(0o600)
+        self.publish(False)
+        self.assertEqual(self.header.read_bytes(), source.read_bytes())
+        self.assertEqual(stat.S_IMODE(self.header.stat().st_mode),
+                         stat.S_IMODE(source.stat().st_mode))
+
+    def test_changed_headers_receive_a_new_build_timestamp(self) -> None:
+        # Source headers can predate the recipe. Retaining their old timestamp
+        # would make B2 rerun header generation and rebuild archives forever.
+        source = self.generated / 'include/openssl/configuration.h'
+        source.write_bytes(b'/* updated configuration */\n')
+        os.utime(source, ns=(1700000000000000000, 1700000000000000000))
+        self.publish(True)
+        self.assertGreater(self.header.stat().st_mtime_ns, source.stat().st_mtime_ns)
+
+    def test_failed_copy_leaves_the_published_header_and_no_partial_files(self) -> None:
+        (self.generated / 'include/openssl/configuration.h').write_bytes(b'/* changed */\n')
+        original_copy = shutil.copyfile
+
+        def fail_copy(source, destination, *, follow_symlinks=True):
+            if Path(destination).parent == self.header.parent:
+                Path(destination).write_bytes(b'partial')
+                raise OSError('interrupted header copy')
+            return original_copy(source, destination, follow_symlinks=follow_symlinks)
+
+        for full in (False, True):
+            with self.subTest(full=full), patch.object(build.shutil, 'copyfile',
+                                                     side_effect=fail_copy):
+                with self.assertRaisesRegex(OSError, 'interrupted header copy'):
+                    self.publish(full)
+                self.assertEqual(self.header.read_bytes(), self.original)
+                self.assertEqual(list(self.header.parent.iterdir()), [self.header])
+                for name in ('libssl.a', 'libcrypto.a', 'build.json'):
+                    self.assertFalse((self.output / name).exists(), name)
 
 
 class UpstreamResultsTest(unittest.TestCase):
