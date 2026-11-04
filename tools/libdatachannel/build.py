@@ -55,6 +55,15 @@ def build(args: argparse.Namespace) -> None:
     source, output, openssl = args.source.resolve(), args.output.resolve(), args.openssl.resolve()
     pin = json.loads((HERE / 'pin.json').read_text())
     check_checkout(source, pin)
+    if args.headers_only:
+        # The same verified staging boundary protects analysis and full builds.
+        # Headers alone cannot publish archives or their successful build record.
+        with tempfile.TemporaryDirectory(prefix='webcpp-libdatachannel-headers-') as temporary:
+            staged = Path(temporary) / 'source'
+            stage_source(source, staged, pin)
+            shutil.copytree(staged / 'include/rtc', output / 'include/rtc',
+                            dirs_exist_ok=True, copy_function=shutil.copyfile)
+        return
     windows = args.platform == 'windows'
     ssl = provider(openssl, windows)
     output.mkdir(parents=True, exist_ok=True)
@@ -164,6 +173,7 @@ def main() -> None:
     parser.add_argument('--platform', choices=('darwin', 'linux', 'windows'), required=True)
     parser.add_argument('--cxx', required=True)
     parser.add_argument('--variant', required=True)
+    parser.add_argument('--headers-only', action='store_true')
     parser.add_argument('flags', nargs=argparse.REMAINDER)
     build(parser.parse_args(arguments))
 

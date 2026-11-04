@@ -91,6 +91,65 @@ def test_missing_source_is_lazy_and_never_uses_an_external_install(root: Path) -
                    'git submodule update --init --recursive third_party/libs/libdatachannel')
 
 
+def provider_header_plan(root: Path, properties: list[str]) -> None:
+    """Ask B2 for only RTC headers, retaining the real consumer's provider properties."""
+    (root / 'Jamroot').write_text(
+        'import webcpp-openssl ;\nimport webcpp-libdatachannel ;\n'
+        'import webcpp-lint-headers ;\n'
+        'project : build-dir bin ;\n'
+        f'webcpp-openssl.declare "{root.as_posix()}" : ssl.h configuration.h\n'
+        '  : tools/openssl/build.py ;\n'
+        f'webcpp-libdatachannel.declare "{root.as_posix()}" : datachannel.hpp\n'
+        '  : tools/libdatachannel/build.py ;\n'
+        'exe consumer : provider.cpp libdatachannel openssl ;\n'
+        'webcpp-lint-headers.declare-lint-headers ;\n')
+    (root / 'provider.cpp').write_text(SOURCE)
+    env = {'BOOST_BUILD_PATH': str(root / 'tools')}
+    full = harness.run_b2(root, '-n', '-a', '-d+2', '-d+6', 'consumer', *properties,
+                          env_extra=env)
+    harness.expect(full, True, 'webcpp-openssl.build', 'webcpp-libdatachannel.build')
+    if 'webcpp-openssl-tests=on' in properties:
+        assert 'upstream-tests.json' in full.stdout, full.stdout[-6000:]
+    if 'debug-store=database' in properties:
+        assert 'ossl_static.pdb' in full.stdout, full.stdout[-6000:]
+    selected = re.findall(r'^webcpp-libdatachannel\.prepare-headers (.+)$', full.stdout,
+                          re.MULTILINE)
+    assert len(selected) == 1, full.stdout[-6000:]
+    request = [*properties, '--webcpp-lint-source=consumer',
+               *(f'--webcpp-lint-property={prop}' for prop in properties),
+               f'--webcpp-lint-header={selected[0]}', 'lint-provider-headers']
+    headers = harness.run_b2(root, '-n', '-a', '-d+2', *request, env_extra=env)
+    harness.expect(headers, True, 'webcpp-libdatachannel.prepare-headers',
+                   'webcpp-openssl.generate-headers')
+    assert not re.search(r'^webcpp-(?:openssl|libdatachannel)\.build ', headers.stdout,
+                         re.MULTILINE), headers.stdout[-10000:]
+    assert '--test ' not in headers.stdout, headers.stdout[-6000:]
+    if 'target-os=windows' not in properties:
+        built = harness.run_b2(root, '-d0', *request, env_extra=env)
+        harness.expect(built, True)
+        assert Path(selected[0]).is_file(), selected
+        assert list((root / 'bin').rglob('configuration.h'))
+        for artifact in ('*.a', '*.lib', 'build.json', 'upstream-tests.json', '*.run'):
+            assert not list((root / 'bin').rglob(artifact)), artifact
+
+
+def test_headers_only_do_not_build_upstream_proof(root: Path) -> None:
+    provider_header_plan(root, ['toolset=clang', 'threading=multi', 'webcpp-openssl-tests=on'])
+
+
+def test_headers_only_do_not_build_msvc_symbols(root: Path) -> None:
+    compiler = root / 'Visual Studio/bin/cl.exe'
+    compiler.parent.mkdir(parents=True)
+    compiler.write_text('')
+    setup = compiler.parent / 'vcvarsall.bat'
+    setup.write_text('')
+    harness.configure(root, f'using msvc : 14.3 : "{compiler.as_posix()}"\n'
+                      f'  : <setup>"{setup.as_posix()}" <rewrite-setup-scripts>off ;\n')
+    provider_header_plan(root, ['toolset=msvc-14.3', 'target-os=windows', 'architecture=x86',
+                               'address-model=64', 'threading=multi', 'variant=debug',
+                               'debug-store=database'])
+
+
 def test_msvc_runtime_and_custom_cpp_flags_reach_both_dependencies(root: Path) -> None:
     compiler = root / 'Visual Studio/bin/cl.exe'
     compiler.parent.mkdir(parents=True)
@@ -127,6 +186,8 @@ def test_msvc_runtime_and_custom_cpp_flags_reach_both_dependencies(root: Path) -
 
 
 CASES = [test_one_native_provider_in_a_path_with_spaces,
+         test_headers_only_do_not_build_upstream_proof,
+         test_headers_only_do_not_build_msvc_symbols,
          test_msvc_runtime_and_custom_cpp_flags_reach_both_dependencies,
          test_single_threaded_and_unsupported_consumers_are_refused,
          test_missing_source_is_lazy_and_never_uses_an_external_install]

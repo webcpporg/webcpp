@@ -14,6 +14,7 @@ import property-set ;
 import targets ;
 import toolset ;
 import virtual-target ;
+import webcpp-lint-headers ;
 
 feature.feature webcpp-libdatachannel-openssl : : free incidental ;
 
@@ -24,6 +25,7 @@ class libdatachannel-target : basic-target
     import modules ;
     import path ;
     import property-set ;
+    import set ;
     import toolset ;
     import unix ;
     import virtual-target ;
@@ -47,6 +49,7 @@ class libdatachannel-target : basic-target
         local provider-libraries ;
         local provider-ssl ;
         local provider-crypto ;
+        local header-sources ;
         for local source in $(source-targets)
         {
             if [ $(source).name ] in libssl.a libssl.lib
@@ -62,6 +65,10 @@ class libdatachannel-target : basic-target
             {
                 provider-libraries += $(source) ;
             }
+            else
+            {
+                header-sources += $(source) ;
+            }
         }
         if ! $(provider)
         {
@@ -71,31 +78,58 @@ class libdatachannel-target : basic-target
         properties = [ $(properties).add $(relevant) ] ;
         local fingerprint = [ modules.call-in webcpp-libdatachannel : fingerprint $(properties) ] ;
         properties = [ $(properties).add-raw <webcpp-libdatachannel-openssl>$(provider) ] ;
-        local action = [ new action $(source-targets) : webcpp-libdatachannel.build : $(properties) ] ;
+        # RTC headers are verified source files. Preparing them needs neither
+        # OpenSSL archives nor a CMake build of the native provider.
+        # OpenSSL also propagates proof and PDB outputs through <dependency>.
+        # Remove only those produced by its archive action; keep generated
+        # headers and every other dependency, and retain the full build's set.
+        local provider-action = [ $(provider-ssl).action ] ;
+        local archive-dependencies ;
+        for local dependency in [ $(properties).get <dependency> ]
+        {
+            if [ $(dependency).action ] = $(provider-action)
+            {
+                archive-dependencies += <dependency>$(dependency) ;
+            }
+        }
+        local header-properties = [ property-set.create
+            [ set.difference [ $(properties).raw ] : $(archive-dependencies) ] ] ;
+        local header-action = [ new action $(header-sources)
+            : webcpp-libdatachannel.prepare-headers : $(header-properties) ] ;
+        local headers ;
+        local directory ;
+        for local header in [ modules.peek webcpp-libdatachannel : .headers ]
+        {
+            local generated = [ new file-target include/rtc/$(header) exact
+                : H : $(self.project) : $(header-action) ] ;
+            if ! $(directory)
+            {
+                directory = [ path.root [ path.make [ $(generated).path ] ] [ path.pwd ] ] ;
+                directory = $(directory)/config-$(fingerprint) ;
+            }
+            $(generated).set-path $(directory) ;
+            generated = [ virtual-target.register $(generated) ] ;
+            headers += $(generated) ;
+            if $(header) = datachannel.hpp
+            {
+                modules.call-in webcpp-lint-headers : register-lint-header
+                    $(directory)/include/rtc/$(header) : $(generated) ;
+            }
+        }
+        # Order the two writers without allowing header preparation to satisfy
+        # any archive or its build record.
+        local action = [ new action $(source-targets) $(headers)
+            : webcpp-libdatachannel.build : $(properties) ] ;
         local prefix = lib ;
         local extension = a ;
         if $(os) = windows { prefix = "" ; extension = lib ; }
         local archives ;
-        local directory ;
         for local library in datachannel juice usrsctp srtp2
         {
             local archive = [ new file-target $(prefix)$(library).$(extension) exact
                 : STATIC_LIB : $(self.project) : $(action) ] ;
-            if ! $(directory)
-            {
-                directory = [ path.root [ path.make [ $(archive).path ] ] [ path.pwd ] ] ;
-                directory = $(directory)/config-$(fingerprint) ;
-            }
             $(archive).set-path $(directory) ;
             archives += [ virtual-target.register $(archive) ] ;
-        }
-        local headers ;
-        for local header in [ modules.peek webcpp-libdatachannel : .headers ]
-        {
-            local generated = [ new file-target include/rtc/$(header) exact
-                : H : $(self.project) : $(action) ] ;
-            $(generated).set-path $(directory) ;
-            headers += [ virtual-target.register $(generated) ] ;
         }
         if $(os) = windows && [ $(properties).get <debug-symbols> ] = "on"
             && [ $(properties).get <debug-store> ] = database
@@ -146,6 +180,7 @@ rule configuration ( properties * )
 }
 
 toolset.uses-features webcpp-libdatachannel.build : <toolset> <target-os> <architecture> <address-model> <variant> <threading> <optimization> <debug-symbols> <debug-store> <inlining> <runtime-link> <runtime-debugging> <cflags> <cxxflags> <define> <linkflags> <exception-handling> <rtti> <lto> <lto-mode> ;
+toolset.uses-features webcpp-libdatachannel.prepare-headers : <toolset> <target-os> <architecture> <address-model> <variant> <threading> <optimization> <debug-symbols> <debug-store> <inlining> <runtime-link> <runtime-debugging> <cflags> <cxxflags> <define> <linkflags> <exception-handling> <rtti> <lto> <lto-mode> ;
 
 rule compiler-settings ( outputs * : ps )
 {
@@ -182,7 +217,7 @@ rule fingerprint ( ps )
     return $(.fingerprint.$(ps)) ;
 }
 
-rule build ( outputs * : inputs * : properties * )
+rule build-settings ( outputs * : properties * )
 {
     local ps = [ property-set.create $(properties) ] ;
     compiler-settings $(outputs) : $(ps) ;
@@ -195,6 +230,21 @@ rule build ( outputs * : inputs * : properties * )
     OPENSSL on $(outputs) = [ path.native [ $(ps).get <webcpp-libdatachannel-openssl> ] ] ;
     PLATFORM on $(outputs) = [ $(ps).get <target-os> ] ;
     VARIANT on $(outputs) = [ $(ps).get <variant> ] ;
+}
+
+rule build ( outputs * : inputs * : properties * )
+{
+    build-settings $(outputs) : $(properties) ;
+}
+
+rule prepare-headers ( outputs * : inputs * : properties * )
+{
+    build-settings $(outputs) : $(properties) ;
+}
+
+actions prepare-headers
+{
+    $(.SETUP) python3 "$(SCRIPT)" "@($(<[1]:W).rsp:E=--headers-only --source "$(SOURCE)" --output "$(<[1]:DW)/../.." --openssl "$(OPENSSL)" --platform "$(PLATFORM)" --variant "$(VARIANT)" --cxx "$(DRIVER)" -- $(C_OPTIONS) -D$(DEFINES) --cxx-flags $(CXX_OPTIONS) -D$(DEFINES))"
 }
 
 actions build

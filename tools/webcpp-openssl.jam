@@ -5,7 +5,6 @@
 # https://www.boost.org/LICENSE_1_0.txt)
 
 import "class" : new ;
-import build-request ;
 import errors ;
 import feature ;
 import modules ;
@@ -16,6 +15,7 @@ import targets ;
 import toolset ;
 import type ;
 import virtual-target ;
+import webcpp-lint-headers ;
 import webcpp-wasi ;
 
 feature.feature webcpp-openssl-tests : on : optional propagated ;
@@ -86,7 +86,7 @@ class openssl-target : basic-target
             headers += $(generated) ;
             if $(header) = configuration.h
             {
-                modules.call-in webcpp-openssl : register-lint-header
+                modules.call-in webcpp-lint-headers : register-lint-header
                     $(directory)/include/openssl/$(header) : $(generated) ;
             }
         }
@@ -120,81 +120,6 @@ class openssl-target : basic-target
         }
         return [ property-set.create [ $(relevant).raw ] <include>$(directory)/include
             <dependency>$(headers) ] $(ssl) $(crypto) ;
-    }
-}
-
-rule register-lint-header ( file : target )
-{
-    .lint-header.$(file) = $(target) ;
-}
-
-# Resolve consumers exactly as B2 does, but return only provider artifacts.
-# Requesting existing filenames on B2's command line instead would treat them
-# as input files and update every consumer in the original request.
-class openssl-lint-headers-target : basic-target
-{
-    import errors ;
-    import modules ;
-    import property-set ;
-
-    rule __init__ ( name : project : sources * : requirements *
-        : default-build * : usage-requirements * )
-    {
-        basic-target.__init__ $(name) : $(project) : $(sources) :
-            $(requirements) : $(default-build) : $(usage-requirements) ;
-    }
-
-    rule construct ( name : source-targets * : properties )
-    {
-        # Generate each original top-level request independently. Making them
-        # sources of this target would propagate its defaults into own lanes.
-        for local request in [ modules.peek webcpp-openssl : .lint-properties ]
-        {
-            for local source in [ modules.peek webcpp-openssl : .lint-sources ]
-            {
-                local target = [ $(self.project).find $(source) ] ;
-                local generated = [ $(target).generate $(request) ] ;
-            }
-        }
-        local selected ;
-        for local file in [ modules.peek webcpp-openssl : .lint-requested-headers ]
-        {
-            local target = [ modules.peek webcpp-openssl : .lint-header.$(file) ] ;
-            if ! $(target)
-            {
-                errors.user-error "No OpenSSL header variant was generated for" $(file) ;
-            }
-            selected += $(target) ;
-        }
-        return [ property-set.empty ] $(selected) ;
-    }
-}
-
-rule declare-lint-headers ( )
-{
-    local arguments = [ modules.peek : ARGV ] ;
-    .lint-sources = [ MATCH "^--webcpp-lint-source=(.*)$" : $(arguments) ] ;
-    for local file in [ MATCH "^--webcpp-lint-header=(.*)$" : $(arguments) ]
-    {
-        .lint-requested-headers += [ path.make $(file) ] ;
-    }
-    local properties = [ MATCH "^--webcpp-lint-property=(.*)$" : $(arguments) ] ;
-    if $(properties)
-    {
-        local converted = [ build-request.convert-command-line-elements $(properties) ] ;
-        for local expanded in [ build-request.expand-no-defaults $(converted) ]
-        {
-            .lint-properties += [ property-set.create [ feature.split $(expanded) ] ] ;
-        }
-    }
-    else
-    {
-        .lint-properties = [ property-set.empty ] ;
-    }
-    if $(.lint-sources) && $(.lint-requested-headers)
-    {
-        targets.create-metatarget openssl-lint-headers-target : [ project.current ]
-            : lint-openssl-headers ;
     }
 }
 

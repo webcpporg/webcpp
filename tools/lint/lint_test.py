@@ -455,7 +455,7 @@ def test_compile_database_prepares_program_openssl_variants(root):
         root, '-n', f'--webcpp-lint-source={request}',
         '--webcpp-lint-property=exception-handling=on,off',
         *(f'--webcpp-lint-header={directory}/include/openssl/configuration.h'
-          for directory in directories), 'lint-openssl-headers')
+          for directory in directories), 'lint-provider-headers')
     assert preparation.returncode == 0, preparation.stdout[-6000:]
     assert not re.search(r'^webcpp-openssl\.build ', preparation.stdout, re.MULTILINE), (
         preparation.stdout[-6000:])
@@ -516,7 +516,7 @@ def test_compile_database_prepares_program_openssl_variants(root):
     pending = harness.run_b2(
         root, '-n', '--webcpp-lint-source=libs/tls_user/test/release//tls-variant',
         '--webcpp-lint-property=exception-handling=on,off',
-        *(f'--webcpp-lint-header={header}' for header in headers), 'lint-openssl-headers')
+        *(f'--webcpp-lint-header={header}' for header in headers), 'lint-provider-headers')
     assert pending.returncode == 0, pending.stdout[-6000:]
     assert len(re.findall(r'^webcpp-openssl\.generate-headers ', pending.stdout,
                           re.MULTILINE)) == 4, (
@@ -524,6 +524,60 @@ def test_compile_database_prepares_program_openssl_variants(root):
     assert not re.search(r'^webcpp-openssl\.build ', pending.stdout, re.MULTILINE)
     assert 'testing.capture-output' not in pending.stdout, pending.stdout[-6000:]
     assert not re.search(r'^\S+\.compile', pending.stdout, re.MULTILINE), pending.stdout[-6000:]
+
+
+def test_compile_database_prepares_program_libdatachannel_variants(root):
+    # RTC programs need their own provider headers even if no public header
+    # unit selects that configuration. No archive build may hide missing inputs.
+    output = root / 'build outputs'
+    output.mkdir()
+    (root / 'bin').symlink_to(output, target_is_directory=True)
+    harness.add_library(root, 'rtc_user', HASH + '\nimport webcpp ;\n'
+                        'webcpp.targets native ;\n'
+                        'webcpp.run rtc_program : rtc_program.cpp\n'
+                        '  : <library>/webcpp/third_party//libdatachannel\n'
+                        '    <threading>multi <define>WEBCPP_TEST_RTC_PROGRAM ;\n',
+                        {'rtc_program.cpp': CPP + '\n#include <rtc/datachannel.hpp>\n'
+                         'int main() { return 0; }\n'})
+    completed = compile_database(root)
+    assert completed.returncode == 0, completed.stdout[-6000:]
+    entries = json.loads((root / 'compile database/compile_commands.json').read_text())
+    source = root / 'libs/rtc_user/test/rtc_program.cpp'
+    commands = [entry['arguments'] for entry in entries if Path(entry['file']) == source]
+    assert len(commands) == 2, commands
+    for command in commands:
+        said = compile_commands.compiles_aggregate(str(root), command, str(source))
+        assert not said, said
+    assert not list((root / 'bin/third_party').rglob('*.a'))
+    assert not list((root / 'bin/third_party').rglob('*.lib'))
+    assert not list((root / 'bin/third_party').rglob('build.json'))
+    assert not list((root / 'bin').rglob('*.run'))
+    headers = sorted((root / 'bin/third_party').rglob('datachannel.hpp'))
+    assert len(headers) == 2, headers
+    upstream = root / 'third_party/libs/libdatachannel/include/rtc'
+    for header in headers:
+        for source_header in upstream.iterdir():
+            assert (header.parent / source_header.name).read_bytes() == source_header.read_bytes()
+    repeated = compile_database(root)
+    assert repeated.returncode == 0, repeated.stdout[-6000:]
+    assert json.loads((root / 'compile database/compile_commands.json').read_text()) == entries
+    assert not list((root / 'bin/third_party').rglob('build.json'))
+    assert not list((root / 'bin').rglob('*.run'))
+    # Preparing headers leaves the real consumer's full archive actions pending.
+    pending = harness.run_b2(root, '-n', 'libs/rtc_user/test//rtc_program')
+    assert pending.returncode == 0, pending.stdout[-6000:]
+    assert 'webcpp-libdatachannel.build ' in pending.stdout, pending.stdout[-6000:]
+    assert 'webcpp-openssl.build ' in pending.stdout, pending.stdout[-6000:]
+    # A missing header and a stale sibling variant must both be restored without
+    # accidentally running the consumer or publishing a successful build record.
+    changed = max(header.stat().st_mtime for header in headers) + 1
+    os.utime(root / 'tools/libdatachannel/build.py', (changed, changed))
+    headers[0].unlink()
+    refreshed = compile_database(root)
+    assert refreshed.returncode == 0, refreshed.stdout[-6000:]
+    assert all(header.is_file() for header in headers), headers
+    assert not list((root / 'bin/third_party').rglob('build.json'))
+    assert not list((root / 'bin').rglob('*.run'))
 
 
 def test_compile_database_reads_what_only_wasi_builds(root):
@@ -2307,6 +2361,7 @@ CASES = [
     test_compile_database_lists_what_b2_builds,
     test_compile_database_prepares_generated_header_dependencies,
     test_compile_database_prepares_program_openssl_variants,
+    test_compile_database_prepares_program_libdatachannel_variants,
     test_compile_database_reads_what_only_wasi_builds,
     test_an_aggregate_no_units_options_compile_names_each,
     test_wasi_sdk_is_told_by_the_compiler_itself,

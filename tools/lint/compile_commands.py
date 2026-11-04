@@ -101,7 +101,8 @@ through B2. This materializes generated dependencies, including OpenSSL configur
 data, on a clean checkout. The corresponding exception-free units are prepared too. Selected
 program commands may also need checked Boost overlays on a target no aggregate uses; their
 include paths select the overlays' B2 preparation targets before analysis. Neither preparation
-executes a test program.
+executes a test program. Program-only OpenSSL and libdatachannel variants prepare their
+verified provider headers too, without compiling archives or publishing build proof.
 
 b2 runs with root/.local/user-config.jam when it exists, else with $WEBCPP_USER_CONFIG when it
 is set, else with its own search; and without CPATH, CPLUS_INCLUDE_PATH and C_INCLUDE_PATH,
@@ -607,9 +608,9 @@ def prepare_boost_overlays(root: str, target: str, commands: list[list[str]]) ->
                       'while preparing checked Boost overlays')
 
 
-def prepare_openssl_headers(root: str, request: list[str], commands: list[list[str]],
+def prepare_provider_headers(root: str, request: list[str], commands: list[list[str]],
                             lines: list[str]) -> None:
-    """Build each program's configured OpenSSL headers without executing its test target."""
+    """Build each program's configured provider headers without executing its test target."""
     includes: set[Path] = set()
     for words in commands:
         for index, word in enumerate(words):
@@ -626,17 +627,21 @@ def prepare_openssl_headers(root: str, request: list[str], commands: list[list[s
                 includes.add(directory)
     if not includes:
         return
-    # libdatachannel also publishes config-*/include. Identify the provider from
-    # its actual B2 action, rather than assuming every configured directory is TLS.
+    # Select each provider by its real B2 action, preserving the exact variant
+    # that the consumer uses, including program-only definitions and ABI flags.
     headers: set[str] = set()
     for line in lines:
-        built = re.fullmatch(r'webcpp-openssl\.build (.+[/\\])libssl\.(?:a|lib)', line)
+        built = re.fullmatch(
+            r'webcpp-(openssl|libdatachannel)\.build (.+[/\\])'
+            r'(?:libssl|libdatachannel|datachannel)\.(?:a|lib)', line)
         if built:
-            directory = Path(root, built.group(1), 'include')
+            directory = Path(root, built.group(2), 'include')
             # B2 aliases explicit outputs by their original spelling, even when
             # the build directory is a symlink. Canonicalize only comparisons.
             if directory.resolve() in includes:
-                headers.add(str(directory / 'openssl/configuration.h'))
+                header = ('openssl/configuration.h' if built.group(1) == 'openssl'
+                          else 'rtc/datachannel.hpp')
+                headers.add(str(directory / header))
     if not headers:
         return
     # Resolve the original consumers inside a dedicated B2 preparation target.
@@ -649,10 +654,10 @@ def prepare_openssl_headers(root: str, request: list[str], commands: list[list[s
     sources = [f'--webcpp-lint-source={argument}' for argument in request if '=' not in argument]
     requested = [f'--webcpp-lint-header={header}' for header in sorted(headers)]
     command, completed = run_b2(root, ['-d0', *properties, *original, *sources, *requested,
-                                      'lint-openssl-headers'])
+                                      'lint-provider-headers'])
     if completed.returncode != 0 or any(not Path(header).is_file() for header in headers):
         raise Failure(f'{completed.stdout}{" ".join(command)} exited {completed.returncode} '
-                      'while preparing program OpenSSL headers')
+                      'while preparing program provider headers')
 
 
 def source_path(root: str, source: str) -> str:
@@ -690,7 +695,7 @@ def read(root: str, target: str, lines: list[str], entries: list[dict[str, objec
         entries.append({'directory': root, 'file': os.path.join(root, source),
                         'arguments': analysed(target, source, words, wasi_clang)})
     prepare_boost_overlays(root, target, selected)
-    prepare_openssl_headers(root, request, selected, lines)
+    prepare_provider_headers(root, request, selected, lines)
     return units, sources
 
 
@@ -814,7 +819,7 @@ def twins(root: str, target: str, chosen: dict[str, list[Aggregate]], units: Uni
         entries.append({'directory': root, 'file': os.path.join(root, source),
                         'arguments': analysed(target, source, words, wasi_clang)})
     prepare_boost_overlays(root, target, selected)
-    prepare_openssl_headers(root, request, selected, lines)
+    prepare_provider_headers(root, request, selected, lines)
     twinned.programs |= kept - compiled
     for library, theirs in aggregates.items():
         index = next(index for index, aggregate in enumerate(theirs)

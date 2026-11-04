@@ -7,6 +7,7 @@
 """Exercise committed source pin generation and the verified build staging boundary."""
 from __future__ import annotations
 
+import argparse
 import json
 import os
 from pathlib import Path
@@ -16,6 +17,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from build import build
 from source import check_checkout, stage_source
 from update import regenerate
 
@@ -79,6 +81,34 @@ class SourceTest(unittest.TestCase):
                          ['CMakeLists.txt', 'crypto/input.c'])
         self.assertEqual((destination / 'CMakeLists.txt').read_bytes(), b'#!/usr/bin/env perl\n')
         self.assertEqual((destination / 'CMakeLists.txt').stat().st_mode & 0o777, 0o755)
+
+    def test_headers_only_checks_revision_and_all_distributable_bytes(self) -> None:
+        header = self.source / 'include/rtc/datachannel.hpp'
+        header.parent.mkdir(parents=True)
+        header.write_text('struct channel {};\n')
+        self.git('add', '.')
+        self.git('commit', '--quiet', '-m', 'Add public header fixture')
+        self.pin['commit'] = self.git('rev-parse', 'HEAD')
+        (self.root / 'pin.json').write_text(json.dumps(regenerate(self.source, self.pin)))
+        output = self.root / 'headers'
+        args = argparse.Namespace(source=self.source, output=output,
+                                  openssl=self.root / 'absent provider', headers_only=True)
+        with patch('build.HERE', self.root):
+            build(args)
+            self.assertEqual((output / 'include/rtc/datachannel.hpp').read_bytes(),
+                             b'struct channel {};\n')
+            self.assertEqual([path.relative_to(output).as_posix() for path in output.rglob('*')
+                              if path.is_file()], ['include/rtc/datachannel.hpp'])
+            args.output = self.root / 'rejected'
+            header.write_text('struct tampered {};\n')
+            with self.assertRaises(subprocess.CalledProcessError):
+                build(args)
+            self.assertFalse(args.output.exists())
+            self.git('checkout', '--', 'include/rtc/datachannel.hpp')
+            (self.source / 'extra.c').write_text('int untracked;\n')
+            with self.assertRaisesRegex(RuntimeError, 'source tree differs'):
+                build(args)
+            self.assertFalse(args.output.exists())
 
     def test_checkout_and_generator_reject_mismatched_revision(self) -> None:
         self.pin['commit'] = '0' * 40

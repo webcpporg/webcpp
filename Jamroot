@@ -24,6 +24,7 @@ import type ;
 # with, which import it as webcpp.
 import tools/webcpp ;
 import tools/webcpp-wasi ;
+import tools/webcpp-lint-headers ;
 import tools/webcpp-openssl ;
 import tools/webcpp-libdatachannel ;
 import tools/webcpp-ca-certificates ;
@@ -781,7 +782,7 @@ actions dist
 notfile dist : @dist : : <dependency>doc <webcpp-boost-check>off ;
 
 # This target is declared only for the lint's explicit preparation request.
-webcpp-openssl.declare-lint-headers ;
+webcpp-lint-headers.declare-lint-headers ;
 
 explicit boost_version throw_exception boost_json boost_url boost_charconv
     boost_locale boost_cobalt boost_cobalt_io_ssl node-test emscripten-reference test example doc install $(.install)
