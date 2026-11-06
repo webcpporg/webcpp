@@ -34,9 +34,7 @@
 #               emscripten lane emsdk and Node, which runs its programs, and a lane whose entry
 #               says external the libraries its libraries need, built with the lane's compilers.
 #               GCC 14 and Clang 18 run their b2 in a container with no network but the loopback,
-#               whose image (tools/ci/container/Dockerfile) they load from the cache.
-#   container   when a lane runs in a container: builds that image once per run when the cache
-#               does not hold it, and saves it there; every lane waits for it.
+#               whose image is prepared separately and pulled by its immutable digest.
 #   own-lanes   one job per own lane of a library and target it runs on, which runs the lane
 #               in every directory that declares it there. One that names no target, as an
 #               oracle, runs on Linux x86-64 with Clang 18, and with Node when it runs the
@@ -106,7 +104,6 @@ jobs:
       has-emscripten: ${{ steps.plan.outputs.has-emscripten }}
       external: ${{ steps.plan.outputs.external }}
       lint-external: ${{ steps.plan.outputs.lint-external }}
-      has-container: ${{ steps.plan.outputs.has-container }}
     steps:
       # The superproject is the caller's commit when it calls this workflow itself, and main
       # when a library does, the branch this workflow is called at.
@@ -169,11 +166,6 @@ jobs:
           matrix="$(python3 tools/ci/matrix.py plan "${arguments[@]}")"
           python3 -m json.tool <<< "$matrix"
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
-          # Whether a lane runs in a container, whose image the container job builds first.
-          has_container="$(python3 -c 'import json, sys
-          print(str(any(lane["container"] for lane in json.load(sys.stdin)["include"])).lower())' \
-            <<< "$matrix")"
-          echo "has-container=$has_container" >> "$GITHUB_OUTPUT"
           own_lanes="$(python3 tools/ci/matrix.py own-lanes "${arguments[@]}")"
           python3 -m json.tool <<< "$own_lanes"
           echo "own-lanes=$own_lanes" >> "$GITHUB_OUTPUT"
@@ -194,27 +186,10 @@ jobs:
           lint_external="$(python3 tools/ci/matrix.py external)"
           echo "lint-external=$lint_external" >> "$GITHUB_OUTPUT"
 
-  # The container lanes' image, built once per run when the cache does not hold it, and saved
-  # there before any lane starts: two lanes that missed the cache together would each build it.
-  container:
-    name: Container image
-    needs: plan
-    if: needs.plan.outputs.has-container == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    steps:
-      - *superproject
-      - *superproject-for-library
-      - uses: ./tools/ci/actions/container
-
-  # Every lane waits for the container job, which builds the image a container lane loads, and
-  # runs when that job succeeded or was not needed.
+  # Only a container lane obtains its prepared image; other lanes do not wait for it.
   lanes:
     name: ${{ matrix.name }}
-    needs: [plan, container]
-    if: >-
-      !cancelled() && needs.plan.result == 'success'
-      && (needs.container.result == 'success' || needs.container.result == 'skipped')
+    needs: plan
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     strategy:
@@ -275,8 +250,8 @@ jobs:
           cc: ${{ matrix.cc }}
           emscripten: ${{ matrix.emsdk }}
 
-      # The image a container lane runs b2 in (its entry's container), which the container job
-      # built and cached, restored from the cache, so that the lane builds none.
+      # Only a container lane obtains the separately prepared immutable image.
+      # No ordinary lane builds images or waits for an image-building job.
       - if: matrix.container
         uses: ./tools/ci/actions/container
 

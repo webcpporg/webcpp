@@ -15,5 +15,6 @@ runs:
   using: composite
   steps:
     - name: Install the WIT of WASI 0.2.12 and 0.3.0
-      shell: bash
-      run: bash tools/ci/actions/wasi-wit/install.sh
+      uses: ./tools/ci/actions/tool-archives
+      with:
+        tool: wasi-wit

@@ -117,7 +117,6 @@ register.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import re
@@ -125,6 +124,8 @@ import shlex
 import shutil
 import subprocess
 import sys
+
+import environment as prepared_environment
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 
@@ -168,24 +169,6 @@ EXTERNAL_DEPENDENCIES = {'trystero': ('secp256k1',)}
 # of such a library passes to b2 as -s<VARIABLE>=<dir>: a library's build.jam reads them from b2's
 # command line alone, never from the environment.
 EXTERNAL_VARIABLES = ('SECP256K1_ROOT', 'SECP256K1_EMSCRIPTEN_ROOT')
-
-# The directory of the Dockerfile a container lane's image is built from, and the image, tagged
-# with the start of the Dockerfile's SHA-256: an image of another Dockerfile is never taken for it.
-# tools/ci/actions/container/install.sh tags the image it caches the same way.
-CONTAINER_CONTEXT = ROOT / 'tools/ci/container'
-
-
-def container_tag() -> str:
-    """The tag of the container lanes' image: webcpp-lane:<16 hex digits>, or the bare name when
-    the Dockerfile cannot be read, which then fails the build that needs it."""
-    try:
-        digest = hashlib.sha256((CONTAINER_CONTEXT / 'Dockerfile').read_bytes()).hexdigest()
-    except OSError:
-        return 'webcpp-lane'
-    return f'webcpp-lane:{digest[:16]}'
-
-
-CONTAINER_IMAGE = container_tag()
 
 # The own lanes whose driver meets a browser, (library, lane), which the CI's chrome action gives
 # its pinned chrome-headless-shell, as CHROME: trystero's interop, natively and on emscripten, and
@@ -828,29 +811,15 @@ def fresh_xml(out_dir: Path, name: str) -> Path:
     return xml
 
 
-def container_image() -> None:
-    """Builds the image a container lane runs in, from CONTAINER_CONTEXT, with the network its
-    packages are installed from, unless an image of that tag is there: the CI's container action
-    loads the one it built once and cached."""
+def container_image() -> str:
+    """Obtain the pinned prepared image; normal lanes never build a missing image."""
     try:
-        present = subprocess.run(['docker', 'image', 'inspect', CONTAINER_IMAGE],
-                                 capture_output=True, check=False).returncode == 0
-    except OSError as error:
-        raise Failure(f'cannot run docker: {error.strerror}') from error
-    if present:
-        print(f'container: {CONTAINER_IMAGE} is there', flush=True)
-        return
-    command = ['docker', 'build', '--tag', CONTAINER_IMAGE, str(CONTAINER_CONTEXT)]
-    print(f'container: {shlex.join(command)}', flush=True)
-    try:
-        status = subprocess.run(command, cwd=ROOT, check=False).returncode
-    except OSError as error:
-        raise Failure(f'cannot run docker: {error.strerror}') from error
-    if status != 0:
-        raise Failure(f'{shlex.join(command)} exited {status}')
+        return prepared_environment.native()
+    except (prepared_environment.Failure, OSError, subprocess.TimeoutExpired) as error:
+        raise Failure(str(error)) from error
 
 
-def contained(command: list[str], mounted: list[Path]) -> list[str]:
+def contained(command: list[str], mounted: list[Path], image: str) -> list[str]:
     """command, whose first word is b2, run in the container image with no network but the
     loopback: b2 by its path, as the user who runs the lane, with ROOT, b2's prefix (the Boost
     action installs b2 and Boost's headers in one) and each directory of mounted at their own
@@ -867,7 +836,7 @@ def contained(command: list[str], mounted: list[Path]) -> list[str]:
                for word in ('--volume', f'{directory}:{directory}')]
     return ['docker', 'run', '--rm', '--network', 'none', '--user',
             f'{os.getuid()}:{os.getgid()}', '--workdir', str(ROOT), *volumes,
-            CONTAINER_IMAGE, str(b2), *command[1:]]
+            image, str(b2), *command[1:]]
 
 
 def run_lane(lane: Lane, user_config: Path, out_dir: Path, extra: list[str]) -> int:
@@ -884,8 +853,8 @@ def run_lane(lane: Lane, user_config: Path, out_dir: Path, extra: list[str]) -> 
     xml = fresh_xml(out_dir, lane.lane)
     command = lane_command(lane, user_config, xml, extra)
     if lane.container:
-        container_image()
-        command = contained(command, [user_config.parent, xml.parent])
+        image = container_image()
+        command = contained(command, [user_config.parent, xml.parent], image)
     status = run_b2(label, command)
     return recorded(label, lane.lane, xml, status)
 

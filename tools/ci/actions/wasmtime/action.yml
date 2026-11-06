@@ -14,5 +14,6 @@ runs:
   using: composite
   steps:
     - name: Install wasmtime 50.0.1
-      shell: bash
-      run: bash tools/ci/actions/wasmtime/install.sh
+      uses: ./tools/ci/actions/tool-archives
+      with:
+        tool: wasmtime

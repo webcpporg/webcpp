@@ -55,6 +55,8 @@ None.
 [#webcpp-0-1-0-tools-and-build]
 == Tools and build
 
+* Changed CI to consume verified prepared environments without rebuilding images in PR jobs.
+* Added verified archive caches and isolated container availability from unrelated CI lanes.
 * Fixed parallel builds truncating OpenSSL headers while compilers read them.
 * Fixed driven-test execution and descendant cleanup on Windows.
 * Fixed driven-test executable reuse for Windows and WASI builds.
