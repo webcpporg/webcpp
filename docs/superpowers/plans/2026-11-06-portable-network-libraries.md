@@ -319,3 +319,67 @@ with EH off, the strict Cobalt reference/guide build and independent review
 passed. The exact combined candidate still requires a new full remote verdict
 before integration. Evidence remains in the ignored publication directory;
 neither historical measurement archives nor the original sources are rewritten.
+
+Candidate f9d4729 passed the complete remote run 42400325361, including all
+133 audited XML lanes, eight lint shards, eight tool-test shards, documentation
+and site assembly. The exact tested merge 80c6688 was integrated into main.
+Its subsequent main run 42407610002 exposed an intermittent false failure in
+the WASIp3 localhost resolver test: the first `poll_one()` can already deliver
+success, so the later cancellation cannot replace that completed callback with
+`operation_aborted`. The test had also assumed that context destruction always
+preceded a localhost callback after one poll.
+
+A controlled immediate host-result fixture reproduces both incorrect
+expectations against the unchanged test, with three failed assertions. The
+corrected test distinguishes delivery before cancellation from pending work,
+and delivery before context abandonment from forbidden delivery afterwards.
+The existing deterministic pending-subtask test continues to require both
+cancellation forms, shutdown cleanup and associated allocation release, with
+an explicit assertion that no callback preceded cancellation. Production
+Asio, Boost and SDK code remain unchanged. Evidence and exact local commands
+are retained in the publication directory's `resolver-race` subdirectory.
+The correction requires a new library and superproject CI verdict before
+integration; the earlier green run does not validate it.
+
+Fresh local validation passed twenty programs: fourteen capability tests on
+WASIp3 with EH on/off, two real resolver tests on WASIp2 with EH on/off, and
+four resolver tests on cooperative WASIp3 with EH off. Eleven affected
+compilation profiles passed clang-tidy; formatting, text checks, the strict
+Asio reference/guide build and independent review passed. The first broader
+local run lacked socket permission for UDP bind; the authorized fresh run
+passed without production changes.
+
+Candidate 8c4f8da (run 42414092998) passed the corrected WASIp3 resolver
+tests but failed two Trystero interoperability scenarios among 133 audited
+XML lanes. Asio's own run 42414060357 passed all 29 XML lanes, eight lint
+shards and documentation. Beast's run 42407655502 and Cobalt main's run
+42407664390 also passed, with 53 and 65 XML lanes respectively. These
+library results do not replace the failing superproject gate.
+
+The recovered-browser relay scenario accepted a join reported by JavaScript
+before C++ completed its handshake. It sent the fresh-message probe too
+early and failed while the next connection was recovering normally. A
+controlled one-way handshake delay reproduces the same false failure with
+the unchanged driver. The corrected setup requires fresh, currently joined
+peers on both sides within the existing 30-second bound, then the existing
+10-second round-trip check. The registered control fails before the fix and
+passes on browser and native backends afterwards. Relay-loss assertions,
+backoff bounds and fatal console errors remain unchanged. No production
+library code or upstream package is modified.
+
+The separate native two-room scenario logged a JavaScript `OperationError`
+while two connection attempts crossed. Its cause is still unconfirmed:
+local macOS and Linux ARM runs have not reproduced that error. The JavaScript
+fixture now records RTCError details while forwarding the original console
+error, so the next failure retains the evidence needed for diagnosis. A
+normal user-initiated SCTP abort observed in a diagnostic experiment is
+already filtered by the original package and is not claimed as the CI
+failure. The root CI and publication remain open until this is resolved.
+
+Fresh complete local runs passed all 26 browser and 30 native interoperability
+scenarios, including the newly registered delayed-handshake controls. Changed-file
+text rules, JavaScript module syntax, whitespace checks and independent review
+passed. Trystero commit e9326e9 contains only the test fixture, driver and testing
+instructions. Its PR3 now records both the validated setup correction and the
+separate unresolved native error; neither a passing repeat nor the additional
+diagnostics is presented as a fix for that error.
