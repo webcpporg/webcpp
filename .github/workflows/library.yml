@@ -207,6 +207,12 @@ jobs:
       - *transport-sources
       - *boost
 
+      # Ubuntu 26.04's GCC 15.2 crashes on standard coroutine await_suspend
+      # default arguments (GCC PR121643). Keep the unchanged Cobalt tests and
+      # install the corrected compiler independently of the runner image.
+      - if: matrix.id == 'gcc-15'
+        uses: ./tools/ci/actions/gcc
+
       # What a WASI lane installs, which the own-lanes job installs too, by these anchors, for an
       # own lane on wasip2 or wasip3: a step a WASI lane needs is one of them. wit-bindgen and the
       # WIT are installed for every library's WASI lane, whether or not it builds a component: it
@@ -315,7 +321,7 @@ jobs:
       - if: matrix.chrome
         uses: ./tools/ci/actions/chrome
         with:
-          product: ${{ matrix.library == 'beast' && 'chrome' || 'chrome-headless-shell' }}
+          product: ${{ (matrix.library == 'beast' || matrix.library == 'cobalt') && 'chrome' || 'chrome-headless-shell' }}
 
       - name: Build the native Beast interoperability peer
         if: matrix.library == 'beast' && (matrix.lane == 'browser' || matrix.lane == 'browser-node')

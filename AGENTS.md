@@ -222,6 +222,10 @@ Jamroot is its build configuration, and `libs/<name>` is its repository.
   the same version (below);
 - b2 (B2 5.5.3 measured);
 - a C++20 compiler;
+- the GCC 15 CI lane uses pinned GCC 15.3, since the Ubuntu runner's GCC 15.2
+  has coroutine default-argument regression PR121643. Its action extracts the
+  official Linux-X64 image's relocatable toolchain, verifies a compile/run probe
+  after installation and cache restoration, and selects its matching runtime;
 - Python 3.9 or newer;
 - for WebAssembly: wasi-sdk 34 and wasmtime 50.0.1;
 - for WebAssembly components, such as wasi's: wit-bindgen 0.62.0, which
@@ -1804,9 +1808,9 @@ wrapper each quoted as one word of Jam.
   `CHROME_DEVEL_SANDBOX` naming the image's setuid helper,
   `/opt/google/chrome/chrome-sandbox`.
   The headless shell sends nothing to Google of its own (measured).
-  Beast browser lanes select `product: chrome` at the same pinned version,
-  installed into `.local/chrome`. Its certificate tests need full Chrome's
-  isolated profile trust store. Test CAs are installed only in disposable
+  Beast and Cobalt browser lanes select `product: chrome` at the same pinned
+  version, installed into `.local/chrome`. Their certificate tests need full
+  Chrome's isolated profile trust store. Test CAs are installed only in disposable
   profiles; no host trust store or certificate-validation bypass is used.
   The drivers disable background networking and operate against local fixtures.
 - `container` gives a job the checked immutable image above. Registry access

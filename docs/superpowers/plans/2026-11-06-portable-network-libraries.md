@@ -186,3 +186,68 @@ by the new classification gate; it now supplies that inventory and verifies that
 an unlisted neighboring file remains linted. All three failures were reproduced before
 correction. These findings supersede the corresponding local reconciliation claims;
 the original reports and failed CI logs remain preserved.
+
+
+The second remote candidate, 349f5b3 (run 42372677128), exposed additional
+portability and lane-registration failures. Its green B2 job statuses do not
+certify tests: the XML report is the verdict. Corrections under verification:
+
+- Preserve the shipped Asio system executor's inherited fatal `noexcept`
+  initialization boundary explicitly; native Boost types remain unchanged.
+- Keep GCC 14 coroutine-allocation false positives confined to the affected
+  test consumers. Use pinned GCC 15.3 for the GCC 15 lane to avoid compiler
+  PR121643 without changing Cobalt's coroutine code. The exact relocated
+  toolchain passed its compile/run probe and five ASan/UBSan Cobalt programs
+  in Ubuntu 26.04.1.
+- Register ICMP header checks only on native; give browser/P2 timer tests their
+  actual Beast test dependency; exercise the unbounded backend control through
+  its base type. JSPI/Asyncify with EH on/off and P2 EH on/off passed locally.
+- Provision Chrome for Asio's concurrency-hint and all Cobalt browser lanes,
+  with explicit suspension/EH expansion for direct programs and manifest-based
+  expansion for network counterparts. The planner regression fails without it.
+- Migrate the shared OpenSSL test clients to public WebCPP Asio headers.
+  Move the Cobalt TLS profile matrix into Cobalt's own lane, preserving its
+  native S/M and supported P3 combinations and the MSVC CRT/provider checks.
+- Keep SDK/upstream limitations visible rather than patching native Boost:
+  pinned Emscripten PIPEFS returns EAGAIN after writer closure instead of EOF;
+  native IOCP retains its global thread-state allocation; MSVC rejects the
+  upstream no-EH main promise without `unhandled_exception`. Negative witnesses
+  are distinct from feature support. Windows runtime results remain a remote
+  verification gate for the corrected candidate.
+
+The completed run contains 131 lane artifacts. Its reconstructed report records
+47 failed test cells and refuses the two cross-library TLS lanes; green B2 job
+statuses did not override that verdict. The site could not download the report
+artifact after that refusal. Every reported cause has a focused local correction
+or an explicit upstream/SDK limitation witness. This is not a green remote verdict.
+
+The browser investigation reproduced a separate starvation defect: successive
+timer waits discarded the handler budget and could resume only through JavaScript
+microtasks, preventing a worker proxy request from being serviced. The corrected
+composition counts both polled and waited handlers until an explicit yield. A
+nine-timer regression with limit four failed with zero yields and now requires
+two. The unchanged Cobalt worker test, including its one-millisecond observer,
+passed in real Chrome for JSPI/Asyncify with EH on/off. Fresh Asio Emscripten and
+Asyncify suites passed, including stack witnesses, documentation and focused lint.
+
+The finite echo counterpart now uses the existing primitive `accept(socket&)`
+overload, preserving native Boost while allowing cancellation. Its reset driver
+waits for an echoed byte before sending RST, so the test proves that a session
+was accepted. Native S/M with EH on/off and WASIp2/P3 supported profiles passed.
+The immutable SPSC queue's negative control stays native; the corrected queue's
+forced-interleaving tests passed on native, Emscripten's four variants and WASIp3.
+
+On 2026-11-07 the owner explicitly directed that newly identified original Boost
+defects remain documented rather than patched. Native composed accept and MSVC's
+no-EH main-promise limitation retain their negative witnesses. The previously
+approved native SSL exception remains separate. Documentation now distinguishes
+the shipped source layout from historical overlays and states the exact turn
+budget and native allocation boundaries. Independent correction reviews found no
+remaining code findings; real Windows results still require the next remote run.
+
+Fresh local evidence, failed controls and independent reviews are retained under
+`.superpowers/sdd/2026-11-06-portable-network-libraries/publication/`. A concurrent
+local TLS build once exposed an incomplete Wasm file before execution; the same
+entropy/thread driver and a subsequent fresh focused build passed. No test
+expectation was changed for that build-output collision. No merge has been
+performed for this candidate.

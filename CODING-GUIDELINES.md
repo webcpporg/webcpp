@@ -6194,6 +6194,11 @@ and independent compiler/CMake consumers. Cobalt owns its compiled sources;
 Asio's old Cobalt targets are compatibility aliases. Native Cobalt SSL alone uses
 the separately corrected WebCPP type after reproduced state/cancellation defects
 and explicit owner approval. The core and runner remain unchanged upstream.
+On 2026-11-07 the owner reaffirmed that defects found in original Boost behavior
+are documented and retained, with negative witnesses; this does not authorize
+native fixes or compatibility shims, including for MSVC's no-exceptions
+`co_main`. The previously approved native SSL exception remains in force, as do
+the separately shipped Wasm adaptations and their correction provenance.
 
 Distribution closure uses `sources.json` in Asio and Cobalt, with B2 lists
 generated from the same inventories. Direct compiler and CMake consumers build
@@ -6216,10 +6221,10 @@ publication remain separate gates.
 
 
 webcpp::asio is a C++20 wrapper over Boost.Asio: natively it is
-Boost.Asio itself, and on Emscripten it is Boost's own `io_context`, whose run
-family suspends into the browser's event loop and yields to it after every
-turn of `max_handlers_per_turn` handlers, with a bridge through which browser
-events post, promises and DOM events as Asio operations, sockets and a
+Boost.Asio itself, and on Emscripten its context derives from the shipped
+Asio backend. Its run family suspends into the browser's event loop and yields
+after every turn of `max_handlers_per_turn` handlers, with a bridge through
+which browser events post, promises and DOM events as Asio operations, sockets and a
 resolver that fail as values, and Boost.Cobalt's `co_main` on that loop. The
 implementation, source-built OpenSSL, embedded CAs and Cobalt SSL are integrated
 with the owner's authorization in superproject `2ba5116`. The published library
@@ -6242,22 +6247,21 @@ Asio's first library-main CI and the final joint candidate remain separate gates
 
 **Interface and names.**
 
-- **`webcpp::asio::io_context` derives from `boost::asio::io_context` on its supported
-  targets, shares its executor type and converts to
-  `boost::asio::io_context&`; the timers are aliases of Boost's, and a program
-  keeps naming `post`, `co_spawn`, `use_awaitable` and `bind_executor` from
-  Boost.** A program sets its options the same way everywhere, code written
-  against either type interoperates, and Cobalt and Beast are templates over
-  Boost's executor. A fork of Asio's scheduler was rejected as a maintenance
-  burden incompatible with every library on Asio.
-  Source: `genesis/design.md`, D1 (proposals).
-- **The library is header-only but for two translation units the build
-  compiles for a program, `src/browser_src.cpp` (the JavaScript of the yield,
-  the bridge and the promises, and the export the bridge delivers through) and
-  `src/cobalt_main.cpp`, each linked once by a target.** The JavaScript
-  functions and the export exist exactly once, and a second definition fails
-  at link.
-  Source: `genesis/specs/asio/spec.md`, Library and Build (proposals).
+- **Native public types are aliases of Boost.Asio; Wasm public types select
+  the shipped `webcpp::asio_backend` implementation.** On Emscripten the
+  public context derives from that backend context and adds bounded turns.
+  Portable applications use `webcpp::asio` headers and names for contexts,
+  timers, `post`, `co_spawn`, completion tokens and executor bindings. Wasm
+  objects do not interoperate with separately instantiated Boost.Asio types.
+  The three portable libraries share the same selected implementation.
+  Source: owner approval, 2026-11-06, and
+  `docs/superpowers/specs/2026-11-06-portable-network-libraries.md`.
+- **Each target links its explicit runtime source once:**
+  `src/browser_src.cpp` supplies the browser bridge and JavaScript imports;
+  `src/wasip2/pollable.cpp` and `src/wasip3/waitable.cpp` supply their WASI
+  bridges. Cobalt owns its separately compiled core and runner. B2 and
+  external builds consume these shipped sources without modifying Boost.
+  Source: `doc/distribution.adoc` (asio) and the portable-library contract.
 - **The convenience header `<webcpp/asio.hpp>` leaves out
   `<webcpp/asio/ssl.hpp>`.** Natively that header brings OpenSSL, which a user
   of the rest should not pay for.
@@ -6275,16 +6279,17 @@ Asio's first library-main CI and the final joint candidate remain separate gates
   Throwing APIs stay guarded and raise through `boost::throw_exception`.
   Source: `genesis/specs/asio/spec.md`, Library: Configuration header
   (proposals).
-- **On single-thread Emscripten `/webcpp/asio//asio` gives every translation
-  unit, `browser-src` included, `BOOST_ASIO_DISABLE_THREADS`; explicit pthread
-  builds retain Boost's POSIX thread configuration.** Both link embind,
-  `browser-src`, the variant's link flags and the tag rule. Boost's inline
+- **On single-thread Emscripten the shipped backend disables threads in every
+  translation unit, `browser-src` included; explicit pthread builds retain
+  its POSIX thread configuration.** Both link embind,
+  `browser-src`, the variant's link flags and the tag rule. The backend's inline
   namespace differs with and without threads, so every compiled dependency
   must use the consumer's profile. A silent switch from multi to single is
   forbidden. Browser runtime isolation remains a host requirement.
   Source: `genesis/specs/asio/spec.md`, Build (proposals).
-- **The library supports native, Emscripten and WASIp2/P3 through the checked
-  Boost 1.92 overlay; WASI supports guest TCP/UDP and optional source-built TLS.** A library
+- **The library uses Boost.Asio's native types and a checked, shipped backend
+  derived from Boost 1.92 on Emscripten and WASIp2/P3; WASI supports guest TCP/UDP
+  and optional source-built TLS.** A library
   may declare only the targets its actual APIs support. Beast's portable
   messages and WASI host HTTP do not require guest sockets. xactor's existing
   Asio driver stays native until separately adapted; Asio's port does not
@@ -6310,15 +6315,16 @@ Asio's first library-main CI and the final joint candidate remain separate gates
 
 **The run family and the turn limit.**
 
-- **On Emscripten the six members of the run family hide Boost's and compose
+- **On Emscripten the six members of the run family hide the backend's and compose
   `poll_one` and `run_one`: a turn of ready handlers, a return if stopped or
-  expired, a yield if the turn reached the limit, else one `run_one` that
-  suspends in the reactor's `select`; natively they are Boost's through
-  `using` declarations.** Boost's `run` is not virtual and cannot be told to
+  expired, a yield if the turn reached the limit, else one `run_one` whose
+  handler consumes the same turn budget.** The latter suspends in the reactor's
+  `select`; natively the context and its operations are Boost's unchanged
+  types. Boost's `run` is not virtual and cannot be told to
   yield: measured, a self-posting handler ran 300,000 times under it before a
   `setTimeout(0)` ran, because a zero-timeout `select` suspends only to a
-  microtask. Code that calls `run` through a `boost::asio::io_context&` gets
-  Boost's run without the limit, as documented.
+  microtask. Code that calls `run` through a `webcpp::asio_backend::io_context&`
+  gets the inherited backend run without the limit, as documented.
   Source: `genesis/design.md`, D2 (proposals).
 - **The yield is the `EM_ASYNC_JS` import `webcpp_asio_yield`, which awaits a
   promise that a `MessageChannel` message resolves.** A macrotask lets the
@@ -6351,12 +6357,14 @@ Asio's first library-main CI and the final joint candidate remain separate gates
   one program.
   Source: `include/webcpp/asio/config.hpp`, `doc/run.adoc` (asio);
   `genesis/reference/STATUS.md` (proposals).
-- **The limit counts handlers and is no time budget: up to
-  `k + 1 + max_handlers_per_turn` handlers can run between two yields, and a
-  long handler is never preempted.** Step 4's one handler belongs to no turn,
-  so a short turn of `k` handlers followed by a wait that ends at once runs it
-  with no macrotask between.
-  Source: `genesis/design.md`, Risks (proposals); `doc/run.adoc` (asio).
+- **The limit counts every handler completed by `poll_one` or `run_one` in
+  the same turn, and is no time budget.** At most `max_handlers_per_turn`
+  handlers run between explicit cooperative yields. Only that yield resets
+  the budget: a wait can suspend only to microtasks, so resetting after each
+  wait can starve browser events and worker proxy messages. A blocking wait
+  may give the host an earlier opportunity to run, and a long handler is never
+  interrupted. Stop, expiry and exhaustion of work still return before a yield.
+  Source: `doc/run.adoc`, `test/turn_limit_test.cpp` (asio).
 - **The browser lane stops the work for the owner's decision when a turn's
   95th percentile exceeds 8 ms in any of three runs, and its driver fails when
   no animation callback occurs.** The criterion leaves roughly half of a 60 Hz
@@ -6366,8 +6374,10 @@ Asio's first library-main CI and the final joint candidate remain separate gates
   Source: `genesis/design.md`, D3, and `genesis/reference/STATUS.md`
   (proposals); `doc/yield-cost.adoc` (asio).
 - **The turn limit's tests count the run family's yields
-  (`webcpp::test::yield_counter`, every `MessagePort.postMessage`) and assert
-  where a `setTimeout(0)` runs, never after how many handlers.** When a
+  (`webcpp::test::yield_counter`, every `MessagePort.postMessage`) for both
+  self-posting handlers and timer-completion chains.** They pin the handler
+  budget between explicit yields, but assert only where a `setTimeout(0)`
+  runs, never after how many handlers that particular timer must run. When a
   `setTimeout(0)` runs is the host's: node delays it by 1 ms, a browser clamps
   a nested one to 4 ms and throttles a background tab's to 1 s or more.
   Source: `genesis/specs/asio/spec.md`, Testing (proposals).
@@ -6517,19 +6527,27 @@ Asio's first library-main CI and the final joint candidate remain separate gates
   claims no safety.
   Source: `genesis/reference/STATUS.md` (proposals); `AGENTS.md`, chapter 1
   (superproject branch).
-- **The checked common Cobalt overlay supplies `unhandled_exception` for
-  main and thread promises when exceptions are disabled.** Boost 1.92 omits
-  these hooks; the overlay uses `std::terminate` for the unreachable exception
-  path, keeping strict compiler diagnostics and actual worker/join tests.
-  Source: `tools/boost/cobalt-common/boost-1.92.patch` (superproject).
+- **The shipped Wasm Cobalt promises supply `unhandled_exception` for main
+  and thread when exceptions are disabled; native promises remain Boost's.**
+  The Wasm hooks use `std::terminate` for the unreachable exception path,
+  retaining strict diagnostics and worker/join tests. Boost 1.92 omits those
+  hooks natively: MSVC rejects no-exceptions `co_main`, and a compile-failure
+  witness is paired with an exceptions-enabled control and a missing-member
+  witness. Other no-exceptions consumers remain enabled without a general
+  safety guarantee.
+  Source: `doc/differences.adoc`, `test/upstream_limits/main_no_exceptions.cpp`
+  (cobalt); the historical `tools/boost/cobalt-common/boost-1.92.patch`
+  records correction provenance only.
 
 **Allocation.**
 
 - **The io_context passes the user's allocator to Boost's constructor, an
   operation allocates through its handler's associated allocator, and the
-  bridge's map through the context's.** Run-time objects route their
-  allocations through the user's allocator; an allocator given to the context
-  is not associated with handlers, which bind it with `bind_allocator`.
+  bridge's map through the context's.** Native Boost retains the IOCP thread
+  allocation limitation described below; passing a context allocator does not
+  establish zero global allocation on every platform. An allocator given to
+  the context is not associated with handlers, which bind it with
+  `bind_allocator`.
   Source: `genesis/specs/asio/spec.md`, Allocation (proposals);
   `doc/allocation.adoc` (asio).
 - **The counting test counts every `operator new`, the C library's allocation
@@ -6546,9 +6564,9 @@ Asio's first library-main CI and the final joint candidate remain separate gates
 
 **Timers, promises and events.**
 
-- **Timers are Boost's on every supported target, in the reactor's timer
-  queue: Beast's timeouts fire.** On Emscripten an idle program holds the
-  reactor's one `setTimeout`, of at most 300 s, and schedules nothing else.
+- **Timers use the selected Asio backend on every supported target, in the
+  reactor's timer queue: Beast's timeouts fire.** On Emscripten an idle program
+  holds the reactor's one `setTimeout`, of at most 300 s, and schedules nothing else.
   Its code resumes when the browser delivers an event, never by polling.
   Source: `genesis/specs/asio/spec.md`, Timers and Browser (proposals).
 - **`async_await(executor, promise, token)` and
@@ -6595,9 +6613,10 @@ Asio's first library-main CI and the final joint candidate remain separate gates
   entry, so Beast's layered client code runs unchanged; a resolver that failed
   like the sockets would change a line of every Beast client.
   Source: `genesis/design.md`, D14 (proposals).
-- **`<webcpp/asio/ssl.hpp>` is Boost's `ssl` on native and WASI; on
-  Emscripten it records TLS settings and a host name in `std::pmr` storage
-  for webcpp::beast's browser streams.** Guest TLS explicitly names
+- **`<webcpp/asio/ssl.hpp>` selects Boost's `ssl` natively and the shipped
+  Asio backend's SSL types on WASI; on Emscripten it records TLS settings
+  and a host name in `std::pmr` storage for webcpp::beast's browser streams.**
+  Guest TLS explicitly names
   `/webcpp/asio//openssl` on native or WASI. Naming that source provider for
   Emscripten fails with an instruction; the browser owns TLS in its profile.
   WASI host HTTP continues to use the host's independent TLS implementation.
@@ -6606,16 +6625,17 @@ Asio's first library-main CI and the final joint candidate remain separate gates
 
 **Boost.Cobalt.**
 
-- **Cobalt's `main_promise::run_main` and `final_suspend` are webcpp's
-  (`src/cobalt_main.cpp`, `/webcpp/asio//cobalt`), with Cobalt's steps over a
-  `webcpp::asio::io_context{BOOST_ASIO_CONCURRENCY_HINT_1}`, and
-  `/webcpp//boost_cobalt` excludes `main.cpp` and the optional `io/ssl.cpp`,
-  with additional unsupported sources omitted for WASI as listed below.**
-  `co_main` cannot be replaced from a header: `main` is a hidden friend that
-  calls `run_main`, compiled in Cobalt's `src/main.cpp`, which calls Boost's
-  `run`; compiling against the pinned Boost probes the private members it
-  reads, and Cobalt's own `co_main`, without the limit, is the fallback.
-  Source: `genesis/design.md`, D11 (proposals).
+- **Cobalt owns separate native and Wasm core and runner sources, selected
+  by `/webcpp/cobalt//cobalt`; the old Asio and root names are compatibility
+  aliases.** Native `src/native/main.cpp` retains upstream behavior. Wasm
+  `src/wasm/main.cpp` supplies `main_promise::run_main` and `final_suspend`
+  over `webcpp::asio::io_context{WEBCPP_ASIO_BACKEND_CONCURRENCY_HINT_1}`,
+  which adds bounded turns on Emscripten. `co_main` calls the separately
+  compiled runner, so its settings must agree with the application. The core
+  excludes the runner and optional SSL implementation; `sources.json` records
+  all target-specific source selections.
+  Source: `sources.json`, `src/Jamfile`, `doc/building.adoc` (cobalt);
+  `genesis/design.md`, D11 (proposals), records the original runner design.
 - **Under Asyncify `run_main` ends the program with `std::exit` once the
   context and the signal set are destroyed, and `EXIT_RUNTIME` stays 0.** A
   `main` that suspended loses its return value under Asyncify, so the
@@ -6623,9 +6643,10 @@ Asio's first library-main CI and the final joint candidate remain separate gates
   not promised.
   Source: `genesis/design.md`, D11, and `genesis/reference/STATUS.md`, task 16
   (proposals).
-- **`src/cobalt_main.cpp` keeps the copyright notice of Boost.Cobalt's
-  `main.cpp`, beside webcpp's.** It adapts that file; the task's review found
-  the attribution missing.
+- **Cobalt's shipped `src/wasm/main.cpp` keeps the copyright notice of
+  Boost.Cobalt's `main.cpp`, beside webcpp's.** The earlier adaptation at
+  Asio's `src/cobalt_main.cpp` acquired that attribution during its original
+  review; the generated source preserves it after the move.
   Source: `genesis/reference/STATUS.md`, task 16 (proposals).
 
 **Documentation and release.**
@@ -6654,10 +6675,12 @@ supersedes the temporary system-OpenSSL choice; it does not reopen every rule.
 
 - The `asyncify` own lane runs on every push while nightly/release CI levels
   remain roadmap work. Declaring it does not establish that Asio main has run it.
-- The concurrency-hint `io_context` constructors remain intentional extensions,
-  with and without an allocator, including Cobalt's `io_context{1}` use.
-- Plain `/webcpp//boost_cobalt` omits `io/ssl.cpp`; the explicit
-  `/webcpp//boost_cobalt_io_ssl` target now supplies it for native and WASIp3.
+- The Wasm context retains concurrency-hint constructors with and without an
+  allocator, including Cobalt's `io_context{1}` use. Native constructors are
+  Boost's unchanged constructors.
+- Plain `/webcpp/cobalt//core` omits SSL; the explicit
+  `/webcpp/cobalt//io_ssl` supplies the corrected native or WASI wrapper.
+  The old `/webcpp//boost_cobalt` and `boost_cobalt_io_ssl` names are aliases.
 - The former shared system OpenSSL/native-only bridge is superseded by the
   pinned static source provider on native and WASIp3, without waiting for crypto.
   Chapter 5 rule 7 retains its Configure/Make and exact-archive canary exception.
@@ -6702,16 +6725,15 @@ The owner ratified these additions to the proposal on 2026-11-03. Its amended
 D15/D16 now distinguish WASIp3 sockets and guest TLS from the browser adapters.
 The closure record distinguishes the baseline CI from validation of later changes.
 
-- **Asio runs on WASIp3 (`clang-wasip3`) through a checked patch of Boost
-  1.92's platform layer, applied to private headers under
-  `bin/boost-asio-wasip3/include` for that toolset alone, keeping Boost's
-  scheduler and select reactor.** Boost.Asio assumes POSIX signals, `::pause`
-  and `ESHUTDOWN`; patching a private copy leaves the installed Boost
-  untouched, and the preparation refuses another Boost version or a modified
-  input rather than compile unpatched headers.
-  Source: `docs/superpowers/specs/2026-10-15-asio-wasip3.md`,
-  `tools/boost/asio-wasip3/README.md` (superproject).
-- **On WASIp3 the io_context uses Boost's own run family, with no turn limit,
+- **Asio runs on WASIp3 (`clang-wasip3`) through its shipped backend, derived
+  from Boost 1.92's scheduler and select reactor with explicit platform
+  adaptations.** The installed Boost tree remains untouched. Maintainer import
+  generation checks the pinned inputs and records the generated hashes;
+  consumers compile the shipped headers and runtime sources directly. The
+  earlier private-header patching workflow is historical provenance only.
+  Source: `upstream/README.md`, `sources.json`, `doc/distribution.adoc` (asio);
+  `docs/superpowers/specs/2026-10-15-asio-wasip3.md` records the original port.
+- **On WASIp3 the io_context uses the backend's run family, with no turn limit,
   bridge or yield.** Its system calls suspend through wasi-libc and the host's
   Component Model.
   Source: `doc/capabilities.adoc`, `include/webcpp/asio/io_context.hpp` (asio).
@@ -6738,8 +6760,8 @@ The closure record distinguishes the baseline CI from validation of later change
   sequence.** Temporary storage uses the context allocator synchronously or
   the handler's allocator asynchronously and is released before completion.
   Truncation, empty datagrams and cancellation preserve datagram boundaries.
-  The pinned libc lacks `sendmsg`/`recvmsg`; this adaptation belongs to the
-  checked Boost overlay, not the installed SDK.
+  The pinned libc lacks `sendmsg`/`recvmsg`; the shipped Asio backend contains
+  this adaptation without changing the installed SDK.
   Source: `docs/superpowers/specs/2026-10-15-asio-wasip3.md` (superproject); `AGENTS.md` (asio).
 - **What WASI lacks is explicit: Asio's `shut_down` error maps to `EPIPE`,
   interface-name scopes are refused, a missing socket option reports
@@ -6755,25 +6777,25 @@ The closure record distinguishes the baseline CI from validation of later change
   every feature, target and variant, telling unavailable from unverified.**
   The owner approved an AsciiDoc feature matrix that links its evidence.
   Source: `docs/superpowers/specs/2026-10-15-asio-wasip3.md` (superproject); `AGENTS.md` (asio).
-- **`/webcpp/asio//cobalt` builds on WASIp2/P3 from a checked patch of private
-  copies of Cobalt's headers and sources (`tools/boost/cobalt-wasip3`): its
-  signal, serial-port and seqpacket sources are left out, `thread.cpp` comes
-  only with threads, and the archive and its consumers share the Asio overlay
-  and the thread profile.** Unsupported local sockets, signals and serial
-  ports must not break the IP APIs, and an archive and its program must agree
-  about headers, threads and exceptions.
-  Source: `docs/superpowers/plans/2026-10-16-cobalt-wasip3.md`,
-  `tools/boost/Jamfile` (superproject).
+- **`/webcpp/cobalt//cobalt` builds on WASIp2/P3 from its shipped Wasm headers
+  and sources: signal, serial-port and seqpacket sources are left out,
+  `src/wasm/thread.cpp` comes only with threads, and the archive and its
+  consumers share the selected Asio backend and thread profile.** The old
+  `/webcpp/asio//cobalt` name is a compatibility alias. Unsupported local
+  sockets, signals and serial ports must not break the IP APIs, and an archive
+  and its program must agree about headers, threads and exceptions.
+  Source: `sources.json`, `src/Jamfile` (cobalt);
+  `docs/superpowers/plans/2026-10-16-cobalt-wasip3.md` records the original port.
 - **On WASIp2/P3 `run_main` sets the promise's `signal_set` to null and includes
   no POSIX signal service, keeping the executor, the initial post, the status
   and Cobalt's internal cancellation.** WASI delivers no process signal; a
   host's graceful shutdown needs a protocol of the program's.
-  Source: `src/cobalt_main.cpp`, `AGENTS.md` (asio).
+  Source: `src/wasm/main.cpp`, `AGENTS.md` (cobalt).
 - **On WASIp3 the Cobalt status driver expects host exit status 1 for a
   nonzero `co_return`.** The component command reports failure to the host;
   the driver verifies that outcome rather than assuming a native integer exit
   status is preserved by the component interface.
-  Source: `test/cobalt_status_driver.mjs` (asio).
+  Source: `test/cobalt_status_driver.mjs` (cobalt).
 - **OpenSSL 3.5.9 (`45e844f`) is a pinned, unmodified submodule at
   `third_party/libs/openssl`, built as static `libssl.a` and `libcrypto.a`
   with their generated headers by upstream Configure and `make build_libs`,
@@ -6842,31 +6864,38 @@ The closure record distinguishes the baseline CI from validation of later change
   a future explicit process-wide crypto policy is separate work.
   Source: `docs/superpowers/plans/2026-10-16-ca-certificates.md`
   (superproject).
-- **`/webcpp//boost_cobalt_io_ssl` compiles Cobalt's `io/ssl.cpp` as a library
-  of its own with a checked patch (`tools/boost/cobalt-ssl`), and
-  `/webcpp/asio//cobalt_ssl` adds it and `/webcpp/asio//tls` to
-  `/webcpp/asio//cobalt`, natively and on WASIp3; plain Cobalt takes no
-  OpenSSL.** Against a real TLS server, Boost 1.92's wrapper finished a
-  handshake with `secure` false and then wrote plaintext, and its verification
-  callback's constraint named `ssl::context` for `ssl::verify_context`; the
-  patch fixes both and adds the borrowed `native_ssl_handle()` for SNI.
-  Source: `docs/superpowers/plans/2026-10-16-cobalt-ssl.md` (superproject).
+- **`/webcpp/cobalt//io_ssl` compiles the corrected, shipped SSL sources
+  independently of the plain core, and `/webcpp/cobalt//cobalt_ssl` adds the
+  runner and the shared `/webcpp/asio//tls` provider on native and WASIp2/P3.**
+  Native SSL uses `src/native_ssl.cpp` and `src/native_ssl_transfer.cpp`;
+  WASI uses `src/wasm/io/ssl.cpp`. Native SSL is the owner's explicit exception
+  to Boost type identity; plain native coroutine and I/O types, core and runner
+  remain upstream. The old root and Asio SSL target names are compatibility
+  aliases, and plain Cobalt takes no OpenSSL. Against a real TLS server,
+  Boost 1.92's wrapper finished a handshake with `secure` false and then
+  wrote plaintext, and its verification callback's constraint named
+  `ssl::context` for `ssl::verify_context`; the corrected wrapper fixes both
+  and adds the borrowed `native_ssl_handle()` for SNI.
+  Source: `sources.json`, `doc/differences.adoc` (cobalt);
+  `docs/superpowers/plans/2026-10-16-cobalt-ssl.md` records the original correction.
 - **Cobalt's SSL stream allows plaintext only before the first TLS attempt: a
   failed or cancelled handshake and a completed shutdown block application
   I/O, and the wrapper keeps the handler's associations.** A failed handshake
   must never fall back to plaintext, and an unbound lambda in their place
   would lose cancellation.
   Source: `docs/superpowers/plans/2026-10-16-cobalt-ssl.md` (superproject).
-- **Every Cobalt target, native and Emscripten included, uses the checked
-  overlay `tools/boost/cobalt-common`, whose composition promise connects its
-  cancellation source to the handler's slot.** Reproduced: a composed read's
-  cancellation hung, because Boost 1.92's composition promise did not attach
-  to the received handler's slot; the overlay pins the integration to Boost
-  1.92 until the patch is rebased and verified. The overlay also supplies the
+- **The shipped Wasm Cobalt composition promise connects its cancellation
+  source to the handler's slot; native composition retains Boost's behavior.**
+  Reproduced: a composed read's cancellation hung, because Boost 1.92's
+  composition promise did not attach to the received handler's slot.
+  The corrected Wasm sources also supply the
   required main/thread promise exception hooks in no-exceptions builds;
-  thread coroutine runtime tests cover worker dispatch and join.
-  Source: `docs/superpowers/plans/2026-10-16-cobalt-ssl-cancellation.md`
-  (superproject).
+  worker/join tests and the native upstream-limitation probes keep those
+  contracts distinct. Native SSL uses its separately corrected transfer path
+  without changing the upstream native composition or coroutine types.
+  Source: `doc/differences.adoc`, `src/native_ssl_transfer.cpp` (cobalt);
+  `docs/superpowers/plans/2026-10-16-cobalt-ssl-cancellation.md` records the
+  correction's historical overlay implementation.
 - **TLS transfer cancellation is terminal: the connection is closed
   afterwards, with no promise of rollback or reuse, and the tests require a
   real `operation_aborted` from a Cobalt promise, one write per cancellable
@@ -6882,9 +6911,15 @@ The closure record distinguishes the baseline CI from validation of later change
   the toolchain, the entropy and the features itself.
   Source: `README.md` (superproject).
 
-Windows uses the checked `tools/boost/asio-windows` allocator overlay for
-IOCP worker and timer thread state; installed Boost remains untouched, and the
-same headers reach Cobalt sources and consumers.
+Native Windows uses unmodified Boost.Asio, including IOCP worker and timer-thread
+state that does not forward the context allocator. The earlier
+`tools/boost/asio-windows` allocator overlay is historical provenance, not a
+consumer build path. The Windows allocation scenario is a negative witness:
+it requires observable global allocation, preserves the timer and posted-handler
+checks, and prints `UPSTREAM-LIMITATION`. It establishes neither zero global
+allocation nor an arbitrary allowance. A future upstream fix must fail this
+witness and be reclassified. Other supported targets retain checks for zero
+global allocation in the measured scenario, with its documented runtime boundaries.
 
 The `tls-integration` own lane drives real TLS, embedded trust, Cobalt state and
 cancellation fixtures on native and WASIp3 profiles. The native
@@ -6918,6 +6953,15 @@ application requirements, read-only capabilities and build-wide executor/PMR
 policies. A capability cannot grant runtime permissions. Arbitrary cross-unit ABI
 mismatches remain caller errors; source consumers must rebuild all support units.
 B2 lists and external builds consume the same source inventories.
+
+GCC 15.2's default-argument `await_suspend` regression (GCC PR121643) prevents
+unmodified native Cobalt `race` applications from compiling. The GCC 15 CI lane
+therefore provisions GCC 15.3 from a pinned official image and validates an
+independent compile/run coroutine probe, including after cache restoration.
+It does not change the native core or omit those tests. GCC 14's separate known
+coroutine-allocation false positive (boostorg/cobalt#7) is scoped to the affected
+test functions; the two immutable original application probes retain the warning
+as nonfatal for GCC 14 alone. Consumers inherit no warning-suppression flags.
 
 The 2026-11-07 report covers 12 original applications in 432 cells, keeping
 counterparts, unavailable facilities and upstream defects separate. Shared Release

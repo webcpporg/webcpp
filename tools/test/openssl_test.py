@@ -252,12 +252,18 @@ def test_msvc_tls_lanes_keep_distinct_openssl_thread_profiles(root: Path) -> Non
     jamroot.write_text(jamroot.read_text().replace('<conditional>@boost-check',
                                                  '<webcpp-boost-check>off'))
     for version in ('14.3', '14.5'):
-        for lane, variant in ((f'openssl-upstream-msvc-{version}', 'release'),
-                              ('tls-integration', 'debug')):
+        lanes = (
+            ('asio', f'openssl-upstream-msvc-{version}', 'release', ['tls_client.cpp']),
+            ('asio', 'tls-integration', 'debug',
+             ['tls_client.cpp', 'tls_client_embedded.cpp']),
+            ('cobalt', 'tls-integration', 'debug',
+             ['cobalt_ssl_client.cpp', 'cobalt_ssl_state.cpp', 'cobalt_ssl_cancel.cpp']),
+        )
+        for library, lane, variant, sources in lanes:
             result = harness.run_b2(
                 root, '-a', '-n', '-d+2', f'toolset=msvc-{version}',
                 'target-os=windows', 'architecture=x86', 'address-model=64',
-                f'libs/asio/test/tls//{lane}')
+                f'libs/{library}/test/tls//{lane}')
             harness.expect(result, True, 'webcpp-openssl.build')
             commands = [line for line in result.stdout.splitlines()
                         if '--source "' in line and '--threading "' in line]
@@ -284,11 +290,11 @@ def test_msvc_tls_lanes_keep_distinct_openssl_thread_profiles(root: Path) -> Non
                               'multi': {'headers', 'archives'}}, (version, lane, stages)
             assert set(profiles) == {'single', 'multi'}, (version, lane, profiles)
             assert profiles['single'].isdisjoint(profiles['multi']), profiles
-            sources = ['tls_client.cpp']
-            if lane == 'tls-integration':
-                sources += ['tls_client_embedded.cpp', 'cobalt_ssl_client.cpp',
-                            'cobalt_ssl_state.cpp', 'cobalt_ssl_cancel.cpp']
             lines = [line.replace('\\', '/') for line in result.stdout.splitlines()]
+            foreign = ('libs/cobalt/test/tls/cobalt_ssl_' if library == 'asio'
+                       else 'tools/openssl/test/tls_client')
+            assert not any(' -c ' in line and foreign in line for line in lines), \
+                (library, lane, foreign)
             drivers = [line.strip() for line in lines if '/tools/drive/drive.py"' in line]
             for source in sources:
                 folder = ('libs/cobalt/test/tls' if source.startswith('cobalt_')
@@ -317,7 +323,8 @@ def test_msvc_tls_lanes_keep_distinct_openssl_thread_profiles(root: Path) -> Non
                         assert output, links[0]
                         executable = output.group(1)
                         assert any(line.endswith(f'"{executable}"') for line in drivers), drivers
-            print(f'MSVC {version} {lane}: distinct S/M providers and fixture links verified')
+            print(f'MSVC {version} {library}/{lane}: '
+                  'distinct S/M providers and fixture links verified')
 
 
 def test_wasip3_prebuilt_component_keeps_its_main(root: Path) -> None:

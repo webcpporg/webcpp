@@ -553,14 +553,17 @@ def test_asio_capability_lanes_cover_suspension_and_exception_modes(root):
                         'webcpp.drive tls : pass.cpp : : driver.py : : wasip2 ;\n'
                         'webcpp.lane browser-workers : worker : emscripten ;\n'
                         'webcpp.lane browser-worker-exceptions : exception : emscripten ;\n'
+                        'webcpp.lane browser-concurrency-hint : worker : emscripten ;\n'
                         'webcpp.lane wasip2-tls : tls : wasip2 ;\n',
                         {'pass.cpp': 'int main() {}\n', 'driver.py': '',
                          'package.json': '{}\n', 'package-lock.json': '{}\n'})
     entries = own_lanes(root, '--library', 'asio')
     assert {entry['id'] for entry in entries} == {
         'emscripten.asio.browser-workers', 'emscripten.asio.browser-worker-exceptions',
-        'wasip2.asio.wasip2-tls'}, entries
+        'emscripten.asio.browser-concurrency-hint', 'wasip2.asio.wasip2-tls'}, entries
     expected = {
+        'browser-concurrency-hint': ['toolset=emscripten', 'webcpp-suspend=jspi,asyncify',
+                                     'exception-handling=on,off'],
         'browser-workers': ['toolset=emscripten', 'webcpp-suspend=jspi,asyncify',
                             'exception-handling=on,off'],
         'browser-worker-exceptions': ['toolset=emscripten', 'webcpp-suspend=jspi,asyncify',
@@ -1204,12 +1207,14 @@ def test_asio_browser_lane_receives_chrome(root):
                         'webcpp.drive page : pass.cpp : : driver.py ;\n'
                         'webcpp.lane browser : page : emscripten ;\n'
                         'webcpp.lane browser-workers : page : emscripten ;\n'
-                        'webcpp.lane browser-worker-exceptions : page : emscripten ;\n',
+                        'webcpp.lane browser-worker-exceptions : page : emscripten ;\n'
+                        'webcpp.lane browser-concurrency-hint : page : emscripten ;\n',
                         {'pass.cpp': 'int main() {}\n', 'driver.py': '',
                          'package.json': '{}\n', 'package-lock.json': '{}\n'})
     entries = own_lanes(root, '--library', 'asio')
     assert {entry['lane']: entry['chrome'] for entry in entries} == {
-        'browser': True, 'browser-workers': True, 'browser-worker-exceptions': True}, entries
+        'browser': True, 'browser-workers': True, 'browser-worker-exceptions': True,
+        'browser-concurrency-hint': True}, entries
 
     for lane, platform in (('browser', 'emscripten'),
                            ('applications-browser', 'emscripten'),
@@ -1220,6 +1225,30 @@ def test_asio_browser_lane_receives_chrome(root):
         assert own_lane_entry_of(beast)['chrome'] is True, (lane, platform)
 
 
+def test_cobalt_browser_lanes_receive_chrome_and_all_profiles(root):
+    lanes = ('browser-workers', 'browser-runtime-probes', 'browser-pages',
+             'browser-worker-pages', 'browser-network-counterparts')
+    harness.add_library(root, 'cobalt',
+                        'import webcpp ;\nwebcpp.targets emscripten ;\n'
+                        'webcpp.original node ;\n'
+                        'webcpp.drive page : pass.cpp : : driver.mjs ;\n'
+                        + ''.join(f'webcpp.lane {lane} : page : emscripten ;\n' for lane in lanes),
+                        {'pass.cpp': 'int main() {}\n', 'driver.mjs': '',
+                         'package.json': '{}\n', 'package-lock.json': '{}\n'})
+    entries = own_lanes(root, '--library', 'cobalt')
+    assert {entry['lane'] for entry in entries} == set(lanes), entries
+    for entry in entries:
+        assert entry['chrome'] is True, entry
+        own = matrix.parsed_own_lane(json.dumps(entry))
+        command = matrix.own_lane_command(own, root / 'config.jam', root / 'lane.xml', [])
+        assert 'exception-handling=on,off' in command, command
+        if own.lane != 'browser-network-counterparts':
+            assert 'webcpp-suspend=jspi,asyncify' in command, command
+        else:
+            # The network lane expands suspension through its variants manifest.
+            assert 'webcpp-suspend=jspi,asyncify' not in command, command
+
+
 def test_a_browser_lane_has_the_pinned_chrome(root):
     # An own lane whose driver meets a browser, asio's browser, trystero's interop and document's js
     # (CHROME_LANES), says chrome, on every target it runs on, and its job installs the pinned
@@ -1227,8 +1256,12 @@ def test_a_browser_lane_has_the_pinned_chrome(root):
     # image's Chrome.
     assert matrix.CHROME_LANES == {
         ('asio', 'browser'), ('asio', 'browser-workers'), ('asio', 'browser-worker-exceptions'),
+        ('asio', 'browser-concurrency-hint'),
         ('beast', 'browser'), ('beast', 'applications-browser'),
-        ('beast', 'applications-chat'), ('document', 'js'),
+        ('beast', 'applications-chat'),
+        ('cobalt', 'browser-workers'), ('cobalt', 'browser-runtime-probes'),
+        ('cobalt', 'browser-pages'), ('cobalt', 'browser-worker-pages'),
+        ('cobalt', 'browser-network-counterparts'), ('document', 'js'),
         ('trystero', 'interop')}, matrix.CHROME_LANES
     boost_only(root)
     external_library(root)
@@ -1239,7 +1272,9 @@ def test_a_browser_lane_has_the_pinned_chrome(root):
     steps = job_steps(workflow_jobs()['own-lanes'])
     chrome = [step for step in steps if 'uses: ./tools/ci/actions/chrome' in step]
     assert len(chrome) == 1 and 'if: matrix.chrome\n' in chrome[0], chrome
-    assert "matrix.library == 'beast' && 'chrome' || 'chrome-headless-shell'" in chrome[0], chrome
+    product = ("(matrix.library == 'beast' || matrix.library == 'cobalt') "
+               "&& 'chrome' || 'chrome-headless-shell'")
+    assert product in chrome[0], chrome
     workflow = (harness.ROOT / '.github/workflows/library.yml').read_text()
     assert '/usr/bin/google-chrome' not in workflow
     # AGENTS.md names the shell's version once, the action's.
@@ -1478,6 +1513,7 @@ CASES = [
     test_the_jobs_install_the_external_dependencies,
     test_container_availability_does_not_block_other_lanes,
     test_asio_browser_lane_receives_chrome,
+    test_cobalt_browser_lanes_receive_chrome_and_all_profiles,
     test_a_browser_lane_has_the_pinned_chrome,
     test_host_tls_fixture_is_isolated_to_its_own_lane,
     test_browser_contract_lanes_build_a_native_beast_peer,
