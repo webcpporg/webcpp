@@ -7,9 +7,6 @@
 [#webcpp-0-1-0]
 = webcpp 0.1.0
 
-In preparation: no tag names this version yet, and its libraries' entries
-are their changelogs' "Unreleased" sections.
-
 [#webcpp-0-1-0-new-libraries]
 == New Libraries
 
