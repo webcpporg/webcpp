@@ -73,8 +73,9 @@ for web developers and for AI developers (`CODING-GUIDELINES.md` chapter 16).
 
 | Library | What it is | Targets | State |
 | --- | --- | --- | --- |
-| asio | Boost.Asio and Cobalt with browser event-loop suspension, WASIp2/P3 networking and optional source-built TLS | native, emscripten, wasip2, wasip3 | a submodule at `libs/asio`; see its feature matrix for variants |
+| asio | Boost.Asio with browser event-loop suspension, WASIp2/P3 networking and optional source-built TLS | native, emscripten, wasip2, wasip3 | a submodule at `libs/asio`; see its feature matrix for variants |
 | beast | HTTP and WebSocket applications using native/WASIp3 sockets, browser WebSocket/fetch, WASI host HTTP or supplied streams | native, emscripten, wasip2, wasip3, by backend | a submodule at `libs/beast`; all 53 upstream applications remain in its compatibility matrix |
+| cobalt | Boost.Cobalt coroutine applications with shipped Wasm adaptations and optional corrected SSL | native, emscripten, wasip2, wasip3, by capability | a submodule at `libs/cobalt`; see its feature and application matrices for variants |
 | config | webcpp's configuration, which every library includes first: the target, exceptions and webcpp's version, as Boost.Config is Boost's; webcpp's own | native, wasip2, wasip3, emscripten | a submodule at `libs/config` |
 | xactor | a deterministic actor system, webcpp's own | native, wasip2, wasip3 (`xactor_asio` native only) | a submodule at `libs/xactor`; the model for every port |
 | xstate | a port of XState 5.33.2's state machines and actors; depends on xactor and Boost.JSON | native, wasip2, wasip3; its oracle lane | a submodule at `libs/xstate`; the first user of the shared oracle (`CODING-GUIDELINES.md` chapter 12) |
@@ -221,6 +222,10 @@ Jamroot is its build configuration, and `libs/<name>` is its repository.
   the same version (below);
 - b2 (B2 5.5.3 measured);
 - a C++20 compiler;
+- the GCC 15 CI lane uses pinned GCC 15.3, since the Ubuntu runner's GCC 15.2
+  has coroutine default-argument regression PR121643. Its action extracts the
+  official Linux-X64 image's relocatable toolchain, verifies a compile/run probe
+  after installation and cache restoration, and selects its matching runtime;
 - Python 3.9 or newer;
 - for WebAssembly: wasi-sdk 34 and wasmtime 50.0.1;
 - for WebAssembly components, such as wasi's: wit-bindgen 0.62.0, which
@@ -343,55 +348,39 @@ being on the compiler's default include path, naming the `using boost` line to
 add, and if it lacks the library's sources; a build that needs none never
 looks.
 
-**Cobalt source target.** `/webcpp//boost_cobalt` builds a static library from
-24 of Boost 1.92's 26 Cobalt sources on native/browser targets: `src/*.cpp`,
-`src/detail/*.cpp` and `src/io/*.cpp`, excluding `src/main.cpp` and
-`src/io/ssl.cpp`. It supplies no default `co_main` runner; `/webcpp/asio//cobalt`
-adds the webcpp runner. Ordinary `main` consumers can use the archive directly.
-On WASIp2/P3, `tools/boost/cobalt-wasip3` verifies a Boost 1.92 compatibility patch
-and prepares private headers and endpoint/acceptor sources. The archive and
-consumers use the same Asio overlay and thread profile. Signal, serial-port
-and seqpacket sources are omitted, along with `thread.cpp` in single-thread
-builds. Cooperative builds include and test the thread coroutine. Installed
-Boost headers and sources remain untouched. Every Cobalt target also uses the
-checked `tools/boost/cobalt-common` header overlay: Boost 1.92's composition
-promise must connect its cancellation source to the received completion handler.
-Both compiled operations and application-defined compositions receive this fix.
-The common overlay also supplies `unhandled_exception` for main and thread
-promises in no-exceptions builds; the thread coroutine is exercised by Asio's
-`threads` own lane, natively and on cooperative WASIp3.
-Rebase and verify the common patch before using a different Boost version.
-TLS consumers combine the Cobalt target with `/webcpp/asio//tls` and await
-Asio SSL operations with Cobalt tokens. `/webcpp//boost_cobalt_io_ssl` optionally
-compiles `io/ssl.cpp` with `BOOST_COBALT_SSL_SOURCE=1`, source-built OpenSSL and
-the checked shared patch in `tools/boost/cobalt-ssl`. It preserves handler
-associations, fixes handshake state and callback constraints, and exposes a
-borrowed `native_ssl_handle()` for SNI. `/webcpp/asio//cobalt_ssl` adds the
-runner and CA factory. Native and WASIp2/P3 consumers share these SSL corrections;
-browser OpenSSL is refused. Plain Cobalt does not acquire an OpenSSL dependency.
-Asio's `tls-integration` own lane drives the real OpenSSL/Cobalt fixtures on
-native and WASIp3 profiles, including primitive/composed transfer cancellation,
-truncated shutdown and cancelled shutdown. Its native `openssl-upstream` lane
-requests `webcpp-openssl-tests=on`: the exact archives pass upstream's full
-`alltests` suite before the TLS consumer links. The upstream harness cannot run
-on WASI; its separate TLS/entropy integration tests do not substitute for it.
-The `openssl-upstream-msvc-14.3` and `openssl-upstream-msvc-14.5` aliases
-select their matching Windows runners/toolsets; the default native upstream
-lane uses Linux. CI uploads upstream logs, proof and build manifests even on
-failure. Lane declarations describe recurring coverage, not a successful CI run. Require actual pending operations and transport/protocol observations,
-not guessed sleeps. Terminal transfer cancellation does not promise safe reuse.
-Its sources define `BOOST_COBALT_SOURCE=1` and `BOOST_COBALT_IO_SOURCE=1`, while
-consumers receive `BOOST_COBALT_NO_LIB=1`. On Emscripten, both sources and
-consumers define `BOOST_ASIO_DISABLE_THREADS`; native thread support is unchanged.
-Use the shared `BOOST_SOURCE` setup above, not a separate Cobalt source tree.
+**Cobalt shipped sources.** `libs/cobalt/sources.json` declares the core,
+runner, optional SSL and additional threaded sources per target. The independent
+library owns them. `/webcpp//boost_cobalt` aliases its plain core;
+`/webcpp/cobalt//cobalt` supplies exactly one runner for a user-defined `co_main`.
+The older Asio Cobalt targets are compatibility aliases. Native core and runner
+sources are unchanged Boost 1.92. Wasm implementations are shipped under explicit
+WebCPP paths; consumers never run an importer or prepare replacement Boost headers.
+Cobalt does not require an external `BOOST_SOURCE` tree. Boost.URL, Charconv,
+Locale and Context retain the source requirements above.
 
-**Windows Asio allocator overlay.** `tools/boost/asio-windows` passes the
-context allocator into Boost 1.92's existing `win_thread` constructor for the
-IOCP worker and timer thread. Asio and compiled Cobalt use the same checked
-private headers on Windows only. The manifest verifies the original and patched
-hashes, without modifying installed Boost. Native allocation tests construct the
-context and its first timer inside the counted window. A prepared overlay or a
-dry run alone is not evidence that a Windows program ran.
+Compile the application, core, runner and optional SSL with matching exception,
+thread and Cobalt executor/PMR settings. A custom configuration header is
+preincluded in every source. Native sources use Boost's configuration vocabulary;
+Wasm maps those settings to its isolated implementation. Its generated B2 source
+list and external compiler/CMake recipes consume the same inventory. Asio has
+its own runtime inventory and private WASI SDK ABI checks under `libs/asio/src`.
+The consumer test creates and extracts a source archive, validates hashes and
+compiler dependencies, and rejects accidental checkout inputs.
+
+`/webcpp/cobalt//io_ssl` selects WebCPP's corrected wrapper for native and WASI,
+with the shared source-built OpenSSL/CA provider. This is the owner-approved
+exception to native Boost identity. `/webcpp/cobalt//cobalt_ssl` adds the runner.
+Plain Cobalt does not link OpenSSL. Browser HTTPS/WSS uses the browser's TLS.
+State, transfer cancellation and shutdown drivers live in `libs/cobalt/test/tls`.
+Asio's existing integration aliases preserve their callers. Native upstream
+OpenSSL tests remain distinct from WebCPP TLS witnesses and from WASI tests.
+
+**Native upstream limitations.** Native Cobalt retains Boost's composition,
+accept, write-at and missing-no-exceptions-promise-hook limitations, documented
+by its probes. Those core paths do not receive Wasm corrections. Native Asio
+retains Boost's Windows IOCP worker/timer allocation limitation. Historical patch
+inputs survive in `libs/asio/upstream/reference/windows-iocp`, without a consumer
+build rule. A dry run on this machine is not Windows runtime evidence.
 
 **Cobalt without exceptions.** A build that uses `/webcpp//boost_cobalt` with
 `exception-handling=off` emits a non-fatal configuration warning with
@@ -637,6 +626,28 @@ in the guide part of the page, and a reference like `(doc: #anchor)` in a Doc
 Comment becomes `@see "<title>"`.
 
 ## 3. Documentation
+
+### Shipped Boost implementation provenance
+
+Asio, Cobalt and Beast ship their Wasm implementation explicitly under their own
+paths. Native Cobalt core/runner sources remain unchanged upstream snapshots;
+the owner approved the separately corrected native SSL wrapper on 2026-11-06.
+No consumer build applies a patch or shadows an installed Boost include tree.
+
+`upstream/generated.json` identifies maintainer-generated implementation and
+forwarding files by hash. `tools/shipped_sources.py` verifies every entry before
+lint preserves its upstream style or the reference omits inherited declarations.
+A missing, changed or escaping path fails this integrity gate. The importer,
+correction inputs and hand-written wrappers/adapters remain subject to all owned
+source rules. Regeneration uses the pinned input and correction manifests.
+
+The owned-header aggregate and MrDocs input document WebCPP's additions and
+configuration; guides link the matching upstream reference for inherited APIs.
+The input list excludes only verified generated outputs. This does not disable
+MrDocs warnings or permit a library-specific arbitrary reference filter. Actual
+consumer/application tests still compile the imported implementation. Generated
+forwarders additionally require distribution/header coverage for their supported
+profiles; omitting them from the documentation aggregate is not test evidence.
 
 ### The page
 
@@ -1797,9 +1808,9 @@ wrapper each quoted as one word of Jam.
   `CHROME_DEVEL_SANDBOX` naming the image's setuid helper,
   `/opt/google/chrome/chrome-sandbox`.
   The headless shell sends nothing to Google of its own (measured).
-  Beast browser lanes select `product: chrome` at the same pinned version,
-  installed into `.local/chrome`. Its certificate tests need full Chrome's
-  isolated profile trust store. Test CAs are installed only in disposable
+  Beast and Cobalt browser lanes select `product: chrome` at the same pinned
+  version, installed into `.local/chrome`. Their certificate tests need full
+  Chrome's isolated profile trust store. Test CAs are installed only in disposable
   profiles; no host trust store or certificate-validation bypass is used.
   The drivers disable background networking and operate against local fixtures.
 - `container` gives a job the checked immutable image above. Registry access

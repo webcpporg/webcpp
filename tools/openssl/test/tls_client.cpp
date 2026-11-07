@@ -5,21 +5,23 @@
 // https://www.boost.org/LICENSE_1_0.txt)
 #include <openssl/ssl.h>
 #include <array>
-#include <boost/asio/ip/tcp.hpp>
-#include <boost/asio/read.hpp>
-#include <boost/asio/write.hpp>
 #include <cstdio>
 #include <cstdlib>
 #include <string_view>
+#include <webcpp/asio/buffer.hpp>
 #include <webcpp/asio/io_context.hpp>
+#include <webcpp/asio/ip/address_v4.hpp>
+#include <webcpp/asio/ip/tcp.hpp>
+#include <webcpp/asio/read.hpp>
 #include <webcpp/asio/ssl.hpp>
+#include <webcpp/asio/write.hpp>
 #ifdef WEBCPP_TEST_EMBEDDED_CA
 #include <webcpp/asio/tls_client_context.hpp>
 #endif
 
 namespace {
 
-using tls_stream = webcpp::asio::ssl::stream<boost::asio::ip::tcp::socket>;
+using tls_stream = webcpp::asio::ssl::stream<webcpp::asio::ip::tcp::socket>;
 
 bool verify_handshake(tls_stream& stream, boost::system::error_code error, bool reject,
                       int& result) {
@@ -42,14 +44,14 @@ bool verify_handshake(tls_stream& stream, boost::system::error_code error, bool 
 
 void exchange(tls_stream& stream, const std::array<char, 4>& request, std::array<char, 4>& response,
               int& result) {
-    boost::asio::async_write(
-        stream, boost::asio::buffer(request),
+    webcpp::asio::async_write(
+        stream, webcpp::asio::buffer(request),
         [&](boost::system::error_code write_ec, std::size_t bytes) {
             if (write_ec || bytes != request.size()) {
                 return;
             }
-            boost::asio::async_read(
-                stream, boost::asio::buffer(response),
+            webcpp::asio::async_read(
+                stream, webcpp::asio::buffer(response),
                 [&](boost::system::error_code read_ec, std::size_t count) {
                     if (read_ec || count != response.size() ||
                         std::string_view(response.data(), count) != "pong") {
@@ -118,7 +120,7 @@ int main(int argc, char* const* argv) {
     std::array<char, 4> response{};
     int result = 1;
     stream.next_layer().async_connect(
-        {boost::asio::ip::address_v4::loopback(), port}, [&](boost::system::error_code ec) {
+        {webcpp::asio::ip::address_v4::loopback(), port}, [&](boost::system::error_code ec) {
             if (ec) {
                 static_cast<void>(std::fprintf(stderr, "connect: %s\n", ec.message().c_str()));
                 return;

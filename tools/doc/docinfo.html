@@ -35,6 +35,12 @@ pre.highlight > code.hljs { background: none; padding: 0; }
   word-wrap: normal;
   overflow-x: auto;
 }
+/* Inline exported plots have fixed point dimensions. Fit the available column
+   without changing their viewBox, aspect ratio or underlying measurement data. */
+.imageblock > .content > svg {
+  max-width: 100%;
+  height: auto;
+}
 /* Where the table of contents stands at the left of the content, from 768px, Asciidoctor leaves
    the content 15px of room at its right, against the table's 240px, 320px from 1280px. The
    content gets a gutter there taken from the table's width, whose entries keep their lines: the

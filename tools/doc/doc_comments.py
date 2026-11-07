@@ -59,6 +59,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import shipped_sources
+
 Node = dict[str, Any]
 
 COMPILER_PATHS = ('CPATH', 'CPLUS_INCLUDE_PATH', 'C_INCLUDE_PATH')
@@ -235,6 +238,7 @@ class Checker:
     def __init__(self, objects: list[Node], include: Path) -> None:
         self.locations = Locations(objects)
         self.include = include.resolve()
+        self.imported = shipped_sources.verified(self.include.parent)
         self.symbols: dict[tuple[str, ...], Symbol] = {}
         # The name of each class, by the id of its declarations, for the members defined out
         # of it.
@@ -249,7 +253,8 @@ class Checker:
         if file is None:
             return False
         try:
-            return Path(file).resolve().is_relative_to(self.include)
+            path = Path(file).resolve()
+            return path.is_relative_to(self.include) and path not in self.imported
         except OSError:
             return False
 

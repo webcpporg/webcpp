@@ -175,9 +175,13 @@ EXTERNAL_VARIABLES = ('SECP256K1_ROOT', 'SECP256K1_EMSCRIPTEN_ROOT')
 # document's js, whose examples Playwright runs in Chrome, and the browser and
 # chat applications whose fixture connects Chrome to native or WASI servers.
 CHROME_LANES = {('asio', 'browser'), ('asio', 'browser-workers'),
-                ('asio', 'browser-worker-exceptions'),
+                ('asio', 'browser-worker-exceptions'), ('asio', 'browser-concurrency-hint'),
                 ('beast', 'browser'), ('beast', 'applications-browser'),
-                ('beast', 'applications-chat'), ('document', 'js'), ('trystero', 'interop')}
+                ('beast', 'applications-chat'),
+                ('cobalt', 'browser-workers'), ('cobalt', 'browser-runtime-probes'),
+                ('cobalt', 'browser-pages'), ('cobalt', 'browser-worker-pages'),
+                ('cobalt', 'browser-network-counterparts'),
+                ('document', 'js'), ('trystero', 'interop')}
 
 # MSVC's lanes build 64-bit programs, embed their manifest with the linker and abbreviate b2's
 # paths against Windows's MAX_PATH, as xstate-cpp's green Windows jobs did. b2 abbreviates each
@@ -500,6 +504,18 @@ OWN_LANE_BASES = {None: 'clang-18', 'native': 'clang-18', 'emscripten': 'emscrip
 # Own lanes select their supported suspension, exception and library policy modes.
 # Manifest-based browser lanes already expand suspension variants inside B2.
 OWN_LANE_OPTIONS = {
+    ('cobalt', 'browser-workers', 'emscripten'):
+        ('webcpp-suspend=jspi,asyncify', 'exception-handling=on,off'),
+    ('cobalt', 'browser-runtime-probes', 'emscripten'):
+        ('webcpp-suspend=jspi,asyncify', 'exception-handling=on,off'),
+    ('cobalt', 'browser-pages', 'emscripten'):
+        ('webcpp-suspend=jspi,asyncify', 'exception-handling=on,off'),
+    ('cobalt', 'browser-worker-pages', 'emscripten'):
+        ('webcpp-suspend=jspi,asyncify', 'exception-handling=on,off'),
+    ('cobalt', 'browser-network-counterparts', 'emscripten'):
+        ('exception-handling=on,off',),
+    ('asio', 'browser-concurrency-hint', 'emscripten'):
+        ('webcpp-suspend=jspi,asyncify', 'exception-handling=on,off'),
     ('asio', 'browser-workers', 'emscripten'):
         ('webcpp-suspend=jspi,asyncify', 'exception-handling=on,off'),
     ('asio', 'browser-worker-exceptions', 'emscripten'):

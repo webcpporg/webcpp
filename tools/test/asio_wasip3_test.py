@@ -5,71 +5,72 @@
 # accompanying file LICENSE_1_0.txt or copy at
 # https://www.boost.org/LICENSE_1_0.txt)
 
-"""Verify private WASIp3 headers and profile selection in a checkout with spaces.
+"""Verify shipped WASI headers and profile selection in a checkout with spaces.
 
 These build tests need wasi-sdk but do not execute a WASI runtime. The library's
 wasi_core and wasi_contract programs provide runtime coverage separately.
 """
 
 from pathlib import Path
-import shutil
 import sys
 
 import harness
 
 
 JAM = '''
-use-project /webcpp/asio-wasip3 : ../../../tools/boost/asio-wasip3 ;
 webcpp.compile wasi_configuration : wasi_configuration.cpp
-  : <toolset>clang-wasip3:<library>/webcpp/asio-wasip3//headers ;
+  : <library>/webcpp/asio//asio ;
 '''
-SOURCE = '''#include <boost/asio/io_context.hpp>
-#include <boost/asio/steady_timer.hpp>
-#include <boost/asio/ip/tcp.hpp>
-#include <boost/asio/ip/udp.hpp>
-#if defined(__wasip3__) && !defined(_REENTRANT) && defined(BOOST_ASIO_HAS_THREADS)
+SOURCE = '''#include <webcpp/asio/io_context.hpp>
+#include <webcpp/asio/steady_timer.hpp>
+#include <webcpp/asio/ip/tcp.hpp>
+#include <webcpp/asio/ip/udp.hpp>
+#if defined(__wasip3__) && !defined(_REENTRANT) && WEBCPP_ASIO_HAS_THREADS
 #error "single profile must disable Asio threads"
 #endif
-#if defined(__wasip3__) && defined(_REENTRANT) && !defined(BOOST_ASIO_HAS_THREADS)
+#if defined(__wasip3__) && defined(_REENTRANT) && !WEBCPP_ASIO_HAS_THREADS
 #error "cooperative profile must enable Asio threads"
 #endif
 void instantiate() {
-    boost::asio::io_context context;
-    boost::asio::steady_timer timer(context);
-    boost::asio::ip::tcp::socket tcp(context);
-    boost::asio::ip::udp::socket udp(context);
+    webcpp::asio::io_context context;
+    webcpp::asio::steady_timer timer(context);
+    webcpp::asio::ip::tcp::socket tcp(context);
+    webcpp::asio::ip::udp::socket udp(context);
 }
 '''
 TARGET = 'libs/demo/test//wasi_configuration'
 
-HOST_SOURCE = '''#include <boost/asio/associated_executor.hpp>
-#include <boost/asio/associated_allocator.hpp>
-#include <boost/asio/associated_cancellation_slot.hpp>
-#include <boost/asio/async_result.hpp>
-#include <boost/asio/bind_allocator.hpp>
-#include <boost/asio/execution.hpp>
+HOST_SOURCE = '''#include <webcpp/asio/associated_executor.hpp>
+#include <webcpp/asio/associated_allocator.hpp>
+#include <webcpp/asio/associated_cancellation_slot.hpp>
+#include <webcpp/asio/async_result.hpp>
+#include <webcpp/asio/bind_allocator.hpp>
+#include <webcpp/asio/execution.hpp>
 void host_traits() {}
 '''
 
 
 def fixture(root: Path) -> None:
+    harness.copy_integration_libraries(root, 'config', 'asio')
+    harness.link_wasi_tools(root)
     directory = root / 'libs/demo/test'
     jam = directory / 'Jamfile'
     jam.write_text(jam.read_text() + JAM)
     (directory / 'wasi_configuration.cpp').write_text(SOURCE)
 
 
-def test_overlay_is_wasi_only_and_precedes_stock_headers(root: Path) -> None:
+def test_public_consumer_uses_shipped_headers_without_overlays(root: Path) -> None:
     fixture(root)
-    result = harness.run_b2(root, '-a', TARGET)
+    result = harness.run_b2(root, '-a', '-d+2', TARGET)
     harness.expect(result, True, '**passed**')
     overlay = root / 'bin/boost-asio-wasip3/include/boost/asio/detail/config.hpp'
     assert not overlay.exists(), result.stdout
     for handling in ('on', 'off'):
-        result = harness.run_b2(root, '-a', 'toolset=clang-wasip3', 'threading=single',
+        result = harness.run_b2(root, '-a', '-d+2', 'toolset=clang-wasip3', 'threading=single',
                                 f'exception-handling={handling}', TARGET)
         harness.expect(result, True, '**passed**')
-        assert '__wasip3__' in overlay.read_text()
+        assert not overlay.exists(), result.stdout
+        assert 'boost-asio-wasip3/include' not in result.stdout, result.stdout[-4000:]
 
 
 def test_cooperative_profile_and_missing_exception_runtime(root: Path) -> None:
@@ -98,7 +99,7 @@ def test_wasip2_host_traits_without_socket_reactor(root: Path) -> None:
     jam = directory / 'Jamfile'
     jam.write_text(jam.read_text() + '''
 webcpp.compile host_traits : host_traits.cpp
-  : <toolset>clang-wasip2:<library>/webcpp/asio-wasip3//host-headers ;
+  : <library>/webcpp/asio//asio ;
 ''')
     (directory / 'host_traits.cpp').write_text(HOST_SOURCE)
     for toolset in ('clang', 'clang-wasip2'):
@@ -111,11 +112,7 @@ webcpp.compile host_traits : host_traits.cpp
 
 def test_wasip2_consumer_and_unsupported_profiles(root: Path) -> None:
     # Use the public B2 alias in a clean path with spaces, including its ABI guard.
-    for name in ('config', 'asio'):
-        source = harness.ROOT / 'libs' / name
-        target = root / 'libs' / name
-        shutil.copytree(source / 'include', target / 'include')
-        shutil.copyfile(source / 'build.jam', target / 'build.jam')
+    harness.copy_integration_libraries(root, 'config', 'asio')
     harness.link_wasi_tools(root)
     harness.add_library(root, 'p2_user', '''import webcpp ;
 webcpp.targets wasip2 ;
@@ -139,7 +136,7 @@ int main() {
     harness.expect(harness.run_b2(root, 'threading=multi', *options),
                    False, 'WASIp2 supports threading=single only')
     # TLS/Cobalt now have real P2 runtime consumers in
-    # libs/asio/test/wasip2_tls_cobalt. Only unsupported profiles are refused.
+    # libs/cobalt/test/wasip2. Only unsupported profiles are refused.
     stale = root / 'unknown SDK'
     stale.mkdir()
     (stale / 'VERSION').write_text('34.0\nwasi-libc: unknown\n')
@@ -148,7 +145,7 @@ int main() {
     harness.expect(harness.run_b2(root, *options), True)
 
 
-CASES = [test_overlay_is_wasi_only_and_precedes_stock_headers,
+CASES = [test_public_consumer_uses_shipped_headers_without_overlays,
          test_cooperative_profile_and_missing_exception_runtime,
          test_wasip2_host_traits_without_socket_reactor,
          test_wasip2_consumer_and_unsupported_profiles]
