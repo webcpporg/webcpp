@@ -1186,11 +1186,12 @@ site's own decisions follow in the next sections.
   Boost.Locale without ICU and Boost.Cobalt, are built by webcpp from Boost's
   own source archive for their supported targets, as `/webcpp//boost_url` and
   its kin.** Each archive follows its consumer's target, macros and compiler
-  configuration; Cobalt supports the validated P2/P3 WASI profiles. Checked Asio/Cobalt overlays
-  apply only to private copies, with original and patched hashes and an exact
-  Boost-version check (AGENTS.md chapter 1). An installed Boost cannot be
-  relied on for sources (Homebrew's has no `libs/url/src`), and the sources'
-  version must equal the configured Boost's.
+  configuration. Cobalt's independent library now ships its pinned upstream
+  native sources and adapted Wasm sources; Asio ships its Wasm backend too.
+  Maintainer imports record original and resulting hashes, while consumer
+  builds apply no patches. Other compiled Boost dependencies still require the
+  matching source archive: an installed Boost cannot be relied on for sources
+  (Homebrew's has no `libs/url/src`).
   Source: `organization/openspec/changes/archive/2026-10-07-genesis/design.md`
   (proposals).
 - **Boost.JSON's definitions and Boost.Test's header-only framework are
@@ -6181,7 +6182,38 @@ which includes the change `shared-connection` (trystero `2e2dcd4`, webcpp
   example needs the public relays or a browser.
   Source: `doc/differences.adoc` (libs/trystero).
 
-### asio (Boost.Asio and Cobalt on native, Emscripten and WASIp2/P3; implemented for 0.1.0 in preparation)
+### asio (Boost.Asio on native, Emscripten and WASIp2/P3; implemented for 0.1.0 in preparation)
+
+
+**Owner-approved architecture update, 2026-11-06.** The coordinated Asio,
+Cobalt and Beast migration supersedes the earlier derived-native-context and
+consumer overlay choices in the historical design inventory below. Native
+upstream-equivalent public types are the actual Boost types. Wasm implementations
+are shipped under explicit WebCPP paths, selected by config, and shared by B2
+and independent compiler/CMake consumers. Cobalt owns its compiled sources;
+Asio's old Cobalt targets are compatibility aliases. Native Cobalt SSL alone uses
+the separately corrected WebCPP type after reproduced state/cancellation defects
+and explicit owner approval. The core and runner remain unchanged upstream.
+
+Distribution closure uses `sources.json` in Asio and Cobalt, with B2 lists
+generated from the same inventories. Direct compiler and CMake consumers build
+from an extracted, hashed source archive. Compiler dependencies must name only
+that archive, explicit dependencies or the selected toolchain's declared paths.
+Custom executor/PMR settings apply to every source; incompatible per-translation-
+unit flags are not repaired by a general ABI guard. The consumer audit checks
+the requested configuration instead. Consumer overlay recipes and the lint's
+overlay preparation hook have been removed. Historical patch inputs remain only
+for maintainer provenance and upstream comparison.
+
+Verified maintainer-generated imports preserve upstream provenance and style;
+owned adapters and generators remain linted. The shared integrity gate checks
+all generated hashes before any documentation or lint classification. Guides
+explain WebCPP additions and link the pinned upstream reference. The migration
+plan and its local evidence, not the historical inventory below, determine
+current closure. Dated application matrices and Release measurements passed locally
+on 2026-11-07. Local lint and review are complete; coordinated remote CI and
+publication remain separate gates.
+
 
 webcpp::asio is a C++20 wrapper over Boost.Asio: natively it is
 Boost.Asio itself, and on Emscripten it is Boost's own `io_context`, whose run
@@ -6867,6 +6899,33 @@ coverage belongs to Trystero's `test/provider//provider-integration`, where its
 external secp256k1 dependency is provisioned. Final-candidate CI and remaining
 coverage limitations are tracked in chapter 19.
 
+### cobalt (Boost.Cobalt source integration; local candidate for 0.1.0)
+
+The owner approved independent Cobalt ownership and the coordinated source contract
+on 2026-11-06. `libs/cobalt` owns core, runner, optional SSL, tests, examples and
+Diataxis/MrDocs documentation. Native coroutine/plain I/O types and core/runner
+sources are Boost 1.92. Wasm uses checked-in sources over the same WebCPP Asio
+backend as Beast. Consumer builds require no patches or replacement Boost headers.
+
+The corrected native SSL stream is an explicit owner-approved identity exception,
+after real upstream state/cancellation failures. Plain Cobalt never links SSL.
+Native upstream defects outside that wrapper remain named negative probes;
+corrected Wasm behavior is not reported as native Boost behavior. The issue-287
+no-EH caution remains informational, with versioned runtime evidence.
+
+Default browser scheduling stays at Asio's 100 handlers. Config distinguishes
+application requirements, read-only capabilities and build-wide executor/PMR
+policies. A capability cannot grant runtime permissions. Arbitrary cross-unit ABI
+mismatches remain caller errors; source consumers must rebuild all support units.
+B2 lists and external builds consume the same source inventories.
+
+The 2026-11-07 report covers 12 original applications in 432 cells, keeping
+counterparts, unavailable facilities and upstream defects separate. Shared Release
+measurements cover 136 builds and 15,906 runtime observations, with immutable source
+snapshots and distinct memory boundaries. The full source-archive, lint, review and
+publication gates are recorded in the portable-network migration plan. Local
+results do not claim a released library, GitHub repository creation or CI approval.
+
 ### beast (Boost.Beast portability facade)
 
 The owner's expanded Beast genesis proposal in
@@ -6882,11 +6941,14 @@ facilities separately; a successful compile never proves runtime parity.
 - Portable HTTP messages, parsers and serializers reuse Boost.Beast 1.92.
   `http.hpp` remains independent of a socket reactor. Byte-stream algorithms
   are explicit `http/read.hpp` and `http/write.hpp` includes.
-- Native and WASIp3 guest sockets use webcpp::asio. Guest TLS is optional and
+- Native and WASIp2/P3 guest sockets use webcpp::asio. Guest TLS is optional and
   explicitly links the project's source-built OpenSSL through `//tls`.
   `set_server_name` sets SNI only; peer verification and hostname validation
-  remain explicit. Native and WASIp3 stream internals retain upstream Beast's
-  allocation behavior, even when accepting the portable allocator constructor.
+  remain explicit. Native equivalent types are exactly Boost.Beast types.
+  Wasm protocol sources are shipped explicitly and use Asio's selected backend,
+  without replacement Boost include directories. WASI stream internals retain
+  upstream Beast's allocation behavior; browser allocator extensions do not
+  change the native type or constructor contract.
 - The browser backend uses JavaScript WebSocket and fetch. Its TCP-shaped
   lowest layer records an authority rather than opening a raw socket, and its
   TLS-shaped layer records intent rather than running guest OpenSSL. The
@@ -6925,9 +6987,11 @@ facilities separately; a successful compile never proves runtime parity.
 - Feature and application matrices in the guide keep compilation and execution
   separate for every target, exception mode and supported threading profile.
   Unavailable stackful Wasm coroutines, browser listeners and cooperative
-  WASIp3 exceptions remain unavailable, never counted as passes. WASIp2 guest
-  socket examples remain application-integration work in Beast; Asio now provides
-  that backend, so they are not a platform impossibility.
+  WASIp3 exceptions remain unavailable in SDK 34, never counted as passes.
+  The 2026-11-07 application matrix includes WASIp2 guest sockets: across
+  53 applications and 35 profiles it records 843 passed, 816 unavailable and
+  196 blocked cells. Dated results identify their exact measured source
+  snapshot; subsequent edits do not silently replace that evidence.
 - Native upstream programs are the oracle. Browser validation runs in real
   Chrome with a disposable CA profile, independently of Node. WASI host HTTPS
   uses a pinned Wasmtime host fixture with normal trust and hostname checks;
@@ -8713,7 +8777,7 @@ compatibility departure belongs with its rationale in chapter 15.
 
 Chapter 15 now records the implemented configuration, allocator and private-header
 corrections, native/Emscripten/WASIp2/P3 target contract, default turn limit 100,
-Diataxis guide, source-built OpenSSL, checked Boost overlays and recurring thread
+Diataxis guide, source-built OpenSSL, shipped Wasm backends and recurring thread
 and TLS lanes. Chapter 4's executor contract and compiled-unit exceptions and
 chapter 6's SDK-limited exception profiles reflect the existing approvals.
 Public `webcpp.asio.tls` and `webcpp.beast.wasi` identities remain compatible.
@@ -8736,7 +8800,7 @@ adopted. Chapter 5 rule 7's existing exact-archive exception stays in force.
   OpenSSL and combined-consumer witnesses do not prove that C++ library's own
   suite or every nested C dependency's suite. Keep that distinction in closure
   and CI reports without broadening this change to unrelated library work.
-- **Upstream overlay follow-up.** Checked input/output hashes, version refusal
+- **Upstream corrections follow-up.** Checked input/output hashes, version refusal
   and runtime witnesses bound the Asio/Cobalt corrections. They do not prove
   that every patch has an upstream issue or has been accepted there. Preserve
   existing issue references and verify provenance when rebasing; do not invent

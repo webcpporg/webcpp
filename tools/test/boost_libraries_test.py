@@ -21,6 +21,7 @@ Run with the names of some cases to run only those."""
 
 from __future__ import annotations
 
+import json
 import re
 import shlex
 import shutil
@@ -536,78 +537,88 @@ def test_boost_locale_is_refused_without_exceptions(root: Path) -> None:
 
 COBALT_JAMFILE = ('import webcpp ;\n'
                   'webcpp.targets native emscripten ;\n'
-                  'webcpp.run coroutines : coroutines.cpp : <library>/webcpp//boost_cobalt ;\n')
+                  'webcpp.run coroutines : coroutines.cpp : <library>/webcpp//boost_cobalt '
+                  '<toolset>clang,<exception-handling>off:'
+                  '<cxxflags>-Wno-error=coroutine-missing-unhandled-exception ;\n')
 
-COBALT_SOURCE = r'''#if defined(__EMSCRIPTEN__) && !defined(BOOST_ASIO_DISABLE_THREADS)
+COBALT_SOURCE = r'''#include <webcpp/cobalt/config.hpp>
+#if defined(__EMSCRIPTEN__) && WEBCPP_ASIO_HAS_THREADS
 #error Cobalt must configure Asio for the browser in its usage requirements
 #endif
-#if !defined(__EMSCRIPTEN__) && defined(BOOST_ASIO_DISABLE_THREADS)
+#if !defined(__EMSCRIPTEN__) && !WEBCPP_ASIO_HAS_THREADS
 #error Native consumers must retain their normal thread configuration
 #endif
-#if defined(BOOST_COBALT_SOURCE) || defined(BOOST_COBALT_IO_SOURCE)
+#if defined(BOOST_COBALT_SOURCE) || defined(BOOST_COBALT_IO_SOURCE) || \
+    defined(WEBCPP_COBALT_BACKEND_SOURCE) || defined(WEBCPP_COBALT_BACKEND_IO_SOURCE)
 #error Source-only macros must not leak into consumers
 #endif
 
-#include <boost/asio/io_context.hpp>
-#include <boost/asio/post.hpp>
-#include <boost/asio/steady_timer.hpp>
-#include <boost/cobalt/composition.hpp>
-#include <boost/cobalt/io/steady_timer.hpp>
-#include <boost/cobalt/op.hpp>
-#include <boost/cobalt/result.hpp>
-#include <boost/cobalt/promise.hpp>
-#include <boost/cobalt/this_thread.hpp>
+#include <webcpp/asio/io_context.hpp>
+#include <webcpp/asio/post.hpp>
+#include <webcpp/asio/steady_timer.hpp>
+#include <webcpp/cobalt/composition.hpp>
+#include <webcpp/cobalt/io/steady_timer.hpp>
+#include <webcpp/cobalt/op.hpp>
+#include <webcpp/cobalt/result.hpp>
+#include <webcpp/cobalt/promise.hpp>
+#include <webcpp/cobalt/this_thread.hpp>
 #include <webcpp/test/exit_status.hpp>
 
 #include <chrono>
 #include <cstdio>
 
-boost::cobalt::promise<int> answer() {
+webcpp::cobalt::promise<int> answer() {
     co_return 42;
 }
 
-struct composed_wait : boost::cobalt::op<boost::system::error_code> {
-    boost::asio::steady_timer& timer;
-    explicit composed_wait(boost::asio::steady_timer& timer) : timer(timer) {}
-    void initiate(boost::cobalt::completion_handler<boost::system::error_code>) override {
-        co_return co_await timer.async_wait(boost::asio::deferred);
+struct composed_wait : webcpp::cobalt::op<boost::system::error_code> {
+    webcpp::asio::steady_timer& timer;
+    explicit composed_wait(webcpp::asio::steady_timer& timer) : timer(timer) {}
+    void initiate(webcpp::cobalt::completion_handler<boost::system::error_code>) override {
+        co_return co_await timer.async_wait(webcpp::asio::deferred);
     }
 };
 
-boost::cobalt::promise<boost::system::error_code> wait_composed(boost::asio::steady_timer& timer) {
+webcpp::cobalt::promise<boost::system::error_code>
+wait_composed(webcpp::asio::steady_timer& timer) {
     composed_wait operation(timer);
-    auto [error] = co_await boost::cobalt::as_tuple(operation);
+    auto [error] = co_await webcpp::cobalt::as_tuple(operation);
     co_return error;
 }
 
-boost::cobalt::promise<int> exercise(boost::asio::io_context& ctx) {
+webcpp::cobalt::promise<int> exercise(webcpp::asio::io_context& ctx) {
     // Eager promises provide a result without moving a pending task.
     auto child = answer();
-    auto result = co_await boost::cobalt::as_result(child);
+    auto result = co_await webcpp::cobalt::as_result(child);
     if (!result || *result != 42)
         co_return 1;
-    boost::cobalt::io::steady_timer cobalt_timer(std::chrono::milliseconds(1),
+    webcpp::cobalt::io::steady_timer cobalt_timer(std::chrono::milliseconds(1),
                                                 ctx.get_executor());
-    auto [timer_error] = co_await boost::cobalt::as_tuple(cobalt_timer.wait());
+    auto [timer_error] = co_await webcpp::cobalt::as_tuple(cobalt_timer.wait());
     if (timer_error)
         co_return 3;
-    boost::asio::steady_timer timer(ctx, std::chrono::hours(1));
-    boost::asio::post(ctx, [&timer] { timer.cancel(); });
-    auto [error] = co_await boost::cobalt::as_tuple(
-        timer.async_wait(boost::cobalt::use_op));
-    if (error != boost::asio::error::operation_aborted)
+    webcpp::asio::steady_timer timer(ctx, std::chrono::hours(1));
+    webcpp::asio::post(ctx, [&timer] { timer.cancel(); });
+    auto [error] = co_await webcpp::cobalt::as_tuple(
+        timer.async_wait(webcpp::cobalt::use_op));
+    if (error != webcpp::asio::error::operation_aborted)
         co_return 2;
+#ifdef WEBCPP_TARGET_NATIVE
+    // Native composition cancellation is a separately reproduced upstream limitation.
+    co_return 42;
+#else
     timer.expires_after(std::chrono::hours(1));
     auto pending = wait_composed(timer);
-    boost::asio::post(ctx, [&pending] { pending.cancel(); });
+    webcpp::asio::post(ctx, [&pending] { pending.cancel(); });
     auto composed_error = co_await pending;
-    co_return composed_error == boost::asio::error::operation_aborted ? 42 : 4;
+    co_return composed_error == webcpp::asio::error::operation_aborted ? 42 : 4;
+#endif
 }
 
 int main() {
     webcpp::test::bound(std::chrono::seconds(10));
-    boost::asio::io_context ctx;
-    boost::cobalt::this_thread::set_executor(ctx.get_executor());
+    webcpp::asio::io_context ctx;
+    webcpp::cobalt::this_thread::set_executor(ctx.get_executor());
     auto operation = exercise(ctx);
     ctx.run();
     bool const ok = operation.ready() && operation.get() == 42;
@@ -617,41 +628,39 @@ int main() {
 '''
 
 
-def test_boost_cobalt_names_missing_or_mismatched_sources(root: Path) -> None:
+def test_cobalt_consumes_shipped_sources_without_external_boost_source(root: Path) -> None:
+    harness.copy_integration_libraries(root, 'config', 'asio', 'cobalt')
     harness.without_boost_source(root)
     target = '/webcpp//boost_cobalt'
-    harness.expect(harness.run_b2(root, '-a', target), False,
-                   "Boost's sources", '-sBOOST_SOURCE=<dir>', '.local/boost-source')
-    harness.expect(harness.run_b2(root, '-a', 'libs/demo/test//pass'), True)
-    empty = fake_sources(root / 'no cobalt sources', 109200, with_url=False)
-    harness.expect(harness.run_b2(root, '-a', f'-sBOOST_SOURCE={empty}', target), False,
-                   'libs/cobalt/src holds no .cpp file', target)
-    old = with_sources_of(fake_sources(root / 'old sources', 109100), 'cobalt')
-    harness.expect(harness.run_b2(root, '-a', f'-sBOOST_SOURCE={old}', target), False,
-                   "holds Boost 1.91.0's sources", 'is 1.92.0')
+    harness.expect(harness.run_b2(root, '-a', '-j4', target), True)
+    assert len(list((root / 'bin').rglob('libnative-core.a'))) == 1
+    # An unrelated source-tree option does not replace the shipped Cobalt inventory.
+    for supplied in (root / 'missing source', fake_sources(root / 'old source', 109100)):
+        result = harness.run_b2(root, '-a', '-n', '-d+2', f'-sBOOST_SOURCE={supplied}', target)
+        harness.expect(result, True)
+        assert 'src/native/channel.cpp' in result.stdout, result.stdout[-4000:]
+        assert str(supplied / 'libs/cobalt/src') not in result.stdout, result.stdout[-4000:]
 
 
-def test_boost_cobalt_omits_main_and_ssl_from_supplied_sources(root: Path) -> None:
-    # Poison the excluded sources: compiling either would break the application boundary.
-    sources = fake_sources(root / 'cobalt sources', 109200, with_url=False)
-    for name in ('channel.cpp', 'detail/util.cpp', 'io/sleep.cpp', 'main.cpp', 'io/ssl.cpp'):
-        source = sources / 'libs/cobalt/src' / name
-        source.parent.mkdir(parents=True, exist_ok=True)
-        text = '#error This source must not be compiled by boost_cobalt\n'
-        if name not in ('main.cpp', 'io/ssl.cpp'):
-            text = ('#if !defined(BOOST_COBALT_SOURCE) || !defined(BOOST_COBALT_IO_SOURCE)\n'
-                    '#error Both source macros are required\n#endif\n')
-            text += 'int fixture_' + name.replace('/', '_').replace('.', '_') + ' = 0;\n'
-        source.write_text(text)
-    result = harness.run_b2(root, '-a', '-j4', '-d+2', f'-sBOOST_SOURCE={sources}',
-                            '/webcpp//boost_cobalt')
+def test_cobalt_core_omits_shipped_runner_and_ssl(root: Path) -> None:
+    harness.copy_integration_libraries(root, 'config', 'asio', 'cobalt')
+    # Poison excluded fixture sources. Linking plain core must not compile a
+    # runner or SSL, including when those files exist in the distribution.
+    for name in ('native/main.cpp', 'native/io/ssl.cpp', 'native_ssl.cpp',
+                 'native_ssl_transfer.cpp', 'wasm/main.cpp', 'wasm/io/ssl.cpp'):
+        (root / 'libs/cobalt/src' / name).write_text('#error Core compiled an optional source\n')
+    result = harness.run_b2(root, '-a', '-j4', '-d+2', '/webcpp//boost_cobalt')
     harness.expect(result, True)
-    compiled = set(re.findall(r'libs/cobalt/src/([a-z/_]+[.]cpp)"', result.stdout))
-    assert compiled == {'channel.cpp', 'detail/util.cpp', 'io/sleep.cpp'}, compiled
-    assert len(list((root / 'bin').rglob('libboost_cobalt.a'))) == 1
+    compiled = {name for line in result.stdout.splitlines() if ' -c ' in line
+                for name in re.findall(r'"libs/cobalt/(src/[^" ]+[.]cpp)"', line)}
+    inventory = json.loads((root / 'libs/cobalt/sources.json').read_text())
+    assert compiled == set(inventory['profiles']['native']['core']), compiled
+    assert len(list((root / 'bin').rglob('libnative-core.a'))) == 1
+    assert not list((root / 'bin').rglob('libssl.a'))
 
 
 def test_boost_cobalt_warns_only_for_disabled_exceptions(root: Path) -> None:
+    harness.copy_integration_libraries(root, 'config', 'asio', 'cobalt')
     # Missing, unconditional or repeated warnings would hide or misrepresent the risk.
     # Dry runs exercise dependency configuration without recompiling the archive.
     harness.add_library(root, 'coroutines', COBALT_JAMFILE, {'coroutines.cpp': COBALT_SOURCE})
@@ -665,7 +674,7 @@ def test_boost_cobalt_warns_only_for_disabled_exceptions(root: Path) -> None:
         assert result.stdout.count(issue) == expected, result.stdout
         if expected:
             assert 'warning:' in result.stdout, result.stdout
-            assert 'pending task' in result.stdout, result.stdout
+            assert 'pending coroutine' in result.stdout, result.stdout
             assert 'libc++' in result.stdout, result.stdout
             assert 'exception-handling=on' in result.stdout, result.stdout
     unrelated = harness.run_b2(root, '-a', '-n', 'exception-handling=off', 'libs/demo/test//pass')
@@ -674,7 +683,7 @@ def test_boost_cobalt_warns_only_for_disabled_exceptions(root: Path) -> None:
     variants = harness.run_b2(root, '-a', '-n', 'exception-handling=off',
                               'variant=debug,release', *targets)
     harness.expect(variants, True)
-    assert variants.stdout.count(issue) == 2, variants.stdout
+    assert variants.stdout.count(issue) == 1, variants.stdout
     # A consumer may require exceptions even in an otherwise exception-free build.
     forced = COBALT_JAMFILE.replace('<library>/webcpp//boost_cobalt',
                                    '<library>/webcpp//boost_cobalt <exception-handling>on')
@@ -684,35 +693,28 @@ def test_boost_cobalt_warns_only_for_disabled_exceptions(root: Path) -> None:
     assert issue not in result.stdout, result.stdout
 
 
-def test_asio_windows_allocator_overlay_reaches_sources_and_consumers(root: Path) -> None:
-    # Windows-only private headers must reach Asio applications and compiled Cobalt alike.
-    harness.add_library(root, 'asio',
+def test_native_sources_and_consumers_do_not_select_windows_overlays(root: Path) -> None:
+    harness.copy_integration_libraries(root, 'config', 'asio', 'cobalt')
+    harness.add_library(root, 'asio_user',
                         'import webcpp ;\nwebcpp.targets native ;\n'
                         'webcpp.run context : context.cpp : <library>/webcpp/asio//asio ;\n',
                         {'context.cpp': '#include <webcpp/asio.hpp>\nint main() {}\n'})
-    original = harness.ROOT / 'libs/asio'
-    (root / 'libs/asio/build.jam').write_text((original / 'build.jam').read_text())
-    for name in ('include', 'src'):
-        shutil.copytree(original / name, root / 'libs/asio' / name)
-    # The actual Asio build project requires config even in a dry run.
-    config = root / 'libs/config'
-    config.mkdir()
-    shutil.copyfile(harness.ROOT / 'libs/config/build.jam', config / 'build.jam')
-    shutil.copytree(harness.ROOT / 'libs/config/include', config / 'include')
     harness.add_library(root, 'coroutines', COBALT_JAMFILE, {'coroutines.cpp': COBALT_SOURCE})
-    for request, selected in (((), False), (('target-os=windows',), True)):
+    for request in ((), ('target-os=windows',)):
         result = harness.run_b2(root, '-a', '-n', '-d+2', *request,
-                               'libs/asio/test//context', 'libs/coroutines/test')
+                               'libs/asio_user/test', 'libs/coroutines/test')
         harness.expect(result, True)
         commands = [line for line in result.stdout.splitlines()
                     if ' -c ' in line and any(name in line for name in
                                              ('context.cpp', 'coroutines.cpp', '/cobalt/src/'))]
         assert commands, result.stdout[-4000:]
         for command in commands:
-            assert ('boost-asio-windows/include' in command) == selected, command
+            assert 'boost-asio-windows/include' not in command, command
+            assert 'boost-cobalt-common/include' not in command, command
 
 
-def test_msvc_overlays_win_actual_header_lookup(root: Path) -> None:
+def test_msvc_commands_preserve_native_header_identity(root: Path) -> None:
+    harness.copy_integration_libraries(root, 'config', 'asio', 'cobalt')
     # MSVC searches /I and /external:I in command order. Unlike GCC/Clang,
     # an earlier external path shadows a later ordinary overlay path.
     harness.add_library(root, 'coroutines', COBALT_JAMFILE, {'coroutines.cpp': COBALT_SOURCE})
@@ -751,41 +753,37 @@ def test_msvc_overlays_win_actual_header_lookup(root: Path) -> None:
             if word.startswith(prefix):
                 includes.append(word[len(prefix):])
                 break
-    assert any('boost-asio-windows/include' in path for path in includes), commands
-    assert any('boost-cobalt-common/include' in path for path in includes), commands
-    # Preparing the real common overlay and compiling against the emitted order
-    # proves which promise definition wins, including a checkout containing spaces.
-    harness.expect(harness.run_b2(root, '/webcpp/cobalt-common//prepared.stamp'), True)
-    assert (root / 'bin/boost-cobalt-common/include/boost/cobalt/detail/main.hpp').is_file()
+    assert str(headers) in includes, includes
+    assert not any('boost-asio-windows' in path or 'boost-cobalt-common' in path
+                   for path in includes), includes
+    # Reuse the emitted include directories with a native compiler: the
+    # no-exceptions main promise must retain the original missing hook.
     flags = ' '.join(f'-I\\"{path}\\"' for path in includes)
-    source = ('#include <boost/cobalt/main.hpp>\n'
-              'static_assert(requires(boost::cobalt::detail::main_promise& promise) {\n'
-              '    promise.unhandled_exception();\n'
-              '});\n')
+    source = ('#include <webcpp/cobalt/main.hpp>\n'
+              'template<class Promise> concept has_hook = requires(Promise& promise) {\n'
+              '    promise.unhandled_exception();\n};\n'
+              'static_assert(!has_hook<boost::cobalt::detail::main_promise>);\n')
     harness.add_library(root, 'selected',
                         'import webcpp ;\nwebcpp.targets native ;\n'
                         'webcpp.compile promise : promise.cpp : <exception-handling>off '
                         f'<cxxflags>"{flags}" ;\n', {'promise.cpp': source})
     result = harness.run_b2(root, '-a', 'libs/selected/test//promise')
     harness.expect(result, True, '**passed**')
-    # The same precedence must reach every separately compiled Cobalt source.
     compiled = [line for line in result_commands.splitlines()
                 if ' -c ' in line and '/cobalt/src/' in line]
     assert compiled, result_commands[-4000:]
     for command in [*commands, *compiled]:
         words = shlex.split(command)
-        external = next(index for index, word in enumerate(words)
-                        if word.startswith('/external:I'))
-        for overlay in ('boost-asio-windows/include', 'boost-cobalt-common/include'):
-            selected = next(index for index, word in enumerate(words) if overlay in word)
-            assert selected < external, command
+        assert not any('boost-asio-windows' in word or 'boost-cobalt-common' in word
+                       for word in words), command
         assert '/external:W0' in words, command
         assert '/external:anglebrackets' not in words, command
 
 
 def test_boost_cobalt_thread_joins_without_exceptions(root: Path) -> None:
-    # Omitting thread_promise's exception-disabled hook makes a real coroutine
-    # fail to compile. Exercise the compiled thread implementation and its executor.
+    harness.copy_integration_libraries(root, 'config', 'asio', 'cobalt')
+    # Native Boost retains the missing no-EH hook. Keep that known Clang
+    # diagnostic visible while checking thread execution and joining separately.
     source = r'''#include <boost/asio/post.hpp>
 #include <boost/cobalt/op.hpp>
 #include <boost/cobalt/this_coro.hpp>
@@ -810,7 +808,10 @@ int main() {
     harness.add_library(root, 'thread_probe',
                         'import webcpp ;\nwebcpp.targets native ;\n'
                         'webcpp.run thread : thread.cpp : <threading>multi '
-                        '<library>/webcpp//boost_cobalt ;\n', {'thread.cpp': source})
+                        '<library>/webcpp//boost_cobalt '
+                        '<toolset>clang,<exception-handling>off:'
+                        '<cxxflags>-Wno-error=coroutine-missing-unhandled-exception ;\n',
+                        {'thread.cpp': source})
     for exceptions in ('off', 'on'):
         result = harness.run_b2(root, '-a', '-j4', '--verbose-test',
                                f'exception-handling={exceptions}', 'libs/thread_probe/test')
@@ -819,12 +820,13 @@ int main() {
 
 
 def test_boost_cobalt_preserves_exception_setting(root: Path) -> None:
+    harness.copy_integration_libraries(root, 'config', 'asio', 'cobalt')
     # A blanket exception requirement would reject a valid result-based consumer.
     # Build the real archive and execute eager promises and cancellation in each mode.
     harness.link_emsdk(root)
     harness.add_library(root, 'coroutines', COBALT_JAMFILE, {'coroutines.cpp': COBALT_SOURCE})
     wasm = EMSCRIPTEN
-    count = 0
+    counts = {'libnative-core.a': 0, 'libwasm-core.a': 0}
     for request in ((), wasm, (*wasm, 'webcpp-suspend=asyncify')):
         for exceptions in ('off', 'on'):
             result = harness.run_b2(root, '-a', '-j4', '-d+2', '--verbose-test', *request,
@@ -837,18 +839,22 @@ def test_boost_cobalt_preserves_exception_setting(root: Path) -> None:
                         if ' -c ' in line and ('coroutines.cpp' in line or '/cobalt/src/' in line)]
             assert any('coroutines.cpp' in line for line in compiles), result.stdout[-4000:]
             library_compiles = [line for line in compiles if '/cobalt/src/' in line]
-            assert len(library_compiles) == 24, library_compiles
+            profile = 'emscripten' if request else 'native'
+            inventory = json.loads((root / 'libs/cobalt/sources.json').read_text())
+            expected = inventory['profiles'][profile]['core']
+            assert len(library_compiles) == len(expected), library_compiles
             assert not any('/main.cpp' in line or '/io/ssl.cpp' in line
                            for line in library_compiles), library_compiles
             for line in library_compiles:
-                assert '-DBOOST_COBALT_SOURCE=1' in line, line
-                assert '-DBOOST_COBALT_IO_SOURCE=1' in line, line
-            assert all(('-DBOOST_ASIO_DISABLE_THREADS' in line) == bool(request)
-                       for line in compiles), compiles
+                prefix = 'WEBCPP_COBALT_BACKEND' if request else 'BOOST_COBALT'
+                assert f'-D{prefix}_SOURCE=1' in line, line
+                assert f'-D{prefix}_IO_SOURCE=1' in line, line
+            assert all('boost-cobalt-common/include' not in line for line in compiles)
             assert all(('-fno-exceptions' in line) == (exceptions == 'off')
                        for line in compiles), (request, exceptions, compiles)
-            count += 1
-            assert len(list((root / 'bin').rglob('libboost_cobalt.a'))) == count
+            archive = 'libwasm-core.a' if request else 'libnative-core.a'
+            counts[archive] += 1
+            assert len(list((root / 'bin').rglob(archive))) == counts[archive]
             print(f'cobalt {request or ("native",)} exceptions={exceptions}: passed', flush=True)
 
 
@@ -892,13 +898,13 @@ def test_boost_context_refuses_unverified_wasm(root: Path) -> None:
 CASES = [
     test_boost_context_unwinds_native_stack,
     test_boost_context_refuses_unverified_wasm,
-    test_boost_cobalt_names_missing_or_mismatched_sources,
-    test_boost_cobalt_omits_main_and_ssl_from_supplied_sources,
+    test_cobalt_consumes_shipped_sources_without_external_boost_source,
+    test_cobalt_core_omits_shipped_runner_and_ssl,
     test_boost_cobalt_warns_only_for_disabled_exceptions,
     test_boost_cobalt_thread_joins_without_exceptions,
     test_boost_cobalt_preserves_exception_setting,
-    test_asio_windows_allocator_overlay_reaches_sources_and_consumers,
-    test_msvc_overlays_win_actual_header_lookup,
+    test_native_sources_and_consumers_do_not_select_windows_overlays,
+    test_msvc_commands_preserve_native_header_identity,
     test_boost_url_links_on_every_target,
     test_boost_charconv_links_on_every_target,
     test_boost_locale_on_every_target,

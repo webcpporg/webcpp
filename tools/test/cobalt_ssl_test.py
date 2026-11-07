@@ -5,23 +5,24 @@
 # accompanying file LICENSE_1_0.txt or copy at
 # https://www.boost.org/LICENSE_1_0.txt)
 
-"""Check optional Cobalt SSL dependencies and private patches through B2."""
+"""Check optional shipped Cobalt SSL dependencies and maintainer provenance."""
 from pathlib import Path
 import re
 import shutil
+import subprocess
 import sys
 
 import harness
 
-SOURCE = '''#include <boost/cobalt/io/ssl.hpp>
-#include <boost/asio/io_context.hpp>
-#include <boost/asio/ssl/host_name_verification.hpp>
+SOURCE = '''#include <webcpp/cobalt/io/ssl.hpp>
+#include <webcpp/asio/io_context.hpp>
+#include <webcpp/asio/ssl/host_name_verification.hpp>
 int main() {
-    boost::asio::io_context context;
-    boost::cobalt::io::ssl::context tls(boost::asio::ssl::context::tls_client);
-    boost::cobalt::io::ssl::stream stream(tls, context.get_executor());
+    webcpp::asio::io_context context;
+    webcpp::cobalt::io::ssl::context tls(webcpp::asio::ssl::context::tls_client);
+    webcpp::cobalt::io::ssl::stream stream(tls, context.get_executor());
     auto verified = stream.set_verify_callback(
-        boost::asio::ssl::host_name_verification("localhost"));
+        webcpp::asio::ssl::host_name_verification("localhost"));
     return verified && stream.native_ssl_handle() && !stream.secure() ? 0 : 1;
 }
 '''
@@ -34,6 +35,8 @@ webcpp.run cobalt_ssl : cobalt_ssl.cpp
 
 
 def test_transitive_openssl_is_unique(root: Path) -> None:
+    harness.copy_integration_libraries(root, 'config', 'asio', 'cobalt')
+    harness.link_wasi_tools(root)
     harness.add_library(root, 'cobalt_ssl', JAM, {'cobalt_ssl.cpp': SOURCE})
     result = harness.run_b2(root, '-n', '-a', '-d+2', 'variant=release',
                             'libs/cobalt_ssl/test')
@@ -43,6 +46,8 @@ def test_transitive_openssl_is_unique(root: Path) -> None:
 
 
 def test_public_archive_in_a_path_with_spaces(root: Path) -> None:
+    harness.copy_integration_libraries(root, 'config', 'asio', 'cobalt')
+    harness.link_wasi_tools(root)
     harness.add_library(root, 'cobalt_ssl', JAM, {'cobalt_ssl.cpp': SOURCE})
     for target in ('clang', 'clang-wasip3'):
         result = harness.run_b2(root, '-j6', 'variant=release', 'toolset=' + target,
@@ -52,25 +57,24 @@ def test_public_archive_in_a_path_with_spaces(root: Path) -> None:
         harness.expect(result, True, '**passed**')
 
 
-def test_changed_ssl_source_is_refused(root: Path) -> None:
+def test_changed_ssl_maintainer_input_is_refused(root: Path) -> None:
     source = root / 'modified Boost source'
     shutil.copytree(harness.boost_source() / 'libs/cobalt/src', source / 'libs/cobalt/src')
     (source / 'boost').mkdir()
     shutil.copyfile(harness.boost_source() / 'boost/version.hpp', source / 'boost/version.hpp')
     ssl_source = source / 'libs/cobalt/src/io/ssl.cpp'
     ssl_source.write_text(ssl_source.read_text() + '\n// Different upstream input.\n')
-    result = harness.run_b2(root, '-j6', f'-sBOOST_SOURCE={source}',
-                            '/webcpp//boost_cobalt_io_ssl')
-    harness.expect(result, False, 'incompatible Boost header: libs/cobalt/src/io/ssl.cpp')
+    result = subprocess.run(
+        [sys.executable, str(harness.ROOT / 'libs/cobalt/upstream/sync.py'),
+         '--boost-include', str(harness.boost_include()), '--boost-source', str(source), '--check'],
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=60)
+    harness.expect(result, False,
+                   'upstream file differs from pinned Cobalt 1.92: libs/cobalt/src/io/ssl.cpp')
 
 
 def test_ssl_is_optional_and_unsupported_targets_are_refused(root: Path) -> None:
-    # P2 Cobalt uses Asio's pollable backend and its Config dependency.
-    for name in ('config', 'asio'):
-        source = harness.ROOT / 'libs' / name
-        target = root / 'libs' / name
-        shutil.copytree(source / 'include', target / 'include')
-        shutil.copyfile(source / 'build.jam', target / 'build.jam')
+    harness.copy_integration_libraries(root, 'config', 'asio', 'cobalt')
+    harness.link_wasi_tools(root)
     harness.third_party_of_its_own(root, 'openssl', checked_out=False)
     harness.expect(harness.run_b2(root, '-n', '/webcpp//boost_cobalt'), True)
     for target in ('clang', 'clang-wasip2', 'clang-wasip3'):
@@ -79,11 +83,12 @@ def test_ssl_is_optional_and_unsupported_targets_are_refused(root: Path) -> None
                        'OpenSSL sources are missing')
     harness.expect(harness.run_b2(root, 'toolset=emscripten',
                                   '/webcpp//boost_cobalt_io_ssl'), False,
-                   'Cobalt SSL requires native, WASIp2 or WASIp3 with source-built OpenSSL.')
+                   'Cobalt SSL requires native or WASI OpenSSL; '
+                   'browser TLS is managed by HTTPS/WSS.')
 
 
 CASES = [test_transitive_openssl_is_unique, test_public_archive_in_a_path_with_spaces,
-         test_changed_ssl_source_is_refused,
+         test_changed_ssl_maintainer_input_is_refused,
          test_ssl_is_optional_and_unsupported_targets_are_refused]
 
 if __name__ == '__main__':

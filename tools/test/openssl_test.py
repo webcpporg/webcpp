@@ -238,6 +238,10 @@ def test_msvc_tls_lanes_keep_distinct_openssl_thread_profiles(root: Path) -> Non
     config_library.mkdir()
     shutil.copyfile(harness.ROOT / 'libs/config/build.jam', config_library / 'build.jam')
     shutil.copytree(harness.ROOT / 'libs/config/include', config_library / 'include')
+    harness.copy_integration_libraries(root, 'cobalt')
+    shutil.copytree(harness.ROOT / 'libs/cobalt/test/tls', root / 'libs/cobalt/test/tls')
+    for name in ('package.json', 'package-lock.json'):
+        shutil.copyfile(harness.ROOT / 'libs/cobalt/test' / name, root / 'libs/cobalt/test' / name)
     config = harness.user_config(root).read_text()
     for version in ('14.3', '14.5'):
         config += f'\nusing msvc : {version} : "{sys.executable}"' \
@@ -287,8 +291,10 @@ def test_msvc_tls_lanes_keep_distinct_openssl_thread_profiles(root: Path) -> Non
             lines = [line.replace('\\', '/') for line in result.stdout.splitlines()]
             drivers = [line.strip() for line in lines if '/tools/drive/drive.py"' in line]
             for source in sources:
+                folder = ('libs/cobalt/test/tls' if source.startswith('cobalt_')
+                          else 'tools/openssl/test')
                 compiles = [line for line in lines
-                            if ' -c ' in line and f'/test/{source}"' in line]
+                            if ' -c ' in line and f'{folder}/{source}"' in line]
                 for runtime in ('/MT', '/MD'):
                     if variant == 'debug':
                         runtime += 'd'
@@ -307,7 +313,9 @@ def test_msvc_tls_lanes_keep_distinct_openssl_thread_profiles(root: Path) -> Non
                         links = [line for line in lines
                                  if ' link ' in line and f'"{object_path}"' in line]
                         assert len(links) == 1, (object_path, links)
-                        executable = object_path.removesuffix('.obj') + '.exe'
+                        output = re.search(r'/out:"([^"]+)"', links[0], re.IGNORECASE)
+                        assert output, links[0]
+                        executable = output.group(1)
                         assert any(line.endswith(f'"{executable}"') for line in drivers), drivers
             print(f'MSVC {version} {lane}: distinct S/M providers and fixture links verified')
 

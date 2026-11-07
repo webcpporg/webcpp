@@ -46,3 +46,6 @@
 [submodule "third_party/libs/libdatachannel"]
 	path = third_party/libs/libdatachannel
 	url = https://github.com/paullouisageneau/libdatachannel.git
+[submodule "libs/cobalt"]
+	path = libs/cobalt
+	url = ../cobalt.git

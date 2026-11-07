@@ -29,3 +29,8 @@ EmptyLineBeforeAccessModifier: LogicalBlock
 # by its columns: clang-format neither splits such a line at the column limit
 # nor joins it with the next. The first alternative is clang-format's default.
 CommentPragmas: '^ IWYU pragma:|^ *\|'
+
+# These macros accept a header-name token, not an arithmetic expression.
+WhitespaceSensitiveMacros:
+  - WEBCPP_ASIO_BACKEND_HEADER
+  - WEBCPP_BEAST_BACKEND_HEADER

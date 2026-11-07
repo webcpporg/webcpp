@@ -239,6 +239,96 @@ def at(root: Path, path: str, text: str) -> str:
     return f'{path}:{lines[0]}:'
 
 
+def test_import_exemption_is_verified_and_file_specific(root):
+    prepare(root)
+    import hashlib
+
+    imported = 'libs/demo/include/webcpp/demo/imported.hpp'
+    # The exact pinned text has deliberately foreign formatting and no WebCPP
+    # notice. No adjacent file should inherit that exemption.
+    write(root, imported, '// Preserved upstream text\ninline int original( ){return 1;}\n')
+    manifest = 'libs/demo/upstream/generated.json'
+    write(root, manifest, json.dumps({
+        'include/webcpp/demo/imported.hpp':
+            hashlib.sha256((root / imported).read_bytes()).hexdigest()}))
+    expect_clean(lint(root))
+    neighbor = 'libs/demo/include/webcpp/demo/neighbor.hpp'
+    write(root, neighbor, CPP + '\n// Owned neighboring header.\n')
+    append(root, neighbor, '// ' + EM_DASH + '\n')
+    expect_alone(lint(root), 'em dash', [neighbor])
+    (root / neighbor).unlink()
+    append(root, imported, '// unreviewed change\n')
+    result = lint(root)
+    assert result.returncode == 1, result.stdout[-6000:]
+    assert 'lint: failed: shipped source integrity' in result.stdout, result.stdout[-6000:]
+    assert 'shipped source differs from maintainer output' in result.stdout
+
+
+def test_imported_translation_unit_keeps_owned_source_diagnostics(root):
+    prepare(root)
+    import hashlib
+
+    imported = 'libs/demo/src/original.cpp'
+    owned = 'libs/demo/src/owned.cpp'
+    write(root, imported, 'int original( ){return 1;}\n')
+    clean = CPP + ('\nint main() {\n    const int* const value = nullptr;\n'
+                   '    return value == nullptr ? 0 : 1;\n}\n')
+    write(root, owned, clean)
+    write(root, 'libs/demo/upstream/generated.json', json.dumps({
+        'src/original.cpp': hashlib.sha256((root / imported).read_bytes()).hexdigest()}))
+    append(root, 'libs/demo/test/Jamfile',
+           '\nwebcpp.compile original : ../src/original.cpp ;\n'
+           'webcpp.compile owned : ../src/owned.cpp ;\n')
+    expect_clean(lint(root))
+    (root / owned).write_text(clean.replace('value = nullptr', 'value = 0'))
+    expect_alone(lint(root), 'clang-tidy', [owned, 'modernize-use-nullptr'], spared=(imported,))
+    append(root, imported, '// changed after import\n')
+    result = lint(root)
+    assert 'lint: failed: shipped source integrity' in result.stdout, result.stdout[-6000:]
+
+
+def test_imported_inline_source_exemption_does_not_hide_owned_headers(root):
+    prepare(root)
+    import hashlib
+
+    imported = 'libs/demo/include/webcpp/demo/upstream.ipp'
+    owned = 'libs/demo/include/webcpp/demo/owned.ipp'
+    write(root, imported, 'inline int original_inline(int value) {\n'
+          'if (value) return 1; return 0; }\n')
+    append(root, 'libs/demo/include/webcpp/demo.hpp',
+           '\n#include <webcpp/demo/owned.ipp>\n#include <webcpp/demo/upstream.ipp>\n')
+    write(root, 'libs/demo/upstream/generated.json', json.dumps({
+        'include/webcpp/demo/upstream.ipp':
+            hashlib.sha256((root / imported).read_bytes()).hexdigest()}))
+    # The import retains implicit bool conversion and unbraced statements.
+    (root / owned).write_text(CPP + '\n[[nodiscard]] inline int owned_inline() { return 2; }\n')
+    expect_clean(lint(root))
+    (root / owned).write_text(CPP + '\ninline int owned_inline(int value) {\n'
+                             'if (value) return 1; return 0; }\n')
+    expect_alone(lint(root), 'clang-tidy', [owned], spared=(imported,))
+
+
+def test_import_subtree_keeps_owned_inc_diagnostics(root):
+    prepare(root)
+    import hashlib
+
+    imported = 'libs/demo/include/webcpp/demo/detail/imported/backend.ipp'
+    owned = 'libs/demo/include/webcpp/demo/detail/imported/owned.inc'
+    write(root, imported, 'inline int original_inline(int value) {\n'
+          'if (value) return 1; return 0; }\n')
+    write(root, 'libs/demo/upstream/generated.json', json.dumps({
+        'include/webcpp/demo/detail/imported/backend.ipp':
+            hashlib.sha256((root / imported).read_bytes()).hexdigest()}))
+    append(root, 'libs/demo/include/webcpp/demo.hpp',
+           '\n#include <webcpp/demo/detail/imported/backend.ipp>\n'
+           '#include <webcpp/demo/detail/imported/owned.inc>\n')
+    (root / owned).write_text(
+        CPP + '\n[[nodiscard]] inline int* owned_pointer() { return nullptr; }\n')
+    expect_clean(lint(root))
+    harness.replace(root / owned, 'return nullptr;', 'return 0;')
+    expect_alone(lint(root), 'clang-tidy', [owned, 'modernize-use-nullptr'], spared=(imported,))
+
+
 def test_clean_tree_passes(root):
     prepare(root)
     result = lint(root)
@@ -965,10 +1055,8 @@ def test_a_compiled_boost_library_s_sources_are_not_analysed(root):
     expect_clean(lint(root))
 
 
-def test_clang_tidy_prepares_cobalt_wrappers_on_a_clean_tree(root):
-    # The library's aggregate is native, but a WASIp3-only program also compiles
-    # webcpp's Cobalt wrappers. Their checked source overlay must exist before
-    # clang-tidy reads them, even when no public header needs that overlay.
+def test_clang_tidy_uses_shipped_cobalt_sources_on_a_clean_tree(root):
+    harness.copy_integration_libraries(root, 'config', 'asio', 'cobalt')
     prepare(root)
     append(root, 'libs/demo/test/Jamfile',
            'webcpp.run cobalt : cobalt.cpp : <library>/webcpp//boost_cobalt : wasip3 ;\n')
@@ -976,24 +1064,20 @@ def test_clang_tidy_prepares_cobalt_wrappers_on_a_clean_tree(root):
           'int main() {\n'
           '    return 1;\n'
           '}\n')
-    overlay = root / 'bin/boost-cobalt-wasip3/include/libs/cobalt/src/io'
-    assert not overlay.exists(), overlay
-    completed = compile_database(root)
-    assert completed.returncode == 0, completed.stdout[-6000:]
-    entries = json.loads((root / 'compile database/compile_commands.json').read_text())
-    wrappers = [entry for entry in entries
-                if '/tools/boost/cobalt-wasip3/' in entry['file']]
-    assert len(wrappers) == 4, wrappers
-    for entry in wrappers:
-        for marker in ('-DBOOST_COBALT_SOURCE=1', '-DBOOST_COBALT_IO_SOURCE=1'):
-            assert marker in entry['arguments'], entry
-    expect_clean(lint(root))
-    for name in ('acceptor', 'endpoint'):
-        assert (overlay / f'{name}.cpp').is_file(), name
-    result = harness.run_b2(root, '-a', 'toolset=clang-wasip3',
-                            'tools/boost/cobalt-wasip3//acceptor',
-                            'tools/boost/cobalt-wasip3//endpoint')
-    harness.expect(result, True)
+    harness.link_wasi_tools(root)
+    request = ['toolset=clang-wasip3', 'libs/demo/test//cobalt']
+    completed = harness.run_b2(root, '-n', '-a', *request)
+    harness.expect(completed, True)
+    entries = []
+    compile_commands.read(str(root), 'wasip3', completed.stdout.splitlines(), entries,
+                          set(), set(), wasi_sdk_tool('clang++'), request)
+    assert any('/libs/asio/src/wasip3/waitable.cpp' in entry['file'] for entry in entries)
+    # Imported source is verified separately; the database keeps hand-written
+    # bridges and the user program. It must never manufacture an include tree.
+    assert not any('/libs/cobalt/src/wasm/' in entry['file'] for entry in entries)
+    assert not any('boost-cobalt-' in ' '.join(entry['arguments']) or
+                   'boost-asio-' in ' '.join(entry['arguments']) for entry in entries)
+    assert not (root / 'bin/boost-cobalt-wasip3').exists()
     # Preparing lint inputs must not execute the deliberately failing program.
     assert not list((root / 'bin/libs/demo/test').rglob('cobalt.run'))
 
@@ -2322,13 +2406,31 @@ def test_beast_corpus_is_verified_before_excluding_upstream_style(root):
     expect_alone(lint(root), 'em dash', [adapted + ':1:'])
 
 
+def test_cobalt_corpus_is_verified_before_excluding_upstream_style(root):
+    prepare(root)
+    corpus = 'libs/cobalt/test/applications/upstream/original.cpp'
+    verifier = 'libs/cobalt/test/applications/inventory.py'
+    # Deliberately invalid WebCPP style: only a verified upstream snapshot is exempt.
+    write(root, corpus, 'int original(){return 42;}\n')
+    write(root, verifier, HASH + '\nimport sys\n\nsys.exit(0)\n')
+    expect_clean(lint(root))
+    # A failed integrity check must fail lint, never silently waive the corpus.
+    write(root, verifier, HASH + '\nimport sys\n\nsys.exit(1)\n')
+    result = lint(root)
+    assert result.returncode != 0, result.stdout
+    assert 'upstream corpus integrity' in FAILED.findall(result.stdout), result.stdout
+    # The port itself keeps normal checks, even when the upstream snapshot is valid.
+    write(root, verifier, HASH + '\nimport sys\n\nsys.exit(0)\n')
+    adapted = 'libs/cobalt/example/notes.txt'
+    write(root, adapted, EM_DASH + '\n')
+    expect_alone(lint(root), 'em dash', [adapted + ':1:'])
+
+
 def check_wasi_abi_style_exemption(root, profile):
     prepare(root)
-    snapshot = f'tools/boost/asio-{profile}/wasi-libc/descriptor.h'
-    verifier = f'tools/boost/asio-{profile}/verify.py'
-    # This test replaces the verifier with a controlled executable. Its unit
-    # tests import the real implementation, which is absent in this fixture.
-    (root / f'tools/boost/asio-{profile}/verify_test.py').unlink(missing_ok=True)
+    snapshot = f'libs/asio/src/{profile}/wasi-libc/descriptor.h'
+    verifier = f'libs/asio/src/{profile}/verify.py'
+    # The real verifiers have independent integrity regression coverage.
     write(root, snapshot, '// upstream text ' + EM_DASH + '\n')
     write(root, verifier, HASH + '\nimport sys\n\nsys.exit(0)\n')
     expect_clean(lint(root))
@@ -2337,7 +2439,7 @@ def check_wasi_abi_style_exemption(root, profile):
     assert result.returncode != 0, result.stdout
     assert 'WASI ABI declaration integrity' in FAILED.findall(result.stdout), result.stdout
     write(root, verifier, HASH + '\nimport sys\n\nsys.exit(0)\n')
-    bridge = f'tools/boost/asio-{profile}/notes.txt'
+    bridge = f'libs/asio/src/{profile}/notes.txt'
     write(root, bridge, EM_DASH + '\n')
     expect_alone(lint(root), 'em dash', [bridge + ':1:'])
 
@@ -2351,10 +2453,15 @@ def test_wasip3_abi_snapshot_requires_integrity_before_style_exemption(root):
 
 
 CASES = [
+    test_imported_translation_unit_keeps_owned_source_diagnostics,
+    test_import_exemption_is_verified_and_file_specific,
+    test_imported_inline_source_exemption_does_not_hide_owned_headers,
+    test_import_subtree_keeps_owned_inc_diagnostics,
     test_wasip3_abi_snapshot_requires_integrity_before_style_exemption,
     test_wasi_abi_snapshot_requires_integrity_before_style_exemption,
     test_compile_database_normalizes_shared_source_paths,
     test_beast_corpus_is_verified_before_excluding_upstream_style,
+    test_cobalt_corpus_is_verified_before_excluding_upstream_style,
     test_clean_tree_passes,
     test_no_library_passes,
     test_a_user_config_the_environment_names_is_read,
@@ -2378,7 +2485,7 @@ CASES = [
     test_clang_tidy_reads_a_program_of_javascript_exceptions,
     test_a_dependency_s_warnings_are_not_ours,
     test_a_compiled_boost_library_s_sources_are_not_analysed,
-    test_clang_tidy_prepares_cobalt_wrappers_on_a_clean_tree,
+    test_clang_tidy_uses_shipped_cobalt_sources_on_a_clean_tree,
     test_clang_tidy_refuses_a_throw_on_each_target_without_exceptions,
     test_a_native_header_that_needs_no_exceptions_has_its_twin,
     test_a_library_webcpp_does_not_build_missing_is_named,
