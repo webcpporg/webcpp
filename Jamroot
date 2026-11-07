@@ -419,18 +419,27 @@ rule boost-source-usable ( properties * )
     }
 }
 
+# Independent compiled integrations use the same source/version validation.
+alias boost-source-check : : <conditional>@boost-source-usable ;
+explicit boost-source-check ;
+
 # Boost's compiled libraries, built from those sources (tools/boost/Jamfile).
 use-project /webcpp/boost-libraries : tools/boost ;
 
-# Boost.URL, Boost.Charconv, Boost.Locale and Boost.Cobalt, compiled: a library
-# that needs one puts <library>/webcpp//boost_url, boost_charconv, boost_locale
-# or boost_cobalt in its main target's usage requirements, as one that needs
-# Boost.JSON does with boost_json. Each alias checks the sources before anything
-# is built; what Boost.Locale gives on each target is the table of
-# CODING-GUIDELINES.md chapter 10.
-for local name in boost_url boost_charconv boost_locale boost_cobalt boost_cobalt_io_ssl boost_context
+# Boost.URL, Boost.Charconv, Boost.Locale and Boost.Context, compiled: a library
+# that needs one puts its /webcpp//boost_* alias in its usage requirements,
+# as one that needs Boost.JSON does with boost_json. Each alias checks sources
+# before building. CODING-GUIDELINES.md chapter 10 lists Boost.Locale's targets.
+for local name in boost_url boost_charconv boost_locale boost_context
 {
     alias $(name) : tools/boost//$(name) : <conditional>@boost-source-usable ;
+}
+
+# Cobalt owns shipped sources and needs matching Boost headers, not an external
+# Boost source checkout. Legacy aliases retain the same dependency contract.
+for local name in boost_cobalt boost_cobalt_io_ssl
+{
+    alias $(name) : tools/boost//$(name) ;
 }
 
 # What every test and example of a library links (tools/webcpp.jam): the

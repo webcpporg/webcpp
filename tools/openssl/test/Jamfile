@@ -15,22 +15,14 @@ exe tls_client_embedded : tls_client_embedded.cpp /webcpp/asio//tls
     : <exception-handling>off:<source>/webcpp//throw_exception ;
 explicit tls_client_embedded ;
 
-exe cobalt_tls_client : cobalt_tls_client.cpp /webcpp/asio//cobalt /webcpp/asio//tls
-    : <exception-handling>off:<source>/webcpp//throw_exception ;
+# Compatibility names resolve to the Cobalt-owned clients.
+alias cobalt_tls_client : ../../../libs/cobalt/test/tls//cobalt_tls_client-program ;
 explicit cobalt_tls_client ;
-
-exe cobalt_ssl_client : cobalt_ssl_client.cpp /webcpp/asio//cobalt_ssl
-    : <exception-handling>off:<source>/webcpp//throw_exception ;
+alias cobalt_ssl_client : ../../../libs/cobalt/test/tls//cobalt_ssl_client-program ;
 explicit cobalt_ssl_client ;
-
-exe cobalt_ssl_state : cobalt_ssl_state.cpp /webcpp/asio//cobalt_ssl
-    : <include>../../node-test/include
-      <exception-handling>off:<source>/webcpp//throw_exception ;
+alias cobalt_ssl_state : ../../../libs/cobalt/test/tls//cobalt_ssl_state-program ;
 explicit cobalt_ssl_state ;
-
-exe cobalt_ssl_cancel : cobalt_ssl_cancel.cpp /webcpp/asio//cobalt_ssl
-    : <include>../../node-test/include
-      <exception-handling>off:<source>/webcpp//throw_exception ;
+alias cobalt_ssl_cancel : ../../../libs/cobalt/test/tls//cobalt_ssl_cancel-program ;
 explicit cobalt_ssl_cancel ;
 
 # The native WebRTC backend needs worker threads and exceptions.

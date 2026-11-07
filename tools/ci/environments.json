@@ -5,48 +5,48 @@
       "archives": [
         "9d96e42f303046fb0b221aa9071eabccc40b9683e0b7af2b02a929d15476ca6a"
       ],
-      "image": "ghcr.io/webcpporg/ci-environment@sha256:bfc8d2a63423a662cc21dc7377bf1b794cff883aa52446372eab8ccdddbe8b4d",
+      "image": "ghcr.io/webcpporg/ci-environment@sha256:47ffcbe9dff61287e7482efb908e13ba91ac5973efbc964ff228b98a4f633fc1",
       "recipe": "1caf5163552b9ba131f4687f9321cf90a157ce02e411d8d3284faf3a63547bbf",
-      "source": "5b92b3b896ebaa0c0b9fd56a3c2d0bbf8fd63e42"
+      "source": "c41196569b22bd1b0ca80baf4945cd657be15f3f"
     },
     "native-linux-x64": {
       "archives": [],
-      "image": "ghcr.io/webcpporg/ci-environment@sha256:d97a1596cfd6b7b0c69b9285bfbe95d90b2324fed34b0108ff102e44ad90888e",
-      "recipe": "12e35220e73d085db6e4e6aa4fe840a58a885018600e5cb9cc976f41c5996ec3",
-      "source": "5b92b3b896ebaa0c0b9fd56a3c2d0bbf8fd63e42"
+      "image": "ghcr.io/webcpporg/ci-environment@sha256:c1e7a56dcb3c74bb7431e105e6432d345131ed3fd5d3fbac7c19531e6d5692a4",
+      "recipe": "34fb00b6fe5aebb73082f45019a5ed6a13a2e8fec9f4900d6a278d1a00c236ac",
+      "source": "c41196569b22bd1b0ca80baf4945cd657be15f3f"
     },
     "wasi-sdk-linux-x64": {
       "archives": [
         "b761e3a0721dbae9c09a0059e5fdb2bf917d1b4a8a7b430fb3b5aafb0984b2c4"
       ],
-      "image": "ghcr.io/webcpporg/ci-environment@sha256:b753ad1d3c1e5a437e65f55e967287211554db9b6ab5e02c0b471829b60c1f89",
+      "image": "ghcr.io/webcpporg/ci-environment@sha256:fed7836d1847c252bb0a346f1e69aa33f5f3391a17c89aee0b48ec003cec2d91",
       "recipe": "605940eca683fa1f9da9d842779fcdd2825582e0315fc9f0da78196231a67b1e",
-      "source": "5b92b3b896ebaa0c0b9fd56a3c2d0bbf8fd63e42"
+      "source": "c41196569b22bd1b0ca80baf4945cd657be15f3f"
     },
     "wasi-wit-linux-x64": {
       "archives": [
         "b67efb37e106e55ce722a510d6b5f9c17f083e5fc79afc2badeb12cc313d9487",
         "f1d5749fdf69bb9400562eba50f8f25f5cd800ef4b74300038b6f99ae7409674"
       ],
-      "image": "ghcr.io/webcpporg/ci-environment@sha256:3823662eca2283c12601a4189e7adbe6c307ff011fc4f299e10b2e95cda10af0",
+      "image": "ghcr.io/webcpporg/ci-environment@sha256:f05fc9fe2786aed49df98ece6508b57a965ddde00b056aaf1ab2104b17513076",
       "recipe": "a154f6fe1adb7268d5c4f0c6a5e244166d3925fd74d3d125691709067a84209a",
-      "source": "5b92b3b896ebaa0c0b9fd56a3c2d0bbf8fd63e42"
+      "source": "c41196569b22bd1b0ca80baf4945cd657be15f3f"
     },
     "wasmtime-linux-x64": {
       "archives": [
         "685466455dd42a14774a86c36c8f2e45cbb9bd6d92a850139315df60a75498a5"
       ],
-      "image": "ghcr.io/webcpporg/ci-environment@sha256:82c0aea55102da94e9931c6dc95448095f0627ab14a8c78aad10ae2236db8686",
+      "image": "ghcr.io/webcpporg/ci-environment@sha256:3879086896abc7f0228e174011dedcbe207c4dc0822e1c10034c386f9af7668e",
       "recipe": "3e46afc7303c53c2161bcc97ff2714fd6a0426aa61dac6cb85f4f56b33bb0101",
-      "source": "5b92b3b896ebaa0c0b9fd56a3c2d0bbf8fd63e42"
+      "source": "c41196569b22bd1b0ca80baf4945cd657be15f3f"
     },
     "wit-bindgen-linux-x64": {
       "archives": [
         "3e81cc6523729f7532b4aa7968648a04abf0c711b7d1677150e9121f4e6458fe"
       ],
-      "image": "ghcr.io/webcpporg/ci-environment@sha256:9e4b762d83ae9bf098e28ef8a34a2e9f3f5ab473a7b997f91cc2f20114012aff",
+      "image": "ghcr.io/webcpporg/ci-environment@sha256:f6780e906a25d7c6d0de510201bef592761775b2b520e685985a69fd2d78b4b6",
       "recipe": "436fd39c29f16fc56d136cad6ca2f829f984cf536a0abc83f53d8cf23049ad93",
-      "source": "5b92b3b896ebaa0c0b9fd56a3c2d0bbf8fd63e42"
+      "source": "c41196569b22bd1b0ca80baf4945cd657be15f3f"
     }
   },
   "schema": 1

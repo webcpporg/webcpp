@@ -314,6 +314,30 @@ def scratch_superproject(*fixtures: str) -> Path:
     return root
 
 
+def copy_integration_libraries(root: Path, *names: str) -> None:
+    """Copy named real build integrations, without their tests or generated products.
+
+    Most build-tool tests use only artificial libraries. Cases that exercise a
+    cross-library dependency opt into its actual recipe, headers and sources.
+    This keeps unrelated fixtures independent of the checked-out collection.
+    """
+    for name in names:
+        source = ROOT / 'libs' / name
+        destination = root / 'libs' / name
+        destination.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source / 'build.jam', destination / 'build.jam')
+        for entry in ('include', 'src', 'test/applications/upstream'):
+            if (source / entry).is_dir():
+                shutil.copytree(source / entry, destination / entry,
+                                ignore=built, dirs_exist_ok=True)
+        # Shipped imports are sources, not disposable build output. Preserve the
+        # exact manifest and source inventory so integrity/lint sees the same tree.
+        for entry in ('sources.json', 'upstream/generated.json'):
+            if (source / entry).is_file():
+                (destination / entry).parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source / entry, destination / entry)
+
+
 def link_wasi_tools(root: Path) -> None:
     """Gives the scratch superproject root, in its .local, the wit-bindgen, the WASI WIT and the
     wasi-sdk that a copy leaves out: links to $WIT_BINDGEN_ROOT, the directory that holds
@@ -418,6 +442,15 @@ def without_emscripten(root: Path) -> None:
 # A line of a user-config.jam that names Boost's sources.
 POKE_BOOST_SOURCE = re.compile(r'^\s*modules\.poke\s*:\s*BOOST_SOURCE\s*:\s*"?([^";]+?)"?\s*;\s*$',
                                re.MULTILINE)
+
+
+def boost_include() -> Path:
+    """Return the explicit Boost header directory configured for these fixtures."""
+    text = user_config(ROOT).read_text()
+    include = re.search(r'using\s+boost\b[^;]*<include>(?:"([^"]+)"|([^;\s]+))', text)
+    if not include:
+        raise RuntimeError('configure using boost with an explicit <include> directory')
+    return Path(include.group(1) or include.group(2)).resolve()
 
 
 def boost_source() -> Path:

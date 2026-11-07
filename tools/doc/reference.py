@@ -461,11 +461,16 @@ def reference(options: argparse.Namespace) -> int:
     output = Path(os.path.abspath(options.output))
     work = output.parent
     work.mkdir(parents=True, exist_ok=True)
-    if not compile_commands.public_headers(str(root), library):
+    headers = compile_commands.public_headers(str(root), library)
+    if library == 'config':
+        # This public header lives outside config's headers-alone family.
+        # Its dedicated version test already compiles it independently.
+        headers.append('webcpp/version.hpp')
+    if not headers:
         raise Broken(f'{include} holds neither webcpp/{library}.hpp nor a header under '
                      f'webcpp/{library}/')
     aggregate = work / 'aggregate.cpp'
-    compile_commands.write_aggregate(str(root), library, str(aggregate))
+    compile_commands.write_aggregate(str(root), library, str(aggregate), headers)
 
     # The library's own headers are read as the library's; every other include directory, as
     # Boost's, is a system one.
@@ -500,7 +505,9 @@ def reference(options: argparse.Namespace) -> int:
         'MACROS': macro_prefix(library),
         'SOURCE_ROOT': quoted(source_root),
         'DATABASE': quoted(database),
-        'INPUT': quoted(include),
+        # Shipped imports retain their upstream reference. Only owned facades
+        # define WebCPP's additional reference, after hash verification.
+        'INPUT': '\n  - '.join(quoted(include / header) for header in headers),
         'OUTPUT': quoted(written),
     }, override if override.is_file() else None))
 

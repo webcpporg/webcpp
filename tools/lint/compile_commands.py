@@ -99,8 +99,7 @@ translation unit; one that holds fewer is a translation unit of its own,
 Before selecting each aggregate command, its compile-only headers-alone targets are built
 through B2. This materializes generated dependencies, including OpenSSL configuration and CA
 data, on a clean checkout. The corresponding exception-free units are prepared too. Selected
-program commands may also need checked Boost overlays on a target no aggregate uses; their
-include paths select the overlays' B2 preparation targets before analysis. Neither preparation
+program commands consume shipped Asio/Cobalt sources without header overlays. No preparation
 executes a test program. Program-only OpenSSL and libdatachannel variants prepare their
 verified provider headers too, without compiling archives or publishing build proof.
 
@@ -127,6 +126,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import shipped_sources
+
 # The b2 request whose compile lines the database holds: every library's programs.
 PROGRAMS = ['test', 'example']
 
@@ -137,13 +139,6 @@ TARGETS = {
     'wasip2': ['toolset=clang-wasip2'],
     'wasip3': ['toolset=clang-wasip3'],
     'emscripten': ['toolset=emscripten'],
-}
-
-# Checked overlays owned by tools/boost: each include directory's B2 preparation target.
-# A program can need one on a target that the library's native aggregate never prepares.
-BOOST_OVERLAYS = {
-    f'bin/boost-{name}/include': f'tools/boost/{name}//prepared.stamp'
-    for name in ('asio-wasip3', 'asio-windows', 'cobalt-common', 'cobalt-wasip3', 'cobalt-ssl')
 }
 
 # The property of the request that builds a program without exceptions as a user asks b2 for one,
@@ -453,7 +448,9 @@ def public_headers(root: str, library: str) -> list[str]:
     include = Path(root, 'libs', library, 'include')
     headers = [include / 'webcpp' / f'{library}.hpp']
     headers += (include / 'webcpp' / library).rglob('*.hpp')
-    return sorted(header.relative_to(include).as_posix() for header in headers if header.is_file())
+    imported = shipped_sources.verified(include.parent)
+    return sorted(header.relative_to(include).as_posix() for header in headers
+                  if header.is_file() and header.resolve() not in imported)
 
 
 def alone_name(header: str) -> str:
@@ -586,28 +583,6 @@ def of_the_tree(root: str, source: str) -> bool:
 Units = dict[str, dict[str, list[list[str]]]]
 
 
-def prepare_boost_overlays(root: str, target: str, commands: list[list[str]]) -> None:
-    """Build the checked Boost overlays selected commands include, without compiling programs."""
-    includes: set[Path] = set()
-    for words in commands:
-        for index, word in enumerate(words):
-            if word in ('-I', '-isystem') and index + 1 < len(words):
-                directory = words[index + 1]
-            elif word.startswith('-I'):
-                directory = word[2:]
-            else:
-                continue
-            includes.add(Path(root, directory).resolve())
-    requested = sorted(preparation for directory, preparation in BOOST_OVERLAYS.items()
-                       if Path(root, directory).resolve() in includes)
-    if not requested:
-        return
-    command, completed = run_b2(root, ['-d0', *TARGETS[target], *requested])
-    if completed.returncode != 0:
-        raise Failure(f'{completed.stdout}{" ".join(command)} exited {completed.returncode} '
-                      'while preparing checked Boost overlays')
-
-
 def prepare_provider_headers(root: str, request: list[str], commands: list[list[str]],
                             lines: list[str]) -> None:
     """Build each program's configured provider headers without executing its test target."""
@@ -665,6 +640,18 @@ def source_path(root: str, source: str) -> str:
     return os.path.relpath(os.path.realpath(os.path.join(root, source)), os.path.realpath(root))
 
 
+def imported_source(root: str, source: str) -> bool:
+    """Apply the same verified-source boundary to ordinary and exception-off commands."""
+    parts = Path(source).parts
+    if len(parts) <= 2 or parts[0] != 'libs':
+        return False
+    try:
+        imported = shipped_sources.lint_sources(Path(root, 'libs', parts[1]))
+    except (ValueError, OSError, KeyError, TypeError) as error:
+        raise Failure(str(error)) from error
+    return Path(root, source).resolve() in imported
+
+
 def read(root: str, target: str, lines: list[str], entries: list[dict[str, object]],
          seen: set[tuple[str, ...]], earlier: set[str],
          wasi_clang: str | None, request: list[str]) -> tuple[Units, set[str]]:
@@ -685,6 +672,8 @@ def read(root: str, target: str, lines: list[str], entries: list[dict[str, objec
         if source.startswith(f'{BUILD_DIR}/') or not of_the_tree(root, source):
             continue
         source = source_path(root, source)
+        if imported_source(root, source):
+            continue
         words = [*words[:-1], source]
         sources.add(source)
         key = tuple(without_output(words))
@@ -694,7 +683,6 @@ def read(root: str, target: str, lines: list[str], entries: list[dict[str, objec
         selected.append(words)
         entries.append({'directory': root, 'file': os.path.join(root, source),
                         'arguments': analysed(target, source, words, wasi_clang)})
-    prepare_boost_overlays(root, target, selected)
     prepare_provider_headers(root, request, selected, lines)
     return units, sources
 
@@ -804,6 +792,8 @@ def twins(root: str, target: str, chosen: dict[str, list[Aggregate]], units: Uni
         if source.startswith(f'{BUILD_DIR}/') or not of_the_tree(root, source):
             continue
         source = source_path(root, source)
+        if imported_source(root, source):
+            continue
         words = [*words[:-1], source]
         if first.setdefault(source, target) != target:
             continue
@@ -818,7 +808,6 @@ def twins(root: str, target: str, chosen: dict[str, list[Aggregate]], units: Uni
         selected.append(words)
         entries.append({'directory': root, 'file': os.path.join(root, source),
                         'arguments': analysed(target, source, words, wasi_clang)})
-    prepare_boost_overlays(root, target, selected)
     prepare_provider_headers(root, request, selected, lines)
     twinned.programs |= kept - compiled
     for library, theirs in aggregates.items():

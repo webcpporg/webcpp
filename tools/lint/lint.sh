@@ -146,12 +146,20 @@ if [ -d libs/beast/example/upstream ]; then
     fi
 fi
 
+# Exempt exact imports only after their inventory and generator checks pass.
+# Hand-written wrappers, functional adaptations and correction inputs remain linted.
+rule 'shipped source integrity'
+if ! python3 tools/shipped_sources.py . --list > "${work_directory}/imported"; then
+    fail 'the shipped implementation failed its integrity check'
+    : > "${work_directory}/imported"
+fi
+
 # Private libc declarations keep upstream text only after their pinned hashes match.
 verify_wasi_abi() {
     local profile="$1"
-    [ -d "tools/boost/asio-${profile}/wasi-libc" ] || return 1
+    [ -d "libs/asio/src/${profile}/wasi-libc" ] || return 1
     rule 'WASI ABI declaration integrity'
-    if python3 "tools/boost/asio-${profile}/verify.py"; then
+    if python3 "libs/asio/src/${profile}/verify.py"; then
         return 0
     else
         fail 'the pinned wasi-libc declaration snapshot failed its integrity check'
@@ -175,9 +183,9 @@ for repository in "${repositories[@]}"; do
               fi
               case "${path}" in
                   third_party/libs/*) continue ;;
-                  tools/boost/asio-wasip2/wasi-libc/*)
+                  libs/asio/src/wasip2/wasi-libc/*)
                       if [ "${wasi_abi_verified}" = true ]; then continue; fi ;;
-                  tools/boost/asio-wasip3/wasi-libc/*)
+                  libs/asio/src/wasip3/wasi-libc/*)
                       if [ "${wasi_p3_abi_verified}" = true ]; then continue; fi ;;
                   libs/beast/example/upstream/*)
                       if [ "${beast_corpus_verified}" = true ]; then continue; fi ;;
@@ -187,6 +195,28 @@ for repository in "${repositories[@]}"; do
               fi
           done
 done | sort -z -u > "${work_directory}/files"
+
+python3 - "${work_directory}/files" "${work_directory}/imported" <<'PYTHON'
+from pathlib import Path
+import sys
+files, imported = map(Path, sys.argv[1:])
+excluded = set(imported.read_bytes().split(b'\0')) - {b''}
+files.write_bytes(b''.join(path + b'\0' for path in files.read_bytes().split(b'\0')
+                          if path and path not in excluded))
+PYTHON
+
+# Only a fully verified subtree can use a directory filter; owned neighbors
+# force exact-file matching and remain subject to all checks.
+tidy_exclude="$(python3 - "${work_directory}/imported" <<'PYTHON'
+from pathlib import Path
+import sys
+sys.path.insert(0, 'tools')
+from shipped_sources import header_filter
+paths = [path.decode() for path in Path(sys.argv[1]).read_bytes().split(b'\0') if path]
+headers = [path for path in paths if Path(path).suffix in ('.h', '.hpp', '.ipp', '.cpp')]
+print(header_filter(headers, Path.cwd()))
+PYTHON
+)"
 
 # The files whose path matches the extended regular expression given, NUL-separated.
 files_matching() {
@@ -279,7 +309,9 @@ PYTHON
         # shellcheck disable=SC2329
         tidy_one() {
             local index="$1" kind="$2" file="$3"
-            local arguments=(-p "${work_directory}/database")
+            local arguments=(-p "${work_directory}/database"
+                '--header-filter=(^|/)(include/webcpp|libs/[^/]+/(test|example|js))/'
+                "--exclude-header-filter=${tidy_exclude}")
             if [ "${kind}" = host ]; then
                 arguments+=("--extra-arg=--target=${host_target}")
                 if [ -n "${host_sysroot}" ]; then
@@ -292,7 +324,7 @@ PYTHON
             printf '%s\n' "${status}" > "${work_directory}/${index}.status"
         }
         export -f tidy_one
-        export clang_tidy host_target host_sysroot work_directory
+        export clang_tidy host_target host_sysroot work_directory tidy_exclude
 
         # This shard's slice: the files whose position in the sorted list is K modulo N.
         # Interleaving keeps the slices alike, since neighbours are alike (the examples of one
