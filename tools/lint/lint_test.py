@@ -2413,15 +2413,19 @@ def test_cobalt_corpus_is_verified_before_excluding_upstream_style(root):
     # Deliberately invalid WebCPP style: only a verified upstream snapshot is exempt.
     write(root, corpus, 'int original(){return 42;}\n')
     write(root, verifier, HASH + '\nimport sys\n\nsys.exit(0)\n')
+    # The shipped-source gate excludes inventory entries, not whole directories.
+    write(root, 'libs/cobalt/test/applications/manifest.json', json.dumps({
+        'applications': [{'path': 'original.cpp'}], 'benchmarks': [], 'supporting_files': []
+    }) + '\n')
     expect_clean(lint(root))
     # A failed integrity check must fail lint, never silently waive the corpus.
     write(root, verifier, HASH + '\nimport sys\n\nsys.exit(1)\n')
     result = lint(root)
     assert result.returncode != 0, result.stdout
-    assert 'upstream corpus integrity' in FAILED.findall(result.stdout), result.stdout
+    assert 'shipped source integrity' in FAILED.findall(result.stdout), result.stdout
     # The port itself keeps normal checks, even when the upstream snapshot is valid.
     write(root, verifier, HASH + '\nimport sys\n\nsys.exit(0)\n')
-    adapted = 'libs/cobalt/example/notes.txt'
+    adapted = 'libs/cobalt/test/applications/upstream/notes.txt'
     write(root, adapted, EM_DASH + '\n')
     expect_alone(lint(root), 'em dash', [adapted + ':1:'])
 

@@ -14,6 +14,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shlex
 import shutil
 import subprocess
@@ -36,7 +37,7 @@ def run(command: list[str], environment: dict[str, str], expected: str = "",
 
 
 def compiler_search_paths(command: list[str], environment: dict[str, str]) -> list[Path]:
-    """Ask the selected compiler/target for its declared system-header roots."""
+    """Ask the selected compiler/target for its header and library search roots."""
     result = subprocess.run(command + ["-E", "-x", "c++", "-v", "-"], input="", text=True,
                             stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
                             env=environment, check=True, timeout=60)
@@ -56,6 +57,15 @@ def compiler_search_paths(command: list[str], environment: dict[str, str]) -> li
             paths.append(Path(line.strip().removesuffix(" (framework directory)")).resolve())
     if not paths:
         raise RuntimeError("compiler did not report its system include paths")
+    result = subprocess.run(command + ["-print-search-dirs"], text=True,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            env=environment, check=True, timeout=60)
+    for line in result.stdout.splitlines():
+        if line.startswith("libraries: ="):
+            # CMake's linker depfiles also record system libraries, such as libm.
+            # Trust only the selected driver's declared paths, not a host prefix.
+            paths += [Path(path).resolve() for path in
+                      line.removeprefix("libraries: =").split(os.pathsep) if path]
     return paths
 
 
@@ -69,12 +79,16 @@ def dependency_audit(stage: Path, build: Path, commands: list[dict],
         raise RuntimeError("no compiler dependency files were produced")
     for depfile in depfiles:
         body = depfile.read_text().replace("\\\n", "")
-        _, separator, body = body.partition(": ")
-        if not separator:
-            raise RuntimeError("invalid compiler dependency file: " + str(depfile))
-        for name in shlex.split(body):
-            path = Path(name)
-            dependencies.add((path if path.is_absolute() else build / path).resolve())
+        for rule in body.splitlines():
+            if not rule.strip():
+                continue
+            parts = re.split(r"(?<!\\):(?:\s|$)", rule, maxsplit=1)
+            if len(parts) != 2:
+                raise RuntimeError("invalid compiler dependency file: " + str(depfile))
+            # Linkers and -MP emit additional rules, including empty phony targets.
+            for name in shlex.split(parts[1]):
+                path = Path(name)
+                dependencies.add((path if path.is_absolute() else build / path).resolve())
     stage = stage.resolve()
     boost = boost.resolve()
     for path in dependencies:
@@ -115,7 +129,7 @@ def dependency_audit(stage: Path, build: Path, commands: list[dict],
           f"{len(cobalt)} declared Cobalt sources; no checkout or replacement Boost headers.",
           flush=True)
     return {"commands": commands, "dependencies": groups, "cobalt_sources": sorted(cobalt),
-            "compiler_include_roots": [str(path) for path in compiler_roots]}
+            "compiler_search_roots": [str(path) for path in compiler_roots]}
 
 
 def copy_sources(destination: Path) -> None:

@@ -173,3 +173,16 @@ retain Unreleased entries. No release tag or GitHub release exists. The attempte
 in-preparation marker conflicted with those historical frozen sections and was
 reverted without rewriting them. Reconcile this state in the separately authorized
 release procedure; remote integration CI does not certify a release archive.
+
+The first full remote run, 42370852663, exposed three tooling regressions. The
+Linux CMake consumer built and ran, but dependency auditing rejected libm because
+only header search roots were queried. The audit now also queries the selected
+compiler's library paths, with a regression that still rejects an undeclared
+library. Linker phony rules were also misread as dependency filenames; a real
+compiler regression using `-MP` reproduces this and confirms that dependencies
+in subsequent rules are still checked. The existing Cobalt lint fixture lacked the exact-file
+inventory required
+by the new classification gate; it now supplies that inventory and verifies that
+an unlisted neighboring file remains linted. All three failures were reproduced before
+correction. These findings supersede the corresponding local reconciliation claims;
+the original reports and failed CI logs remain preserved.

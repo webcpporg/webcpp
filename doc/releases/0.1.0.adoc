@@ -58,6 +58,7 @@ None.
 [#webcpp-0-1-0-tools-and-build]
 == Tools and build
 
+* Fixed clean CMake consumer audits rejecting system libraries and phony dependency rules.
 * Changed CI to consume verified prepared environments without rebuilding images in PR jobs.
 * Added verified archive caches and isolated container availability from unrelated CI lanes.
 * Fixed parallel builds truncating OpenSSL headers while compilers read them.

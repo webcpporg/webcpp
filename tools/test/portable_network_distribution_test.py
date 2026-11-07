@@ -9,10 +9,13 @@
 from pathlib import Path
 import hashlib
 import json
+import os
+import shlex
 import shutil
 import subprocess
 import sys
 import tarfile
+from unittest.mock import patch
 
 import harness
 import portable_network_distribution as distribution
@@ -53,6 +56,49 @@ def test_unpacked_custom_configuration(root: Path) -> None:
                  '--cobalt-pmr', 'custom')
 
 
+def test_audit_recognizes_compiler_library_search_paths(root: Path) -> None:
+    stage = root / 'unpacked'
+    boost = root / 'boost/include'
+    headers = root / 'toolchain/include'
+    libraries = root / 'toolchain/lib'
+    foreign = root / 'undeclared'
+    for directory in (stage, boost, headers, libraries, foreign):
+        directory.mkdir(parents=True)
+    source = stage / 'main.cpp'
+    header = boost / 'version.hpp'
+    library = libraries / 'libm.so'
+    hidden = foreign / 'libhidden.so'
+    for path in (source, header, library, hidden):
+        path.write_text('')
+    dependencies = [source, header, library]
+    depfile = stage / 'link.d'
+
+    def write_dependencies() -> None:
+        depfile.write_text('program: ' + ' '.join(shlex.quote(str(path))
+                                               for path in dependencies) + '\n')
+
+    write_dependencies()
+    include_output = '#include <...> search starts here:\n ' + str(headers) + (
+        '\nEnd of search list.\n')
+    search_output = 'libraries: =' + str(libraries) + os.pathsep + str(headers) + '\n'
+    replies = [subprocess.CompletedProcess([], 0, stderr=include_output),
+               subprocess.CompletedProcess([], 0, stdout=search_output)]
+    with patch.object(distribution.subprocess, 'run', side_effect=replies):
+        roots = distribution.compiler_search_paths(['clang++'], {})
+    commands = [{'file': str(source), 'arguments': ['clang++', str(source)]}]
+    receipt = distribution.dependency_audit(stage, stage, commands, boost, set(), [], roots)
+    assert str(library.resolve()) in receipt['dependencies']['toolchain']
+
+    dependencies.append(hidden)
+    write_dependencies()
+    try:
+        distribution.dependency_audit(stage, stage, commands, boost, set(), [], roots)
+    except RuntimeError as error:
+        assert 'undeclared dependency' in str(error) and str(hidden) in str(error), str(error)
+    else:
+        raise AssertionError('the audit accepted an undeclared library')
+
+
 def test_source_archive_roundtrip(root: Path) -> None:
     stage = root / 'unpacked source with spaces'
     stage.mkdir()
@@ -80,6 +126,38 @@ def test_source_archive_roundtrip(root: Path) -> None:
         assert hashlib.sha256((stage / name).read_bytes()).hexdigest() == digest, name
     assert set(manifest['sha256']) == set(names) - {'archive-manifest.json'}
     assert not (stage.parent / 'source staging').exists(), 'remove inputs before extracting'
+
+
+def test_audit_reads_multiple_dependency_rules(root: Path) -> None:
+    stage = root / 'unpacked'
+    boost = root / 'boost/include'
+    stage.mkdir()
+    boost.mkdir(parents=True)
+    source = stage / 'main.cpp'
+    header = boost / 'header with spaces.hpp'
+    header.write_text('')
+    source.write_text('#include "header with spaces.hpp"\n')
+    compiler = shutil.which('clang++')
+    assert compiler
+    depfile = stage / 'main.d'
+    command = [compiler, '-I', str(boost)]
+    compiler_roots = distribution.compiler_search_paths(command, harness.b2_environment())
+    invocation = command + ['-MD', '-MP', '-MF', str(depfile), '-c', str(source),
+                            '-o', str(stage / 'main.o')]
+    subprocess.run(invocation, env=harness.b2_environment(), check=True, capture_output=True)
+    entries = [{'file': str(source), 'arguments': invocation}]
+    receipt = distribution.dependency_audit(stage, stage, entries, boost, set(), [], compiler_roots)
+    assert str(header.resolve()) in receipt['dependencies']['boost']
+
+    # A second nonempty rule must still be audited, not discarded with phony rules.
+    with depfile.open('a') as output:
+        output.write('other: missing.hpp\n')
+    try:
+        distribution.dependency_audit(stage, stage, entries, boost, set(), [], compiler_roots)
+    except RuntimeError as error:
+        assert 'dependency is missing' in str(error) and 'missing.hpp' in str(error), str(error)
+    else:
+        raise AssertionError('the audit skipped a dependency in a subsequent rule')
 
 
 def test_audit_rejects_hidden_headers_and_mismatched_configuration(root: Path) -> None:
@@ -176,7 +254,9 @@ CASES = [test_source_archive_roundtrip, test_native_identity_and_interoperabilit
          test_unpacked_native_cmake_consumer, test_unpacked_custom_configuration,
          test_audit_rejects_hidden_headers_and_mismatched_configuration,
          test_conflicting_cobalt_policies_are_rejected_without_b2,
-         test_mismatched_boost_headers_are_rejected_without_b2]
+         test_mismatched_boost_headers_are_rejected_without_b2,
+         test_audit_recognizes_compiler_library_search_paths,
+         test_audit_reads_multiple_dependency_rules]
 
 if __name__ == '__main__':
     sys.exit(harness.run_cases('portable_network_distribution_test', CASES, sys.argv[1:]))
