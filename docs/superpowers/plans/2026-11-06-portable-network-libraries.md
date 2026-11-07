@@ -297,3 +297,25 @@ profile. The original source hash, fresh guide/reference build, text checks and
 independent review passed. The SPSC limitation probes and unavailable browser UI
 passed remotely. The next complete remote run must confirm actual MSVC compilation
 with the expanded object format; this recorded failure does not authorize a merge.
+
+Candidate f677c12 (run 42394021516) confirmed successful original ticker
+compilation on both MSVC versions. All eight lint shards and tool-test shards
+passed. The XML audit found a separate intermittent browser worker lifecycle
+timeout in three suspension/EH profiles, despite the B2 job's zero exit status.
+The same timeout reproduced locally in real Chrome before any change.
+
+The lifecycle test's one-millisecond readiness observer generated hundreds of
+thousands of zero-timeout polls and competed with worker setup. Under identical
+controlled Chrome CPU throttling, the observer failed six of twelve executions;
+a posted readiness notification passed twelve of twelve. The notification
+changes a timer's expiry on the creator's executor, retaining an early signal.
+Separate controls cover arrival before the wait. The five-second deadline and
+all cancellation, completion and executor-affinity checks remain unchanged.
+This is a test synchronization correction, not a change to Boost, SDK timer
+polling or a general browser worker-latency guarantee.
+
+Fresh native single/multi-thread profiles with EH on/off, cooperative WASIp3
+with EH off, the strict Cobalt reference/guide build and independent review
+passed. The exact combined candidate still requires a new full remote verdict
+before integration. Evidence remains in the ignored publication directory;
+neither historical measurement archives nor the original sources are rewritten.
