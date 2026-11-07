@@ -159,7 +159,17 @@ is registered as a submodule. These commits preserve the checked source and
 measurement bytes; Git attributes retain imported/generated whitespace and CSV
 line endings. The superproject records all three revisions together.
 
-Remote CI is pending. The changed container recipe must first produce verified
-immutable environment pins. The complete superproject CI validates the combined
+The changed container recipe produced verified immutable environment pins in
+GitHub run 42370588658. All six publishers, six anonymous consumers and the
+manifest assembly passed. The generated manifest is promoted unchanged. Full
+remote test CI is pending. The complete superproject CI validates the combined
 candidate before integration; library workflows use the superproject's main and
 must be rerun after its integration. No release or proposal archival is implied.
+
+
+The source-release check is a separate unresolved gate: the existing 0.1.0
+notes and the older libraries are frozen, while the three changed libraries
+retain Unreleased entries. No release tag or GitHub release exists. The attempted
+in-preparation marker conflicted with those historical frozen sections and was
+reverted without rewriting them. Reconcile this state in the separately authorized
+release procedure; remote integration CI does not certify a release archive.
