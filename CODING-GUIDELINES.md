@@ -6943,7 +6943,11 @@ sources are Boost 1.92. Wasm uses checked-in sources over the same WebCPP Asio
 backend as Beast. Consumer builds require no patches or replacement Boost headers.
 
 The corrected native SSL stream is an explicit owner-approved identity exception,
-after real upstream state/cancellation failures. Plain Cobalt never links SSL.
+after real upstream state/cancellation failures. Document the wrapper as fixing
+those defects, including plaintext fallback after a failed or cancelled handshake,
+with its regression evidence and supported target boundaries. The owner reaffirmed
+this exception on 2026-11-07 and directed that other newly identified original
+Boost defects be documented without local corrections. Plain Cobalt never links SSL.
 Native upstream defects outside that wrapper remain named negative probes;
 corrected Wasm behavior is not reported as native Boost behavior. The issue-287
 no-EH caution remains informational, with versioned runtime evidence.

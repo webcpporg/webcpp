@@ -251,3 +251,37 @@ local TLS build once exposed an incomplete Wasm file before execution; the same
 entropy/thread driver and a subsequent fresh focused build passed. No test
 expectation was changed for that build-output collision. No merge has been
 performed for this candidate.
+
+The third remote candidate, 861809f (run 42381776828), completed all eight
+lint shards and tool-test shards successfully. Its report accepted all 133 XML
+lanes and recorded three failed cells: the immutable ticker's MSVC C4457 warning
+on 14.3 and 14.5, and a lost value in the native SPSC sequence counterpart.
+The ticker adjustment is limited to that original compile probe; its bytes and
+other warning policies remain unchanged. A deterministic witness reproduced the
+queue's stale-notification data loss in both the original and the counterpart.
+The existing wakeup correction does not fix that separate upstream defect.
+Per the owner's 2026-11-07 direction, preserve that behavior, document the
+limitation and withdraw the counterpart's reliable-transfer claim rather than
+patching the original or accepting a probabilistic passing run.
+The final site assembly also rejected Cobalt's 63-character rendered title,
+which exceeds its 60-character limit. The shortened title has 51 characters;
+the actual site build reproduced the rejection, then passed all 37 pages,
+12 libraries, links and HTML checks with the regenerated final guide.
+
+The owner also reaffirmed the native SSL exception and requested explicit
+fixed-defect documentation. The guide now records the corrected handshake/state,
+plaintext-fallback, shutdown, composed-transfer cancellation and move behavior,
+with the concrete-type and target constraints. OpenSSL and native Cobalt's
+core/plain I/O remain unchanged. The new candidate still requires full remote
+verification before integration; these records do not mark it green.
+
+Follow-up local verification passed nine deterministic queue limitation profiles
+(native original/counterpart with EH on/off, Emscripten JSPI/Asyncify with EH
+on/off, and cooperative WASIp3 with EH off), with three recurring matrix-policy
+regressions. Real Chrome verified the unavailable SPSC UI and the remaining
+portable programs in all four suspension/EH profiles. Focused clang-tidy,
+Pyright, formatting, import integrity and text rules passed. The historical
+source and measurement bytes remain unchanged. MSVC dry runs retained `/W4`
+and `/WX`, applying `/wd4457` only to the original ticker probe. The full Cobalt
+reference/guide build and independent review passed. Actual MSVC confirmation
+of the new diagnostic scope and the complete remote CI remain the merge gate.
