@@ -285,3 +285,15 @@ source and measurement bytes remain unchanged. MSVC dry runs retained `/W4`
 and `/WX`, applying `/wd4457` only to the original ticker probe. The full Cobalt
 reference/guide build and independent review passed. Actual MSVC confirmation
 of the new diagnostic scope and the complete remote CI remain the merge gate.
+
+Candidate 8cbca68 (run 42388065736) passed all eight lint shards, all eight tool
+test shards, documentation and the final site assembly. Its 133 XML lanes contain
+131 passing lanes and two failures: both MSVC versions compile past C4457 but
+reject the immutable ticker with C1128 because its Debug object exceeds the
+default COFF section limit. Only that compile probe now selects `/bigobj`.
+Real B2 dry runs for 14.3/14.5 confirm the option stays confined to that command,
+with `/W4` and `/WX` retained and 63 other compiler commands unaffected in each
+profile. The original source hash, fresh guide/reference build, text checks and
+independent review passed. The SPSC limitation probes and unavailable browser UI
+passed remotely. The next complete remote run must confirm actual MSVC compilation
+with the expanded object format; this recorded failure does not authorize a merge.
