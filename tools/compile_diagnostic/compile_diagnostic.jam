@@ -14,10 +14,11 @@
 # on its line, and it drops that directive. The object's compile writes its
 # compilation database entry (-MJ), whose exact command check.py runs again
 # with clang's diagnostic log, and the test fails on any error located in a
-# directive. This file is loaded as the module webcpp-compile-diagnostic.
+# comment after an expected-<kind> of that comment, or when the compile
+# reported no error at all. This file is loaded as the module
+# webcpp-compile-diagnostic.
 import generators ;
 import modules ;
-import os ;
 import path ;
 import testing ;
 import type ;
@@ -27,9 +28,11 @@ type.register COMPILE_DIAGNOSTIC : : TEST ;
 generators.register-standard webcpp-compile-diagnostic.check : OBJ : DIAGNOSTIC_CHECK ;
 generators.register-standard testing.expect-success : DIAGNOSTIC_CHECK : COMPILE_DIAGNOSTIC ;
 
-if [ os.name ] = NT { .python = python ; } else { .python = python3 ; }
 .here = [ path.parent [ path.root [ path.make [ modules.binding $(__name__) ] ] [ path.pwd ] ] ] ;
-.check = [ path.native $(.here)/check.py ] ;
+# The check as a file target of its own, which every check depends on, so
+# that a change of it runs each again.
+.check = <webcpp-compile-diagnostic>check.py ;
+SEARCH on $(.check) = [ path.native $(.here) ] ;
 
 # requirements hold the -verify options and the program's own; sources are
 # the test's, as testing.compile takes them.
@@ -40,25 +43,23 @@ rule compile-diagnostic ( name : sources + : requirements * )
 
 # The object's compile, whose variables its toolset has set by now, also
 # writes its compilation database entry beside it. A variable of a target is
-# read when its action runs, after every rule. An object built before this
-# check existed has no entry: it is compiled again.
+# read when its action runs, after every rule. clang writes no object for a
+# translation unit with errors, so each build compiles it, and writes the
+# entry, again.
 rule check ( target : sources * : properties * )
 {
     local object = $(sources[1]) ;
     local directory = [ on $(object) return $(LOCATE) ] ;
-    local entry = $(object:G=:S=.compile.json) ;
-    local database = $(directory)/$(entry) ;
+    local database = $(directory)/$(object:G=:S=.compile.json) ;
     OPTIONS on $(object) += "-MJ \"$(database)\"" ;
-    if ! [ GLOB $(directory) : $(entry) ]
-    {
-        ALWAYS $(object) ;
-    }
     DATABASE on $(target) = $(database) ;
-    PYTHON on $(target) = $(.python) ;
+    # tools/webcpp.jam's interpreter, which loads this module.
+    PYTHON on $(target) = [ modules.peek webcpp : .python ] ;
     CHECK on $(target) = $(.check) ;
+    DEPENDS $(target) : $(.check) ;
 }
 
-actions check
+actions check bind CHECK
 {
     "$(PYTHON)" "$(CHECK)" --database "$(DATABASE)" --output "$(<)"
 }

@@ -233,7 +233,8 @@ code.
 * Added webcpp.same-program, which proves a library named and not called adds no byte.
 * Added the lint rule entropy sources, which refuses a weaker source in a header that
 reads entropy.
-* Fixed webcpp.compile-diagnostic passing on a directive clang's -verify could not read and dropped, such as one naming a header that does not exist.
+* Fixed webcpp.compile-diagnostic passing on a directive clang's -verify
+could not read and dropped, such as one naming a header that does not exist.
 
 [#webcpp-0-1-0-compilers-tested]
 == Compilers tested

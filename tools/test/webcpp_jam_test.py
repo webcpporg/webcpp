@@ -249,41 +249,76 @@ def test_compile_diagnostic_passes_only_on_its_diagnostic(root):
 def test_compile_diagnostic_fails_on_a_directive_clang_drops(root):
     # A directive that clang's -verify cannot read is dropped, with an error of its own that the
     # rule's tolerance of a header's cascade of errors would hide: one that names a header that
-    # does not exist, alone or beside a directive that holds, and one whose text runs past its
-    # line. Each such test proves nothing, and fails, naming the directive; the cascade of
-    # errors that follows a header's #error is still tolerated.
+    # does not exist, alone, beside a directive that holds, or on a later line of a /* */
+    # comment, and one whose text runs past its line. Each such test proves nothing, and fails,
+    # naming the directive; so does one whose compile reports no error at all. The cascade of
+    # errors that follows a header's #error is still tolerated, and so are a directive in a
+    # branch the preprocessor skips, which clang never reads, an expected note, and a // in a
+    # string before a directive on the same line.
     guard = '#error "the guard says no"\nint after_the_guard() { return undeclared; }\n'
     stated = ('// expected-error@guard.hpp:* {{the guard says no}}\n'
               '#include "guard.hpp"\n'
               'int main() { return undeclared; }\n')
+    holds = {
+        'stated': stated,
+        # Never read: clang skips the branch, so it names nothing.
+        'skipped': '#if 0\n// expected-error@renamed/guard.hpp:* {{never}}\n#endif\n' + stated,
+        'noted': ('template <typename T> void needs_int(T) requires(sizeof(T) == 4) {}\n'
+                  '// expected-note@-1 {{because}}\n'
+                  'void call() {\n'
+                  '    // expected-error@+1 {{no matching function}}\n'
+                  '    needs_int(1.0);\n'
+                  '}\n'),
+        # The error is on the line of its directive, after a string that holds //, before the
+        # comment.
+        'url': ('const char* url = "http://example.org"; int value = undeclared;'
+                ' // expected-error {{undeclared}}\n'),
+    }
+    dropped = {
+        'missing': (stated.replace('@guard.hpp', '@renamed/guard.hpp'),
+                    "file 'renamed/guard.hpp' could not be located", 'missing.cpp:1:'),
+        'missing_beside': ('// expected-error@renamed/guard.hpp:* {{the guard says no}}\n'
+                           + stated, "file 'renamed/guard.hpp' could not be located",
+                           'missing_beside.cpp:1:'),
+        'missing_in_block': ('/* The guard, stated twice:\n'
+                             '   expected-error@renamed/guard.hpp:* {{the guard says no}} */\n'
+                             + stated, "file 'renamed/guard.hpp' could not be located",
+                             'missing_in_block.cpp:2:'),
+        'unfinished': (stated.replace('{{the guard says no}}', '{{the guard\n// says no}}'),
+                       "cannot find end ('}}')", 'unfinished.cpp:1:'),
+        'no_error': ('// expected-no-diagnostics\nint main() { return 0; }\n',
+                     'reported no error', 'no_error'),
+    }
+    sources = {f'{name}.cpp': text for name, text in holds.items()}
+    sources.update({f'{name}.cpp': text for name, (text, _, _) in dropped.items()})
     harness.add_library(
         root, 'dropped',
         'import webcpp ;\n'
         '\n'
         'webcpp.targets native wasip2 ;\n'
         '\n'
-        'webcpp.compile-diagnostic stated : stated.cpp ;\n'
-        'webcpp.compile-diagnostic missing : missing.cpp ;\n'
-        'webcpp.compile-diagnostic missing_beside : missing_beside.cpp ;\n'
-        'webcpp.compile-diagnostic unfinished : unfinished.cpp ;\n',
-        {'guard.hpp': guard, 'stated.cpp': stated,
-         'missing.cpp': stated.replace('@guard.hpp', '@renamed/guard.hpp'),
-         'missing_beside.cpp': '// expected-error@renamed/guard.hpp:* {{the guard says no}}\n'
-                               + stated,
-         'unfinished.cpp': stated.replace('{{the guard says no}}',
-                                          '{{the guard\n// says no}}')})
-    result = harness.run_b2(root, 'libs/dropped/test//stated')
+        + ''.join(f'webcpp.compile-diagnostic {name} : {name}.cpp ;\n'
+                  for name in [*holds, *dropped]),
+        dict(sources, **{'guard.hpp': guard}))
+    result = harness.run_b2(root, *(f'libs/dropped/test//{name}' for name in holds))
     harness.expect(result, True)
-    assert passed(result) == {'stated'}, (passed(result), result.stdout[-4000:])
-    for name, said in (('missing', "file 'renamed/guard.hpp' could not be located"),
-                       ('missing_beside', "file 'renamed/guard.hpp' could not be located"),
-                       ('unfinished', "cannot find end ('}}')")):
+    assert passed(result) == set(holds), (passed(result), result.stdout[-4000:])
+    for name, (_, said, where) in dropped.items():
         result = harness.run_b2(root, f'libs/dropped/test//{name}')
-        harness.expect(result, False, said, f'{name}.cpp:1:')
+        harness.expect(result, False, said, where)
         assert not passed(result), (name, result.stdout[-4000:])
     result = harness.run_b2(root, *WASIP2, 'libs/dropped/test//missing')
     harness.expect(result, False, "file 'renamed/guard.hpp' could not be located")
     assert not passed(result), result.stdout[-4000:]
+    # The check is a source of the test: a change of it runs the check again. (clang writes no
+    # object for a translation unit with errors, -verify or not, so each build compiles the
+    # test's source again too.)
+    kept = ('libs/dropped/test//stated',)
+    harness.expect(harness.run_b2(root, *kept), True)
+    harness.replace(root / 'tools/compile_diagnostic/check.py',
+                    "if __name__ == '__main__':\n",
+                    "if __name__ == '__main__':\n    sys.exit('the check changed')\n")
+    harness.expect(harness.run_b2(root, *kept), False, 'the check changed')
 
 
 def test_filter_maps_each_toolset_to_its_target(root):

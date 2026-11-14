@@ -630,10 +630,13 @@ rule compile-fail ( name : sources + : requirements * : targets * )
 # directive it cannot read, which it then drops: a header it names that
 # cannot be located, a text whose `}}` is not on its line. The test's check,
 # tools/compile_diagnostic's, runs the compile again with clang's diagnostic
-# log and fails on any of them. So a test passes only when every directive
-# was read, its header found and included, and its error raised there. A
-# compile-fail test passes on any error, the wrong one included; this one
-# only on the one it states. -verify is clang's: on a toolset other than
+# log and fails on any error located in a comment, a // or a /* */ one over
+# several lines, after an expected-<kind> of that comment, and on a compile
+# that reports no error at all. So each directive clang reads, every one
+# outside a branch the preprocessor skips, must be read whole, its header
+# found and included, and its error raised there. A compile-fail test
+# passes on any error, the wrong one included; this one only on the one it
+# states. -verify is clang's: on a toolset other than
 # b2's clang (native clang, clang-wasip2, clang-wasip3), the test is
 # skipped, as a program is for a target it does not declare, rather than
 # refused, which would turn red every lane of gcc or msvc for a declaration
