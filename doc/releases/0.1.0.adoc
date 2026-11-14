@@ -72,6 +72,7 @@ None.
 * Fixed Chrome provisioning and browser/TLS profile coverage in Asio CI lanes.
 * Added source-built OpenSSL and Cobalt SSL targets for WASIp2.
 * Added explicit browser pthread profiles with main-thread handoff tests.
+* Fixed the lint's clang-tidy stopping at Boost.Unordered on arm64 hosts.
 * Changed lint to verify WASIp3 ABI snapshots before excluding upstream headers.
 * Fixed embedded CA headers using an unowned namespace and include path.
 * Added source-built Boost.Context for native stackful coroutine applications.
