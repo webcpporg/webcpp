@@ -779,6 +779,17 @@ canary_header='libs/crypto/include/webcpp/crypto/detail/canary.h'
 pins="$(grep -hoE '^#define WEBCPP_CRYPTO_[A-Z0-9]+_COMMIT [0-9a-f]{7}$' \
     "${canary_header}" 2>/dev/null || true)"
 pin_faults=''
+# A line that starts like a pin and is not of the exact form is a fault too, never skipped; a
+# test's override (the macro defined as another WEBCPP_CRYPTO_ macro) is no pin.
+pin_form='#define WEBCPP_CRYPTO_<NAME>_COMMIT <7 hex>'
+while IFS= read -r line; do
+    if ! printf '%s\n' "${pins}" | grep -qxF -- "${line}"; then
+        pin_faults="${pin_faults}${canary_header}: a pin is not of the form ${pin_form}: "
+        pin_faults="${pin_faults}${line}
+"
+    fi
+done < <(grep -E '^#define WEBCPP_CRYPTO_[A-Z0-9]+_COMMIT ' "${canary_header}" 2>/dev/null \
+    | grep -vE ' WEBCPP_CRYPTO_[A-Z0-9_]+$' || true)
 while read -r _ macro hex; do
     [ -n "${macro}" ] || continue
     name="$(printf '%s' "${macro}" | sed -E 's/^WEBCPP_CRYPTO_(.*)_COMMIT$/\1/' | tr 'A-Z' 'a-z')"
@@ -786,9 +797,11 @@ while read -r _ macro hex; do
         ctaes) submodule='bitcoin' ;;
         *) submodule="${name}" ;;
     esac
-    head="$(git rev-parse --short=7 "HEAD:third_party/libs/${submodule}" 2>/dev/null || printf 'missing')"
+    head="$(git rev-parse --short=7 "HEAD:third_party/libs/${submodule}" 2>/dev/null \
+        || printf 'missing')"
     if [ "${head}" != "${hex}" ]; then
-        pin_faults="${pin_faults}${canary_header}: ${name} is pinned at ${hex} and third_party/libs/${submodule} is at ${head}
+        pin_faults="${pin_faults}${canary_header}: ${name} is pinned at ${hex} and "
+        pin_faults="${pin_faults}third_party/libs/${submodule} is at ${head}
 "
     fi
 done <<EOF_PINS

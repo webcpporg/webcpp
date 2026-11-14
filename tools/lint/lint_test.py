@@ -2240,9 +2240,9 @@ def commit_recorded(root: Path, message: str) -> None:
 def test_canary_pins(root):
     prepare(root)
     # Each pin of detail/canary.h is the first seven digits of the commit the superproject
-    # records for its submodule, ctaes' for bitcoin's; the macro of a test's override, an
-    # indented line and a pin of no submodule recorded are not pins read. A pin that differs fails
-    # at the header, naming both.
+    # records for its submodule, ctaes' for bitcoin's; the macro of a test's override is no pin.
+    # A pin that differs, or whose submodule is not recorded, fails at the header, naming both; a
+    # pin that is not of the exact form (not seven hex digits) fails at its line.
     bearssl = '7bea48e5e850ab4cafbe68d3765cdaba13a86d6f'
     bitcoin = '1234567890abcdef1234567890abcdef12345678'
     record_submodule(root, 'bearssl', bearssl)
@@ -2264,6 +2264,12 @@ def test_canary_pins(root):
     commit_recorded(root, 'No bearssl')
     expect_alone(lint(root), 'canary pins', [
         'bearssl is pinned at 1234567 and third_party/libs/bearssl is at missing'])
+    record_submodule(root, 'bearssl', '1234567' + bearssl[7:])
+    write(root, CANARY_HEADER, CANARY.format(bearssl='1234567', ctaes='123456'))
+    commit_recorded(root, 'A malformed pin')
+    expect_alone(lint(root), 'canary pins', [
+        f'{CANARY_HEADER}: a pin is not of the form #define WEBCPP_CRYPTO_<NAME>_COMMIT <7 hex>: '
+        '#define WEBCPP_CRYPTO_CTAES_COMMIT 123456'])
 
 
 def test_pyright(root):
