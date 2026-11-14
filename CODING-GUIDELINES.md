@@ -8530,8 +8530,9 @@ summary.
 ## 18. Proposed, not decided
 
 The proposals not yet decided, each briefly, with the questions they leave
-for the owner. A draft decides nothing: it is here so that a contributor sees
-what is coming, and its proposal holds it in full.
+for the owner. Neither a draft nor a proposal under discussion decides
+anything: each is here so that a contributor sees what is coming, and its
+proposal holds it in full.
 
 ### json_schema (draft, not decided)
 
