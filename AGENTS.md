@@ -1043,6 +1043,7 @@ webcpp.example      <source> : <requirements> * : <targets> * ;
 webcpp.headers-alone <library> : <include-root> : <only> * : <requirements> * : <targets> * ;
 webcpp.link         <name> : <sources> + : <requirements> * : <targets> * ;
 webcpp.link-fail    <name> : <sources> + : <requirements> * : <targets> * ;
+webcpp.same-program <name> : <sources> + : <library> : <targets> * : <requirements> * ;
 webcpp.data         <directory> + ;   (requirements)
 webcpp.source-only <directory> + ;   (reference source trees)
 ```
@@ -1225,6 +1226,19 @@ webcpp.generated <name> : <script> : <argument> * : <output> + ;
 | Rule | Passes when | Notes |
 | --- | --- | --- |
 | `webcpp.generated` | every output that `<script>` writes equals its committed `<output>`, byte for byte | the explicit target `generated-<name>`: `tools/generated/generated.py` runs the Python script `<script>` in the Jamfile's directory as `<script> <argument>... <path>...`, each path where it writes one output, in the order given, under the Jamfile's build directory, and compares each with its committed file (`tools/oracle/compare.py --files`), naming every one that differs, with the command that writes it again, `b2 libs/<name>/test//update-generated`, every one that is missing and every one the generator did not write; it writes nothing into the tree, passing or failing. The first declaration of a Jamfile also declares the explicit target `update-generated`, which runs each of its generators the same way, in a build directory apart from the check's, so that one request may build both, and, once all have succeeded, copies their outputs beside the committed files and renames each over its own: a generator or a copy that fails leaves every committed file as it was, and a rename that fails is named with the files it replaced and those it left. Paths are relative to the Jamfile; a script that is not a `.py` file or does not exist, a name declared twice, and an output named twice, by one generator or by two of the Jamfile, stop the build. An own lane names the check, `webcpp.lane <lane> : generated-<name> ;`, which runs natively, as an oracle's does, and is of the kind `programs`, since a generator runs Python, not the original's language; the ordinary lanes never build it, since a generator may need the network. Neither target compiles anything, so they need no Boost: they leave out the Jamroot's check of Boost, and the libraries their project's requirements name, whose targets would run it |
+
+**A library named and not called** (`tools/same_program/same_program.jam`). A
+library that a program names and never calls adds no byte to it
+(`CODING-GUIDELINES.md` chapter 5, rule 11). A test Jamfile declares the
+proof:
+
+```
+webcpp.same-program <name> : <sources> + : <library> : <targets> * : <requirements> * ;
+```
+
+| Rule | Passes when | Notes |
+| --- | --- | --- |
+| `webcpp.same-program` | `<sources>` built with `<library>` and without it, as two programs of b2 under the one output name `<name>`, give byte-identical files (on emscripten the `.js` and the `.wasm` beside it) | a test of type `SAME_PROGRAM`, listed by `--dump-tests` and recorded by `--out-xml`; `<requirements>` are properties given to both programs (`<library>/webcpp/crypto//crypto`), `<targets>` as for any program. The pair is built in two directories of its own (`<name>_with`, `<name>_without`), release, without debug information, with `/Brepro` on MSVC, and with the same link flags, the linker's removal of unused sections (`-Wl,--gc-sections`, `-Wl,-dead_strip`, `/OPT:REF`) included, so that a C library's usage requirement is not what differs: only `<library>` does. It fails naming both files with their sizes. Nothing runs b2 inside b2 |
 
 The rules of the doc Jamfiles are in chapter 3: `webcpp.doc <library> :
 <page>.adoc ;`, `webcpp.reference <library> : <requirements> * :

@@ -1,0 +1,82 @@
+# Copyright (c) 2026 WebCpp.org
+#
+# Distributed under the Boost Software License, Version 1.0. (See
+# accompanying file LICENSE_1_0.txt or copy at
+# https://www.boost.org/LICENSE_1_0.txt)
+#
+# The rule of a library named and not called (CODING-GUIDELINES.md chapter 5,
+# rule 11), which tools/webcpp.jam offers as webcpp.same-program: two exes of
+# the same sources, one with the library and one without, each renamed by a
+# tag rule to the test's name so that both outputs have the same name (ld64's
+# ad hoc signature embeds it), each in a directory of its own (b2's
+# <location-prefix>, which a target's name alone would not give it), and a test whose action compares
+# them byte for byte. Release, without debug information, and, with MSVC,
+# /Brepro, which keeps a time stamp out of the link. Both programs link with
+# the same flags, the linker's removal of unused sections included (the
+# usage requirement of a C library, which the program with the library would
+# otherwise alone have), so that only the named library differs between them.
+# This file is loaded as the module webcpp-same-program.
+import feature ;
+import generators ;
+import modules ;
+import os ;
+import path ;
+import project ;
+import testing ;
+import type ;
+import virtual-target ;
+
+type.register SAME_RESULT : same-result ;
+type.register SAME_PROGRAM : : TEST ;
+generators.register-composing webcpp-same-program.compare : EXE : SAME_RESULT ;
+generators.register-standard testing.expect-success : SAME_RESULT : SAME_PROGRAM ;
+
+# The output name of both programs of a pair. Free and incidental: the two
+# programs' directories differ by their <location-prefix>, never by this.
+feature.feature webcpp-same-name : : free incidental ;
+
+if [ os.name ] = NT { .python = python ; } else { .python = python3 ; }
+.here = [ path.parent [ path.root [ path.make [ modules.binding $(__name__) ] ] [ path.pwd ] ] ] ;
+.compare = [ path.native $(.here)/compare.py ] ;
+
+# What both programs link with, whichever has the library: the linker's
+# removal of unused sections, which a C library's usage requirements give the
+# program that links it (WebAssembly's linkers remove them by default).
+.link = <target-os>darwin:<linkflags>-Wl,-dead_strip
+    <target-os>linux:<linkflags>-Wl,--gc-sections
+    <target-os>windows:<linkflags>"/OPT:REF" ;
+
+# The tag rule: an executable takes the pair's name, with the prefix and the
+# suffix its type has on the target (b2 adds none after a tag rule returns).
+rule tag ( name : type ? : property-set )
+{
+    local same = [ $(property-set).get <webcpp-same-name> ] ;
+    if $(same) && [ type.is-derived $(type) EXE ]
+    {
+        return [ virtual-target.add-prefix-and-suffix $(same) : $(type) : $(property-set) ] ;
+    }
+}
+
+# found is tools/webcpp.jam's `where`; only is the program's requirements of
+# its targets.
+rule same-program ( found + : name : sources + : library : only * : requirements * )
+{
+    local pair = $(requirements) $(only) <variant>release <debug-symbols>off
+        <toolset>msvc:<linkflags>/Brepro <toolset>msvc:<cxxflags>/Brepro
+        $(.link) <webcpp-same-name>$(name) <tag>@webcpp-same-program%tag ;
+    exe $(name)_with : $(sources) $(library) : $(pair) <location-prefix>$(name)_with ;
+    exe $(name)_without : $(sources) : $(pair) <location-prefix>$(name)_without ;
+    $(found[1]).mark-target-as-explicit $(name)_with $(name)_without ;
+    testing.make-test same-program : $(name)_with $(name)_without : $(only) : $(name) ;
+}
+
+rule compare ( target : sources * : properties * )
+{
+    PYTHON on $(target) = $(.python) ;
+    COMPARE on $(target) = $(.compare) ;
+}
+
+actions compare
+{
+    "$(PYTHON)" "$(COMPARE)" --output "$(<)" "$(>[1])" "$(>[2])"
+}
