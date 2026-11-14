@@ -48,21 +48,26 @@ def self_test() -> None:
 
 def main() -> int:
     self_test()
-    env = {k: v for k, v in os.environ.items() if k not in ('CPATH', 'CPLUS_INCLUDE_PATH', 'C_INCLUDE_PATH')}
+    unset = ('CPATH', 'CPLUS_INCLUDE_PATH', 'C_INCLUDE_PATH')
+    env = {k: v for k, v in os.environ.items() if k not in unset}
     command = ['b2', f'--user-config={ROOT}/.local/user-config.jam', '-a', '-n', '-d+2', '-j3',
                '--build-dir=' + str(ROOT / 'bin/lane-onecopy'), *sys.argv[1:],
-               'libs/crypto/test//openssl_one_copy', 'libs/crypto/test//openssl_one_copy_no_exceptions']
+               'libs/crypto/test//openssl_one_copy',
+               'libs/crypto/test//openssl_one_copy_no_exceptions']
     result = subprocess.run(command, cwd=ROOT, env=env, capture_output=True, text=True, check=False)
     if result.returncode != 0:
         print(result.stdout + result.stderr, file=sys.stderr)
         return 1
-    lines = [line for line in result.stdout.splitlines() if LINK.search(line) and ARCHIVE.search(line)]
-    # b2 prints a command on several lines; join each link command from its -o line to the next blank.
+    lines = [line for line in result.stdout.splitlines()
+             if LINK.search(line) and ARCHIVE.search(line)]
+    # b2 prints a command on several lines; join each link command from its -o line to the next
+    # blank.
     text = result.stdout
-    commands = [chunk for chunk in re.split(r'\n\s*\n', text) if LINK.search(chunk) and ARCHIVE.search(chunk)]
+    commands = [chunk for chunk in re.split(r'\n\s*\n', text)
+                if LINK.search(chunk) and ARCHIVE.search(chunk)]
     if len(commands) != 2:
-        print(f'openssl_one_copy: expected 2 link commands, found {len(commands)} ({len(lines)} lines)',
-              file=sys.stderr)
+        print(f'openssl_one_copy: expected 2 link commands, found {len(commands)} '
+              f'({len(lines)} lines)', file=sys.stderr)
         return 1
     faults = [fault for chunk in commands for fault in check_link_line(chunk)]
     for fault in faults:
