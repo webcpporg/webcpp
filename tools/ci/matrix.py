@@ -181,7 +181,8 @@ CHROME_LANES = {('asio', 'browser'), ('asio', 'browser-workers'),
                 ('cobalt', 'browser-workers'), ('cobalt', 'browser-runtime-probes'),
                 ('cobalt', 'browser-pages'), ('cobalt', 'browser-worker-pages'),
                 ('cobalt', 'browser-network-counterparts'),
-                ('document', 'js'), ('trystero', 'interop')}
+                ('document', 'js'), ('trystero', 'interop'),
+                ('webrtc', 'browser'), ('webrtc', 'interop')}
 
 # MSVC's lanes build 64-bit programs, embed their manifest with the linker and abbreviate b2's
 # paths against Windows's MAX_PATH, as xstate-cpp's green Windows jobs did. b2 abbreviates each
@@ -525,6 +526,12 @@ OWN_LANE_OPTIONS = {
         ('exception-handling=on,off', 'webcpp-beast-unsupported=error,ignore'),
     ('beast', 'browser-node', 'emscripten'):
         ('exception-handling=on,off', 'webcpp-beast-unsupported=error,ignore'),
+    # webrtc's interop lane builds its programs as the request asks: both
+    # exception settings, and in the page both unsupported policies; its browser
+    # lane builds each program with exceptions on and off itself.
+    ('webrtc', 'interop', 'native'): ('exception-handling=on,off',),
+    ('webrtc', 'interop', 'emscripten'):
+        ('exception-handling=on,off', 'webcpp-webrtc-unsupported=error,ignore'),
 }
 
 

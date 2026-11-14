@@ -7067,7 +7067,7 @@ facilities separately; a successful compile never proves runtime parity.
   controls accompany TLS application evidence. Documentation follows Diataxis
   in AsciiDoc with MrDocs API reference and executable examples.
 
-### webrtc (WebRTC data channels in Asio's model; own; implementing, increment 1 of 3)
+### webrtc (WebRTC data channels in Asio's model; own; implementing, increments 1 and 2 of 3)
 
 webcpp::webrtc is a header-only C++20 library of webcpp's own (`kind: own`,
 although it wraps libdatachannel natively) for peer connections and data
@@ -7077,7 +7077,8 @@ The owner accepted its proposal on 2026-11-14 (webcpporg/proposals#12); its
 where they differ, and `reference/plan.md` holds three increments: the
 interface, the runtime and the native implementation (built, in `libs/webrtc`,
 from one import commit of `reference/source/`), the browser implementation
-over webcpp::asio's bridge with an interop lane, and trystero on it.
+over webcpp::asio's bridge with its `browser` and `interop` lanes (built), and
+trystero on it.
 
 - **A library of its own on webcpp::asio, not a part of webcpp::beast.** The
   owner's decision of 2026-11-14: beast is a source-compatible facade of
@@ -7100,9 +7101,7 @@ over webcpp::asio's bridge with an interop lane, and trystero on it.
   (its threads, and libjuice's and usrsctp's, need preemptive threads, and its
   ICE and SCTP were never ported to WASI sockets), and no WASI host interface
   offers WebRTC. A WASI stub was rejected because it would let a program
-  compile and fail at run time. Increment 1 declares native only; until
-  increment 2 the headers that need a backend stop with `#error` on
-  emscripten.
+  compile and fail at run time.
   Source: `libraries/webrtc/openspec/changes/genesis/design.md` D3 (proposals).
 - **The native backend calls libdatachannel's C API only, so the library works
   with exceptions on and off.** The owner's decision of 2026-11-14:
@@ -7145,17 +7144,30 @@ over webcpp::asio's bridge with an interop lane, and trystero on it.
   touched on its threads. The lifetime test runs 100 rounds of destruction
   while the peer floods, clean under ThreadSanitizer.
   Source: `libraries/webrtc/openspec/changes/genesis/design.md` D7 (proposals).
-- **In the browser it will follow webcpp::beast's browser WebSocket as built:
+- **In the browser it follows webcpp::beast's browser WebSocket as built:
   one intrusive registration of the bridge per object, arrivals staged and
   charged on arrival to the receive bound, one notification posted per batch,
-  JavaScript's exceptions caught in JavaScript, and the unsupported policy in
-  an inline namespace with a propagated b2 feature.** Those patterns are
-  proved; where webrtc differs (a send refused before the browser sees it
-  leaves the channel open; several event kinds; terminal cancellation only for
-  the description operations) the design says why. The b2 feature
-  `webcpp-webrtc-unsupported` exists from increment 1.
-  Source: `libraries/webrtc/openspec/changes/genesis/design.md` D8, D11, D12
-  and D14 (proposals).
+  JavaScript's exceptions caught in JavaScript and reported by DOMException
+  name, and the unsupported policy in an inline namespace with a propagated b2
+  feature.** Those patterns are proved; where webrtc differs (a send refused
+  before the browser sees it leaves the channel open; several event kinds;
+  terminal cancellation only for the description operations, and in the
+  browser for adding a candidate, whose promise cannot be called back) the
+  design and the page say why. The page's census of `RTCPeerConnection`s,
+  kept in JavaScript until a `FinalizationRegistry` sees each collected, is
+  what `max_peer_connections` caps there.
+  Source: `libraries/webrtc/openspec/changes/genesis/design.md` D6, D8, D11,
+  D12 and D14 (proposals); `doc/browser.adoc` (libs/webrtc).
+- **The tests run on both targets: natively, on emscripten under Node with a
+  fake connection where a real one is not needed, in headless Chrome with two
+  peers in one page (the `browser` lane), and native against Chrome through a
+  local relay over webcpp::beast's WebSocket (the `interop` lane).** Chrome
+  156 offers a page with no media permission only its default-route address,
+  whatever `--allow-loopback-in-peer-connection` says, so the interop driver
+  grants the page's origin the microphone, which starts no capture, to keep
+  the exchange on 127.0.0.1; and Chrome 156 may drop messages sent just
+  before a channel is closed, which the page states as a difference.
+  Source: `doc/testing.adoc`, `test/interop/run.mjs` (libs/webrtc).
 - **`async_receive` copies one whole message into the caller's dynamic
   buffer; natively unread messages wait in libdatachannel's own queue of
   1,024, a flow control that never fails, and in the browser in a queue

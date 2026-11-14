@@ -85,7 +85,7 @@ for web developers and for AI developers (`CODING-GUIDELINES.md` chapter 16).
 | idna | internationalized domain names: Punycode, UTS 46's ToASCII and ToUnicode, conformant to IdnaTestV2, and IDNA2008's validity, over Unicode 17.0.0 tables generated into its headers; webcpp's own | native, wasip2, wasip3, emscripten; its own lane `tables` | a submodule at `libs/idna`; its errors are values, and its span forms allocate nothing |
 | lexical | the string formats JSON Schema names (date-time, email, hostname, ipv4/ipv6, uri, iri, uri-template, json-pointer, uuid, regex), each a validator that allocates nothing and a Boost.URL grammar rule; regex is an ECMA-262 syntax validator of its own, checked against V8; depends on idna and Boost.URL; webcpp's own | native, wasip2, wasip3, emscripten; its own lanes `generated` and `oracle` | a submodule at `libs/formats` |
 | trystero | a port of Trystero 0.26.0, serverless WebRTC rooms | native, emscripten; its own lanes `oracle` and `interop` | a submodule at `libs/trystero`; born with the allocation rule through `std::pmr` |
-| webrtc | WebRTC peer connections and data channels with the W3C's names in Asio's model, natively over libdatachannel's C API, with exceptions on and off; webcpp's own | native; emscripten from its increment 2 | a submodule at `libs/webrtc`; increment 1 of 3 (`CODING-GUIDELINES.md` chapter 15) |
+| webrtc | WebRTC peer connections and data channels with the W3C's names in Asio's model, natively over libdatachannel's C API and in the browser over the page's own objects, with exceptions on and off; webcpp's own | native, emscripten; its own lanes `browser` and `interop` | a submodule at `libs/webrtc`; increments 1 and 2 of 3 (`CODING-GUIDELINES.md` chapter 15) |
 
 ### The layout
 
@@ -1632,8 +1632,9 @@ jobs:
     kind `programs` on any other target, such as wasi's served lanes, has
     none.
   - An own lane whose driver meets a browser, one of `CHROME_LANES` in
-    `tools/ci/matrix.py` (trystero's `interop`, natively and on emscripten,
-    document's `js`, and asio's `browser`),
+    `tools/ci/matrix.py` (trystero's and webrtc's `interop`, natively and on
+    emscripten, document's `js`, webrtc's `browser`, and the browser lanes of
+    asio, beast and cobalt),
     has its entry's `chrome`, and its job runs the `chrome` action, which
     gives it `CHROME`, a pinned Chrome rather than the image's, which moves
     with the image, so that a red interop lane is never a browser nobody

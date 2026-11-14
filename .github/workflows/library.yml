@@ -332,6 +332,17 @@ jobs:
             libs/beast/test/browser/peer//native_peer-program \
             toolset=clang-18 threading=multi -j2
 
+      # webrtc's interop lane on emscripten drives the page against the native
+      # peer and relay, which its driver finds under bin/ (test/interop/run.mjs).
+      - name: Build the native webrtc interoperability peer
+        if: matrix.library == 'webrtc' && matrix.lane == 'interop' && matrix.platform == 'emscripten'
+        shell: bash
+        run: |
+          python3 tools/ci/matrix.py register clang-18
+          b2 --user-config=.local/user-config.jam \
+            libs/webrtc/test/interop//native-program \
+            toolset=clang-18 threading=multi -j2
+
       # This embedding adds a private test CA through Wasmtime's supported host hook.
       # Stock Wasmtime uses its bundled public roots and has no CLI test-CA option.
       - name: Restore the isolated WASI HTTPS host fixture

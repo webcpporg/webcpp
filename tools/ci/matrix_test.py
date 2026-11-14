@@ -1250,8 +1250,8 @@ def test_cobalt_browser_lanes_receive_chrome_and_all_profiles(root):
 
 
 def test_a_browser_lane_has_the_pinned_chrome(root):
-    # An own lane whose driver meets a browser, asio's browser, trystero's interop and document's js
-    # (CHROME_LANES), says chrome, on every target it runs on, and its job installs the pinned
+    # An own lane whose driver meets a browser, asio's browser, trystero's interop, document's js
+    # and webrtc's browser and interop (CHROME_LANES), says chrome, on every target it runs on, and its job installs the pinned
     # chrome-headless-shell, which gives CHROME; no other own lane does, and no job names the
     # image's Chrome.
     assert matrix.CHROME_LANES == {
@@ -1262,7 +1262,7 @@ def test_a_browser_lane_has_the_pinned_chrome(root):
         ('cobalt', 'browser-workers'), ('cobalt', 'browser-runtime-probes'),
         ('cobalt', 'browser-pages'), ('cobalt', 'browser-worker-pages'),
         ('cobalt', 'browser-network-counterparts'), ('document', 'js'),
-        ('trystero', 'interop')}, matrix.CHROME_LANES
+        ('trystero', 'interop'), ('webrtc', 'browser'), ('webrtc', 'interop')}, matrix.CHROME_LANES
     boost_only(root)
     external_library(root)
     oracle_library(root, 'beta')
