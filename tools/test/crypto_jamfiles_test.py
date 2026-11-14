@@ -16,6 +16,7 @@ target."""
 from __future__ import annotations
 
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -30,12 +31,20 @@ TOOLSETS = {'native': [], 'wasip2': ['toolset=clang-wasip2'], 'wasip3': ['toolse
             'emscripten': ['toolset=emscripten']}
 SYSTEM = {'Linux': 'linux', 'Darwin': 'darwin', 'Windows': 'windows'}[platform.system()]
 
-# Cases whose outcome needs code that is not merged yet; a run without names leaves them out,
-# a run that names one builds it. Each entry names what it waits for.
+# Cases whose outcome needs code that is not merged yet: a run without names leaves them out
+# (and says so), a run that names one builds it. Each entry names what it waits for. The
+# integrator empties it when the code it waits for is merged.
 NOT_YET = {
     'has_openssl_on_emscripten': 'the refusal in config.hpp (Task 6)',
     'default_openssl_on_emscripten': 'the refusal in config.hpp (Task 6)',
 }
+
+BLOCKS = {'all', 'native', 'native-linux', 'native-darwin', 'native-windows', 'wasip2', 'wasip3',
+          'emscripten'}
+
+
+class OutcomeError(Exception):
+    """An outcome file or a case directory that does not follow the format."""
 
 
 def launcher(target: str) -> Path:
@@ -47,28 +56,48 @@ def launcher(target: str) -> Path:
 class Outcome:
     """What an outcome file says for one target."""
     targets: list[str] = field(default_factory=lambda: ['native'])
-    succeeds: bool = True
+    succeeds: bool | None = None
     run: str | None = None
     lines: list[str] = field(default_factory=list)
     arguments: list[str] = field(default_factory=list)
 
 
 def outcome(path: Path, target: str) -> Outcome:
-    """The blocks of path that apply to target on this system, read into an Outcome."""
+    """The blocks of path that apply to target on this system, read into an Outcome. Every line
+    of the file is checked, whether its block applies or not, and so is the outcome that results
+    when target is one the case is built for (checked)."""
     applying = {'all', target} | ({'native', 'native-' + SYSTEM} if target == 'native' else set())
     result = Outcome()
     block = None
-    for raw in path.read_text().splitlines():
+    for number, raw in enumerate(path.read_text().splitlines(), 1):
+        where = f'{path.name}:{number}'
         if not raw.strip() or raw.startswith('#'):
             continue
         if raw.startswith('[') and raw.endswith(']'):
             block = raw[1:-1]
+            if block not in BLOCKS:
+                raise OutcomeError(f'{where}: no block [{block}]; the blocks are {sorted(BLOCKS)}')
             continue
         if block is None:
-            raise SystemExit(f'{path}: a line before the first [block]: {raw!r}')
+            raise OutcomeError(f'{where}: a line before the first [block]: {raw!r}')
+        directive = re.match(r'([a-z]+):(?: |$)', raw)
+        key, value = (directive.group(1), raw[directive.end():]) if directive else ('', raw)
+        if key and key not in ('targets', 'build', 'run', 'arguments'):
+            raise OutcomeError(f'{where}: no directive {key}: (a line of one lowercase word and '
+                               f'a colon is reserved for them): {raw!r}')
+        if key in ('targets', 'arguments') and not value.split():
+            raise OutcomeError(f'{where}: {key}: names nothing')
+        if key == 'targets':
+            unknown = [t for t in value.split() if t not in TOOLSETS]
+            if unknown:
+                raise OutcomeError(
+                    f'{where}: no target {unknown}; the targets are {list(TOOLSETS)}')
+        elif key == 'build' and value not in ('succeeds', 'fails'):
+            raise OutcomeError(f'{where}: build: is succeeds or fails, not {value!r}')
+        elif key == 'run' and not value:
+            raise OutcomeError(f'{where}: run: names no program')
         if block not in applying:
             continue
-        key, _, value = raw.partition(': ')
         if key == 'targets':
             result.targets = value.split()
         elif key == 'build':
@@ -79,7 +108,40 @@ def outcome(path: Path, target: str) -> Outcome:
             result.arguments += value.split()
         else:
             result.lines.append(raw)
+    if target in result.targets:
+        checked(path, target, result)
     return result
+
+
+def checked(path: Path, target: str, result: Outcome) -> None:
+    """Raises an OutcomeError naming path and target unless result is coherent: a build is said
+    to succeed or fail; a failure has lines to find and no program to run; a success that
+    prints lines has a program."""
+    if result.succeeds is None:
+        raise OutcomeError(f'{path.name} on {target}: no build: line')
+    if not result.succeeds and result.run is not None:
+        raise OutcomeError(f'{path.name} on {target}: run: after build: fails')
+    if not result.succeeds and not result.lines:
+        raise OutcomeError(f'{path.name} on {target}: build: fails with no line to find')
+    if result.succeeds and result.run is None and result.lines:
+        raise OutcomeError(f'{path.name} on {target}: lines after build: succeeds, with no run:')
+
+
+def case_directories() -> list[Path]:
+    """Every directory of CASES, each with its one outcome file named after it, and every
+    outcome file read for every target (so each line of each block is checked), else an
+    OutcomeError."""
+    cases = sorted(p for p in CASES.iterdir() if p.is_dir())
+    for case in cases:
+        found = sorted(p.name for p in case.glob('*.outcome'))
+        if found != [case.name + '.outcome']:
+            raise OutcomeError(f'{case.name}: the outcome files are {found}; '
+                               f'the one is {case.name}.outcome')
+        if not (case / 'Jamfile').is_file():
+            raise OutcomeError(f'{case.name}: no Jamfile')
+        for target in TOOLSETS:
+            outcome(case / f'{case.name}.outcome', target)
+    return cases
 
 
 def program_command(build_dir: Path, case: str, name: str, target: str) -> list[str]:
@@ -88,7 +150,7 @@ def program_command(build_dir: Path, case: str, name: str, target: str) -> list[
     suffix = {'native': '.exe' if SYSTEM == 'windows' else '', 'wasip2': '.wasm',
               'wasip3': '.wasm', 'emscripten': '.js'}[target]
     found = [p for p in build_dir.rglob(name + suffix)
-             if p.is_file() and f'user/{case}/' in p.relative_to(build_dir).as_posix() + '/']
+             if p.is_file() and f'user/{case}/' in p.relative_to(build_dir).as_posix()]
     if len(found) != 1:
         raise AssertionError(f'the build made {len(found)} files named {name}{suffix}')
     if target == 'emscripten':
@@ -98,16 +160,12 @@ def program_command(build_dir: Path, case: str, name: str, target: str) -> list[
     return [str(found[0])]
 
 
-def selected(names: list[str], target: str) -> list[Path]:
-    """The case directories to build for target: the named ones, else every one that is not in
-    NOT_YET, each that its outcome file's targets line names target for."""
-    cases = []
-    for case in sorted(p.parent for p in CASES.glob('*/*.outcome')):
-        if (names and case.name not in names) or (not names and case.name in NOT_YET):
-            continue
-        if target in outcome(next(case.glob('*.outcome')), target).targets:
-            cases.append(case)
-    return cases
+def selected(cases: list[Path], names: list[str], target: str) -> list[Path]:
+    """The cases to build for target: the named ones, else every one that is not in NOT_YET,
+    each that its outcome file's targets line names target for."""
+    return [case for case in cases
+            if (case.name in names if names else case.name not in NOT_YET)
+            and target in outcome(case / f'{case.name}.outcome', target).targets]
 
 
 def run_target(root: Path, target: str, cases: list[Path]) -> list[str]:
@@ -115,12 +173,12 @@ def run_target(root: Path, target: str, cases: list[Path]) -> list[str]:
     faults: list[str] = []
     build_dir = root / 'bin' / f'user-{target}'
     for case in cases:
-        expected = outcome(next(case.glob('*.outcome')), target)
+        expected = outcome(case / f'{case.name}.outcome', target)
         scratch = root / 'scratch' / case.name
         scratch.mkdir(parents=True, exist_ok=True)
         arguments = [a.replace('@scratch', str(scratch)) for a in expected.arguments]
-        launch = [f'testing.launcher={launcher(target)}'] if target.startswith('wasi') else []
-        built = harness.run_b2(root, f'--build-dir={build_dir}', *TOOLSETS[target], *launch,
+        # No testing.launcher: a user's exe is run by this test, not by b2.
+        built = harness.run_b2(root, '-j3', f'--build-dir={build_dir}', *TOOLSETS[target],
                                *arguments, f'user/{case.name}')
         output = built.stdout
         if (built.returncode == 0) != expected.succeeds:
@@ -128,11 +186,16 @@ def run_target(root: Path, target: str, cases: list[Path]) -> list[str]:
                           f'{"succeeded" if built.returncode == 0 else "failed"}\n{output[-3000:]}')
             continue
         if not expected.succeeds:
-            faults += [f'{case.name} on {target}: b2 did not print: {line}'
-                       for line in expected.lines if line not in output]
+            printed = {line.rstrip() for line in output.splitlines()}
+            faults += [f'{case.name} on {target}: b2 printed no line {line!r}'
+                       for line in expected.lines if line.rstrip() not in printed]
             continue
         if expected.run is not None:
-            command = program_command(build_dir, case.name, expected.run, target)
+            try:
+                command = program_command(build_dir, case.name, expected.run, target)
+            except AssertionError as error:
+                faults.append(f'{case.name} on {target}: {error}')
+                continue
             ran = subprocess.run(command, capture_output=True, text=True, check=False)
             printed = ran.stdout.replace('\r\n', '\n').splitlines()
             if ran.returncode != 0 or printed != expected.lines:
@@ -144,17 +207,32 @@ def run_target(root: Path, target: str, cases: list[Path]) -> list[str]:
 def main(argv: list[str]) -> int:
     targets = list(TOOLSETS)
     if '--target' in argv:
-        targets = [argv[argv.index('--target') + 1]]
-        argv = [a for a in argv if a not in ('--target', targets[0])]
-        if targets[0] not in TOOLSETS:
-            raise SystemExit(f'crypto_jamfiles: no target {targets[0]}; '
-                             f'the targets are {list(TOOLSETS)}')
+        position = argv.index('--target')
+        if position + 1 >= len(argv) or argv[position + 1] not in TOOLSETS:
+            print(f'crypto_jamfiles: --target takes one of {list(TOOLSETS)}', file=sys.stderr)
+            return 2
+        targets = [argv[position + 1]]
+        argv = argv[:position] + argv[position + 2:]
     names = [a for a in argv if not a.startswith('--')]
+    try:
+        cases = case_directories()
+    except OutcomeError as error:
+        print(f'crypto_jamfiles: {error}', file=sys.stderr)
+        return 2
+    missing = [n for n in names if n not in {c.name for c in cases}]
+    if missing:
+        print(f'crypto_jamfiles: no case named {missing}', file=sys.stderr)
+        return 2
+    if not names and NOT_YET:
+        for case, reason in NOT_YET.items():
+            print(f'left out until {reason}: {case}')
     faults: list[str] = []
+    built = 0
     for target in targets:
-        cases = selected(names, target)
-        if not cases:
+        chosen = selected(cases, names, target)
+        if not chosen:
             continue
+        built += len(chosen)
         started = time.monotonic()
         root = harness.scratch_superproject()
         try:
@@ -164,10 +242,12 @@ def main(argv: list[str]) -> int:
                 harness.link_emsdk(root)
             elif target.startswith('wasi'):
                 harness.link_wasi_tools(root)
-            faults += run_target(root, target, cases)
+            faults += run_target(root, target, chosen)
         finally:
             shutil.rmtree(root)
         print(f'{target}: done in {time.monotonic() - started:.0f} s')
+    if not built:
+        faults.append(f'no case was built for {targets}; nothing was tested')
     for fault in faults:
         print(f'crypto_jamfiles: {fault}', file=sys.stderr)
     print('crypto_jamfiles_test: ' + ('failed' if faults else 'ok'))

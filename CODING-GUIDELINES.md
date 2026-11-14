@@ -101,6 +101,7 @@ Not built yet:
     `tools/test/oracle_jam_test.py`, `tools/test/generated_jam_test.py`,
     `tools/test/component_jam_test.py`, `tools/generated/generated_test.py`,
     `tools/test/emscripten_test.py`, `tools/test/crypto_jamfiles_test.py`,
+    `tools/test/crypto_jamfiles_format_test.py`,
     `tools/test/external_test.py`,
     `tools/test/doc_test.py`,
     `tools/test/harness_test.py`, `tools/test/third_party_test.py`,
@@ -587,9 +588,11 @@ aliases, concepts, variables, data members and macros.
   `[emscripten]` applies by the target and the system (`[all]` and each block
   that matches apply). `targets: <target> ...` (native only without it) names
   the targets the case is built for; `build: succeeds` or `build: fails` is
-  b2's exit status; after `build: fails` every other line must appear whole in
-  b2's output, in any order; `run: <program>`, after `build: succeeds`, runs
-  the program as its lane runs one and every other line is its standard
+  b2's exit status; after `build: fails` every other line must be a whole line
+  of b2's output (trailing spaces aside), in any order; a line of one
+  lowercase word and a colon is reserved for these directives;
+  `run: <program>`, after `build: succeeds`, runs the program as its lane runs
+  one and every other line is its standard
   output, exactly; `arguments: <word> ...` gives b2 words for this case alone
   (`@scratch` is the case's scratch directory). The fixtures sit outside
   `libs/*/test/`, so the raw-rules lint does not apply to them. The tools job

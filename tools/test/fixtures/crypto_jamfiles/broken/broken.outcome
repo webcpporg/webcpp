@@ -6,4 +6,4 @@
 
 [all]
 build: fails
-broken on purpose
+    7 | #error "broken on purpose"
