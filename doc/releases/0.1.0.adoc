@@ -126,6 +126,8 @@ JSON Schema Test Suite, which a test reads on every target through
 target through `/webcpp/third_party//wycheproof`.
 * Added libsecp256k1 v0.8.0 to `third_party/`, built from source as
 `/third_party//secp256k1`, its tables chosen by `webcpp-secp256k1-tables`.
+* Added bitcoin/bips to `third_party/`, whose BIP340 vectors a test reads on every
+target through `/third_party//bips`.
 * Changed the lint to never read third-party code under `third_party/libs/`.
 * Added `webcpp.generated`, which checks a library's generated files against
 their Python generator, and `update-generated`, their only writer.

@@ -63,3 +63,7 @@
 [submodule "third_party/libs/secp256k1"]
 	path = third_party/libs/secp256k1
 	url = https://github.com/bitcoin-core/secp256k1.git
+[submodule "third_party/libs/bips"]
+	path = third_party/libs/bips
+	url = https://github.com/bitcoin/bips.git
+	shallow = true

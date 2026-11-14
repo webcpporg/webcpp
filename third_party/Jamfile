@@ -105,6 +105,31 @@ alias wycheproof : : <conditional>@wycheproof-checked-out : :
     <dependency>$(.wycheproof-files) ;
 explicit wycheproof ;
 
+# bitcoin/bips (BSD-2-Clause, as BIP340's header states), shallow: test data,
+# never compiled. A test that names bips reads BIP340's
+# bip-0340/test-vectors.csv from the directory WEBCPP_TEST_BIPS names, with
+# forward slashes, the directory given to wasmtime on WASI (webcpp.data), and
+# runs again when the file changes.
+path-constant BIPS : libs/bips ;
+.bips = [ regex.replace $(BIPS) "\\\\" "/" ] ;
+.bips-files = [ glob libs/bips/bip-0340/test-vectors.csv ] ;
+
+rule bips-checked-out ( properties * )
+{
+    if ! [ path.exists [ path.native $(BIPS)/bip-0340/test-vectors.csv ] ]
+    {
+        errors.user-error "third_party/libs/bips is not checked out: it holds no"
+            "bip-0340/test-vectors.csv. Check it out with `git submodule update --init"
+            "third_party/libs/bips`." ;
+    }
+}
+
+alias bips : : <conditional>@bips-checked-out : :
+    <define>"\"WEBCPP_TEST_BIPS=\\\"$(.bips)\\\"\""
+    [ webcpp.data $(BIPS) ]
+    <dependency>$(.bips-files) ;
+explicit bips ;
+
 # OpenSSL uses its upstream Configure/Make source manifest. The bridge emits
 # static archives and matching generated headers in B2's variant directory.
 import webcpp-openssl ;
