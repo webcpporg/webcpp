@@ -908,7 +908,7 @@ update --init third_party/libs/<name>`; a build that needs none never looks.
 | --- | --- | --- |
 | `ca_certificates` | Dated Mozilla/curl CA data snapshot under `third_party/ca_certificates`, verified against its manifest and embedded by a build-generated header; updated explicitly by `tools/ca_certificates/update.py` | MPL-2.0 |
 | `libdatachannel` | libdatachannel 0.24.6 at `6b1e2e620f1e37f0eafeee702eaea0043cb305fd`, with pinned libjuice, libsrtp, plog and usrsctp sources; static native archives built by upstream CMake through B2 against the same source-built OpenSSL | MPL-2.0 and the nested dependencies' own licences |
-| `openssl` | OpenSSL 3.5.9 at `45e844fa2a14ec92d146bd8f5778ac130b6625fb`; static libssl/libcrypto and matching generated headers, built by upstream Configure/Make through B2 for native Clang/GCC/MSVC and WASIp3 | Apache-2.0 |
+| `openssl` | OpenSSL 3.5.9 at `45e844fa2a14ec92d146bd8f5778ac130b6625fb`; static libssl/libcrypto and matching generated headers, built by upstream Configure/Make through B2 for native Clang/GCC/MSVC, WASIp2 single and WASIp3 single/cooperative | Apache-2.0 |
 | `json-schema-test-suite` | the JSON Schema Test Suite at `5b0ee16` (2026-09-21), test data: a test that names it reads the suite at run time from the directory its define `WEBCPP_TEST_JSON_SCHEMA_TEST_SUITE` gives, on every target (wasmtime is given it, `webcpp.data`), and runs again when a file of the suite changes | MIT |
 | `nativejson-benchmark` | Milo Yip's nativejson-benchmark at `478d572` (2022-10-28), test data: document's benchmarks (`libs/document/bench`) read its `data/canada.json`, `data/citm_catalog.json` and `data/twitter.json` at run time under the directory its define `WEBCPP_TEST_NATIVEJSON_BENCHMARK` gives, on every target (wasmtime is given it, `webcpp.data`), and run again when one of them changes; its own submodules are never checked out | MIT |
 | `wycheproof` | C2SP's Wycheproof at `12fd3aaf` (2026-10-06), shallow, test data: crypto's tests read its `testvectors_v1/` at run time under the directory its define `WEBCPP_TEST_WYCHEPROOF` gives, on every target (wasmtime is given it, `webcpp.data`), and run again when one of its files changes | Apache-2.0 |
@@ -6726,7 +6726,8 @@ supersedes the temporary system-OpenSSL choice; it does not reopen every rule.
 - Plain `/webcpp/cobalt//core` omits SSL; the explicit
   `/webcpp/cobalt//io_ssl` supplies the corrected native or WASI wrapper.
 - The former shared system OpenSSL/native-only bridge is superseded by the
-  pinned static source provider on native and WASIp3, without waiting for crypto.
+  pinned static source provider on native, WASIp2 single and WASIp3, without
+  waiting for crypto.
   Chapter 5 rule 7 retains its Configure/Make and exact-archive canary exception.
 - Dedicated no-exceptions programs and local complete suites run natively;
   the general CI-level expansion remains chapter 16 work. Do not mistake those
@@ -7197,8 +7198,10 @@ C17, and `brew install botan`) and G4 (every push).
 **Provider amendment, 2026-11-03.** The owner's explicit source-build request
 supersedes this accepted design's old OpenSSL provisioning and default-link
 choices (D15 and reference sections 3.3/4.4). Future crypto uses the shared
-pinned `/webcpp/third_party//openssl` provider, whose current support is native
-and WASIp3, static, with chapter 5 rule 7's exact-archive boundary. Statements
+pinned `/webcpp/third_party//openssl` provider, whose current support is
+native, WASIp2 single and WASIp3, static, with chapter 5 rule 7's exact-archive
+boundary, and which crypto names through its own alias
+`/webcpp/crypto//openssl`. Statements
 below about finding a machine OpenSSL, refusing all WebAssembly or defaulting
 to shared linkage record the older design, not current provider requirements.
 Botan's provisioning, future algorithms, APIs and explicit allocator policy
@@ -7499,12 +7502,13 @@ are unchanged. No crypto implementation or new backend coverage is claimed.
   (`br_gcm_context::bctx`).
   Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
   section 3.2 (proposals).
-- **OpenSSL is the machine's libcrypto, 3.0 or later, found and never built,
-  native only, and its header stops with an `#error` on an older version.**
-  Version 3 is needed for `EVP_CIPHER_fetch`, and no OpenSSL for WASI or
-  Emscripten exists in webcpp's tree.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 3.3 (proposals).
+- **OpenSSL is the superproject's source-built OpenSSL 3.5.9, static, named
+  through `/webcpp/crypto//openssl`, which gives `WEBCPP_CRYPTO_HAS_OPENSSL` on
+  native, wasip2 and wasip3 and refuses Emscripten by a forced `#error`; the
+  backend's header stops with an `#error` when it is not linked or older than
+  3.0.** Version 3 is needed for `EVP_CIPHER_fetch`; the alias follows asio's,
+  and OpenSSL has no canary (chapter 5 rule 7).
+  Source: `libs/crypto/build.jam`, `tools/webcpp-openssl.jam` (superproject).
 - **OpenSSL is given the key once, in `make`, webcpp keeps no copy of it, each
   message re-initialises the same context with a null key, and lengths are fed
   in pieces of at most `INT_MAX` rounded down to a multiple of 16.** A null
@@ -7580,7 +7584,7 @@ are unchanged. No crypto implementation or new backend coverage is claimed.
   (proposals).
 - **The backends' page and `gcm`'s page warn that natively without OpenSSL
   BearSSL is 30 to 62 times slower than OpenSSL on ARM, and that a server on
-  ARM names `/third_party//openssl`.** BearSSL has no ARMv8 AES or PMULL code.
+  ARM names `/webcpp/crypto//openssl`.** BearSSL has no ARMv8 AES or PMULL code.
   Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
   section 5 (proposals).
 
@@ -7660,8 +7664,8 @@ are unchanged. No crypto implementation or new backend coverage is claimed.
 
 - **`<define>WEBCPP_CRYPTO_OPENSSL_MEMORY_RESOURCE`, native only, sends every
   allocation of OpenSSL in the process to a `std::pmr::memory_resource`; the
-  program gives it with `<library>/third_party//openssl` in its project's
-  requirements, and `config.hpp` refuses it on WebAssembly and without OpenSSL
+  program gives it with `/webcpp/crypto//openssl` in its project's
+  requirements, and `config.hpp` refuses it on Emscripten and without OpenSSL
   linked.** The owner's decision of 2026-10-11 made `CRYPTO_set_mem_functions`
   an option of the config, so that a program that wants OpenSSL's allocations
   in its own allocator can say so; the library beside the define keeps every
@@ -7786,31 +7790,22 @@ are unchanged. No crypto implementation or new backend coverage is claimed.
   ODR violation into LNK2038.
   Source: `libraries/crypto/openspec/changes/genesis/design.md` D14
   (proposals).
-- **OpenSSL and Botan are found by `webcpp.external` (`-s<NAME>_ROOT`, then
+- **Botan is found by `webcpp.external` (`-s<NAME>_ROOT`, then
   `.local/<name>`, then the system), declared in `libs/crypto/build.jam`; a
   user's program that names a missing one stops the build with three ways out,
-  a WebAssembly build that names one stops before compiling, and only webcpp's
-  own tests and examples, marked by the incidental feature `webcpp-own`, are
-  left out.** A program that names `/third_party//openssl` has asked for it
+  and a WebAssembly build that names one stops before compiling (later work,
+  increment 5).** A program that names a backend has asked for it
   (the owner's decision of 2026-10-11); the index's "left out" reads every
   library's `build.jam`, while `third_party/Jamfile` loads only when a target
   names it.
   Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
   section 4.4 (proposals).
-- **OpenSSL's link, shared or static, is the propagated feature
-  `webcpp-crypto-openssl-link`, shared by default (`webcpp-crypto-botan-link`
-  for Botan), and libssl and libcrypto follow it as one target.** A header
-  cannot change how a program is linked, so the feature carries the owner's
-  choice, which the owner confirmed on 2026-10-11; one target keeps a process from
-  holding two copies of libcrypto.
-  Source: `libraries/crypto/openspec/changes/genesis/design.md` D15
-  (proposals).
 - **One copy per program: webcpp's build of a C library is never linked with
   another copy of it, trystero leaves its external libsecp256k1 in the change
-  that names `/third_party//secp256k1`, and asio's OpenSSL moves onto
-  `/third_party//openssl`.** libsecp256k1's tables are global symbols; a
-  process with two copies of libcrypto has two memory hooks, and the install
-  sets only the one webcpp's backend calls.
+  that names `/third_party//secp256k1`, and asio and crypto name the one
+  source-built OpenSSL.** libsecp256k1's tables are global symbols; two
+  copies of libcrypto would be two error queues and two allocation hooks in
+  one process.
   Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
   sections 3.5, 3.7 and 4.5 (proposals).
 - **Every error case of the build has a directory of its own.** b2 shares one
@@ -7823,10 +7818,10 @@ are unchanged. No crypto implementation or new backend coverage is claimed.
 
 - **The library targets native (Linux x86-64 and arm64, macOS arm64, Windows
   with MSVC), wasip2, wasip3 and Emscripten, and each backend runs where its
-  library exists: BearSSL, ctaes and libsecp256k1 on every target, OpenSSL and
-  Botan natively only; a Botan WebAssembly build is a later increment's.** The
-  rulebook's targets; no OpenSSL or Botan for WebAssembly exists that webcpp's
-  build can find.
+  library exists: BearSSL, ctaes and libsecp256k1 on every target, OpenSSL on
+  native, wasip2 and wasip3, Botan natively only; a Botan WebAssembly build is
+  a later increment's.** The rulebook's targets; webcpp builds no OpenSSL for
+  Emscripten and no Botan for WebAssembly.
   Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
   section 3.1 (proposals).
 - **On Windows `/webcpp/crypto//crypto` adds `bcrypt` to its usage

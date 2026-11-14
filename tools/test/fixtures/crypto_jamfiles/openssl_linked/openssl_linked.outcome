@@ -1,0 +1,5 @@
+[all]
+targets: native wasip2 wasip3
+build: succeeds
+run: app
+HAS_OPENSSL=1
