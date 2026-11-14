@@ -8425,38 +8425,48 @@ what is coming, and its proposal holds it in full.
 webcpp::webrtc would be a header-only C++20 library of webcpp's own
 (`kind: own`, although it wraps libdatachannel natively) for peer connections
 and data channels, shaped as the W3C WebRTC API in Asio's model, on native
-(libdatachannel 0.24.6) and Emscripten (the browser's objects), media out of
-scope, replacing trystero's `backend` in a later change. What exists is the
-draft specification of 2026-10-10 (`reference/spec.md`), with the owner's
-decisions and the controller's rulings on a review; there is no plan and no
-reference code, and both are required before the proposal can be accepted.
+(libdatachannel 0.24.6, through its C API) and Emscripten (the browser's
+objects, through webcpp::asio's bridge), media out of scope, replacing the
+WebRTC of trystero's `backend` in a later change. Its draft was revised on
+2026-11-14: `design.md` supersedes the specification of 2026-10-10
+(`reference/spec.md`) where they differ; `reference/plan.md` holds three
+increments, and `reference/source/` holds increment 1, the interface and the
+native implementation, whose tests pass against the pinned libdatachannel, as
+the build asks, without exceptions and under ThreadSanitizer.
 
+- **A library of its own on webcpp::asio, not a part of webcpp::beast.** The
+  owner's decision of 2026-11-14: beast is a source-compatible facade of
+  Boost.Beast and WebRTC has no Boost counterpart; libdatachannel and its
+  threads would burden every beast user; beast targets WASIp2/P3, where WebRTC
+  has no stack; and beast's D6 already foresees a WebRTC channel's byte stream
+  as an opt-in next layer, so beast would use webrtc, never the reverse.
+  Source: `libraries/webrtc/openspec/changes/genesis/design.md` D1 (proposals).
 - **The interface carries the W3C names and shapes (`peer_connection`,
   `data_channel`, `session_description`, `ice_candidate`, the `RTC*`
   enumerations in snake case) in Asio's model: `async_*` operations with any
-  completion token, the executor and the allocator as template parameters
-  defaulting to `boost::asio::any_io_executor` and
-  `std::allocator<std::byte>`, inputs as views and outputs owned.** The
-  owner's decision of 2026-10-10, so that a program, trystero first, is
-  written once and runs natively and in a browser.
-  Source: `libraries/webrtc/openspec/changes/genesis/design.md` D2
-  (proposals).
-- **Its targets are native and Emscripten, and the convenience header stops
-  with an `#error` under `__wasi__` that names the reason.** libdatachannel
-  needs threads, which neither WASI target gives, and a UDP socket layer and a
-  DTLS stack it has no WASI port of, and Boost.Asio does not build for WASI
-  with the pinned wasi-sdk; a WASI stub was rejected because it would let a
-  program compile and fail at run time.
-  Source: `libraries/webrtc/openspec/changes/genesis/design.md` D3
-  (proposals).
-- **The native backend exists only with exceptions: its headers declare
-  nothing under `WEBCPP_WEBRTC_NO_EXCEPTIONS`, and inside it every call into
-  libdatachannel that may throw is caught and becomes a value; the Emscripten
-  backend works with exceptions on and off.** libdatachannel reports errors by
-  throwing, and the rulebook's rule for a header that wraps a throwing
-  dependency then applies.
-  Source: `libraries/webrtc/openspec/changes/genesis/design.md` D4
-  (proposals).
+  completion token, the executor (default `webcpp::asio::any_io_executor`) and
+  the allocator as template parameters, inputs as views and outputs owned.**
+  The owner's decision of 2026-10-10, so that a program, trystero first, is
+  written once and runs natively and in a browser; webcpp::asio's name is the
+  type the browser implementation shares with the program's io_context.
+  Source: `libraries/webrtc/openspec/changes/genesis/design.md` D2 (proposals).
+- **Its targets are native and Emscripten, and its configuration stops with an
+  `#error` under WASI that names the reason.** libdatachannel has no WASI port
+  (its threads, and libjuice's and usrsctp's, need preemptive threads, and its
+  ICE and SCTP were never ported to WASI sockets), and no WASI host interface
+  offers WebRTC; Boost.Asio itself runs on WASIp2/P3 now, so that is no longer
+  a reason. A WASI stub was rejected because it would let a program compile and
+  fail at run time.
+  Source: `libraries/webrtc/openspec/changes/genesis/design.md` D3 (proposals).
+- **The native backend calls libdatachannel's C API only, so the library works
+  with exceptions on and off on both targets.** The owner's decision of
+  2026-11-14: libdatachannel throws and cannot be built without exceptions, but
+  every function of its C API catches them and returns a negative code, so a
+  program built with `-fno-exceptions` uses it (measured); the C++ API, which
+  would leave a program without exceptions with no native backend, was
+  rejected. The cost is a copy and an allocation per received message inside
+  libdatachannel, to be measured.
+  Source: `libraries/webrtc/openspec/changes/genesis/design.md` D4 (proposals).
 - **Events are pending operations the caller re-arms
   (`async_wait_ice_candidate`, `async_wait_state_change`,
   `async_accept_data_channel`, `async_receive` and their kin), one wait of a
@@ -8464,61 +8474,56 @@ reference code, and both are required before the proposal can be accepted.
   pending.** This keeps every handler on the executor and every lifetime in
   the caller's hands, as an acceptor's `async_accept`; callbacks, and one wait
   returning a variant of events, were rejected.
-  Source: `libraries/webrtc/openspec/changes/genesis/design.md` D5
-  (proposals).
-- **A `runtime` the program owns holds libdatachannel's process-wide state, at
-  most one at a time natively, made before any connection and destroyed after
-  the last, and enforces `max_peer_connections` (default 256) on both
-  targets.** webcpp keeps no global or static mutable state, and
-  libdatachannel's threads must be stopped through `Cleanup()` before static
-  destruction; a hidden singleton (static state) and a per-connection cap (it
-  cannot see the page) were rejected, and 256 is half of Chromium's 500 per
-  page.
-  Source: `libraries/webrtc/openspec/changes/genesis/design.md` D6
-  (proposals).
-- **`async_receive` copies one whole message once into the caller's dynamic
-  buffer; natively unread messages wait in libdatachannel's own bounded queue,
+  Source: `libraries/webrtc/openspec/changes/genesis/design.md` D5 (proposals).
+- **A `runtime` the program owns holds libdatachannel's process-wide state,
+  one at a time natively as a stated precondition, made before any connection
+  and destroyed after the last, and enforces `max_peer_connections` (default
+  256) on both targets.** webcpp keeps no global or static mutable state, so a
+  second runtime cannot be detected; 256 is half of Chromium's 500 per page.
+  Source: `libraries/webrtc/openspec/changes/genesis/design.md` D6 (proposals).
+- **libdatachannel's callbacks copy and post through a weak pointer, and
+  destruction calls `rtcDelete*`, which waits for the callbacks in flight.**
+  libdatachannel documents that wait; nothing of the user's allocator is
+  touched on its threads.
+  Source: `libraries/webrtc/openspec/changes/genesis/design.md` D7 (proposals).
+- **In the browser it follows webcpp::beast's browser WebSocket as built: one
+  intrusive registration of the bridge per object, arrivals staged and charged
+  on arrival to the receive bound, one notification posted per batch,
+  JavaScript's exceptions caught in JavaScript, and the unsupported policy in
+  an inline namespace with a propagated b2 feature.** Those patterns are
+  proved; where webrtc differs (a send refused before the browser sees it
+  leaves the channel open; several event kinds; terminal cancellation only for
+  the description operations) the design says why.
+  Source: `libraries/webrtc/openspec/changes/genesis/design.md` D8, D11, D12 and
+  D14 (proposals).
+- **`async_receive` copies one whole message into the caller's dynamic
+  buffer; natively unread messages wait in libdatachannel's own queue of 1,024,
   a flow control that never fails, and in the browser in a queue bounded by
-  `max_received_bytes`, past which the channel closes with
-  `receive_overflow`.** In the browser the bytes must leave the JavaScript
-  heap anyway and natively `rtc::binary` is a `std::vector` in
-  libdatachannel's allocator, so the one copy is the one that puts them under
-  the user's allocator; the browser has no flow control on receipt.
-  Source: `libraries/webrtc/openspec/changes/genesis/design.md` D8
-  (proposals).
+  `max_received_bytes`.** Measured on 2026-11-14: a native channel never read,
+  once its queue is full, stalls its connection's other channels until it is
+  read or destroyed; the documentation tells a program to read or close every
+  channel, and closing or destroying a channel drains its queue.
+  Source: `libraries/webrtc/openspec/changes/genesis/design.md` D9 (proposals).
+- **libdatachannel is the superproject's pinned, source-built copy, unmodified,
+  justified in the documentation, with nothing of it in a public header; its
+  MPL-2.0 is accepted for this library.** The owner's decision of 2026-11-14,
+  as trystero already distributes it; no WebRTC exists in webcpp, Boost, the
+  C++ Alliance or the standard library, and libdatachannel is the smallest
+  complete implementation.
+  Source: `libraries/webrtc/openspec/changes/genesis/design.md` D16 (proposals).
 - **webcpp::webrtc knows nothing of xactor: an actor that needs a peer holds a
   `peer_connection` made on the executor its driver runs on, and turns each
-  completion into a message to itself.** The rulebook builds asynchronous
-  ports on xactor and the owner put webcpp::webrtc in Asio's model; the two
-  meet at the executor.
-  Source: `libraries/webrtc/openspec/changes/genesis/reference/spec.md`
-  section 2.3 (proposals).
-- **Natively the library wraps libdatachannel, unmodified and justified in its
-  documentation, with nothing of `rtc::` in a public header; it finds
-  libdatachannel through `-sLIBDATACHANNEL_ROOT` or `.local/libdatachannel`,
-  and pins it only when webcpp builds it from `third_party/`.** No WebRTC
-  exists in webcpp, Boost, the C++ Alliance or the standard library, and
-  libdatachannel is the smallest complete implementation (data channels
-  without the media stack).
-  Source: `libraries/webrtc/openspec/changes/genesis/design.md` D14
-  (proposals).
+  completion into a message to itself.** The two meet at the executor.
+  Source: `libraries/webrtc/openspec/changes/genesis/design.md` D17 (proposals).
 
 **Open questions for the owner.**
 
-- libdatachannel's licence: MPL-2.0 is decided case by case by the owner and
-  no entry records it for libdatachannel; webcpp uses it unmodified, so the
-  decision to record is that MPL-2.0 is accepted for this dependency.
-- The compile-time message without exceptions: the compiler's "no member named
-  'peer_connection'", which the rule's "declares nothing" gives, or a declared
-  stub whose use fails a `static_assert` naming libdatachannel and exceptions,
-  which departs from the rule.
-- Whether a later version synthesises `negotiationneeded` natively.
-- The exact names of the headers, the Jamfile targets and the repository
-  layout, which the plan fixes.
-- The precise form of webcpp::asio's browser bridge that increment 2 uses
-  (that proposal is a draft too).
-- Whether libdatachannel is built from `third_party/` before or after the
-  first release.
+- Whether a later version synthesises `negotiationneeded` natively (O1).
+- Whether a later change adds a byte stream over a data channel, for
+  webcpp::beast's D6 (O2).
+- Whether natively a channel keeps its own queue bounded in bytes, so that a
+  channel never read cannot stall its connection's others, at the price of the
+  flow control that slows the peer (O3).
 
 Source: `libraries/webrtc/openspec/changes/genesis/design.md` Open Questions
 (proposals).
