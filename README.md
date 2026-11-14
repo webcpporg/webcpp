@@ -49,25 +49,24 @@ library on every target are published at <https://webcpporg.github.io/>.
   wasm32-wasip3, and wasmtime 50.0.1, which runs what it builds;
 - for emscripten, Emscripten 6.0.11 from emsdk, and Node, which runs what it
   builds;
-- for trystero, libsecp256k1 0.8.0, natively and built with Emscripten, and,
-  for its native backend, libdatachannel 0.24.6 and OpenSSL 3 (below);
+- for trystero's native backend, CMake, which builds libdatachannel 0.24.6 and
+  OpenSSL 3 from pinned sources (below);
 - for WebAssembly components, such as wasi's, wit-bindgen 0.62.0, which
   generates the C bindings of a component's world, and the `wasi:http` WIT
   of WASI 0.2.12 and 0.3.0, against which a world resolves its packages; and
   wasmtime, which serves the components;
 - for the documentation, Node, which runs Asciidoctor.js, MrDocs 2026.9.29,
   which writes each library's API reference, and clang++; wit-bindgen and
-  the WIT, since wasi's reference reads its bindings; and emsdk's headers and
-  trystero's libraries, since trystero's reference reads its browser and
-  native backends;
+  the WIT, since wasi's reference reads its bindings; and emsdk's headers,
+  since trystero's reference reads its browser backend;
 - for a library's oracle lane, which runs the original it ports against the
   same cases and examples, Node and npm;
 - for Beast's browser contracts, Node 26 and full Chrome for Testing with a
   disposable CA profile; its WASI HTTPS host fixture builds with Rust 1.97.1
   and the checked-in Cargo lockfile, as its verification guide describes;
 - for the lint, wasi-sdk 34, whose clang-format and clang-tidy it runs, the
-  wasip2, wasip3 and emscripten toolsets below, wit-bindgen, the WIT and
-  trystero's libraries, since it reads what those toolsets compile, and Node,
+  wasip2, wasip3 and emscripten toolsets below, wit-bindgen and the WIT,
+  since it reads what those toolsets compile, and Node,
   with which it installs Pyright.
 
 b2 refuses to run while `CPATH`, `CPLUS_INCLUDE_PATH` or `C_INCLUDE_PATH` is
@@ -84,12 +83,12 @@ Clone the superproject with its libraries, and test them:
     cd webcpp
     b2 test
 
-On a machine without the three libraries trystero needs ("trystero's
-libraries", below), `b2 test` builds and runs every other library's tests and
-leaves trystero's out, saying so once for each library it did not find, with
-where it looked and how to give it:
-
-    webcpp: trystero is left out: libsecp256k1 was not found: -sSECP256K1_ROOT=<dir> was not given, and /path/to/webcpp/.local/secp256k1-native/include holds no secp256k1.h, nor does /usr/include or /usr/local/include. ...
+trystero needs no library installed on the machine: libsecp256k1 is
+webcpp's own build of it, `/third_party//secp256k1` ("trystero's libraries",
+below), and its native backend builds libdatachannel and OpenSSL from pinned
+sources. `webcpp-require-external=on` on b2's command line, which the CI gives,
+stops the build when a library that is not built from `third_party/` is
+missing; no library of `libs/` has one today.
 
 When Boost is not on the compiler's default include path, as with Homebrew's
 on macOS, the build stops at once and says what to configure:
@@ -111,8 +110,7 @@ line of its configuration checks,
 
     - Boost 1.92 or newer in /opt/homebrew/opt/boost/include (1.92.0) : yes [1]
 
-then builds and runs every library's tests, trystero's once its three
-libraries are found ("trystero's libraries", below).
+then builds and runs every library's tests.
 
 The other aggregates work the same way:
 
@@ -223,25 +221,13 @@ A program for a browser, which node cannot run, is linked and never run.
 
 ### trystero's libraries
 
-trystero needs three libraries that webcpp does not build yet: libsecp256k1
-0.8.0, natively and built with Emscripten, and, for its native backend,
-libdatachannel 0.24.6, built with the compiler and the standard library that
-build the programs, and OpenSSL 3. Its page says how each is built. The
-build finds each where `-sSECP256K1_ROOT=<dir>`,
-`-sSECP256K1_EMSCRIPTEN_ROOT=<dir>`, `-sLIBDATACHANNEL_ROOT=<dir>` and
-`-sOPENSSL_ROOT=<dir>` on b2's command line say, each the directory of its
-`include/` and `lib/`, never the environment, else in
-`.local/secp256k1-native`, `.local/secp256k1-emscripten`,
-`.local/libdatachannel` and `.local/openssl` of the checkout, where the CI
-installs them, else, natively outside Windows, in `/usr/include` or
-`/usr/local/include`, where a system install is legitimate; a relative `-s`
-is read from b2's working directory. When none holds a library's header,
-trystero is left out, its tests and examples skipped, with one line that
-names the library and every place it looked, and every other library
-builds; `b2 doc` then names trystero on the index without a link, and makes
-no page for it, and the lint stops, naming the library it did not find.
-`webcpp-require-external=on` on b2's command line, which the CI gives, stops
-the build instead.
+trystero links three libraries that webcpp builds from pinned sources, each in
+the build directory of the program that uses it: libsecp256k1 0.8.0 as
+`/third_party//secp256k1` (its tables, small on emscripten and large natively,
+are chosen by the feature `webcpp-secp256k1-tables`: `auto`, `small` or
+`large`), and, for its native backend, libdatachannel 0.24.6 and OpenSSL 3.
+Nothing is installed in `.local/` or found on the system, and no `-s` option
+names them. Its page says how each is built.
 
 ## Documentation
 

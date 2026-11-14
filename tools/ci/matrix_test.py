@@ -29,6 +29,7 @@ browser_demo where it says so. Run with the names of some cases to run only thos
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
@@ -507,10 +508,11 @@ def test_an_own_lanes_command(root):
     assert matrix.own_lane_command(driven[0], config, xml, []) == [
         'b2', f'--user-config={config}', '-a', '--dump-tests', f'--out-xml={xml}',
         'toolset=emscripten', 'libs/alpha/test/driver//driver']
-    # An own lane of a library that needs external libraries requires them, as its lane does.
+    # No library of libs/ needs an external library today, so no own lane requires one (the
+    # machinery has its own case, with a stand-in library).
     interop = matrix.parsed_own_lanes('trystero interop libs/trystero/test/oracle native original')
     command = matrix.own_lane_command(interop[0], config, xml, [])
-    assert command[command.index('toolset=clang-18') + 1] == 'webcpp-require-external=on', command
+    assert 'webcpp-require-external=on' not in command, command
     oracle_command = matrix.own_lane_command(oracle, config, None, [])
     assert 'webcpp-require-external=on' not in oracle_command, oracle_command
     # The lane the job sets up for each target runs on the own-lanes job's image, and the native
@@ -1047,8 +1049,38 @@ def test_the_lanes_name_their_compilers_and_their_container(_):
         by_id['clang-18'])
 
 
+EXAMPLE_DEPENDENCIES = {'trystero': ('example',)}
+EXAMPLE_VARIABLES = ('EXAMPLE_ROOT',)
+
+
+@contextlib.contextmanager
+def example_externals(root: Path):
+    """Pretends that trystero needs a library webcpp does not build, which none does today: the
+    machinery stays for a later library, and its cases run against these stand-in declarations,
+    in this process and in root's own copy of matrix.py, and nowhere else."""
+    saved = matrix.EXTERNAL_DEPENDENCIES, matrix.EXTERNAL_VARIABLES
+    script = root / 'tools/ci/matrix.py'
+    text = script.read_text()
+    patched = text.replace(
+        'EXTERNAL_DEPENDENCIES: dict[str, tuple[str, ...]] = {}',
+        f'EXTERNAL_DEPENDENCIES = {EXAMPLE_DEPENDENCIES!r}')
+    patched = patched.replace('EXTERNAL_VARIABLES: tuple[str, ...] = ()',
+                              f'EXTERNAL_VARIABLES = {EXAMPLE_VARIABLES!r}')
+    assert 'EXTERNAL_DEPENDENCIES = {' in patched and 'EXTERNAL_VARIABLES = (' in patched, (
+        'matrix.py no longer declares both constants as empty')
+    assert "{'trystero': ('example',)}" in patched and "('EXAMPLE_ROOT',)" in patched
+    script.write_text(patched)
+    matrix.EXTERNAL_DEPENDENCIES = EXAMPLE_DEPENDENCIES
+    matrix.EXTERNAL_VARIABLES = EXAMPLE_VARIABLES
+    try:
+        yield
+    finally:
+        matrix.EXTERNAL_DEPENDENCIES, matrix.EXTERNAL_VARIABLES = saved
+        script.write_text(text)
+
+
 def external_library(root: Path) -> None:
-    """Adds to root a library named trystero, as EXTERNAL_DEPENDENCIES names it: native and
+    """Adds to root a library named trystero, as EXAMPLE_DEPENDENCIES names it: native and
     emscripten, and an own lane on each."""
     harness.add_library(root, 'trystero',
                         'import webcpp ;\n'
@@ -1059,36 +1091,63 @@ def external_library(root: Path) -> None:
                         {'plain.cpp': 'int main() {}\n'})
 
 
-def test_a_lane_of_a_library_with_external_dependencies_says_so(root):
-    # Until webcpp builds them from third_party/, the libraries trystero needs are installed by
-    # the CI's actions of their names, on a lane or an own lane that builds trystero: its entry
-    # says external, and no other does.
-    assert matrix.EXTERNAL_DEPENDENCIES == {
-        'trystero': ('secp256k1',)}, matrix.EXTERNAL_DEPENDENCIES
-    # Asio builds the pinned OpenSSL sources through its B2 dependency.
-    assert not matrix.needs_external('asio')
-    for dependencies in matrix.EXTERNAL_DEPENDENCIES.values():
-        for dependency in dependencies:
-            assert (matrix.ROOT / 'tools/ci/actions' / dependency / 'action.yml').is_file(), (
-                dependency)
+def test_no_library_needs_an_external_dependency(root):
+    # libsecp256k1 is /third_party//secp256k1 (webcpp's build of it), so the real tree has no
+    # library webcpp does not build: trystero's lanes and own lanes are not external and the
+    # build never requires an external library.
+    assert matrix.EXTERNAL_DEPENDENCIES == {}, matrix.EXTERNAL_DEPENDENCIES
+    assert matrix.EXTERNAL_VARIABLES == (), matrix.EXTERNAL_VARIABLES
+    real = harness.ROOT
+    for arguments in (('--library', 'trystero'), ()):
+        result = subprocess.run([sys.executable, str(real / 'tools/ci/matrix.py'), 'external',
+                                 *arguments], cwd=real, capture_output=True, text=True,
+                                check=False, timeout=harness.TIMEOUT)
+        assert (result.returncode, result.stdout) == (0, 'false\n'), (
+            arguments, result.returncode, result.stdout, result.stderr)
+    assert not matrix.needs_external('trystero')
     boost_only(root)
-    assert not any(lane['external'] for lane in planned(root)), planned(root)
     external_library(root)
-    lanes = planned(root)
-    assert {lane['id']: lane['external'] for lane in lanes} == {
-        **{name: True for name in NATIVE}, 'emscripten': True, 'wasip2': False,
-        'wasip3': False}, lanes
-    assert not any(lane['external'] for lane in planned(root, '--library', 'demo'))
-    assert all(lane['external'] for lane in planned(root, '--library', 'trystero'))
+    assert not any(lane['external'] for lane in planned(root, '--library', 'trystero'))
     entries = own_lanes(root, '--library', 'trystero')
-    assert [(entry['id'], entry['external'], entry['cc'], entry['cxx']) for entry in entries] == [
-        ('emscripten.trystero.interop', True, '', ''),
-        ('native.trystero.interop', True, 'clang-18', 'clang++-18')], entries
-    # Each entry is read back as the lane it is.
-    for entry in entries:
-        assert own_lane_entry_of(matrix.parsed_own_lane(json.dumps(entry))) == entry, entry
-    oracle_library(root, 'beta')
-    assert [entry['external'] for entry in own_lanes(root, '--library', 'beta')] == [False]
+    assert [(entry['id'], entry['external']) for entry in entries] == [
+        ('emscripten.trystero.interop', False), ('native.trystero.interop', False)], entries
+    for command in (matrix.own_lane_command(matrix.parsed_own_lane(json.dumps(entry)),
+                                            root / 'config.jam', None, [])
+                    for entry in entries):
+        assert 'webcpp-require-external=on' not in command, command
+        assert not any(word.startswith('-sSECP256K1') for word in command), command
+
+
+def test_a_lane_of_a_library_with_external_dependencies_says_so(root):
+    # The machinery stays for a later library: a lane or an own lane that builds a library of
+    # EXTERNAL_DEPENDENCIES says external, and no other does.
+    boost_only(root)
+    with example_externals(root):
+        # Asio builds the pinned OpenSSL sources through its B2 dependency.
+        assert not matrix.needs_external('asio')
+        assert not any(lane['external'] for lane in planned(root)), planned(root)
+        external_library(root)
+        lanes = planned(root)
+        assert {lane['id']: lane['external'] for lane in lanes} == {
+            **{name: True for name in NATIVE}, 'emscripten': True, 'wasip2': False,
+            'wasip3': False}, lanes
+        assert not any(lane['external'] for lane in planned(root, '--library', 'demo'))
+        assert all(lane['external'] for lane in planned(root, '--library', 'trystero'))
+        entries = own_lanes(root, '--library', 'trystero')
+        assert [(entry['id'], entry['external'], entry['cc'], entry['cxx'])
+                for entry in entries] == [
+            ('emscripten.trystero.interop', True, '', ''),
+            ('native.trystero.interop', True, 'clang-18', 'clang++-18')], entries
+        # Each entry is read back as the lane it is.
+        for entry in entries:
+            assert own_lane_entry_of(matrix.parsed_own_lane(json.dumps(entry))) == entry, entry
+        # An own lane of such a library requires them, as its lane does, and gets no other.
+        command = matrix.own_lane_command(matrix.parsed_own_lane(json.dumps(entries[1])),
+                                          root / 'config.jam', None, [])
+        assert command[command.index('toolset=clang-18') + 1] == 'webcpp-require-external=on', (
+            command)
+        oracle_library(root, 'beta')
+        assert [entry['external'] for entry in own_lanes(root, '--library', 'beta')] == [False]
 
 
 def test_whether_a_library_has_external_dependencies(root):
@@ -1101,28 +1160,30 @@ def test_whether_a_library_has_external_dependencies(root):
         result = run(root, 'external', *arguments)
         assert (result.returncode, result.stdout) == (0, 'false\n'), (result.returncode,
                                                                    result.stdout, result.stderr)
-    external_library(root)
-    harness.add_library(root, 'user',
-                        'import webcpp ;\nwebcpp.run plain : plain.cpp\n'
-                        '  : <library>/webcpp/trystero//trystero ;\n',
-                        {'plain.cpp': 'int main() {}\n'})
-    harness.add_library(root, 'user_of_user', 'import webcpp ;\n', {})
-    (root / 'libs/user_of_user/build.jam').write_text(
-        'project /webcpp/user_of_user ;\n'
-        'alias user_of_user : : : : <library>/webcpp/user//user ;\n')
-    for arguments, expected in (((), 'true'), (('--library', 'trystero'), 'true'),
-                                (('--library', 'user'), 'true'),
-                                (('--library', 'user_of_user'), 'true'),
-                                (('--library', 'demo'), 'false')):
-        result = run(root, 'external', *arguments)
-        assert (result.returncode, result.stdout) == (0, f'{expected}\n'), (
-            arguments, result.returncode, result.stdout, result.stderr)
-    # A lane of a library that uses one says external too.
-    assert {lane['id']: lane['external'] for lane in planned(root, '--library', 'user')} == {
-        name: True for name in NATIVE}
-    result = run(root, 'external', '--library', 'nothing')
-    assert result.returncode == 2 and result.stdout == '', (result.returncode, result.stdout)
-    assert 'libs/nothing is no library of libs/' in result.stderr, result.stderr
+    with example_externals(root):
+        external_library(root)
+        harness.add_library(root, 'user',
+                            'import webcpp ;\nwebcpp.run plain : plain.cpp\n'
+                            '  : <library>/webcpp/trystero//trystero ;\n',
+                            {'plain.cpp': 'int main() {}\n'})
+        harness.add_library(root, 'user_of_user', 'import webcpp ;\n', {})
+        (root / 'libs/user_of_user/build.jam').write_text(
+            'project /webcpp/user_of_user ;\n'
+            'alias user_of_user : : : : <library>/webcpp/user//user ;\n')
+        for arguments, expected in (((), 'true'), (('--library', 'trystero'), 'true'),
+                                    (('--library', 'user'), 'true'),
+                                    (('--library', 'user_of_user'), 'true'),
+                                    (('--library', 'demo'), 'false')):
+            result = run(root, 'external', *arguments)
+            assert (result.returncode, result.stdout) == (0, f'{expected}\n'), (
+                arguments, result.returncode, result.stdout, result.stderr)
+        # A lane of a library that uses one says external too.
+        assert {lane['id']: lane['external']
+                for lane in planned(root, '--library', 'user')} == {
+            name: True for name in NATIVE}
+        result = run(root, 'external', '--library', 'nothing')
+        assert result.returncode == 2 and result.stdout == '', (result.returncode, result.stdout)
+        assert 'libs/nothing is no library of libs/' in result.stderr, result.stderr
 
 
 def workflow_jobs() -> dict[str, str]:
@@ -1139,49 +1200,30 @@ def job_steps(job: str) -> list[str]:
 
 
 def test_the_jobs_install_the_external_dependencies(_):
-    # Only secp256k1 remains external. B2 builds transport and TLS from source,
-    # so independent binary-install actions must not inject a second provider.
+    # B2 builds transport, TLS and libsecp256k1 from source, so no binary-install action of
+    # a library exists and the jobs install none; the plan still says whether a library needs
+    # one, for a later library.
     jobs = workflow_jobs()
     for job in jobs.values():
         assert 'uses: ./tools/ci/actions/openssl' not in job
         assert 'uses: ./tools/ci/actions/libdatachannel' not in job
+        assert 'uses: ./tools/ci/actions/secp256k1' not in job
+        assert 'SECP256K1' not in job
+    assert not (matrix.ROOT / 'tools/ci/actions/secp256k1').exists()
     plan = jobs['plan']
     assert 'external: ${{ steps.plan.outputs.external }}' in plan, plan
     assert 'lint-external: ${{ steps.plan.outputs.lint-external }}' in plan, plan
     assert 'python3 tools/ci/matrix.py external "${arguments[@]}"' in plan, plan
     assert 'lint_external="$(python3 tools/ci/matrix.py external)"' in plan, plan
-    actions = ('emsdk', 'secp256k1')
     steps = job_steps(jobs['lanes'])
-    uses = [next((action for action in actions if f'./tools/ci/actions/{action}' in step), None)
-            for step in steps]
-    assert [action for action in uses if action] == list(actions), uses
-    by_action = {action: step for action, step in zip(uses, steps) if action}
-    for action in actions:
-        assert by_action[action].lstrip().startswith(f'- &{action}\n'), by_action[action]
-    assert 'if: matrix.external\n' in by_action['secp256k1'], by_action
-    assert 'emscripten: ${{ matrix.emsdk }}' in by_action['secp256k1'], by_action
-    assert 'cc: ${{ matrix.cc }}' in by_action['secp256k1'], by_action
-    # The own lanes install them by the same anchors, in the same order.
+    uses = [re.search(r'uses: \./tools/ci/actions/([a-z0-9-]+)', step) for step in steps]
+    assert [match.group(1) for match in uses if match and match.group(1) == 'emsdk'] == ['emsdk']
+    assert any(step.lstrip().startswith('- &emsdk\n') for step in steps), steps
+    # The own lanes install emsdk by the same anchor.
     firsts = [step.strip().splitlines()[0] for step in job_steps(jobs['own-lanes'])]
-    aliases = [first for first in firsts if first in {f'- *{action}' for action in actions}]
-    assert aliases == [f'- *{action}' for action in actions], aliases
-    for name, output in (('docs', 'external'), ('lint', 'lint-external')):
-        steps = job_steps(jobs[name])
-        for action in ('secp256k1',):
-            found = [step for step in steps if f'uses: ./tools/ci/actions/{action}' in step]
-            assert len(found) == 1, (name, action, found)
-            assert f"if: needs.plan.outputs.{output} == 'true'" in found[0], (name, found)
-            assert 'cc: clang-18' in found[0], (name, found)
-        emsdk = next(index for index, step in enumerate(steps) if 'actions/emsdk' in step)
-        secp256k1 = next(index for index, step in enumerate(steps) if 'actions/secp256k1' in step)
-        assert emsdk < secp256k1, name
+    assert '- *emsdk' in firsts, firsts
     documentation = next(step for step in job_steps(jobs['docs']) if 'name: Documentation' in step)
     assert 'request=(webcpp-require-external=on "${request[@]}")' in documentation, documentation
-    for variable in matrix.EXTERNAL_VARIABLES:
-        assert variable in documentation, (variable, documentation)
-    lint_secp256k1 = next(step for step in job_steps(jobs['lint'])
-                          if 'actions/secp256k1' in step)
-    assert 'emscripten: ${{ needs.plan.outputs.has-emscripten }}' in lint_secp256k1
 
 
 def test_container_availability_does_not_block_other_lanes(_):
@@ -1362,6 +1404,13 @@ def test_container_apt_get_retries_transient_failures(root):
 
 
 def test_a_container_lane_runs_b2_with_no_network(root):
+    # A lane of a library that needs external libraries, which a stand-in declares, is given
+    # the variables the actions export.
+    with example_externals(root):
+        container_lane_runs_b2_with_no_network(root)
+
+
+def container_lane_runs_b2_with_no_network(root):
     # A container lane pulls its prepared Dockerfile image, then runs the lane
     # command's b2 by its path in it, as the user who runs the lane, with no network but the
     # loopback, the superproject and b2's prefix (the Boost action's, with Boost's headers)
@@ -1401,7 +1450,7 @@ def test_a_container_lane_runs_b2_with_no_network(root):
     for name in matrix.EXTERNAL_VARIABLES:
         environment.pop(name, None)
     environment.update(PATH=f'{tools}:{environment["PATH"]}', STAND_IN_DOCKER_LOG=str(log),
-                       STAND_IN_IMAGE=TEST_IMAGE, SECP256K1_ROOT='/somewhere')
+                       STAND_IN_IMAGE=TEST_IMAGE, EXAMPLE_ROOT='/somewhere')
     result = subprocess.run([sys.executable, str(root / 'tools/ci/matrix.py'), 'lane',
                              json.dumps(entry), '--', '--build-dir=bin/lane'], cwd=root,
                             env=environment, capture_output=True, text=True, check=False,
@@ -1430,7 +1479,7 @@ def test_a_container_lane_runs_b2_with_no_network(root):
     assert command[1:4] == [f'--user-config={config.resolve()}', '-a', '--dump-tests'], command
     toolset = command.index(next(word for word in command if word.startswith('toolset=')))
     assert command[toolset + 1:toolset + 3] == ['webcpp-require-external=on',
-                                                '-sSECP256K1_ROOT=/somewhere'], command
+                                                '-sEXAMPLE_ROOT=/somewhere'], command
     assert not any(word.startswith('-sLIBDATACHANNEL_ROOT') for word in command), command
     version = matrix.major_version('clang++')
     system = 'darwin' if sys.platform == 'darwin' else 'linux'
@@ -1508,6 +1557,7 @@ CASES = [
     test_an_own_lane_on_a_target_writes_its_xml_and_the_report_merges_it,
     test_an_own_lanes_failing_served_test_fails_the_report,
     test_the_lanes_name_their_compilers_and_their_container,
+    test_no_library_needs_an_external_dependency,
     test_a_lane_of_a_library_with_external_dependencies_says_so,
     test_whether_a_library_has_external_dependencies,
     test_the_jobs_install_the_external_dependencies,

@@ -199,8 +199,11 @@ members (`inherit-base-members: never`).
 from Ubuntu's archive snapshot, with no network but the loopback.
 * Added a pinned chrome-headless-shell to the CI, for the own lanes whose
 driver meets a browser.
-* Added the CI actions `secp256k1`, `libdatachannel` and `openssl`, which
-build trystero's external libraries, pinned, with each lane's compilers.
+* Added the CI actions `libdatachannel` and `openssl`, which build trystero's
+external libraries, pinned, with each lane's compilers.
+* Changed trystero to link webcpp's own libsecp256k1, `/third_party//secp256k1`;
+the CI action `secp256k1` is gone and `EXTERNAL_DEPENDENCIES` of
+`tools/ci/matrix.py` is empty, so that no lane or job needs an external library.
 * Changed the Node package installer to run `npm ci` with `DO_NOT_TRACK=1`,
 so that no install script reports an install.
 * Changed CI to run the lint and the tests of the tools in eight shards each,

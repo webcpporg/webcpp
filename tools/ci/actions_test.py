@@ -36,12 +36,7 @@ probe of --experimental-wasm-threads without a word, gives the jobs EM_CACHE by 
 outside the emsdk, and warms that cache, so that no b2 meets Emscripten's sanity check; and its
 libraries step builds the system libraries the lanes link into that cache, or, for a job that
 only parses (the input libraries: 'false', under the same key), the sysroot alone, a cache the
-action never saves. The actions of trystero's external libraries: secp256k1 downloads the archive
-of its pinned commit, refuses one whose SHA-256 is not the pin before CMake runs, builds it with
-the lane's C compiler, natively and with emcmake, Debug on Windows, installs it in
-.local/secp256k1-native and .local/secp256k1-emscripten, exports their variables, and keys its
-cache on the compiler and the emscripten build, and refuses a runner it builds nothing for.
-The node action keys npm's
+action never saves. The node action keys npm's
 cache on the lock file of every directory a job runs npm ci in: tools/doc, tools/lint, every
 library's oracle and the site. Nothing is fetched
 from the network: the downloads are file:// URLs or a server of the test's own on the loopback, git
@@ -1100,47 +1095,8 @@ def test_emsdk_refuses_a_runner_it_pins_nothing_for(scratch: Path) -> None:
         assert not (root / '.local').exists()
 
 
-# The external dependencies, which the lanes of a library that needs them build or lay out in
-# .local/, until webcpp builds them from third_party/.
-SECP256K1 = CI / 'actions/secp256k1/install.sh'
-
-SECP256K1_COMMIT = '6e2c8bc4ecdc6e71dbe7a368f360d8d453ce435d'
-SECP256K1_URL = f'https://github.com/bitcoin-core/secp256k1/archive/{SECP256K1_COMMIT}.tar.gz'
-SECP256K1_SHA256 = '3fe9fd705f4fdf2fe90d6e04b6c1fedd7e8f244a119315886f6468f52c2dfc33'
-
-# The options each build is configured with, as trystero's page builds it.
-SECP256K1_OPTIONS = [
-    '-DBUILD_SHARED_LIBS=OFF', '-DCMAKE_POSITION_INDEPENDENT_CODE=ON', '-DCMAKE_INSTALL_LIBDIR=lib',
-    '-DSECP256K1_ENABLE_MODULE_SCHNORRSIG=ON', '-DSECP256K1_ENABLE_MODULE_EXTRAKEYS=ON',
-    '-DSECP256K1_ECMULT_WINDOW_SIZE=4', '-DSECP256K1_ECMULT_GEN_KB=2',
-    '-DSECP256K1_BUILD_TESTS=OFF', '-DSECP256K1_BUILD_EXHAUSTIVE_TESTS=OFF',
-    '-DSECP256K1_BUILD_BENCHMARK=OFF', '-DSECP256K1_BUILD_CTIME_TESTS=OFF',
-]
-# A stand-in of cmake: each call's words to cmake.log, one line each; --install <work> --config
-# <config> --prefix <prefix> also writes every file STAND_IN_INSTALLS names, relative to the
-# prefix.
-FAKE_CMAKE = r"""#!/usr/bin/env bash
-set -euo pipefail
-printf '%s\n' "cmake $*" >> "${STAND_IN_LOG}"
-if [ "$1" = --install ]; then
-    prefix="${@: -1}"
-    for file in ${STAND_IN_INSTALLS-}; do
-        mkdir -p "$(dirname "${prefix}/${file}")"
-        echo installed > "${prefix}/${file}"
-    done
-fi
-"""
-
-# A stand-in of Emscripten's emcmake, which says it ran, then runs what it wraps.
-FAKE_EMCMAKE = r"""#!/usr/bin/env bash
-printf '%s\n' "emcmake $*" >> "${STAND_IN_LOG}"
-exec "$@"
-"""
-
 # A stand-in of a compiler, which says what it is as gcc's --version's first line does.
 FAKE_COMPILER = '#!/bin/sh\necho "$(basename "$0") (stand-in) ${STAND_IN_VERSION:-14.2.0}"\n'
-
-FAKE_CYGPATH = '#!/bin/sh\nprintf \'%s\\n\' "$2"\n'
 
 
 def stand_ins(scratch: Path, tools: dict[str, str]) -> Path:
@@ -1180,161 +1136,6 @@ def dependency_step(scratch: Path, script: Path, runner: dict[str, str],
     return subprocess.run(['bash', str(script), *arguments], capture_output=True, text=True,
                           check=False, cwd=scratch, env=environment)
 
-
-def secp256k1_archive(scratch: Path) -> Path:
-    """A stand-in of the archive of the pinned commit: its top directory and a CMakeLists.txt."""
-    tree = scratch / 'archive/secp256k1'
-    tree.mkdir(parents=True)
-    (tree / 'CMakeLists.txt').write_text('project(secp256k1)\n')
-    return tar_gz(scratch / 'secp256k1.tar.gz', tree, f'secp256k1-{SECP256K1_COMMIT}')
-
-
-SECP256K1_FILES = 'include/secp256k1.h include/secp256k1_schnorrsig.h lib/libsecp256k1.a'
-
-
-def secp256k1_tree(scratch: Path, system: str = 'Linux', processor: str = 'X64',
-                   **extra: str) -> tuple[Path, dict[str, str]]:
-    """The secp256k1 action where it lives, beside a download.sh that serves the stand-in
-    archive, with stand-ins of cmake, Emscripten's emcmake and the compilers, and a runner's
-    variables."""
-    script = serving_tree(scratch, 'secp256k1', SECP256K1,
-                          {SECP256K1_URL: secp256k1_archive(scratch)})
-    shutil.copy2(SECP256K1.parent / 'action.yml', script.parent / 'action.yml')
-    # The emsdk action, whose version the emscripten build's key names.
-    (scratch / 'tools/ci/actions/emsdk').mkdir()
-    shutil.copy2(EMSDK, scratch / 'tools/ci/actions/emsdk/install.sh')
-    emcmake = scratch / '.local/emsdk/upstream/emscripten/emcmake'
-    emcmake.parent.mkdir(parents=True)
-    emcmake.write_text(FAKE_EMCMAKE)
-    emcmake.chmod(0o755)
-    tools = stand_ins(scratch, {'cmake': FAKE_CMAKE, 'gcc-14': FAKE_COMPILER,
-                                'clang-18': FAKE_COMPILER, 'cygpath': FAKE_CYGPATH})
-    return script, dependency_runner(scratch, system, processor, tools,
-                                     **{'STAND_IN_INSTALLS': SECP256K1_FILES, **extra})
-
-
-def test_secp256k1_builds_the_pinned_archive_natively_and_for_emscripten(scratch: Path) -> None:
-    script, runner = secp256k1_tree(scratch, CC='gcc-14', EMSCRIPTEN='true')
-    # What an earlier install left is not kept.
-    stale = scratch / '.local/secp256k1-native/stale'
-    stale.parent.mkdir(parents=True)
-    stale.write_text('stale\n')
-    result = dependency_step(scratch, script, runner, 'install')
-    assert result.returncode == 0, (result.returncode, result.stdout, result.stderr)
-    assert downloads(scratch) == [(SECP256K1_URL, SECP256K1_SHA256)], downloads(scratch)
-    source = f'.local/.build/secp256k1/secp256k1-{SECP256K1_COMMIT}'
-    # The prefixes by the resolved path of the directory the step runs in, as $PWD has it.
-    native = f'{scratch.resolve()}/.local/secp256k1-native'
-    emscripten = f'{scratch.resolve()}/.local/secp256k1-emscripten'
-    assert logged(scratch) == [
-        f'cmake -DCMAKE_C_COMPILER=gcc-14 -S {source} -B .local/.build/secp256k1/native '
-        f'-DCMAKE_BUILD_TYPE=Release {" ".join(SECP256K1_OPTIONS)} '
-        f'-DCMAKE_INSTALL_PREFIX={native}',
-        'cmake --build .local/.build/secp256k1/native --config Release --parallel',
-        f'cmake --install .local/.build/secp256k1/native --config Release --prefix {native}',
-        f'emcmake cmake -S {source} -B .local/.build/secp256k1/emscripten '
-        f'-DCMAKE_BUILD_TYPE=Release {" ".join(SECP256K1_OPTIONS)} '
-        f'-DCMAKE_INSTALL_PREFIX={emscripten}',
-        'cmake -S {0} -B .local/.build/secp256k1/emscripten -DCMAKE_BUILD_TYPE=Release {1} '
-        '-DCMAKE_INSTALL_PREFIX={2}'.format(source, ' '.join(SECP256K1_OPTIONS), emscripten),
-        'cmake --build .local/.build/secp256k1/emscripten --config Release --parallel',
-        f'cmake --install .local/.build/secp256k1/emscripten --config Release --prefix '
-        f'{emscripten}'], logged(scratch)
-    assert not stale.exists() and not (scratch / '.local/.build/secp256k1').exists()
-    result = dependency_step(scratch, script, runner, 'configure')
-    assert result.returncode == 0, (result.returncode, result.stderr)
-    assert (scratch / 'github-env').read_text() == (f'SECP256K1_ROOT={native}\n'
-                                                   f'SECP256K1_EMSCRIPTEN_ROOT={emscripten}\n')
-    # The key names the version, the runner, the build and the compiler: another compiler, or the
-    # emscripten build left out, is another entry of the cache.
-    keys = []
-    for extra in ({'CC': 'gcc-14', 'EMSCRIPTEN': 'true'}, {'CC': 'clang-18', 'EMSCRIPTEN': 'true'},
-                  {'CC': 'gcc-14', 'EMSCRIPTEN': 'false'}, {'CC': 'gcc-14', 'EMSCRIPTEN': 'true',
-                                                            'STAND_IN_VERSION': '14.3.0'}):
-        (scratch / 'github-output').unlink(missing_ok=True)
-        result = dependency_step(scratch, script, {**runner, **extra}, 'key')
-        assert result.returncode == 0, (result.returncode, result.stderr)
-        key = (scratch / 'github-output').read_text()
-        assert key.startswith('key=secp256k1-0.8.0-Linux-X64-ubuntu24-'), key
-        keys.append(key)
-    assert len(set(keys)) == len(keys), keys
-    assert '-native-emscripten-6.0.11-' in keys[0] and '-native-emscripten' not in keys[2], keys
-    # The Emscripten version is the emsdk action's, read from it: a bump of emsdk is another entry.
-    emsdk = scratch / 'tools/ci/actions/emsdk/install.sh'
-    emsdk.write_text(emsdk.read_text().replace('\nversion=6.0.11\n', '\nversion=6.0.12\n'))
-    (scratch / 'github-output').unlink()
-    result = dependency_step(scratch, script, runner, 'key')
-    assert result.returncode == 0, (result.returncode, result.stderr)
-    assert '-native-emscripten-6.0.12-' in (scratch / 'github-output').read_text()
-    emsdk.write_text('# no version\n')
-    result = dependency_step(scratch, script, runner, 'key')
-    assert result.returncode == 1, (result.returncode, result.stderr)
-    assert (f'install.sh: {emsdk.resolve()} names no version=') in result.stderr, result.stderr
-
-
-def test_secp256k1_on_windows_builds_debug_with_visual_studio(scratch: Path) -> None:
-    # No compiler named: CMake's own, Visual Studio's; the Debug configuration, whose /MDd the
-    # lanes' debug variant links with; and the library CMake names libsecp256k1.lib there.
-    script, runner = secp256k1_tree(scratch, 'Windows', 'X64',
-                                    STAND_IN_INSTALLS=SECP256K1_FILES.replace('.a', '.lib'))
-    result = dependency_step(scratch, script, runner, 'install')
-    assert result.returncode == 0, (result.returncode, result.stdout, result.stderr)
-    assert logged(scratch)[0].startswith('cmake -S '), logged(scratch)
-    assert '-DCMAKE_BUILD_TYPE=Debug ' in logged(scratch)[0], logged(scratch)
-    assert logged(scratch)[1].endswith('--config Debug --parallel'), logged(scratch)
-    assert not any('emcmake' in line for line in logged(scratch)), logged(scratch)
-    result = dependency_step(scratch, script, runner, 'configure')
-    assert result.returncode == 0, (result.returncode, result.stderr)
-    assert (scratch / 'github-env').read_text() == (
-        f'SECP256K1_ROOT={scratch.resolve()}/.local/secp256k1-native\n'), (
-            (scratch / 'github-env').read_text())
-    # A build without its library is no install.
-    (scratch / '.local/secp256k1-native/lib/libsecp256k1.lib').unlink()
-    result = dependency_step(scratch, script, runner, 'configure')
-    assert result.returncode == 1, (result.returncode, result.stderr)
-    assert 'holds no include/secp256k1.h, include/secp256k1_schnorrsig.h or ' in result.stderr
-    assert 'lib/libsecp256k1.lib' in result.stderr, result.stderr
-
-
-def test_secp256k1_refuses_an_archive_it_does_not_pin(scratch: Path) -> None:
-    # The download is checked by download.sh itself: an archive whose SHA-256 is not the pinned
-    # one fails the install before CMake runs, and leaves nothing to be cached.
-    script, runner = secp256k1_tree(scratch, CC='gcc-14')
-    archive = scratch / 'secp256k1.tar.gz'
-    (scratch / 'tools/ci/download.sh').write_text(
-        f'#!/bin/sh\nexec bash "{DOWNLOAD}" "{archive.as_uri()}" "$2" "$3"\n')
-    result = dependency_step(scratch, script, runner, 'install')
-    assert result.returncode == 1, (result.returncode, result.stdout, result.stderr)
-    actual = hashlib.sha256(archive.read_bytes()).hexdigest()
-    assert f'has SHA-256 {actual}, and {SECP256K1_SHA256} is pinned' in result.stderr, (
-        result.stderr)
-    assert f'install.sh: {SECP256K1_URL} could not be downloaded as pinned' in result.stderr
-    assert logged(scratch) == [], logged(scratch)
-    assert not (scratch / '.local/secp256k1-native').exists()
-    assert not (scratch / '.local/.build/secp256k1').exists()
-
-
-def test_secp256k1_refuses_a_runner_it_builds_nothing_for(scratch: Path) -> None:
-    script, runner = secp256k1_tree(scratch)
-    for system, processor, emscripten in (('Linux', 'ARM', 'false'), ('', '', 'false'),
-                                          ('Windows', 'ARM64', 'false'),
-                                          ('Windows', 'X64', 'true')):
-        for step in ('key', 'install', 'configure'):
-            result = dependency_step(scratch, script, {**runner, 'RUNNER_OS': system,
-                                                       'RUNNER_ARCH': processor,
-                                                       'EMSCRIPTEN': emscripten}, step)
-            assert result.returncode == 1, (system, processor, step, result.returncode)
-            if emscripten == 'true':
-                assert ('install.sh: the emscripten build of libsecp256k1 is made on Linux and '
-                        'macOS') in result.stderr, result.stderr
-            else:
-                assert (f'and Windows on X64, not for {system} on {processor}'
-                        in result.stderr), result.stderr
-    result = dependency_step(scratch, script, {**runner, 'EMSCRIPTEN': 'yes'}, 'install')
-    assert result.returncode == 2, (result.returncode, result.stderr)
-    assert "the input emscripten is 'true' or 'false', not 'yes'" in result.stderr
-    assert downloads(scratch) == [] and logged(scratch) == []
-    assert not (scratch / '.local/secp256k1-native').exists()
 
 
 CHROME = CI / 'actions/chrome/install.sh'
@@ -1452,6 +1253,18 @@ esac
 """
 
 
+def test_no_external_library_action_remains(scratch: Path) -> None:
+    # libsecp256k1 is /third_party//secp256k1: no workflow step installs it, and its action,
+    # which built the pinned archive with CMake into .local/, is gone.
+    assert not (CI / 'actions/secp256k1').exists()
+    root = CI.parents[1]
+    for workflow in (root / '.github/workflows').glob('*.yml'):
+        assert 'actions/secp256k1' not in workflow.read_text(), workflow
+    for action in (CI / 'actions').iterdir():
+        assert not (action / 'install.sh').is_file() or 'SECP256K1' not in (
+            action / 'install.sh').read_text(), action
+
+
 def test_container_pulls_the_pinned_image_without_building(scratch: Path) -> None:
     # The historical build/load path is replaced by consumption of the checked immutable pin.
     directory = scratch / 'tools/ci/actions/container'
@@ -1559,10 +1372,7 @@ CASES: list[Callable[[Path], None]] = [
     test_emsdk_configure_fails_naming_both_versions,
     test_emsdk_fails_on_a_download_it_does_not_pin,
     test_emsdk_refuses_a_runner_it_pins_nothing_for,
-    test_secp256k1_builds_the_pinned_archive_natively_and_for_emscripten,
-    test_secp256k1_on_windows_builds_debug_with_visual_studio,
-    test_secp256k1_refuses_an_archive_it_does_not_pin,
-    test_secp256k1_refuses_a_runner_it_builds_nothing_for,
+    test_no_external_library_action_remains,
     test_container_pulls_the_pinned_image_without_building,
     test_chrome_installs_the_pinned_headless_shell,
     test_chrome_installs_full_chrome_for_isolated_certificate_trust,

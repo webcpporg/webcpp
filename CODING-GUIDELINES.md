@@ -1254,14 +1254,15 @@ site's own decisions follow in the next sections.
   a lane's toolset from those regions and a page includes them, so that
   neither drifts from the other; bundled toolchains are on the roadmap.
   Source: `AGENTS.md` (webcpp).
-- **A library webcpp does not build yet (currently trystero's libsecp256k1)
-  is declared with `webcpp.external`: a build that
+- **A library webcpp does not build yet (none today: trystero links
+  `/third_party//secp256k1`) is declared with `webcpp.external`: a build that
   does not find it leaves its owner out with one line, and the CI and the
   lint, with `webcpp-require-external=on`, stop instead.** Left out, every
   other library still builds with `b2 test`; required, a library not found
-  stops the build rather than leave the library out. The CI's actions build
-  that remaining dependency until it moves to `third_party/`. OpenSSL and
-  native libdatachannel already use pinned source targets.
+  stops the build rather than leave the library out. `EXTERNAL_DEPENDENCIES`
+  in `tools/ci/matrix.py` is empty and the machinery stays for a later
+  library; a CI action of the library's name would build it. libsecp256k1,
+  OpenSSL and native libdatachannel use pinned source targets.
   Source: `AGENTS.md` (webcpp).
 
 **Targets and toolchains.**
@@ -6110,18 +6111,20 @@ archived on 2026-11-14.
   includes the native backend, so `/webcpp/trystero//trystero` depends on
   neither, as OpenSSL is optional for Asio.
   Source: `doc/design.adoc` (libs/trystero).
-- **Only libsecp256k1 is externally provisioned, through command-line
-  `SECP256K1_ROOT` / `SECP256K1_EMSCRIPTEN_ROOT`, then `.local/`, then native
-  system paths outside Windows; the environment is never read.** Native
+- **trystero links `/third_party//secp256k1`, webcpp's own build of
+  libsecp256k1, and needs nothing provisioned outside the build.** Its
+  tables follow the feature `webcpp-secp256k1-tables`: window 15 and comb 11x6
+  natively, window 2 and comb 2x5 on emscripten (the earlier external build was
+  window 4 and comb 2x5 on both). Native
   libdatachannel and its nested dependencies are now pinned source targets,
   built statically against the same OpenSSL provider as Asio and Beast.
   Native Trystero requires `threading=multi` and exceptions because its backend
   uses worker threads. These dependency changes prepare the later migration;
   they do not claim that Trystero already uses the webcpp facades.
   Source: `doc/building.adoc` (libs/trystero).
-- **A library found nowhere leaves trystero out with one message, unless
-  `webcpp-require-external=on`, as the CI builds, stops the build.** `b2 test`
-  then builds every other library.
+- **A library found nowhere would leave trystero out with one message, unless
+  `webcpp-require-external=on`, as the CI builds, stops the build; none is
+  searched for today.** `b2 test` then builds every other library.
   Source: `AGENTS.md` (libs/trystero).
 - **The searched libraries are explicit targets.** Requested alone, at the
   superproject's root, their alternatives would be matched against a request
@@ -6132,8 +6135,8 @@ archived on 2026-11-14.
   requirements (measured: a program then fails to link,
   `_embind_register_function` undefined).
   Source: `build.jam` (libs/trystero).
-- **On MSVC the external library is `libsecp256k1` with
-  `SECP256K1_STATIC`, the source providers export their static `.lib` archives
+- **On MSVC `/third_party//secp256k1` gives `SECP256K1_STATIC` to trystero
+  through its usage requirements, the source providers export their static `.lib` archives
   with the consumer's runtime settings, and tests and examples add `/bigobj`.** A static
   libsecp256k1 on Windows declares every function imported from a DLL without
   the define, and a test of rooms over Asio holds more sections than the
@@ -7010,7 +7013,7 @@ real execution on the final Windows candidate remains a validation gate.
 OpenSSL's upstream harness is unavailable on WASIp3, and the integration
 witnesses do not claim to replace it. Native combined-provider
 coverage belongs to Trystero's `test/provider//provider-integration`, where its
-external secp256k1 dependency is provisioned. Final-candidate CI and remaining
+secp256k1 dependency is `/third_party//secp256k1`. Final-candidate CI and remaining
 coverage limitations are tracked in chapter 19.
 
 ### cobalt (Boost.Cobalt source integration; local candidate for 0.1.0)
@@ -7180,11 +7183,10 @@ What webcpp does not have yet, and the chapters that mention it:
 - **Documentation for web developers and for AI developers,** beside the
   documentation for C++ developers every library has today, and webcpp's
   integrations with the AIs.
-- **External libraries built from `third_party/`.** Only trystero's
-  libsecp256k1 remains externally provisioned. OpenSSL and native libdatachannel,
-  including its required nested dependencies, now build from pinned sources
-  against one OpenSSL provider. Moving secp256k1 into `third_party/` remains
-  future work; this closure does not implement crypto or WebRTC.
+- **External libraries built from `third_party/`.** No library is externally
+  provisioned: trystero links `/third_party//secp256k1`, and OpenSSL and
+  native libdatachannel, including its required nested dependencies, build from
+  pinned sources against one OpenSSL provider.
 - **Every library on `<webcpp/config.hpp>`.** Each library's `config.hpp`
   includes it first: trystero (held with config's publication), and wasi with
   its redesign, which brings Boost into it.
@@ -7836,11 +7838,10 @@ are unchanged. No crypto implementation or new backend coverage is claimed.
   Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
   section 4.4 (proposals).
 - **One copy per program: webcpp's build of a C library is never linked with
-  another copy of it, trystero leaves its external libsecp256k1 in the change
-  that names `/third_party//secp256k1`, and asio and crypto name the one
-  source-built OpenSSL.** libsecp256k1's tables are global symbols; two
-  copies of libcrypto would be two error queues and two allocation hooks in
-  one process.
+  another copy of it, trystero links `/third_party//secp256k1` and no
+  other libsecp256k1, and asio and crypto name the one source-built
+  OpenSSL.** libsecp256k1's tables are global symbols; two copies of libcrypto
+  would be two error queues and two allocation hooks in one process.
   Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
   sections 3.5, 3.7 and 4.5 (proposals).
 - **Every error case of the build has a directory of its own.** b2 shares one
@@ -7971,7 +7972,7 @@ are unchanged. No crypto implementation or new backend coverage is claimed.
 - **Increment 3 moves webcpp::trystero onto the library: `aes256_gcm` with its
   16-byte IVs replaces its native and browser sealers, `random_device::fill`
   its `random`, `secp256k1::keypair` and `/third_party//secp256k1` its signer
-  and external libsecp256k1, and its direct use of OpenSSL goes.** Errors are
+  and so no other libsecp256k1, and its direct use of OpenSSL goes.** Errors are
   values, so a system without entropy fails the operation that needed the
   bytes with `entropy_unavailable` where trystero aborts today; one copy of
   libsecp256k1 per program.
@@ -8979,11 +8980,10 @@ it says.
 - **Errors as values (chapter 4).** lexical has no error category of its own.
 - **Text (chapter 4).** lexical passes text as `boost::core::string_view`,
   where the rule asks for `std::string_view`.
-- **Bringing a C library (chapter 5).** trystero's libsecp256k1 remains
-  externally provisioned, without the source-target `HAS`/canary contract;
-  the roadmap retains that migration. Libdatachannel is now a pinned C++
-  source target with nested dependencies; its remaining upstream-test limit
-  is recorded above, not confused with the external secp256k1 case.
+- **Bringing a C library (chapter 5).** trystero links
+  `/third_party//secp256k1`, which follows the source-target `HAS`/canary
+  contract. Libdatachannel is a pinned C++ source target with nested
+  dependencies; its remaining upstream-test limit is recorded above.
 - **Exceptions (chapter 6).** lexical's throwing IRI functions
   (`uri.hpp:281-325`) and document's throwing conveniences are not behind
   their library's `NO_EXCEPTIONS` macro; xstate's `machine.hpp:1213,1233`

@@ -161,7 +161,7 @@ webcpp/
                       and emsdk.jam (the lines that register the WASI and emscripten
                       toolsets), container/Dockerfile (the image of the container lanes),
                       and actions/{boost,wasi-sdk,wasmtime,wit-bindgen,wasi-wit,emsdk,
-                      secp256k1,chrome,container,mrdocs,node}/
+                      chrome,container,mrdocs,node}/
                       (chapter 4)
     site/             site.jam, the rules of b2 site and b2 site-serve, catalogue.py (the
                       site's libraries.json), redirect.py (the old address's two pages) and
@@ -244,14 +244,11 @@ Jamroot is its build configuration, and `libs/<name>` is its repository.
   toolsets compile;
 - for emscripten: Emscripten 6.0.11, from emsdk, and Node, which runs its
   programs; the tests of the build need it too;
-- for trystero: libsecp256k1 0.8.0, static, with `schnorrsig` and
-  `extrakeys`, built natively and, for browser programs, with Emscripten.
-  Only this dependency remains externally provisioned. B2 reads
-  `-sSECP256K1_ROOT=<dir>` and `-sSECP256K1_EMSCRIPTEN_ROOT=<dir>` from its
-  command line, never the environment; otherwise it searches
-  `.local/secp256k1-native` and `.local/secp256k1-emscripten`, then the native
-  system include paths outside Windows. A missing dependency leaves trystero
-  out with a diagnostic, or fails when `webcpp-require-external=on`, as in CI;
+- for trystero: nothing installed: libsecp256k1 0.8.0 is `/third_party//secp256k1`,
+  built by `b2` from the pinned `third_party/libs/secp256k1` (small tables on
+  emscripten, large natively; `<webcpp-secp256k1-tables>` asks otherwise). No
+  library of `libs/` needs an externally provisioned dependency today, though
+  `webcpp.external` and `webcpp-require-external=on` stay for a later one;
 - for native Trystero: CMake and Make (nmake on Windows), and the pinned
   `third_party/libs/libdatachannel` checkout with its required nested sources.
   Initialize it with `git submodule update --init --recursive
@@ -400,12 +397,9 @@ verified, rather than assuming a newer Boost release fixes the issue.
 needs: `.local/user-config.jam`, `.local/wasi-sdk/`, `.local/mrdocs/`,
 `.local/wit-bindgen/` and `.local/wasi-wit/p2` and `p3`, `.local/emsdk` (an
 install of emsdk, or a link to one) with Emscripten's cache in
-`.local/emscripten-cache`, and trystero's external libsecp256k1 installs in
-`.local/secp256k1-native` and `.local/secp256k1-emscripten`. The CI action
-uses those same paths. B2 finds them without `-s`; another prefix is named
-with `-sSECP256K1_ROOT=<dir>` or `-sSECP256K1_EMSCRIPTEN_ROOT=<dir>` on its
-command line. Source-built OpenSSL and libdatachannel instead live under the
-B2 build directory, separated by the effective compiler configuration.
+`.local/emscripten-cache`. Source-built libsecp256k1, OpenSSL and
+libdatachannel live under the B2 build directory, separated by the effective
+compiler configuration.
 A tool the build looks up itself is
 taken from the path its `-s` option gives, else from `.local/`, else from
 `PATH`: MrDocs (`-sMRDOCS`), wit-bindgen and the WIT (above); wasi-sdk is
@@ -1617,19 +1611,19 @@ jobs:
   while the other configurations continue. Then it runs b2 by its path, `docker run --rm --network
   none`, as the runner's user, with the superproject and b2's prefix, where
   the Boost action installs Boost's headers too, mounted at their own paths,
-  and the variables of the external libraries passed on; the XML is the
-  lane's, as outside a container. A lane run so needs Linux x86-64 and
-  docker; the external libraries it runs against are built before, on the
-  runner, with the same compilers.
+  and the variables of the external libraries, when a library has any, passed
+  on; the XML is the lane's, as outside a container. A lane run so needs Linux
+  x86-64 and docker.
 
-  **External libraries.** `EXTERNAL_DEPENDENCIES` in `tools/ci/matrix.py`
-  currently names only trystero's `secp256k1`. A lane that needs it has
-  `external` in its entry, including own lanes. Its job runs that action after
-  toolchain setup, with `emscripten: true` when applicable and the lane's
-  compiler settings. B2 receives `webcpp-require-external=on` and explicit
-  `-sSECP256K1_ROOT` / `-sSECP256K1_EMSCRIPTEN_ROOT` arguments from the action's
-  outputs (`EXTERNAL_VARIABLES`); docs use the same setup when required.
-  OpenSSL and libdatachannel have no provisioning actions: their pinned source
+  **External libraries.** `EXTERNAL_DEPENDENCIES` in `tools/ci/matrix.py` is
+  empty and `EXTERNAL_VARIABLES` is `()`: webcpp builds every library it needs
+  (libsecp256k1 as `/third_party//secp256k1`), so `matrix.py external` prints
+  `false`. The machinery stays for a later library: a lane that needs one has
+  `external` in its entry, including own lanes, its job would run the action of
+  its name, `tools/ci/actions/<name>`, after toolchain setup, and B2 would
+  receive `webcpp-require-external=on` and a `-s<VARIABLE>=<dir>` argument for
+  each of `EXTERNAL_VARIABLES` the action exported.
+  libsecp256k1, OpenSSL and libdatachannel have no provisioning actions: their pinned source
   targets build in the consumer's B2 variant, including inside container lanes.
   A container lane passes no variable of the environment into its container.
 - **own lanes,** one job per entry, named and placed as the entry says
@@ -1680,7 +1674,7 @@ jobs:
   alone (`/webcpp//emscripten-reference`, chapter 2); and, when the plan's
   `external` is `true`, the
   external libraries, built with Clang 18, whose headers the reference of
-  the library, or of a library it uses, parses.
+  the library, or of a library it uses, parses (none today).
 - **lint:** `tools/lint/lint.sh` in eight shards (`--shard 1/8` to `8/8`),
   with wasi-sdk's clang-format and clang-tidy, Node, Clang 18 as b2's default
   toolset and the wasip2 and wasip3 toolsets after it (`matrix.py register
@@ -1689,8 +1683,8 @@ jobs:
   is `true`, the emscripten toolset after them and emsdk, without its system
   libraries (`libraries: 'false'`), whose `em++` the emscripten dry run
   names and whose cache holds the sysroot an emscripten command is analysed
-  with; when the plan's `lint-external` is `true`, the external libraries,
-  built with Clang 18, libsecp256k1 for emscripten too when `has-emscripten` is;
+  with; when the plan's `lint-external` is `true` (none today), the external
+  libraries, built with Clang 18;
   and the full history
   (`fetch-depth: 0`) of the superproject and of the library, since the
   banned-word rule reads every commit.
@@ -1806,17 +1800,8 @@ wrapper each quoted as one word of Jam.
   local node = /path/to/node ;
   using emscripten : : $(emsdk)/upstream/emscripten/em++ : <nodejs>$(node) ;
   ```
-- `secp256k1` builds libsecp256k1 0.8.0 from GitHub's archive of commit
-  `6e2c8bc`, checked against its SHA-256, with CMake, static, with `schnorrsig`
-  and `extrakeys` and the small tables trystero's page specifies. It installs
-  in `.local/secp256k1-native`, using the lane's C compiler, and, when requested,
-  builds with Emscripten's `emcmake` into `.local/secp256k1-emscripten` after
-  emsdk setup. It exports `SECP256K1_ROOT` and `SECP256K1_EMSCRIPTEN_ROOT`.
-  The cache key includes its version, runner, compiler identity, action files
-  and the emsdk version for a browser build. Windows uses CMake's Debug
-  configuration for the CI's debug runtime and the static library name
-  `libsecp256k1.lib`; trystero defines `SECP256K1_STATIC` there.
-  OpenSSL and libdatachannel instead build from source through B2. The latter's
+- There is no action for libsecp256k1, OpenSSL or libdatachannel: B2 builds
+  them from source (libsecp256k1 as `/third_party//secp256k1`). The last one's
   static datachannel, juice, usrsctp and srtp2 archives stay separate; it never
   bundles another OpenSSL archive into them. Its CMake recipe uses the exact
   OpenSSL headers and archive bytes selected by the B2 dependency.
@@ -1910,8 +1895,8 @@ they leave out, and their refusals: a runner no build of wit-bindgen or
 emsdk is pinned for, a crate that holds no WIT, an emsdk at another commit,
 a release without its `node_modules`, an archive emsdk would download
 unpinned, and an emcc that is not 6.0.11; the emsdk action's node wrapper,
-`EM_CACHE`, warmed cache and system libraries; libsecp256k1's pinned archive,
-compiler settings, install prefixes, exports, cache key and Windows runtime;
+`EM_CACHE`, warmed cache and system libraries; that no libsecp256k1 action
+remains;
 the chrome action's shell and its `--no-sandbox` wrapper; and the container
 image, pulled by an immutable digest without a build fallback.
 `tools/ci/environment_test.py` checks recipe identity, archive restoration and
