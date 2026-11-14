@@ -293,13 +293,21 @@ PYTHON
         # names its own --target, and its sysroot is the one clang-tidy's wasi-sdk knows; one
         # that em++ compiles names em++'s target and sysroot, from em++ --cflags: it is told
         # neither.
+        # wasi-sdk's clang-tidy ships the x86 intrinsics headers alone: on arm64, Boost.Unordered's
+        # open-addressing containers include <arm_neon.h>, which it does not have, so it is told to
+        # leave NEON out there and read Boost.Unordered's portable path, on which no analysis of
+        # webcpp's own code depends.
         host_target=''
         host_sysroot=''
+        host_define=''
         if [ -n "$(cat "${work_directory}/compiler")" ]; then
             host_target="$("$(cat "${work_directory}/compiler")" -dumpmachine)"
             if [ "$(uname -s)" = Darwin ] && command -v xcrun >/dev/null 2>&1; then
                 host_sysroot="$(xcrun --show-sdk-path)"
             fi
+            case "${host_target}" in
+                arm64-* | aarch64-*) host_define='-DBOOST_UNORDERED_DISABLE_NEON' ;;
+            esac
         fi
 
         # clang-tidy reads one file per run and takes seconds on one that includes Boost, so the
@@ -317,6 +325,9 @@ PYTHON
                 if [ -n "${host_sysroot}" ]; then
                     arguments+=(--extra-arg=-isysroot "--extra-arg=${host_sysroot}")
                 fi
+                if [ -n "${host_define}" ]; then
+                    arguments+=("--extra-arg=${host_define}")
+                fi
             fi
             local status=0
             "${clang_tidy}" --quiet "${arguments[@]}" "${file}" \
@@ -324,7 +335,7 @@ PYTHON
             printf '%s\n' "${status}" > "${work_directory}/${index}.status"
         }
         export -f tidy_one
-        export clang_tidy host_target host_sysroot work_directory tidy_exclude
+        export clang_tidy host_target host_sysroot host_define work_directory tidy_exclude
 
         # This shard's slice: the files whose position in the sorted list is K modulo N.
         # Interleaving keeps the slices alike, since neighbours are alike (the examples of one
