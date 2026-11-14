@@ -1632,8 +1632,10 @@ jobs:
     kind `programs` on any other target, such as wasi's served lanes, has
     none.
   - An own lane whose driver meets a browser, one of `CHROME_LANES` in
-    `tools/ci/matrix.py` (trystero's and webrtc's `interop`, natively and on
-    emscripten, document's `js`, webrtc's `browser`, and the browser lanes of
+    `tools/ci/matrix.py` (trystero's `interop`, natively and on emscripten,
+    webrtc's `interop`, whose page meets Chrome on emscripten while its native
+    run is two native peers, though `CHROME_LANES` names a lane on every
+    target, document's `js`, webrtc's `browser`, and the browser lanes of
     asio, beast and cobalt),
     has its entry's `chrome`, and its job runs the `chrome` action, which
     gives it `CHROME`, a pinned Chrome rather than the image's, which moves

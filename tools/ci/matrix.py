@@ -526,12 +526,12 @@ OWN_LANE_OPTIONS = {
         ('exception-handling=on,off', 'webcpp-beast-unsupported=error,ignore'),
     ('beast', 'browser-node', 'emscripten'):
         ('exception-handling=on,off', 'webcpp-beast-unsupported=error,ignore'),
-    # webrtc's interop lane builds its programs as the request asks: both
-    # exception settings, and in the page both unsupported policies; its browser
-    # lane builds each program with exceptions on and off itself.
+    # webrtc's interop lane builds its programs as the request asks, with
+    # exceptions on and off; its page sets nothing the unsupported policy
+    # decides, so one policy is enough. Its browser lane builds each program
+    # with exceptions on and off itself.
     ('webrtc', 'interop', 'native'): ('exception-handling=on,off',),
-    ('webrtc', 'interop', 'emscripten'):
-        ('exception-handling=on,off', 'webcpp-webrtc-unsupported=error,ignore'),
+    ('webrtc', 'interop', 'emscripten'): ('exception-handling=on,off',),
 }
 
 
