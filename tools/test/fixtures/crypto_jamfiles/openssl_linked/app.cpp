@@ -19,7 +19,7 @@
 
 int main() {
 #if defined(WEBCPP_CRYPTO_HAS_OPENSSL)
-    std::puts("HAS_OPENSSL=1");
+    std::printf("HAS_OPENSSL=%d\n", WEBCPP_CRYPTO_HAS_OPENSSL);
 #endif
     namespace crypto = webcpp::crypto;
     std::array<std::uint8_t, 32> const key{};
