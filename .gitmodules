@@ -49,3 +49,6 @@
 [submodule "libs/cobalt"]
 	path = libs/cobalt
 	url = ../cobalt.git
+[submodule "libs/webrtc"]
+	path = libs/webrtc
+	url = ../webrtc.git

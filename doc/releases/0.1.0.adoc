@@ -40,6 +40,9 @@ for {cpp}20, from R.
 * link:{library-pages}wasi/{library-page}[wasi]: a header-only HTTP handler
 for {cpp}20 programs built as WebAssembly components, covering WASI 0.2 and
 WASI 0.3, from R.
+* link:{library-pages}webrtc/{library-page}[webrtc]: a header-only library of
+WebRTC peer connections and data channels for {cpp}20, with the W3C's names in
+Asio's model, natively over libdatachannel, from R.
 * link:{library-pages}xactor/{library-page}[xactor]: a header-only,
 deterministic actor system for {cpp}20, from R.
 * link:{library-pages}xstate/{library-page}[xstate]: a header-only port of
