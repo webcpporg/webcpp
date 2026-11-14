@@ -7,9 +7,9 @@
 
 """Checks the Jamroot: it finds the installed Boost and searches it first, refuses a missing or
 older one by naming the fix, refuses one whose version it cannot read, checks again when Boost
-changes, keeps Boost's warnings out of -Werror, refuses CPATH, and installs the headers. Each
-case builds a scratch superproject with the fixture library demo. Run with the names of some
-cases to run only those."""
+changes, keeps Boost's warnings out of -Werror, refuses CPATH, reaches third_party/ through both
+of its project ids, and installs the headers. Each case builds a scratch superproject with the
+fixture library demo. Run with the names of some cases to run only those."""
 
 from __future__ import annotations
 
@@ -216,6 +216,18 @@ def test_install_copies_headers_to_prefix(root):
         shutil.rmtree(prefix)
 
 
+def test_third_party_has_both_ids(root):
+    # A user's Jamfile names /third_party//<name> (CODING-GUIDELINES.md chapter 5, rule 5);
+    # the existing consumers name /webcpp/third_party//<name>: both reach one project. The probe
+    # is appended to the real third_party/Jamfile, whose targets the Jamroot names.
+    with (root / 'third_party/Jamfile').open('a') as jamfile:
+        jamfile.write('\nalias probe : : : : <define>WEBCPP_TEST_PROBE=1 ;\nexplicit probe ;\n')
+    harness.add_library(root, 'ids', 'alias one : /third_party//probe ;\n'
+                        'alias two : /webcpp/third_party//probe ;\n', {})
+    result = harness.run_b2(root, '-n', 'libs/ids/test//one', 'libs/ids/test//two')
+    harness.expect(result, True)
+
+
 CASES = [
     test_boost_found_and_fixture_builds,
     test_no_boost_configured_names_the_fix,
@@ -228,6 +240,7 @@ CASES = [
     test_cpath_set_is_refused,
     test_a_relative_user_config_is_found,
     test_install_copies_headers_to_prefix,
+    test_third_party_has_both_ids,
 ]
 
 

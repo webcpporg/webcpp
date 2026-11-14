@@ -895,7 +895,9 @@ owner's:
 What a library or its tests use and webcpp does not own is never copied into
 a library: it is a submodule under `third_party/libs/<name>`, pinned at a
 commit, with the URL of its own repository, and `third_party/Jamfile`
-declares it as `/webcpp/third_party//<target>`, whose usage requirements
+declares it. The Jamroot registers the project under both ids,
+`/webcpp/third_party//<target>` and `/third_party//<target>`, the latter the
+form a user's Jamfile writes (chapter 5, rule 5); the target's usage requirements
 give a program what it needs. It keeps its own licence and notices, and the
 lint never reads it (chapter 9). Adding one is the owner's decision; moving
 its pin is a change of its own, with its evidence. A target whose submodule
@@ -8981,9 +8983,6 @@ These are errors of the rules' own text, moved here unchanged (the proposal
   (`libs/trystero/include/webcpp/trystero/config.hpp:14`). It also calls the
   specifications of asio and crypto "in review"; the owner accepted both on
   2026-10-11.
-- Chapter 10 registers the project `/webcpp/third_party` (`Jamroot`), while
-  chapter 5's rule 5 writes `/third_party//bearssl` and crypto's plan
-  `/third_party//<name>`.
 - Chapter 8 lets a program exclude a target with `#ifndef __wasi__`, while
   config's design chose `WEBCPP_TARGET_*` so that no library reads the
   compiler's macros (config's genesis `design.md`); xactor's `drivers.hpp`

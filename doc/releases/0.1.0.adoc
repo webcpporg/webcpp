@@ -223,6 +223,8 @@ exceptions, such as an `asyncify` variant's.
 Emscripten's notice that the runtime is kept alive.
 * Changed the lint rule `bare-throw` to leave alone the JavaScript of an
 `EM_JS` function or an `EM_ASM` block.
+* Added the project id /third_party, the form a user's Jamfile writes for third-party
+code.
 
 [#webcpp-0-1-0-compilers-tested]
 == Compilers tested
