@@ -36,6 +36,11 @@ SUITE = 'third_party/libs/JSON-Schema-Test-Suite'
 # The commit the suite is pinned at, of 2026-09-21.
 SUITE_COMMIT = '5b0ee1613e45fcc2bddac00e07c19cd49b00d8a8'
 
+WYCHEPROOF = 'third_party/libs/wycheproof'
+
+# The commit Wycheproof is pinned at, of 2026-10-06.
+WYCHEPROOF_COMMIT = '12fd3aaf33eb5fa1f52e026912ee00c054f9d984'
+
 READER_JAMFILE = ('import webcpp ;\n'
                   '\n'
                   'webcpp.targets native wasip2 wasip3 emscripten ;\n'
@@ -92,6 +97,12 @@ def test_the_suite_is_pinned(_: Path) -> None:
     listed = subprocess.run(['git', '-C', str(harness.ROOT), 'ls-files', '-s', SUITE],
                             capture_output=True, text=True, check=True)
     assert listed.stdout.split()[:2] == ['160000', SUITE_COMMIT], listed.stdout
+
+
+def test_wycheproof_is_pinned(_: Path) -> None:
+    listed = subprocess.run(['git', '-C', str(harness.ROOT), 'ls-files', '-s', WYCHEPROOF],
+                            capture_output=True, text=True, check=True)
+    assert listed.stdout.split()[:2] == ['160000', WYCHEPROOF_COMMIT], listed.stdout
 
 
 def test_the_suite_reaches_a_native_test(root: Path) -> None:
@@ -158,6 +169,7 @@ def test_a_suite_not_checked_out_is_refused(root: Path) -> None:
 
 CASES = [
     test_the_suite_is_pinned,
+    test_wycheproof_is_pinned,
     test_the_suite_reaches_a_native_test,
     test_the_suite_reaches_a_test_on_emscripten,
     test_the_suite_reaches_a_test_on_wasi,

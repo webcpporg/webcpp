@@ -120,6 +120,8 @@ announce and package a release.
 * Added `third_party/`, third-party code pinned as submodules: first the
 JSON Schema Test Suite, which a test reads on every target through
 `/webcpp/third_party//json-schema-test-suite`.
+* Added Wycheproof's test vectors to `third_party/`, which a test reads on every
+target through `/webcpp/third_party//wycheproof`.
 * Changed the lint to never read third-party code under `third_party/libs/`.
 * Added `webcpp.generated`, which checks a library's generated files against
 their Python generator, and `update-generated`, their only writer.

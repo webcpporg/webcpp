@@ -79,6 +79,30 @@ alias nativejson-benchmark : : <conditional>@nativejson-checked-out : :
 
 explicit nativejson-benchmark ;
 
+# Wycheproof (Apache-2.0), C2SP/wycheproof: test data, never compiled. A test
+# that names wycheproof reads it from the directory WEBCPP_TEST_WYCHEPROOF
+# names, with forward slashes, the directory given to wasmtime on WASI
+# (webcpp.data), and runs again when one of its files changes.
+path-constant WYCHEPROOF : libs/wycheproof ;
+.wycheproof = [ regex.replace $(WYCHEPROOF) "\\\\" "/" ] ;
+.wycheproof-files = [ glob libs/wycheproof/testvectors_v1/*.json ] ;
+
+rule wycheproof-checked-out ( properties * )
+{
+    if ! [ path.exists [ path.native $(WYCHEPROOF)/testvectors_v1/aes_gcm_test.json ] ]
+    {
+        errors.user-error "third_party/libs/wycheproof is not checked out: it holds no"
+            "testvectors_v1/aes_gcm_test.json. Check it out with `git submodule update"
+            "--init third_party/libs/wycheproof`." ;
+    }
+}
+
+alias wycheproof : : <conditional>@wycheproof-checked-out : :
+    <define>"\"WEBCPP_TEST_WYCHEPROOF=\\\"$(.wycheproof)\\\"\""
+    [ webcpp.data $(WYCHEPROOF) ]
+    <dependency>$(.wycheproof-files) ;
+explicit wycheproof ;
+
 # OpenSSL uses its upstream Configure/Make source manifest. The bridge emits
 # static archives and matching generated headers in B2's variant directory.
 import webcpp-openssl ;

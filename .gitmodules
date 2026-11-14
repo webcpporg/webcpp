@@ -49,3 +49,7 @@
 [submodule "libs/cobalt"]
 	path = libs/cobalt
 	url = ../cobalt.git
+[submodule "third_party/libs/wycheproof"]
+	path = third_party/libs/wycheproof
+	url = https://github.com/C2SP/wycheproof.git
+	shallow = true
