@@ -1716,6 +1716,70 @@ def test_world_rule(root):
                'libs/demo/test/pass.cpp'))
 
 
+def test_entropy_sources(root):
+    prepare(root)
+    header = 'libs/demo/include/webcpp/demo/entropy.hpp'
+    other = 'libs/demo/include/webcpp/demo/other.hpp'
+    # A header that reads entropy names no weaker source, even with lint-world:, which spares it
+    # from the rule above but not from this one. getentropy is the source, not a weaker one.
+    weaker = ['rand()', 'srand(1)', 'time(nullptr)', 'clock()', '_rdrand64_step(&v)',
+              '__builtin_ia32_rdrand32_step(&v)', 'random()', 'rand_r(&seed)', 'drand48()',
+              'nrand48(x)', 'srand48(1)', 'seed48(p)', 'lcong48(p)', 'std::mt19937 engine',
+              'std::mt19937_64 engine', 'std::minstd_rand0 engine', 'std::minstd_rand engine',
+              'std::default_random_engine engine', 'std::ranlux24 engine', 'std::knuth_b engine',
+              '"rdrand %0"']
+    lines = ''.join(f'// Calls {name}. lint-world: a test\n' for name in weaker)
+
+    def licensed(guard: str, body: str) -> str:
+        return ('// Copyright (c) 2026 WebCpp.org\n'
+                '//\n'
+                '// Distributed under the Boost Software License, Version 1.0. (See\n'
+                '// accompanying file LICENSE_1_0.txt or copy at\n'
+                '// https://www.boost.org/LICENSE_1_0.txt)\n'
+                '\n'
+                f'#ifndef WEBCPP_DEMO_{guard}_HPP\n'
+                f'#define WEBCPP_DEMO_{guard}_HPP\n'
+                '\n'
+                f'{body}'
+                '\n'
+                f'#endif  // WEBCPP_DEMO_{guard}_HPP\n')
+
+    source = ('// Calls getentropy(p, 16). lint-world: a test\n'
+              '// Names random_device. lint-world: a test\n'
+              '// The constant time (see the guide) of a comparison.\n')
+    write(root, header, licensed('ENTROPY', lines + source))
+    # Outside the rule's scope, the same names are left alone.
+    write(root, other, licensed('OTHER', '// Calls rand(). lint-world: a test\n'))
+    expect_alone(lint(root), 'entropy sources',
+                 [at(root, header, name) for name in weaker]
+                 + [': a header that reads entropy names a weaker source'],
+                 spared=(at(root, header, 'getentropy'), at(root, header, 'Names random_device'),
+                         at(root, header, 'constant time'), other))
+
+
+def test_entropy_sources_unreadable_header(root):
+    prepare(root)
+    header = 'libs/demo/include/webcpp/demo/entropy.hpp'
+    write(root, header, '// Copyright (c) 2026 WebCpp.org\n')
+    (root / header).chmod(0)
+    try:
+        try:
+            (root / header).read_bytes()
+        except PermissionError:
+            pass
+        else:
+            # root reads whatever its mode: the case cannot make grep fail there.
+            print('test_entropy_sources_unreadable_header: skipped, the header is readable '
+                  '(running as root)')
+            return
+        result = lint(root)
+    finally:
+        (root / header).chmod(0o644)
+    # grep's own error (exit 2) fails the rule loudly; it is never read as "no match".
+    assert 'grep failed to read a header that reads entropy' in result.stdout, result.stdout[-3000:]
+    assert 'entropy sources' in FAILED.findall(result.stdout), result.stdout[-3000:]
+
+
 def test_bare_throw(root):
     prepare(root)
     # A library header raises through boost::throw_exception alone. A throw in a template that
@@ -2566,6 +2630,8 @@ CASES = [
     test_banned_word,
     test_third_party_code_is_never_read,
     test_world_rule,
+    test_entropy_sources,
+    test_entropy_sources_unreadable_header,
     test_bare_throw,
     test_raw_rules,
     test_include_boundaries_angle_brackets,

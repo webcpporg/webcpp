@@ -614,6 +614,41 @@ else
     printf ' the entropy\n'
 fi
 
+# 8a. A header that reads entropy names no weaker source: no rand, random, the *rand48 family,
+#    the standard engines (mt19937, minstd_rand, ranlux, knuth_b, default_random_engine), time,
+#    clock or RDRAND (the _rdrandNN_step intrinsics, the compiler builtins, or
+#    the instruction in inline asm), even with lint-world:, in any header whose path ends
+#    entropy.hpp or random_device.hpp (DESIGN, 2026-10-11 "entropy, safest and readable").
+rule 'entropy sources'
+files_matching '^(libs|tools/test/fixtures)/[^/]+/include/.*(entropy|random_device)\.hpp$' \
+    > "${work_directory}/entropy_headers"
+# The calls, with no space before the parenthesis so that prose such as "constant time (see x)"
+# is spared; the engines and RDRAND by name wherever they appear.
+weak_calls='s?rand|random|rand_r|[edjlmns]rand48|seed48|lcong48|time|clock'
+weak_rdrand='_*rdrand(16|32|64)?_step|__builtin_ia32_rdrand(16|32|64)_step'
+weak_engines='mt19937|minstd_rand|default_random_engine|ranlux|knuth_b'
+weak='(^|[^_[:alnum:]])(((('"${weak_calls}|${weak_rdrand}"')\()|'"${weak_engines}"'|(rdrand([^_[:alnum:]]|$))))'
+weak_found=''
+entropy_failed=0
+while IFS= read -r -d '' entropy_header; do
+    entropy_status=0
+    entropy_hits="$(grep -nHE -e "${weak}" "${entropy_header}")" || entropy_status=$?
+    if [ "${entropy_status}" -gt 1 ]; then
+        entropy_failed=1  # grep's own error (2) is a failure of the rule, never "no match"
+    elif [ "${entropy_status}" -eq 0 ]; then
+        weak_found+="${entropy_hits}"$'\n'
+    fi
+done < "${work_directory}/entropy_headers"
+if [ "${entropy_failed}" -ne 0 ]; then
+    fail "grep failed to read a header that reads entropy"
+elif [ -n "${weak_found}" ]; then
+    printf '%s' "${weak_found}" \
+        | sed 's/$/: a header that reads entropy names a weaker source/'
+    fail "a header that reads entropy names a weaker source"
+else
+    printf 'no header that reads entropy names a weaker source\n'
+fi
+
 # 9. A library's test and example Jamfiles declare their programs with tools/webcpp.jam's rules,
 #    which build each only for the targets it declares and add what every program needs; b2's
 #    own run, run-fail, compile, compile-fail, exe and unit-test do neither (tools/lint/rules.py).

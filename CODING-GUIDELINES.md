@@ -626,6 +626,7 @@ with `lint: failed: <rule>` for each rule that failed.
 | licence notice | a source file (C++, JavaScript, AsciiDoc, Python, shell, Jam, YAML, HTML) that does not open with the notice (chapter 2) |
 | banned word | the word that the pattern `veru[s]` matches, in any case, in a file, a file name or a commit (its author, committer or message) of any repository |
 | no clock, disk or network | a library header that names a clock, a file, a socket, a process, a thread, the environment or entropy (`random_device`, `getentropy`, `getrandom`, `arc4random`, OpenSSL's `RAND_bytes`, `<sys/random.h>`) without `lint-world:` |
+| entropy sources | a library header whose path ends `entropy.hpp` or `random_device.hpp` that names `rand`, `srand`, `random`, `rand_r`, a `rand48` function, `seed48`, `lcong48`, a standard engine (`mt19937`, `minstd_rand`, `ranlux`, `knuth_b`, `default_random_engine`), `time`, `clock` or RDRAND (`_rdrand32_step` and its kin, the builtins, `rdrand` in asm), even with `lint-world:` |
 | raw b2 rules | `run`, `run-fail`, `compile`, `compile-fail`, `exe`, `unit-test`, `link` or `link-fail` in a library's test or example Jamfile (`AGENTS.md` chapter 4) |
 | Doc Comments | a command webcpp does not allow, a bare `@`, or a colon after a reference (chapter 7) |
 | Pyright | an error or a warning in any Python file, with `pyrightconfig.json` (unused imports and variables are errors) |
