@@ -1,0 +1,64 @@
+# Copyright (c) 2026 WebCpp.org
+#
+# Distributed under the Boost Software License, Version 1.0. (See
+# accompanying file LICENSE_1_0.txt or copy at
+# https://www.boost.org/LICENSE_1_0.txt)
+#
+# The test type of webcpp.compile-diagnostic, which tools/webcpp.jam offers:
+# the object compiled with clang's -verify, which succeeds only when every
+# error its directives state appears, then a check that clang read every
+# directive (check.py). -verify ignores the errors it does not expect, so
+# that a header's #error may be followed by what the rest of the header then
+# fails on; among them are the errors it reports on a directive it cannot
+# read, a header it names that cannot be located or a text whose `}}` is not
+# on its line, and it drops that directive. The object's compile writes its
+# compilation database entry (-MJ), whose exact command check.py runs again
+# with clang's diagnostic log, and the test fails on any error located in a
+# directive. This file is loaded as the module webcpp-compile-diagnostic.
+import generators ;
+import modules ;
+import os ;
+import path ;
+import testing ;
+import type ;
+
+type.register DIAGNOSTIC_CHECK : diagnostic-check ;
+type.register COMPILE_DIAGNOSTIC : : TEST ;
+generators.register-standard webcpp-compile-diagnostic.check : OBJ : DIAGNOSTIC_CHECK ;
+generators.register-standard testing.expect-success : DIAGNOSTIC_CHECK : COMPILE_DIAGNOSTIC ;
+
+if [ os.name ] = NT { .python = python ; } else { .python = python3 ; }
+.here = [ path.parent [ path.root [ path.make [ modules.binding $(__name__) ] ] [ path.pwd ] ] ] ;
+.check = [ path.native $(.here)/check.py ] ;
+
+# requirements hold the -verify options and the program's own; sources are
+# the test's, as testing.compile takes them.
+rule compile-diagnostic ( name : sources + : requirements * )
+{
+    testing.make-test compile-diagnostic : $(sources) : $(requirements) : $(name) ;
+}
+
+# The object's compile, whose variables its toolset has set by now, also
+# writes its compilation database entry beside it. A variable of a target is
+# read when its action runs, after every rule. An object built before this
+# check existed has no entry: it is compiled again.
+rule check ( target : sources * : properties * )
+{
+    local object = $(sources[1]) ;
+    local directory = [ on $(object) return $(LOCATE) ] ;
+    local entry = $(object:G=:S=.compile.json) ;
+    local database = $(directory)/$(entry) ;
+    OPTIONS on $(object) += "-MJ \"$(database)\"" ;
+    if ! [ GLOB $(directory) : $(entry) ]
+    {
+        ALWAYS $(object) ;
+    }
+    DATABASE on $(target) = $(database) ;
+    PYTHON on $(target) = $(.python) ;
+    CHECK on $(target) = $(.check) ;
+}
+
+actions check
+{
+    "$(PYTHON)" "$(CHECK)" --database "$(DATABASE)" --output "$(<)"
+}

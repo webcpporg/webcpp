@@ -228,6 +228,12 @@ modules.load webcpp-generated : generated.jam
   : [ path.native [ path.join $(.tools) generated ] ] ;
 import webcpp-generated ;
 
+# The test type of compile-diagnostic, loaded as the module
+# webcpp-compile-diagnostic, as the documentation's are.
+modules.load webcpp-compile-diagnostic : compile_diagnostic.jam
+  : [ path.native [ path.join $(.tools) compile_diagnostic ] ] ;
+import webcpp-compile-diagnostic ;
+
 # The rule of a library named and not called, loaded as the module
 # webcpp-same-program, as the documentation's are.
 modules.load webcpp-same-program : same_program.jam
@@ -617,9 +623,15 @@ rule compile-fail ( name : sources + : requirements * : targets * )
 # clang's -verify comments: `// expected-error@<file>:* {{<message>}}` for
 # an error of a header they include, `// expected-error@+1 {{<message>}}` for
 # one of the next line. clang's -verify makes the compile succeed only when
-# every stated error appears; an error that is not stated, and a note, are
-# ignored (-verify-ignore-unexpected=error,note), so that a header's
-# #error may be followed by what the rest of the header then fails on. A
+# every stated error appears, in the file it names; an error that is not
+# stated, and a note, are ignored (-verify-ignore-unexpected=error,note), so
+# that a header's #error may be followed by what the rest of the header then
+# fails on. Among those ignored errors are the ones -verify reports on a
+# directive it cannot read, which it then drops: a header it names that
+# cannot be located, a text whose `}}` is not on its line. The test's check,
+# tools/compile_diagnostic's, runs the compile again with clang's diagnostic
+# log and fails on any of them. So a test passes only when every directive
+# was read, its header found and included, and its error raised there. A
 # compile-fail test passes on any error, the wrong one included; this one
 # only on the one it states. -verify is clang's: on a toolset other than
 # b2's clang (native clang, clang-wasip2, clang-wasip3), the test is
@@ -628,11 +640,10 @@ rule compile-fail ( name : sources + : requirements * : targets * )
 # that holds; the report shows it there as not built.
 rule compile-diagnostic ( name : sources + : requirements * : targets * )
 {
-    testing.compile $(sources)
+    webcpp-compile-diagnostic.compile-diagnostic $(name) : $(sources)
       : $(requirements) <cxxflags>"-Xclang -verify -Xclang -verify-ignore-unexpected=error,note"
         <conditional>@webcpp%clang-only [ program compile-diagnostic : $(name) : $(targets) ]
-        $(.node-test)
-      : $(name) ;
+        $(.node-test) ;
 }
 
 # The conditional requirement of compile-diagnostic: <build>no on a toolset

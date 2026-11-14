@@ -12,7 +12,8 @@ request, which links the handler on any target and reaches every program but one
 output, its standard input its .input file or nothing; every public header compiles alone, each call
 of webcpp.headers-alone taking the headers its globs match, with requirements and targets of its
 own, and a header two calls take or a glob that matches none refused; a compile-diagnostic test
-passes only on the error it states, and is skipped on a toolset that is not clang;
+passes only on the error it states, fails on a directive clang's -verify drops (a header it names
+that cannot be located), and is skipped on a toolset that is not clang;
 `b2 declared-targets` lists what each library declares; a lane of a library's own is listed once per
 target it runs on, which must be one its Jamfile declares, with its kind, whether it runs the
 original's language; what it names leaves the ordinary lanes, a build of it for another target stops
@@ -243,6 +244,46 @@ def test_compile_diagnostic_passes_only_on_its_diagnostic(root):
     harness.expect(result, True)
     assert not passed(result), result.stdout[-4000:]
     assert 'stated' not in result.stdout, result.stdout[-4000:]
+
+
+def test_compile_diagnostic_fails_on_a_directive_clang_drops(root):
+    # A directive that clang's -verify cannot read is dropped, with an error of its own that the
+    # rule's tolerance of a header's cascade of errors would hide: one that names a header that
+    # does not exist, alone or beside a directive that holds, and one whose text runs past its
+    # line. Each such test proves nothing, and fails, naming the directive; the cascade of
+    # errors that follows a header's #error is still tolerated.
+    guard = '#error "the guard says no"\nint after_the_guard() { return undeclared; }\n'
+    stated = ('// expected-error@guard.hpp:* {{the guard says no}}\n'
+              '#include "guard.hpp"\n'
+              'int main() { return undeclared; }\n')
+    harness.add_library(
+        root, 'dropped',
+        'import webcpp ;\n'
+        '\n'
+        'webcpp.targets native wasip2 ;\n'
+        '\n'
+        'webcpp.compile-diagnostic stated : stated.cpp ;\n'
+        'webcpp.compile-diagnostic missing : missing.cpp ;\n'
+        'webcpp.compile-diagnostic missing_beside : missing_beside.cpp ;\n'
+        'webcpp.compile-diagnostic unfinished : unfinished.cpp ;\n',
+        {'guard.hpp': guard, 'stated.cpp': stated,
+         'missing.cpp': stated.replace('@guard.hpp', '@renamed/guard.hpp'),
+         'missing_beside.cpp': '// expected-error@renamed/guard.hpp:* {{the guard says no}}\n'
+                               + stated,
+         'unfinished.cpp': stated.replace('{{the guard says no}}',
+                                          '{{the guard\n// says no}}')})
+    result = harness.run_b2(root, 'libs/dropped/test//stated')
+    harness.expect(result, True)
+    assert passed(result) == {'stated'}, (passed(result), result.stdout[-4000:])
+    for name, said in (('missing', "file 'renamed/guard.hpp' could not be located"),
+                       ('missing_beside', "file 'renamed/guard.hpp' could not be located"),
+                       ('unfinished', "cannot find end ('}}')")):
+        result = harness.run_b2(root, f'libs/dropped/test//{name}')
+        harness.expect(result, False, said, f'{name}.cpp:1:')
+        assert not passed(result), (name, result.stdout[-4000:])
+    result = harness.run_b2(root, *WASIP2, 'libs/dropped/test//missing')
+    harness.expect(result, False, "file 'renamed/guard.hpp' could not be located")
+    assert not passed(result), result.stdout[-4000:]
 
 
 def test_filter_maps_each_toolset_to_its_target(root):
@@ -1293,6 +1334,7 @@ CASES = [
     test_compile_builds_only_where_declared,
     test_a_compile_finds_the_test_support,
     test_compile_diagnostic_passes_only_on_its_diagnostic,
+    test_compile_diagnostic_fails_on_a_directive_clang_drops,
     test_filter_maps_each_toolset_to_its_target,
     test_undeclared_jamfile_is_native_only,
     test_emscripten_builds_only_what_declares_it,
