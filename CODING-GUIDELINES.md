@@ -100,7 +100,8 @@ Not built yet:
     changed: `tools/test/jamroot_test.py`, `tools/test/webcpp_jam_test.py`,
     `tools/test/oracle_jam_test.py`, `tools/test/generated_jam_test.py`,
     `tools/test/component_jam_test.py`, `tools/generated/generated_test.py`,
-    `tools/test/emscripten_test.py`, `tools/test/external_test.py`,
+    `tools/test/emscripten_test.py`, `tools/test/crypto_jamfiles_test.py`,
+    `tools/test/external_test.py`,
     `tools/test/doc_test.py`,
     `tools/test/harness_test.py`, `tools/test/third_party_test.py`,
     `tools/test/boost_libraries_test.py`,
@@ -574,6 +575,27 @@ aliases, concepts, variables, data members and macros.
   build is excluded by declaration (`: native`), and inside a program by the
   same condition the library uses (`#ifndef __wasi__`), never by skipping
   silently.
+- A user's Jamfile of a library whose own tests cannot express it (b2's raw
+  `exe`, a refusal on one target) is a fixture of the tools' test, not a
+  library's test: `tools/test/fixtures/crypto_jamfiles/<case>/` holds the
+  case's `Jamfile`, its sources and `<case>.outcome`, and
+  `tools/test/crypto_jamfiles_test.py` builds each case on a scratch
+  superproject, with b2 as a user runs it, once per target, in a build
+  directory the cases of a target share. The outcome file's lines starting
+  with `#` are comments; a block `[all]`, `[native]`, `[native-linux]`,
+  `[native-darwin]`, `[native-windows]`, `[wasip2]`, `[wasip3]` or
+  `[emscripten]` applies by the target and the system (`[all]` and each block
+  that matches apply). `targets: <target> ...` (native only without it) names
+  the targets the case is built for; `build: succeeds` or `build: fails` is
+  b2's exit status; after `build: fails` every other line must appear whole in
+  b2's output, in any order; `run: <program>`, after `build: succeeds`, runs
+  the program as its lane runs one and every other line is its standard
+  output, exactly; `arguments: <word> ...` gives b2 words for this case alone
+  (`@scratch` is the case's scratch directory). The fixtures sit outside
+  `libs/*/test/`, so the raw-rules lint does not apply to them. The tools job
+  of the CI runs the test; the `[native-darwin]` blocks apply only to a run on
+  macOS, and the MSVC cases are `webcpp.compile-fail` and `webcpp.link-fail`
+  of the library's tests.
 - A test moved from the original's or another suite records the conversion,
   case by case, and each converted case is seen failing on a planted defect
   where the old one had a pinning test (`libs/xactor/test/CONVERSION.md`).

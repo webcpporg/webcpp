@@ -66,6 +66,7 @@ None.
 * Fixed driven-test execution and descendant cleanup on Windows.
 * Fixed driven-test executable reuse for Windows and WASI builds.
 * Improved lint preparation by separating OpenSSL headers from archive builds and upstream tests.
+* Added the user's Jamfiles of webcpp::crypto, tested as fixtures of a test of the tools.
 * Fixed the WASIp2 test launcher interrupting large finite workloads after 60 seconds.
 * Fixed Chrome provisioning and browser/TLS profile coverage in Asio CI lanes.
 * Added source-built OpenSSL and Cobalt SSL targets for WASIp2.
