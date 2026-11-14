@@ -1724,7 +1724,10 @@ def test_entropy_sources(root):
     # from the rule above but not from this one. getentropy is the source, not a weaker one.
     weaker = ['rand()', 'srand(1)', 'time(nullptr)', 'clock()', '_rdrand64_step(&v)',
               '__builtin_ia32_rdrand32_step(&v)', 'random()', 'rand_r(&seed)', 'drand48()',
-              'nrand48(x)', 'std::mt19937 engine', '"rdrand %0"']
+              'nrand48(x)', 'srand48(1)', 'seed48(p)', 'lcong48(p)', 'std::mt19937 engine',
+              'std::mt19937_64 engine', 'std::minstd_rand0 engine', 'std::minstd_rand engine',
+              'std::default_random_engine engine', 'std::ranlux24 engine', 'std::knuth_b engine',
+              '"rdrand %0"']
     lines = ''.join(f'// Calls {name}. lint-world: a test\n' for name in weaker)
 
     def licensed(guard: str, body: str) -> str:
@@ -1742,7 +1745,8 @@ def test_entropy_sources(root):
                 f'#endif  // WEBCPP_DEMO_{guard}_HPP\n')
 
     source = ('// Calls getentropy(p, 16). lint-world: a test\n'
-              '// Names random_device. lint-world: a test\n')
+              '// Names random_device. lint-world: a test\n'
+              '// The constant time (see the guide) of a comparison.\n')
     write(root, header, licensed('ENTROPY', lines + source))
     # Outside the rule's scope, the same names are left alone.
     write(root, other, licensed('OTHER', '// Calls rand(). lint-world: a test\n'))
@@ -1750,7 +1754,21 @@ def test_entropy_sources(root):
                  [at(root, header, name) for name in weaker]
                  + [': a header that reads entropy names a weaker source'],
                  spared=(at(root, header, 'getentropy'), at(root, header, 'Names random_device'),
-                         other))
+                         at(root, header, 'constant time'), other))
+
+
+def test_entropy_sources_unreadable_header(root):
+    prepare(root)
+    header = 'libs/demo/include/webcpp/demo/entropy.hpp'
+    write(root, header, '// Copyright (c) 2026 WebCpp.org\n')
+    (root / header).chmod(0)
+    try:
+        result = lint(root)
+    finally:
+        (root / header).chmod(0o644)
+    # grep's own error (exit 2) fails the rule loudly; it is never read as "no match".
+    assert 'grep failed to read a header that reads entropy' in result.stdout, result.stdout[-3000:]
+    assert 'entropy sources' in FAILED.findall(result.stdout), result.stdout[-3000:]
 
 
 def test_bare_throw(root):
@@ -2541,6 +2559,7 @@ CASES = [
     test_third_party_code_is_never_read,
     test_world_rule,
     test_entropy_sources,
+    test_entropy_sources_unreadable_header,
     test_bare_throw,
     test_raw_rules,
     test_include_boundaries_angle_brackets,

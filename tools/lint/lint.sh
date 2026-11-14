@@ -614,15 +614,19 @@ else
 fi
 
 # 8a. A header that reads entropy names no weaker source: no rand, random, the *rand48 family,
-#    mt19937, time, clock or RDRAND (the _rdrandNN_step intrinsics, the compiler builtins, or
+#    the standard engines (mt19937, minstd_rand, ranlux, knuth_b, default_random_engine), time,
+#    clock or RDRAND (the _rdrandNN_step intrinsics, the compiler builtins, or
 #    the instruction in inline asm), even with lint-world:, in any header whose path ends
 #    entropy.hpp or random_device.hpp (DESIGN, 2026-10-11 "entropy, safest and readable").
 rule 'entropy sources'
 files_matching '^(libs|tools/test/fixtures)/[^/]+/include/.*(entropy|random_device)\.hpp$' \
     > "${work_directory}/entropy_headers"
-weak_calls='s?rand|random|rand_r|[edjlmn]rand48|time|clock'
+# The calls, with no space before the parenthesis so that prose such as "constant time (see x)"
+# is spared; the engines and RDRAND by name wherever they appear.
+weak_calls='s?rand|random|rand_r|[edjlmns]rand48|seed48|lcong48|time|clock'
 weak_rdrand='_*rdrand(16|32|64)?_step|__builtin_ia32_rdrand(16|32|64)_step'
-weak='(^|[^_[:alnum:]])((('"${weak_calls}|${weak_rdrand}"')[[:space:]]*\()|(mt19937|rdrand)([^_[:alnum:]]|$))'
+weak_engines='mt19937|minstd_rand|default_random_engine|ranlux|knuth_b'
+weak='(^|[^_[:alnum:]])(((('"${weak_calls}|${weak_rdrand}"')\()|'"${weak_engines}"'|(rdrand([^_[:alnum:]]|$))))'
 weak_found=''
 entropy_failed=0
 while IFS= read -r -d '' entropy_header; do
