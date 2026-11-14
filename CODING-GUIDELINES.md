@@ -1529,6 +1529,12 @@ site's own decisions follow in the next sections.
   implemented, and a rejected or withdrawn one is archived with that status.**
   The reasons then stay readable.
   Source: `CONTRIBUTING.md` (proposals).
+- **A proposal is implemented when its code is merged into the `main` of its
+  repository, the superproject's `main` records that commit or a later one,
+  and every GitHub check of both passed; no release is needed, and `release`
+  names the version the change enters.** The status says what is built, and a
+  release waits for the owner.
+  Source: `CONTRIBUTING.md` (proposals).
 - **The maintainers decide a proposal after its public discussion on its pull
   request, until a governance of the members, through grants and a DAO, is
   specified by a proposal of its own.** (reason not recorded)
@@ -5266,10 +5272,10 @@ proposals is given relative to `libraries/document/openspec/`.
 trystero ports Trystero 0.26.0: the peers of a room meet over public Nostr
 relays and talk over WebRTC data channels, on Trystero's wire byte for byte,
 natively over libdatachannel and in the browser over the page's own WebRTC.
-The decisions are those of the tree webcpp 0.1.0 pins (trystero `77fed8f`),
-which includes the change `shared-connection` (trystero `2e2dcd4`, webcpp
-`1a0dcac` and `d9e5fa6`, 2026-10-14) although its proposal's status is still
-`implementing`.
+The decisions are those of the tree the superproject records for webcpp 0.1.0
+(trystero `e9326e9`), which includes the change `shared-connection` (trystero
+`2e2dcd4`, webcpp `1a0dcac` and `d9e5fa6`, 2026-10-14), implemented and
+archived on 2026-11-14.
 
 **Scope and differences from Trystero JS.**
 
@@ -5594,7 +5600,8 @@ which includes the change `shared-connection` (trystero `2e2dcd4`, webcpp
   assigning another room over it, leaves at once, without the 99 ms
   farewell.** Two handles to one membership would make leaving depend on
   another handle.
-  Source: `libraries/trystero/openspec/changes/shared-connection/design.md`
+  Source:
+  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/design.md`
   (proposals).
 - **An action's type sets Trystero's format and how a message arrives: owning
   types receive a copy or the moved buffer, while `std::string_view` and
@@ -5659,12 +5666,14 @@ which includes the change `shared-connection` (trystero `2e2dcd4`, webcpp
   one id per room, where two standalone rooms with one id meet a Trystero JS
   peer in one of them only; the standalone form can return later as an app of
   one room without breaking anything.
-  Source: `libraries/trystero/openspec/changes/shared-connection/design.md`
+  Source:
+  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/design.md`
   (proposals).
 - **Two peers in several rooms of one app share one WebRTC connection, each
   frame naming its room by its token.** Trystero does so, and the owner
   decided on 2026-10-11 that the difference goes away.
-  Source: `libraries/trystero/openspec/changes/shared-connection/proposal.md`
+  Source:
+  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/proposal.md`
   (proposals).
 - **Sharing is scoped by the `app` object the user makes: nothing is keyed by
   the backend or kept in static storage, and two apps of one app id in one
@@ -5684,7 +5693,7 @@ which includes the change `shared-connection` (trystero `2e2dcd4`, webcpp
   decides which rooms may be linked, and rooms that must stay unlinkable use
   separate apps.
   Source:
-  `libraries/trystero/openspec/changes/shared-connection/reference/spec.md`
+  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/reference/spec.md`
   (proposals).
 - **The password is the app's and immutable: `app_config::password` is copied
   into the app's resource, and `room_options` has no password.** The initial
@@ -5692,20 +5701,21 @@ which includes the change `shared-connection` (trystero `2e2dcd4`, webcpp
   adopted, so a peer that reaches another room through presence already knows
   its password (owner amendment, 2026-10-14).
   Source:
-  `libraries/trystero/openspec/changes/shared-connection/reference/password-domains.md`
+  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/reference/password-domains.md`
   (proposals).
 - **Different passwords need separate apps with distinct self ids, whose
   connections, registries, presence and tokens are never shared.** A room
   token does not depend on the password, so isolation comes from scoped
   connections and registries, not from a new token format.
   Source:
-  `libraries/trystero/openspec/changes/shared-connection/reference/password-domains.md`
+  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/reference/password-domains.md`
   (proposals).
 - **The room handshake stays Trystero's one-way handshake; no reciprocal room
   proof is added.** Reciprocal proofs would change compatibility with Trystero
   JS; a JS page that mixes passwords keeps its own exposure, which the page
   documents rather than repairs.
-  Source: `libraries/trystero/openspec/changes/shared-connection/design.md`
+  Source:
+  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/design.md`
   (proposals).
 - **A passwordless app's rooms are open, by token, to the peers connected
   through any of its rooms; no proof gate is added.** A gate by a message on
@@ -5713,7 +5723,7 @@ which includes the change `shared-connection` (trystero `2e2dcd4`, webcpp
   assurance, and it cost up to 10 s against a Trystero JS peer that joined
   first; a room that must be private belongs to an app with a password.
   Source:
-  `libraries/trystero/openspec/changes/shared-connection/reference/spec.md`
+  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/reference/spec.md`
   (proposals).
 - **Adoption follows Trystero: the first connection registered wins, a second
   one to the same peer is closed and the room bound to the first, a stale one
@@ -5721,21 +5731,22 @@ which includes the change `shared-connection` (trystero `2e2dcd4`, webcpp
   met anew.** Matching Trystero's rule keeps a C++ and a Trystero JS side
   agreeing; ending the stale one first fixes the plan's silent replacement, in
   which a late close erased the new entry.
-  Source: `libraries/trystero/openspec/changes/shared-connection/design.md`
+  Source:
+  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/design.md`
   (proposals).
 - **A room binds a connected peer only after that peer advertised the room's
   token itself on that connection.** An announcement or a signal forged in its
   name must not bind an innocent peer; in Trystero JS it binds the peer by
   reuse, which is kicked after its handshake timeout.
   Source:
-  `libraries/trystero/openspec/changes/shared-connection/specs/trystero/spec.md`
+  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/specs/trystero/spec.md`
   (proposals).
 - **A bound room keeps its negotiation entry marked connected, and binds by
   signaling reuse only on its first meeting with that peer over that
   connection.** Otherwise a room bound by presence or reuse would offer to the
   peer it is bound to, and later relay signals could shorten a backoff.
   Source:
-  `libraries/trystero/openspec/changes/shared-connection/reference/spec.md`
+  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/reference/spec.md`
   (proposals).
 - **A room that binds by reuse or at its rebinding time sends `presence(1, T)`
   on the connection.** It makes the other side, Trystero JS included, bind at
@@ -5747,7 +5758,7 @@ which includes the change `shared-connection` (trystero `2e2dcd4`, webcpp
   before signaling binds it, as Trystero's source notes; the frames before a
   kept `@_leave` belong to a binding of the other side that has ended.
   Source:
-  `libraries/trystero/openspec/changes/shared-connection/reference/spec.md`
+  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/reference/spec.md`
   (proposals).
 - **A bound room has no buffer for frames that wait for its handler, where
   Trystero keeps 64 for 10 s and then drops the connection.** A binding's
@@ -5756,13 +5767,15 @@ which includes the change `shared-connection` (trystero `2e2dcd4`, webcpp
 - **A frame for a token no room of the app has is dropped and the connection
   stays; a frame that does not decode, or a 65th advertised token, ends the
   connection for every room.** Presence and routing are Trystero's.
-  Source: `libraries/trystero/openspec/changes/shared-connection/design.md`
+  Source:
+  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/design.md`
   (proposals).
 - **A kick, a failed handshake or a peer's `@_leave` ends that room's binding
   only, and the other rooms keep the connection.** Each room's membership,
   handshake, actions, queues and bounds stay its own, so a failure in one room
   costs no other.
-  Source: `libraries/trystero/openspec/changes/shared-connection/design.md`
+  Source:
+  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/design.md`
   (proposals).
 - **After a binding ends over a live connection, the room rebinds one step
   later: the larger of `handshake_timeout` and 10 s, plus 1 s (11 s by
@@ -5772,21 +5785,23 @@ which includes the change `shared-connection` (trystero `2e2dcd4`, webcpp
   added second lets a Trystero JS peer drop the frames it kept from the ended
   binding (10 s) before the next one.
   Source:
-  `libraries/trystero/openspec/changes/shared-connection/reference/spec.md`
+  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/reference/spec.md`
   (proposals).
 - **Meanwhile only the lower id refuses the peer and keeps its frames, while
   the higher id refuses nothing but drops the peer's frames of that room until
   it next sends presence.** Two honest peers cannot alternate kicks, and a
   stale frame of an ended binding is never answered in the next one; a wrong
   proof costs at most six reports in ten minutes, on the lower id only.
-  Source: `libraries/trystero/openspec/changes/shared-connection/design.md`
+  Source:
+  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/design.md`
   (proposals).
 - **The initiator accepts a correct answer to any of the last 8 challenges it
   sent the peer since their last completed handshake.** A response carries no
   challenge id, and each challenge is the initiator's own fresh nonce on a
   channel only the peer can write to, so any of them proves the password; a
   late answer of an ended binding no longer reports a false error.
-  Source: `libraries/trystero/openspec/changes/shared-connection/design.md`
+  Source:
+  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/design.md`
   (proposals).
 - **Announcements restart after a peer leaves only when no live connection to
   it remains.** Over a live connection every rebinding goes through the
@@ -5804,26 +5819,30 @@ which includes the change `shared-connection` (trystero `2e2dcd4`, webcpp
   leaves, so a second handle to one membership would make that depend on
   another; finishing the farewell sends the old room's `presence(0)` before
   the new one's `presence(1)`, as Trystero's rejoin does.
-  Source: `libraries/trystero/openspec/changes/shared-connection/design.md`
+  Source:
+  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/design.md`
   (proposals).
 - **An app holds at most `app::max_rooms` (64) rooms, a room counting until
   its `presence(0)` is sent.** A Trystero peer drops a connection whose remote
   advertises more than 64 tokens, so a 65th room would cost every connection
   of the app.
-  Source: `libraries/trystero/openspec/changes/shared-connection/design.md`
+  Source:
+  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/design.md`
   (proposals).
 - **The app handle and every room not yet ended are the users of the app's
   state: the last to go ends every connection at that call, and
   `detail::app_impl`'s destructor closes and posts nothing.** The destructor
   may run while the `io_context` is destroyed, from the last operation pending
   there, and then may only free.
-  Source: `libraries/trystero/openspec/changes/shared-connection/design.md`
+  Source:
+  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/design.md`
   (proposals).
 - **Relay sockets, subscriptions and the Nostr signing key stay per room,
   configured once for the app.** No peer sees the difference, and sharing
   sockets, batching topics and one key per app touch the strategy's bounds and
   reconnection tests, which deserve their own specification.
-  Source: `libraries/trystero/openspec/changes/shared-connection/design.md`
+  Source:
+  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/design.md`
   (proposals).
 - **The app's relays and ICE servers serve every room of it.** One
   configuration for what the rooms share, where Trystero takes the first
@@ -5834,7 +5853,7 @@ which includes the change `shared-connection` (trystero `2e2dcd4`, webcpp
   `room::on_error` reports only problems with peers.** The app's constructor
   does not fail, and no handler can see a report made during construction.
   Source:
-  `libraries/trystero/openspec/changes/shared-connection/reference/spec.md`
+  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/reference/spec.md`
   (proposals).
 - **A send that must wait for the shared channel to drain waits in its
   binding, and at each drain the bindings take turns; an inline send while the
@@ -5847,14 +5866,14 @@ which includes the change `shared-connection` (trystero `2e2dcd4`, webcpp
   locked.** The state is touched only there, so the resources need not be
   thread-safe on one thread; several threads need a strand.
   Source:
-  `libraries/trystero/openspec/changes/shared-connection/reference/spec.md`
+  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/reference/spec.md`
   (proposals).
 - **trystero runs on the Asio executor it is given, not on xactor.** How a
   library on Asio meets xactor is still to be designed, and the move onto
   webcpp::asio, webcpp::webrtc and webcpp::crypto is a change of its own,
   after this one.
   Source:
-  `libraries/trystero/openspec/changes/shared-connection/reference/spec.md`
+  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/reference/spec.md`
   (proposals).
 - **Two residual cases with a Trystero JS lower id are accepted: a reuse
   binding inside the higher id's dropping window, and a page whose timers run
@@ -5862,7 +5881,8 @@ which includes the change `shared-connection` (trystero `2e2dcd4`, webcpp
   false; the first joins by the second rebinding time (at most 43 s by
   default), the second costs one false error on the JS side, at most three
   times.
-  Source: `libraries/trystero/openspec/changes/shared-connection/design.md`
+  Source:
+  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/design.md`
   (proposals).
 
 **Bounded signaling and security.**
@@ -5939,27 +5959,28 @@ which includes the change `shared-connection` (trystero `2e2dcd4`, webcpp
   resource the allocation rule gave it, while what the rooms share lives in
   the app's.
   Source:
-  `libraries/trystero/openspec/changes/shared-connection/reference/spec.md`
+  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/reference/spec.md`
   (proposals).
 - **Peer connections, data channels and the frames received on them use the
   app's resource even while a room negotiates them; relay sockets, sealers and
   room timers use the room's.** A connection belongs to the app once adopted,
   and serves every room bound to it.
-  Source: `libraries/trystero/openspec/changes/shared-connection/design.md`
+  Source:
+  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/design.md`
   (proposals).
 - **A binding fails and frees its drain waiters, in the room's resource, when
   it detaches.** The waiters are the room's handlers, frames and timers; held
   by the app's connection, they would outlive a room with a resource of its
   own.
   Source:
-  `libraries/trystero/openspec/changes/shared-connection/reference/spec.md`
+  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/reference/spec.md`
   (proposals).
 - **A received binary payload moves out of its frame when the frame and the
   room share a resource, and is copied once otherwise; received text is always
   copied once.** A `std::pmr` container moved into another resource copies
   anyway; for text, (reason not recorded).
   Source:
-  `libraries/trystero/openspec/changes/shared-connection/reference/spec.md`
+  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/reference/spec.md`
   (proposals).
 - **The log sink, and every sentence of the app and its rooms, are in the
   app's resource, the sink shared through a `std::shared_ptr`.** The sink then
@@ -6118,7 +6139,7 @@ which includes the change `shared-connection` (trystero `2e2dcd4`, webcpp
   the counts, when a side makes more than four connections.** A livelock of
   crossed adoptions then fails by name, not as flakiness.
   Source:
-  `libraries/trystero/openspec/changes/shared-connection/reference/spec.md`
+  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/reference/spec.md`
   (proposals).
 - **The unit tests run whole rooms in one process over
   `test/support/memory_backend.hpp`, every event posted, and reach nothing
@@ -6133,23 +6154,23 @@ which includes the change `shared-connection` (trystero `2e2dcd4`, webcpp
   and a timer re-armed without delay fails a test by name instead of hanging
   it.
   Source:
-  `libraries/trystero/openspec/changes/shared-connection/reference/spec.md`
+  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/reference/spec.md`
   (proposals).
 - **The hooks' storage uses the default resource, and only when a test sets
   them.** The allocation test sets none, so its counts do not change.
   Source:
-  `libraries/trystero/openspec/changes/shared-connection/reference/spec.md`
+  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/reference/spec.md`
   (proposals).
 - **Every test case with a password fixes which side has the lower id.** Only
   the handshake's initiator reports a wrong proof.
   Source:
-  `libraries/trystero/openspec/changes/shared-connection/reference/spec.md`
+  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/reference/spec.md`
   (proposals).
 - **A test in which a peer leaves and comes back with the same id destroys the
   peer's `app` between visits, or sets `idle_timeout` to 0.** An idle
   connection kept by the peer's app would replace the new negotiation.
   Source:
-  `libraries/trystero/openspec/changes/shared-connection/reference/spec.md`
+  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/reference/spec.md`
   (proposals).
 - **The allocation test replaces the global `operator new`, counts the C
   library's allocation functions where the platform shows them, and makes
@@ -9025,15 +9046,13 @@ says what the tree does.
   `doc/stringify.adoc`; the genesis keeps O5 open though it is resolved and
   counts 20 examples where there are 21; `doc/testing.adoc` and
   `doc/exceptions.adoc` are incomplete.
-- **trystero.** 0.1.0 pins `77fed8f`, whose changelog lists `app::join`
-  under 0.1.0, while the proposal `shared-connection` is still
-  `implementing` with no release and waits for "the next release", and the
-  genesis ties 0.1.0 to `160f431`. The specification gives the interop
-  driver's timeout as 900 where `test/oracle/Jamfile` gives 2400; the shared
-  connection's delta has the roadmap list shared relay sockets, which
-  `doc/roadmap.adoc` leaves out; comments still say "the room's resource"
-  where it is the app's (`backend.hpp`, `native/data_channel.hpp`), and
-  `error.hpp` that `room::on_error` reports `invalid_configuration`;
+- **trystero.** The genesis ties 0.1.0 to `160f431`, while 0.1.0 also holds
+  the change `shared-connection` (trystero `e9326e9`). The specification gives
+  the interop driver's timeout as 900 where `test/oracle/Jamfile` gives 2400;
+  the shared connection's delta has the roadmap list shared relay sockets,
+  which `doc/roadmap.adoc` leaves out; comments still say "the room's
+  resource" where it is the app's (`backend.hpp`, `native/data_channel.hpp`),
+  and `error.hpp` that `room::on_error` reports `invalid_configuration`;
   `doc/differences.adoc` still says "as today"; comments use a private
   shorthand, `C/`, for Trystero's source files. The draft bounded parse
   (chapter 18) claims guarantee 9, which 9 to 11 now hold, rebases on
