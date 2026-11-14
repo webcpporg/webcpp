@@ -10,8 +10,11 @@
 emscripten, and on wasip2 and wasip3, where wasmtime is given that directory; a changed file of the
 suite runs such a test again; and a suite that is not checked out stops a build that needs it,
 naming the command that checks it out, and no other build. Each case builds a scratch superproject
-with the fixture library demo, whose path holds a space; BearSSL is built from its real sources, with
-the canary of libs/crypto. Run with the names of some cases to run
+with the fixture library demo, whose path holds a space. It also checks that BearSSL, pinned and built
+from its real sources with the canary of libs/crypto, compiles file by file with the flags a C
+library needs and holds the canary's symbol; that a BearSSL or a libs/crypto that is not checked
+out stops the build that needs it, naming the command; and that loading third_party/Jamfile prints
+nothing b2 warns of. Run with the names of some cases to run
 only those."""
 
 from __future__ import annotations
@@ -194,6 +197,31 @@ def test_bearssl_is_built_file_by_file(root: Path) -> None:
     assert canary in symbols.stdout.split(), symbols.stdout[-2000:]
 
 
+def test_third_party_jamfile_loads_without_noise(root: Path) -> None:
+    # b2 prints "Unescaped special character in argument" on stdout for a flag such as /OPT:REF
+    # that a Jamfile does not quote, on every load of that Jamfile.
+    result = harness.run_b2(root, '-n', 'third_party//json-schema-test-suite')
+    harness.expect(result, True)
+    assert 'Unescaped special character' not in result.stdout, result.stdout[-4000:]
+
+
+def test_bearssl_not_checked_out_is_refused(root: Path) -> None:
+    harness.copy_integration_libraries(root, 'config', 'crypto')
+    harness.third_party_of_its_own(root, 'bearssl', checked_out=False)
+    result = harness.run_b2(root, 'third_party//bearssl')
+    harness.expect(result, False, 'third_party/libs/bearssl is not checked out',
+                   'git submodule update --init third_party/libs/bearssl')
+    # A build that needs no BearSSL never looks for it.
+    harness.expect(harness.run_b2(root, 'libs/demo/test//pass'), True)
+
+
+def test_crypto_not_checked_out_is_refused(root: Path) -> None:
+    # No libs/crypto in the scratch superproject: the canary is missing.
+    result = harness.run_b2(root, 'third_party//bearssl')
+    harness.expect(result, False, 'libs/crypto is not checked out',
+                   'git submodule update --init libs/crypto')
+
+
 def test_a_suite_not_checked_out_is_refused(root: Path) -> None:
     harness.third_party_of_its_own(root, 'JSON-Schema-Test-Suite', checked_out=False)
     add_reader(root)
@@ -214,6 +242,9 @@ CASES = [
     test_a_suite_not_checked_out_is_refused,
     test_bearssl_is_pinned,
     test_bearssl_is_built_file_by_file,
+    test_third_party_jamfile_loads_without_noise,
+    test_bearssl_not_checked_out_is_refused,
+    test_crypto_not_checked_out_is_refused,
 ]
 
 
