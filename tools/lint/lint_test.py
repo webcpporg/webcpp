@@ -1719,26 +1719,38 @@ def test_world_rule(root):
 def test_entropy_sources(root):
     prepare(root)
     header = 'libs/demo/include/webcpp/demo/entropy.hpp'
+    other = 'libs/demo/include/webcpp/demo/other.hpp'
     # A header that reads entropy names no weaker source, even with lint-world:, which spares it
     # from the rule above but not from this one. getentropy is the source, not a weaker one.
-    write(root, header,
-          '// Copyright (c) 2026 WebCpp.org\n'
-          '//\n'
-          '// Distributed under the Boost Software License, Version 1.0. (See\n'
-          '// accompanying file LICENSE_1_0.txt or copy at\n'
-          '// https://www.boost.org/LICENSE_1_0.txt)\n'
-          '\n'
-          '#ifndef WEBCPP_DEMO_ENTROPY_HPP\n'
-          '#define WEBCPP_DEMO_ENTROPY_HPP\n'
-          '\n'
-          '// Calls rand(). lint-world: a test\n'
-          '// Calls getentropy(p, 16). lint-world: a test\n'
-          '\n'
-          '#endif  // WEBCPP_DEMO_ENTROPY_HPP\n')
-    expect_alone(lint(root), 'entropy sources', [
-        at(root, header, 'rand()'),
-        ': a header that reads entropy names rand, time, clock or __rdrand',
-    ], spared=(at(root, header, 'getentropy'),))
+    weaker = ['rand()', 'srand(1)', 'time(nullptr)', 'clock()', '_rdrand64_step(&v)',
+              '__builtin_ia32_rdrand32_step(&v)', 'random()', 'rand_r(&seed)', 'drand48()',
+              'nrand48(x)', 'std::mt19937 engine', '"rdrand %0"']
+    lines = ''.join(f'// Calls {name}. lint-world: a test\n' for name in weaker)
+
+    def licensed(guard: str, body: str) -> str:
+        return ('// Copyright (c) 2026 WebCpp.org\n'
+                '//\n'
+                '// Distributed under the Boost Software License, Version 1.0. (See\n'
+                '// accompanying file LICENSE_1_0.txt or copy at\n'
+                '// https://www.boost.org/LICENSE_1_0.txt)\n'
+                '\n'
+                f'#ifndef WEBCPP_DEMO_{guard}_HPP\n'
+                f'#define WEBCPP_DEMO_{guard}_HPP\n'
+                '\n'
+                f'{body}'
+                '\n'
+                f'#endif  // WEBCPP_DEMO_{guard}_HPP\n')
+
+    source = ('// Calls getentropy(p, 16). lint-world: a test\n'
+              '// Names random_device. lint-world: a test\n')
+    write(root, header, licensed('ENTROPY', lines + source))
+    # Outside the rule's scope, the same names are left alone.
+    write(root, other, licensed('OTHER', '// Calls rand(). lint-world: a test\n'))
+    expect_alone(lint(root), 'entropy sources',
+                 [at(root, header, name) for name in weaker]
+                 + [': a header that reads entropy names a weaker source'],
+                 spared=(at(root, header, 'getentropy'), at(root, header, 'Names random_device'),
+                         other))
 
 
 def test_bare_throw(root):
