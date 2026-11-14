@@ -73,6 +73,24 @@ def test_a_leftover_option_is_a_usage_error():
         assert result.returncode == 2, (arguments, result)
 
 
+def test_contains_matches_part_of_a_line():
+    assert parse('[all]\nbuild: fails\ncontains: part\n').contains == ['part']
+    refused('[all]\nbuild: succeeds\nrun: app\ncontains: x\n', 'contains:')
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        case = root / 'c'
+        case.mkdir()
+        original = harness.run_b2
+        harness.run_b2 = lambda *_a, **_k: subprocess.CompletedProcess(
+            [], 1, '/some/path/c.cpp:7:2: error: "boom"\n')
+        try:
+            for text, faults in (('boom', 0), ('/other', 1)):
+                (case / 'c.outcome').write_text(f'[all]\nbuild: fails\ncontains: {text}\n')
+                assert len(jamfiles.run_target(root, 'native', [case])) == faults, text
+        finally:
+            harness.run_b2 = original
+
+
 def test_every_case_directory_is_read():
     cases = jamfiles.case_directories()
     assert {c.name for c in cases} >= {'hello', 'broken'}, cases

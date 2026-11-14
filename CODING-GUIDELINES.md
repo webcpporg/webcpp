@@ -592,7 +592,9 @@ aliases, concepts, variables, data members and macros.
   of b2's output (trailing spaces aside), in any order; a line of one
   lowercase word and a colon is reserved for these directives, and
   `line: <text>` states a literal output line, empty for a blank one, also for
-  a line that starts with `#`, `[` or such a word;
+  a line that starts with `#`, `[` or such a word,
+  and `contains: <text>` (after `build: fails`) a text that one line of b2's
+  output contains, for a line that starts with a path of the machine;
   `run: <program>`, after `build: succeeds`, runs the program as its lane runs
   one and every other line is its standard
   output, exactly; `arguments: <word> ...` gives b2 words for this case alone

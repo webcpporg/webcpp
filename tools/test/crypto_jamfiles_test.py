@@ -60,6 +60,7 @@ class Outcome:
     succeeds: bool | None = None
     run: str | None = None
     lines: list[str] = field(default_factory=list)
+    contains: list[str] = field(default_factory=list)
     arguments: list[str] = field(default_factory=list)
 
 
@@ -83,7 +84,7 @@ def outcome(path: Path, target: str) -> Outcome:
             raise OutcomeError(f'{where}: a line before the first [block]: {raw!r}')
         directive = re.match(r'([a-z]+):(?: |$)', raw)
         key, value = (directive.group(1), raw[directive.end():]) if directive else ('', raw)
-        if key and key not in ('targets', 'build', 'run', 'arguments', 'line'):
+        if key and key not in ('targets', 'build', 'run', 'arguments', 'line', 'contains'):
             raise OutcomeError(f'{where}: no directive {key}: (a line of one lowercase word and '
                                f'a colon is reserved for them): {raw!r}')
         if key in ('targets', 'arguments') and not value.split():
@@ -107,6 +108,8 @@ def outcome(path: Path, target: str) -> Outcome:
             result.run = value
         elif key == 'arguments':
             result.arguments += value.split()
+        elif key == 'contains':
+            result.contains.append(value)
         else:
             result.lines.append(value if key == 'line' else raw)
     if target in result.targets:
@@ -122,7 +125,9 @@ def checked(path: Path, target: str, result: Outcome) -> None:
         raise OutcomeError(f'{path.name} on {target}: no build: line')
     if not result.succeeds and result.run is not None:
         raise OutcomeError(f'{path.name} on {target}: run: after build: fails')
-    if not result.succeeds and not result.lines:
+    if result.succeeds and result.contains:
+        raise OutcomeError(f'{path.name} on {target}: contains: after build: succeeds')
+    if not result.succeeds and not result.lines and not result.contains:
         raise OutcomeError(f'{path.name} on {target}: build: fails with no line to find')
     if result.succeeds and result.run is None and result.lines:
         raise OutcomeError(f'{path.name} on {target}: lines after build: succeeds, with no run:')
@@ -190,6 +195,9 @@ def run_target(root: Path, target: str, cases: list[Path]) -> list[str]:
             printed = {line.rstrip() for line in output.splitlines()}
             faults += [f'{case.name} on {target}: b2 printed no line {line!r}'
                        for line in expected.lines if line.rstrip() not in printed]
+            faults += [f'{case.name} on {target}: no line of b2 contains {text!r}'
+                       for text in expected.contains
+                       if not any(text in line for line in printed)]
             continue
         if expected.run is not None:
             try:
@@ -241,7 +249,7 @@ def main(argv: list[str]) -> int:
         started = time.monotonic()
         root = harness.scratch_superproject()
         try:
-            harness.copy_integration_libraries(root, 'crypto')
+            harness.copy_integration_libraries(root, 'config', 'crypto')
             shutil.copytree(CASES, root / 'user', ignore=harness.built)
             if target == 'emscripten':
                 harness.link_emsdk(root)

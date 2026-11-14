@@ -1,4 +1,4 @@
 [all]
 targets: emscripten
 build: fails
-webcpp::crypto: /webcpp/crypto//openssl is named in a build for Emscripten, where webcpp does not build OpenSSL.
+contains: webcpp::crypto: /webcpp/crypto//openssl is named in a build for Emscripten, where webcpp does not build OpenSSL.
