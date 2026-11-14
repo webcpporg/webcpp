@@ -8414,27 +8414,21 @@ summary.
   `organization/openspec/changes/site-increments-4-5/specs/site/spec.md`
   (proposals).
 
-## 18. Proposed, not decided
+### webrtc (accepted 2026-11-14, not built)
 
-The proposals not yet decided, each briefly, with the questions they leave
-for the owner. Neither a draft nor a proposal under discussion decides
-anything: each is here so that a contributor sees what is coming, and its
-proposal holds it in full.
-
-### webrtc (proposed 2026-11-14, not decided)
-
-webcpp::webrtc would be a header-only C++20 library of webcpp's own
+webcpp::webrtc will be a header-only C++20 library of webcpp's own
 (`kind: own`, although it wraps libdatachannel natively) for peer connections
 and data channels, shaped as the W3C WebRTC API in Asio's model, on native
 (libdatachannel 0.24.6, through its C API) and Emscripten (the browser's
 objects, through webcpp::asio's bridge), media out of scope, replacing the
-WebRTC of trystero's `backend` in a later change. It was proposed on
-2026-11-14, for its public discussion, once its draft was revised that day:
-`design.md` supersedes the specification of 2026-10-10 (`reference/spec.md`)
-where they differ; `reference/plan.md` holds three increments, and
-`reference/source/` holds increment 1, the interface and the native
-implementation, whose tests pass against the pinned libdatachannel, as the
-build asks, without exceptions and under ThreadSanitizer.
+WebRTC of trystero's `backend` in a later change. The owner accepted it on
+2026-11-14, the day its draft was revised and proposed: `design.md` supersedes
+the specification of 2026-10-10 (`reference/spec.md`) where they differ;
+`reference/plan.md` holds three increments, and `reference/source/` holds
+increment 1, the interface and the native implementation, whose tests pass
+against the pinned libdatachannel, as the build asks, without exceptions and
+under ThreadSanitizer. Its repository, `webcpporg/webrtc`, is still to be
+created from one import commit of `reference/source/`.
 
 - **A library of its own on webcpp::asio, not a part of webcpp::beast.** The
   owner's decision of 2026-11-14: beast is a source-compatible facade of
@@ -8529,6 +8523,13 @@ build asks, without exceptions and under ThreadSanitizer.
 
 Source: `libraries/webrtc/openspec/changes/genesis/design.md` Open Questions
 (proposals).
+
+## 18. Proposed, not decided
+
+The proposals not yet decided, each briefly, with the questions they leave
+for the owner. Neither a draft nor a proposal under discussion decides
+anything: each is here so that a contributor sees what is coming, and its
+proposal holds it in full.
 
 ### json_schema (draft, not decided)
 
