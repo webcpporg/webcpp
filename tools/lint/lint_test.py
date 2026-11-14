@@ -1716,6 +1716,31 @@ def test_world_rule(root):
                'libs/demo/test/pass.cpp'))
 
 
+def test_entropy_sources(root):
+    prepare(root)
+    header = 'libs/demo/include/webcpp/demo/entropy.hpp'
+    # A header that reads entropy names no weaker source, even with lint-world:, which spares it
+    # from the rule above but not from this one. getentropy is the source, not a weaker one.
+    write(root, header,
+          '// Copyright (c) 2026 WebCpp.org\n'
+          '//\n'
+          '// Distributed under the Boost Software License, Version 1.0. (See\n'
+          '// accompanying file LICENSE_1_0.txt or copy at\n'
+          '// https://www.boost.org/LICENSE_1_0.txt)\n'
+          '\n'
+          '#ifndef WEBCPP_DEMO_ENTROPY_HPP\n'
+          '#define WEBCPP_DEMO_ENTROPY_HPP\n'
+          '\n'
+          '// Calls rand(). lint-world: a test\n'
+          '// Calls getentropy(p, 16). lint-world: a test\n'
+          '\n'
+          '#endif  // WEBCPP_DEMO_ENTROPY_HPP\n')
+    expect_alone(lint(root), 'entropy sources', [
+        at(root, header, 'rand()'),
+        ': a header that reads entropy names rand, time, clock or __rdrand',
+    ], spared=(at(root, header, 'getentropy'),))
+
+
 def test_bare_throw(root):
     prepare(root)
     # A library header raises through boost::throw_exception alone. A throw in a template that
@@ -2503,6 +2528,7 @@ CASES = [
     test_banned_word,
     test_third_party_code_is_never_read,
     test_world_rule,
+    test_entropy_sources,
     test_bare_throw,
     test_raw_rules,
     test_include_boundaries_angle_brackets,

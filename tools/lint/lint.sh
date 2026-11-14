@@ -613,6 +613,22 @@ else
     printf ' the entropy\n'
 fi
 
+# 8a. A header that reads entropy names no weaker source: no rand, time, clock or
+#    __rdrand, even with lint-world:, in any header whose path ends entropy.hpp or
+#    random_device.hpp (DESIGN, 2026-10-11 "entropy, safest and readable").
+rule 'entropy sources'
+files_matching '^(libs|tools/test/fixtures)/[^/]+/include/.*(entropy|random_device)\.hpp$' \
+    > "${work_directory}/entropy_headers"
+weak='(^|[^_[:alnum:]])(s?rand|time|clock|__rdrand(16|32|64)?_step|__rdrand)[[:space:]]*\('
+weak_found="$(on_files "${work_directory}/entropy_headers" grep -nHE -e "${weak}" || true)"
+if [ -n "${weak_found}" ]; then
+    printf '%s\n' "${weak_found}" \
+        | sed 's/$/: a header that reads entropy names rand, time, clock or __rdrand/'
+    fail "a header that reads entropy names a weaker source"
+else
+    printf 'no header that reads entropy names a weaker source\n'
+fi
+
 # 9. A library's test and example Jamfiles declare their programs with tools/webcpp.jam's rules,
 #    which build each only for the targets it declares and add what every program needs; b2's
 #    own run, run-fail, compile, compile-fail, exe and unit-test do neither (tools/lint/rules.py).
