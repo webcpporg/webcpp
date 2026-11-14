@@ -12,6 +12,7 @@
 # it out; a build that needs none never looks. The C libraries of
 # webcpp::crypto's backends are built here from their own sources, file by file.
 import errors ;
+import feature ;
 import path ;
 import regex ;
 import webcpp ;
@@ -236,3 +237,48 @@ lib ctaes : libs/bitcoin/src/crypto/ctaes/ctaes.c $(CRYPTO)/src/canary_ctaes.c
     <include>libs/bitcoin/src/crypto/ctaes
   : : <include>libs/bitcoin/src/crypto/ctaes <define>WEBCPP_CRYPTO_HAS_CTAES=1 $(.gc) ;
 explicit ctaes ;
+
+# The precomputed tables of libsecp256k1 (spec section 3.5): auto (the
+# default) is small on Emscripten, the web's target, and large natively and on
+# WASI, the servers' (a ruling, spec section 10); small is window 2 and comb
+# 2x5, about 1 MB smaller and a third slower to verify; large is the library's
+# default, window 15 and comb 11x6. Propagated, so that a program's request
+# reaches the library.
+feature.feature webcpp-secp256k1-tables : auto small large : propagated ;
+
+# libsecp256k1 v0.8.0 (MIT) as its CMake builds it: src/secp256k1.c and the two
+# precomputed tables, with every module, recovery included. A program that
+# uses MSVC's static library needs SECP256K1_STATIC, or the header declares
+# every function imported from a DLL.
+path-constant SECP256K1 : libs/secp256k1 ;
+
+rule secp256k1-checked-out ( properties * )
+{
+    if ! [ path.exists [ path.native $(SECP256K1)/include/secp256k1.h ] ]
+    {
+        errors.user-error "third_party/libs/secp256k1 is not checked out: it holds no"
+            "include/secp256k1.h. Check it out with `git submodule update --init"
+            "third_party/libs/secp256k1`." ;
+    }
+}
+
+.secp256k1-small = <define>ECMULT_WINDOW_SIZE=2 <define>COMB_BLOCKS=2 <define>COMB_TEETH=5 ;
+lib secp256k1
+  : libs/secp256k1/src/secp256k1.c libs/secp256k1/src/precomputed_ecmult.c
+    libs/secp256k1/src/precomputed_ecmult_gen.c $(CRYPTO)/src/canary_secp256k1.c
+  : $(.c-library) <conditional>@secp256k1-checked-out
+    <include>libs/secp256k1/include <include>libs/secp256k1/src
+    <define>ENABLE_MODULE_ECDH=1 <define>ENABLE_MODULE_RECOVERY=1
+    <define>ENABLE_MODULE_EXTRAKEYS=1 <define>ENABLE_MODULE_SCHNORRSIG=1
+    <define>ENABLE_MODULE_MUSIG=1 <define>ENABLE_MODULE_ELLSWIFT=1
+    <define>ENABLE_MODULE_SILENTPAYMENTS=1 <toolset>msvc:<define>SECP256K1_STATIC
+    # Quoted, as b2 5.5 warns of an unquoted ":" before a variable; the product
+    # still gives one conditional property per define.
+    "<webcpp-secp256k1-tables>small:$(.secp256k1-small)"
+    "<toolset>emscripten,<webcpp-secp256k1-tables>auto:$(.secp256k1-small)"
+  : : <include>libs/secp256k1/include <define>WEBCPP_CRYPTO_HAS_SECP256K1=1
+    <toolset>msvc:<define>SECP256K1_STATIC
+    <webcpp-secp256k1-tables>small:<define>WEBCPP_CRYPTO_SECP256K1_SMALL_TABLES=1
+    <toolset>emscripten,<webcpp-secp256k1-tables>auto:<define>WEBCPP_CRYPTO_SECP256K1_SMALL_TABLES=1
+    $(.gc) ;
+explicit secp256k1 ;

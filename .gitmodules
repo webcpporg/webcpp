@@ -60,3 +60,6 @@
 	path = third_party/libs/bitcoin
 	url = https://github.com/bitcoin/bitcoin.git
 	shallow = true
+[submodule "third_party/libs/secp256k1"]
+	path = third_party/libs/secp256k1
+	url = https://github.com/bitcoin-core/secp256k1.git
