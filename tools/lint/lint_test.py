@@ -1763,6 +1763,15 @@ def test_entropy_sources_unreadable_header(root):
     write(root, header, '// Copyright (c) 2026 WebCpp.org\n')
     (root / header).chmod(0)
     try:
+        try:
+            (root / header).read_bytes()
+        except PermissionError:
+            pass
+        else:
+            # root reads whatever its mode: the case cannot make grep fail there.
+            print('test_entropy_sources_unreadable_header: skipped, the header is readable '
+                  '(running as root)')
+            return
         result = lint(root)
     finally:
         (root / header).chmod(0o644)
