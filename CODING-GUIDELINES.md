@@ -6725,7 +6725,8 @@ supersedes the temporary system-OpenSSL choice; it does not reopen every rule.
 - Plain `/webcpp/cobalt//core` omits SSL; the explicit
   `/webcpp/cobalt//io_ssl` supplies the corrected native or WASI wrapper.
 - The former shared system OpenSSL/native-only bridge is superseded by the
-  pinned static source provider on native and WASIp3, without waiting for crypto.
+  pinned static source provider on native, WASIp2 single and WASIp3, without
+  waiting for crypto.
   Chapter 5 rule 7 retains its Configure/Make and exact-archive canary exception.
 - Dedicated no-exceptions programs and local complete suites run natively;
   the general CI-level expansion remains chapter 16 work. Do not mistake those
@@ -7196,9 +7197,10 @@ C17, and `brew install botan`) and G4 (every push).
 **Provider amendment, 2026-11-03.** The owner's explicit source-build request
 supersedes this accepted design's old OpenSSL provisioning and default-link
 choices (D15 and reference sections 3.3/4.4). Future crypto uses the shared
-pinned `/webcpp/third_party//openssl` provider, whose current support is native,
-WASIp2 single and WASIp3, which crypto names through its own alias
-`/webcpp/crypto//openssl`, static, with chapter 5 rule 7's exact-archive boundary. Statements
+pinned `/webcpp/third_party//openssl` provider, whose current support is
+native, WASIp2 single and WASIp3, static, with chapter 5 rule 7's exact-archive
+boundary, and which crypto names through its own alias
+`/webcpp/crypto//openssl`. Statements
 below about finding a machine OpenSSL, refusing all WebAssembly or defaulting
 to shared linkage record the older design, not current provider requirements.
 Botan's provisioning, future algorithms, APIs and explicit allocator policy
@@ -7581,7 +7583,7 @@ are unchanged. No crypto implementation or new backend coverage is claimed.
   (proposals).
 - **The backends' page and `gcm`'s page warn that natively without OpenSSL
   BearSSL is 30 to 62 times slower than OpenSSL on ARM, and that a server on
-  ARM names `/third_party//openssl`.** BearSSL has no ARMv8 AES or PMULL code.
+  ARM names `/webcpp/crypto//openssl`.** BearSSL has no ARMv8 AES or PMULL code.
   Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
   section 5 (proposals).
 
@@ -7661,8 +7663,8 @@ are unchanged. No crypto implementation or new backend coverage is claimed.
 
 - **`<define>WEBCPP_CRYPTO_OPENSSL_MEMORY_RESOURCE`, native only, sends every
   allocation of OpenSSL in the process to a `std::pmr::memory_resource`; the
-  program gives it with `<library>/third_party//openssl` in its project's
-  requirements, and `config.hpp` refuses it on WebAssembly and without OpenSSL
+  program gives it with `/webcpp/crypto//openssl` in its project's
+  requirements, and `config.hpp` refuses it on Emscripten and without OpenSSL
   linked.** The owner's decision of 2026-10-11 made `CRYPTO_set_mem_functions`
   an option of the config, so that a program that wants OpenSSL's allocations
   in its own allocator can say so; the library beside the define keeps every
@@ -7815,10 +7817,10 @@ are unchanged. No crypto implementation or new backend coverage is claimed.
 
 - **The library targets native (Linux x86-64 and arm64, macOS arm64, Windows
   with MSVC), wasip2, wasip3 and Emscripten, and each backend runs where its
-  library exists: BearSSL, ctaes and libsecp256k1 on every target, OpenSSL and
-  Botan natively only; a Botan WebAssembly build is a later increment's.** The
-  rulebook's targets; no OpenSSL or Botan for WebAssembly exists that webcpp's
-  build can find.
+  library exists: BearSSL, ctaes and libsecp256k1 on every target, OpenSSL on
+  native, wasip2 and wasip3, Botan natively only; a Botan WebAssembly build is
+  a later increment's.** The rulebook's targets; webcpp builds no OpenSSL for
+  Emscripten and no Botan for WebAssembly.
   Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
   section 3.1 (proposals).
 - **On Windows `/webcpp/crypto//crypto` adds `bcrypt` to its usage
