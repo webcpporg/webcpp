@@ -9100,9 +9100,9 @@ says what the tree does.
   buffer given as 0, since it moves the message out before it reads its size,
   so the probe would stay for that case.
 - **A received message past the local maximum message size,** natively, is
-  truncated by libdatachannel to that size, with a warning in its log
-  (`src/impl/sctptransport.cpp`), and delivered; the page states it as a
-  difference. A peer that keeps to the size announced in the description never
+  truncated by libdatachannel to that size (`src/impl/sctptransport.cpp`),
+  silently, since webrtc installs no logger for it, and delivered; the page
+  states it as a difference. A peer that keeps to the size announced in the description never
   sends one; whether the backend should detect the truncation and fail the
   receive with `message_too_large`, as the browser implementation will, is
   open.
