@@ -590,7 +590,9 @@ aliases, concepts, variables, data members and macros.
   the targets the case is built for; `build: succeeds` or `build: fails` is
   b2's exit status; after `build: fails` every other line must be a whole line
   of b2's output (trailing spaces aside), in any order; a line of one
-  lowercase word and a colon is reserved for these directives;
+  lowercase word and a colon is reserved for these directives, and
+  `line: <text>` states a literal output line, empty for a blank one, also for
+  a line that starts with `#`, `[` or such a word;
   `run: <program>`, after `build: succeeds`, runs the program as its lane runs
   one and every other line is its standard
   output, exactly; `arguments: <word> ...` gives b2 words for this case alone

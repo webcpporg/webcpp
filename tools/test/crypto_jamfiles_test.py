@@ -33,7 +33,8 @@ SYSTEM = {'Linux': 'linux', 'Darwin': 'darwin', 'Windows': 'windows'}[platform.s
 
 # Cases whose outcome needs code that is not merged yet: a run without names leaves them out
 # (and says so), a run that names one builds it. Each entry names what it waits for. The
-# integrator empties it when the code it waits for is merged.
+# integrator empties it when the code it waits for is merged, and then rewrites the lines of those
+# cases' outcome files as b2's whole output lines (a line: directive, if need be).
 NOT_YET = {
     'has_openssl_on_emscripten': 'the refusal in config.hpp (Task 6)',
     'default_openssl_on_emscripten': 'the refusal in config.hpp (Task 6)',
@@ -82,7 +83,7 @@ def outcome(path: Path, target: str) -> Outcome:
             raise OutcomeError(f'{where}: a line before the first [block]: {raw!r}')
         directive = re.match(r'([a-z]+):(?: |$)', raw)
         key, value = (directive.group(1), raw[directive.end():]) if directive else ('', raw)
-        if key and key not in ('targets', 'build', 'run', 'arguments'):
+        if key and key not in ('targets', 'build', 'run', 'arguments', 'line'):
             raise OutcomeError(f'{where}: no directive {key}: (a line of one lowercase word and '
                                f'a colon is reserved for them): {raw!r}')
         if key in ('targets', 'arguments') and not value.split():
@@ -107,7 +108,7 @@ def outcome(path: Path, target: str) -> Outcome:
         elif key == 'arguments':
             result.arguments += value.split()
         else:
-            result.lines.append(raw)
+            result.lines.append(value if key == 'line' else raw)
     if target in result.targets:
         checked(path, target, result)
     return result
@@ -214,6 +215,10 @@ def main(argv: list[str]) -> int:
         targets = [argv[position + 1]]
         argv = argv[:position] + argv[position + 2:]
     names = [a for a in argv if not a.startswith('--')]
+    if len(names) != len(argv):
+        print(f'crypto_jamfiles: no option {[a for a in argv if a.startswith("--")]}; '
+              'the one is --target <name>', file=sys.stderr)
+        return 2
     try:
         cases = case_directories()
     except OutcomeError as error:

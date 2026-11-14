@@ -60,6 +60,19 @@ def test_the_format_is_enforced():
     refused('[wasip3]\nbuilds: fails\n[all]\nbuild: fails\nx\n', 'no directive')
 
 
+def test_line_states_a_literal_output_line():
+    lines = parse('[all]\nbuild: fails\nline: error: x\nline:\nline: # c\nline: [x]\n'
+                  'line: line: y\n').lines
+    assert lines == ['error: x', '', '# c', '[x]', 'line: y'], lines
+    refused('[all]\nbuild: fails\nerror: x\n', 'no directive')
+
+
+def test_a_leftover_option_is_a_usage_error():
+    for arguments in (['--targt', 'hello'], ['--target', 'native', '--target', 'native']):
+        result = run(*arguments)
+        assert result.returncode == 2, (arguments, result)
+
+
 def test_every_case_directory_is_read():
     cases = jamfiles.case_directories()
     assert {c.name for c in cases} >= {'hello', 'broken'}, cases
