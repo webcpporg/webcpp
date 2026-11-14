@@ -27,6 +27,6 @@ explicit cobalt_ssl_cancel ;
 
 # The native WebRTC backend needs worker threads and exceptions.
 exe combined_provider : combined_provider.cpp /webcpp/asio//asio /webcpp/asio//openssl
-    /webcpp/beast//beast /webcpp/trystero//native
+    /webcpp/beast//beast /webcpp/trystero//platform
     : <threading>multi <exception-handling>on ;
 explicit combined_provider ;
