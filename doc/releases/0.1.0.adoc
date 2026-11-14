@@ -229,6 +229,7 @@ Emscripten's notice that the runtime is kept alive.
 * Added the project id /third_party, the form a user's Jamfile writes for third-party
 code.
 * Added the lint rule canary pins, which checks crypto's canaries against their submodules.
+* Added webcpp.same-program, which proves a library named and not called adds no byte.
 
 [#webcpp-0-1-0-compilers-tested]
 == Compilers tested

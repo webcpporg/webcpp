@@ -55,6 +55,12 @@
 #     webcpp.reference library : requirements * : also-checked * ;
 #     webcpp.index page ;
 #
+# the rule of a library named and not called, tools/same_program's, which
+# builds sources with the library and without it, and passes when the two
+# programs are byte-identical:
+#
+#     webcpp.same-program name : sources + : library : targets * : requirements * ;
+#
 # and the rules of the oracle, tools/oracle/oracle.jam's, with which a
 # library's test/oracle/Jamfile runs its original over its twins and cases:
 #
@@ -221,6 +227,12 @@ modules.load webcpp-generated : generated.jam
   : [ path.native [ path.join $(.tools) generated ] ] ;
 import webcpp-generated ;
 
+# The rule of a library named and not called, loaded as the module
+# webcpp-same-program, as the documentation's are.
+modules.load webcpp-same-program : same_program.jam
+  : [ path.native [ path.join $(.tools) same_program ] ] ;
+import webcpp-same-program ;
+
 .nl = "\n" ;
 
 # The conditional requirement of every program: <build>no when the toolset
@@ -313,7 +325,7 @@ rule targets ( targets + )
 # <target> is recorded for declared, and each program as "<kind> <name>
 # <target>..." for programs: kind is the rule that declares it, run,
 # run-fail, compile, compile-fail, compile-diagnostic, boost-test, example,
-# headers-alone, serve, link or drive.
+# headers-alone, serve, link, drive or same-program.
 local rule program ( kind : names + : targets * )
 {
     local jamfile = [ jamfile ] ;
@@ -1371,4 +1383,15 @@ rule left-out ( owner )
 rule generated ( name : script : arguments * : outputs + )
 {
     webcpp-generated.generated [ where ] : $(name) : $(script) : $(arguments) : $(outputs) ;
+}
+
+# A test that builds sources with library and without it, under one output
+# name, in two directories of their own, and passes when the two files are
+# byte-identical: a library named and not called adds no byte
+# (CODING-GUIDELINES.md chapter 5, rule 11).
+rule same-program ( name : sources + : library : targets * : requirements * )
+{
+    local only = [ program same-program : $(name) : $(targets) ] ;
+    webcpp-same-program.same-program [ where ] : $(name) : $(sources) : $(library) : $(only)
+      : $(requirements) $(.handler) ;
 }
