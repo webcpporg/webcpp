@@ -213,3 +213,26 @@ lib bearssl
     <include>libs/bearssl/inc <include>libs/bearssl/src $(.bearssl-config)
   : : <include>libs/bearssl/inc <define>WEBCPP_CRYPTO_HAS_BEARSSL=1 $(.gc) ;
 explicit bearssl ;
+
+# ctaes (MIT), Pieter Wuille's constant-time AES as Bitcoin Core v31.1 ships it
+# in src/crypto/ctaes (the owner's "ctaes do Bitcoin Core", spec section 3.4):
+# the submodule libs/bitcoin is Bitcoin Core's tree at the tag, shallow, and
+# its one file of the library is compiled. Only src/crypto/ctaes is on an
+# include path: the tree's own libsecp256k1 (src/secp256k1) is never reached.
+path-constant BITCOIN : libs/bitcoin ;
+
+rule bitcoin-checked-out ( properties * )
+{
+    if ! [ path.exists [ path.native $(BITCOIN)/src/crypto/ctaes/ctaes.h ] ]
+    {
+        errors.user-error "third_party/libs/bitcoin is not checked out: it holds no"
+            "src/crypto/ctaes/ctaes.h. Check it out with `git submodule update --init"
+            "--depth 1 third_party/libs/bitcoin`." ;
+    }
+}
+
+lib ctaes : libs/bitcoin/src/crypto/ctaes/ctaes.c $(CRYPTO)/src/canary_ctaes.c
+  : $(.c-library) <conditional>@bitcoin-checked-out
+    <include>libs/bitcoin/src/crypto/ctaes
+  : : <include>libs/bitcoin/src/crypto/ctaes <define>WEBCPP_CRYPTO_HAS_CTAES=1 $(.gc) ;
+explicit ctaes ;

@@ -1,0 +1,25 @@
+# Copyright (c) 2026 WebCpp.org
+#
+# Distributed under the Boost Software License, Version 1.0. (See
+# accompanying file LICENSE_1_0.txt or copy at
+# https://www.boost.org/LICENSE_1_0.txt)
+
+[all]
+targets: native wasip2 wasip3 emscripten
+build: fails
+[native-darwin]
+Undefined symbols for architecture
+_webcpp_crypto_ctaes_9be056a_default__add_third_party_ctaes_to_your_link
+[native-linux]
+webcpp_crypto_ctaes_9be056a_default__add_third_party_ctaes_to_your_link
+undefined reference to `webcpp_crypto_ctaes_9be056a_default__add_third_party_ctaes_to_your_link'
+[wasip2]
+wasm-ld: error:
+undefined symbol: webcpp_crypto_ctaes_9be056a_default__add_third_party_ctaes_to_your_link
+[wasip3]
+wasm-ld: error:
+undefined symbol: webcpp_crypto_ctaes_9be056a_default__add_third_party_ctaes_to_your_link
+[emscripten]
+wasm-ld: error:
+undefined symbol: webcpp_crypto_ctaes_9be056a_default__add_third_party_ctaes_to_your_link
+em++: error:

@@ -38,6 +38,11 @@ BEARSSL = 'third_party/libs/bearssl'
 # The commit BearSSL is pinned at, of the mirror webcpporg/bearssl.
 BEARSSL_COMMIT = '7bea48e5e850ab4cafbe68d3765cdaba13a86d6f'
 
+BITCOIN = 'third_party/libs/bitcoin'
+
+# The commit ctaes's submodule, Bitcoin Core v31.1, is pinned at.
+BITCOIN_COMMIT = '9be056a8a72b624dae9623b2f7bded92c2a21c91'
+
 PASSED = re.compile(r'^\*\*passed\*\* (.*)$', re.MULTILINE)
 
 SUITE = 'third_party/libs/JSON-Schema-Test-Suite'
@@ -222,6 +227,36 @@ def test_crypto_not_checked_out_is_refused(root: Path) -> None:
                    'git submodule update --init libs/crypto')
 
 
+def test_ctaes_is_pinned(_: Path) -> None:
+    listed = subprocess.run(['git', '-C', str(harness.ROOT), 'ls-files', '-s', BITCOIN],
+                            capture_output=True, text=True, check=True)
+    assert listed.stdout.split()[:2] == ['160000', BITCOIN_COMMIT], listed.stdout
+
+
+def test_ctaes_is_built_from_one_file_and_the_canary(root: Path) -> None:
+    harness.copy_integration_libraries(root, 'config', 'crypto')
+    result = harness.run_b2(root, '-a', '-d+2', 'third_party//ctaes')
+    harness.expect(result, True)
+    compiles = [line for line in result.stdout.splitlines()
+                if re.search(r'(clang|gcc)\S* .*-x c ', line) and ' -c ' in line]
+    # Bitcoin Core's src/crypto/ctaes/ctaes.c and webcpp::crypto's canary: nothing else of the
+    # tree, whose libsecp256k1 is never built.
+    assert len(compiles) == 2, (len(compiles), result.stdout[-4000:])
+    assert any('src/crypto/ctaes/ctaes.c' in line for line in compiles), compiles
+    for line in compiles:
+        for flag in ('-ffunction-sections', '-fdata-sections'):
+            assert flag in line, (flag, line)
+        assert '-std=' not in line, line
+        assert 'src/secp256k1' not in line, line
+    archive = sorted((root / 'bin').rglob('libctaes.a'))
+    assert len(archive) == 1, archive
+    symbols = subprocess.run(['nm', str(archive[0])], capture_output=True, text=True, check=True)
+    prefix = '_' if sys.platform == 'darwin' else ''
+    canary = (f'{prefix}webcpp_crypto_ctaes_9be056a_default__add_third_party_ctaes'
+              '_to_your_link')
+    assert canary in symbols.stdout.split(), symbols.stdout[-2000:]
+
+
 def test_a_suite_not_checked_out_is_refused(root: Path) -> None:
     harness.third_party_of_its_own(root, 'JSON-Schema-Test-Suite', checked_out=False)
     add_reader(root)
@@ -245,6 +280,8 @@ CASES = [
     test_third_party_jamfile_loads_without_noise,
     test_bearssl_not_checked_out_is_refused,
     test_crypto_not_checked_out_is_refused,
+    test_ctaes_is_pinned,
+    test_ctaes_is_built_from_one_file_and_the_canary,
 ]
 
 
