@@ -2209,6 +2209,63 @@ def test_changelog(root):
                  [f'libs/demo/doc/changelog.adoc:{number}: a line starts with'])
 
 
+CANARY = (CPP + '\n#ifndef WEBCPP_CRYPTO_DETAIL_CANARY_H\n#define WEBCPP_CRYPTO_DETAIL_CANARY_H\n'
+          '#ifdef WEBCPP_CRYPTO_BEARSSL_CANARY_COMMIT\n'
+          '#define WEBCPP_CRYPTO_BEARSSL_COMMIT WEBCPP_CRYPTO_BEARSSL_CANARY_COMMIT\n#else\n'
+          '#define WEBCPP_CRYPTO_BEARSSL_COMMIT {bearssl}\n#endif\n'
+          '#define WEBCPP_CRYPTO_CTAES_COMMIT {ctaes}\n#endif\n')
+CANARY_HEADER = 'libs/crypto/include/webcpp/crypto/detail/canary.h'
+
+
+def record_submodule(root: Path, name: str, commit_id: str) -> None:
+    """Records the gitlink third_party/libs/name at commit_id in the scratch superproject's index,
+    as a submodule's is, without a checkout; the link the scratch copy has for third_party/libs
+    gives way to a directory first."""
+    libs = root / 'third_party/libs'
+    if libs.is_symlink():
+        git(root, 'rm', '-q', '--cached', 'third_party/libs')
+        libs.unlink()
+        libs.mkdir()
+    git(root, 'update-index', '--add', '--cacheinfo',
+        f'160000,{commit_id},third_party/libs/{name}')
+
+
+def commit_recorded(root: Path, message: str) -> None:
+    """Commits the header and the gitlinks recorded, without commit's git add -A, which would
+    drop a gitlink whose directory is not there."""
+    git(root, 'add', CANARY_HEADER)
+    git(root, 'commit', '-q', '-m', message)
+
+
+def test_canary_pins(root):
+    prepare(root)
+    # Each pin of detail/canary.h is the first seven digits of the commit the superproject
+    # records for its submodule, ctaes' for bitcoin's; the macro of a test's override, an
+    # indented line and a pin of no submodule recorded are not pins read. A pin that differs fails
+    # at the header, naming both.
+    bearssl = '7bea48e5e850ab4cafbe68d3765cdaba13a86d6f'
+    bitcoin = '1234567890abcdef1234567890abcdef12345678'
+    record_submodule(root, 'bearssl', bearssl)
+    record_submodule(root, 'bitcoin', bitcoin)
+    write(root, CANARY_HEADER, CANARY.format(bearssl='7bea48e', ctaes='1234567'))
+    commit_recorded(root, 'A canary')
+    expect_clean(lint(root))
+    write(root, CANARY_HEADER, CANARY.format(bearssl='1234567', ctaes='1234568'))
+    commit_recorded(root, 'Canaries at other commits')
+    expect_alone(lint(root), 'canary pins', [
+        f'{CANARY_HEADER}: bearssl is pinned at 1234567 and third_party/libs/bearssl is at 7bea48e',
+        f'{CANARY_HEADER}: ctaes is pinned at 1234568 and third_party/libs/bitcoin is at 1234567',
+    ])
+    record_submodule(root, 'bearssl', '1234567' + bearssl[7:])
+    write(root, CANARY_HEADER, CANARY.format(bearssl='1234567', ctaes='1234567'))
+    commit_recorded(root, 'Canaries at the recorded commits')
+    expect_clean(lint(root))
+    git(root, 'rm', '-q', '--cached', 'third_party/libs/bearssl')
+    commit_recorded(root, 'No bearssl')
+    expect_alone(lint(root), 'canary pins', [
+        'bearssl is pinned at 1234567 and third_party/libs/bearssl is at missing'])
+
+
 def test_pyright(root):
     prepare(root)
     # A warning fails as an error does. lint_test.py itself proves the import paths: it imports
@@ -2520,6 +2577,7 @@ CASES = [
     test_doc_comment_references,
     test_doc_comment_code_spans,
     test_changelog,
+    test_canary_pins,
     test_pyright,
     test_python_line_length,
     test_python_blank_lines,

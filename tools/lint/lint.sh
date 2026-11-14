@@ -28,7 +28,8 @@
 # or class, that a comment of a Jam file keeps to 80 columns, that a library header raises
 # through boost::throw_exception, never with a bare throw, that no code span of a Doc Comment
 # holds __X__ unescaped, which MrDocs shows as a bold X, and that a library's changelog and a
-# version's release notes keep their form.
+# version's release notes keep their form, and that each canary of webcpp::crypto is pinned at
+# its submodule's commit.
 #
 # clang-tidy reads the compilation database of tools/lint/compile_commands.py: what b2 compiles
 # for the libraries' tests and examples and for their own lanes, a served component among them,
@@ -766,6 +767,38 @@ if python3 tools/lint/rules.py changelog < "${work_directory}/files"; then
     printf 'every changelog keeps its form\n'
 else
     fail 'a changelog breaks its form (AGENTS.md chapter 5)'
+fi
+
+# 19. Each canary's commit is its submodule's (CODING-GUIDELINES.md chapter 5, rule 11):
+#     every `#define WEBCPP_CRYPTO_<NAME>_COMMIT <hex>` of crypto's detail/canary.h names
+#     the first seven digits of the commit the superproject records for
+#     third_party/libs/<submodule>, read from git, so that no checkout is needed. The
+#     submodule is the canary's name, except ctaes, which Bitcoin Core's submodule holds.
+rule 'canary pins'
+canary_header='libs/crypto/include/webcpp/crypto/detail/canary.h'
+pins="$(grep -hoE '^#define WEBCPP_CRYPTO_[A-Z0-9]+_COMMIT [0-9a-f]{7}$' \
+    "${canary_header}" 2>/dev/null || true)"
+pin_faults=''
+while read -r _ macro hex; do
+    [ -n "${macro}" ] || continue
+    name="$(printf '%s' "${macro}" | sed -E 's/^WEBCPP_CRYPTO_(.*)_COMMIT$/\1/' | tr 'A-Z' 'a-z')"
+    case "${name}" in
+        ctaes) submodule='bitcoin' ;;
+        *) submodule="${name}" ;;
+    esac
+    head="$(git rev-parse --short=7 "HEAD:third_party/libs/${submodule}" 2>/dev/null || printf 'missing')"
+    if [ "${head}" != "${hex}" ]; then
+        pin_faults="${pin_faults}${canary_header}: ${name} is pinned at ${hex} and third_party/libs/${submodule} is at ${head}
+"
+    fi
+done <<EOF_PINS
+${pins}
+EOF_PINS
+if [ -n "${pin_faults}" ]; then
+    printf '%s' "${pin_faults}"
+    fail "a canary's commit is not its submodule's"
+else
+    printf "every canary's commit is its submodule's\n"
 fi
 
 printf '\n'
