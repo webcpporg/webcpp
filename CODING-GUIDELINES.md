@@ -6122,14 +6122,11 @@ archived on 2026-11-14.
   uses worker threads. These dependency changes prepare the later migration;
   they do not claim that Trystero already uses the webcpp facades.
   Source: `doc/building.adoc` (libs/trystero).
-- **A library found nowhere would leave trystero out with one message, unless
-  `webcpp-require-external=on`, as the CI builds, stops the build; none is
-  searched for today.** `b2 test` then builds every other library.
-  Source: `AGENTS.md` (libs/trystero).
-- **The searched libraries are explicit targets.** Requested alone, at the
-  superproject's root, their alternatives would be matched against a request
-  without `<cxxstd>20`, and none chosen.
-  Source: `build.jam` (libs/trystero).
+- **trystero's three source dependencies are initialised submodules, and a
+  checkout without one stops the build naming it.** `third_party/libs/secp256k1`,
+  `openssl` and `libdatachannel` are initialised with one `git submodule update
+  --init --recursive`; no library is searched for, so none is left out.
+  Source: `doc/building.adoc` (libs/trystero).
 - **embind is linked as the flag `-lembind`, not with b2's `<embind>on`.**
   `<embind>on` is not a free feature, and b2 ignores one among usage
   requirements (measured: a program then fails to link,

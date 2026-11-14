@@ -226,8 +226,8 @@ the build directory of the program that uses it: libsecp256k1 0.8.0 as
 `/third_party//secp256k1` (its tables, small on emscripten and large natively,
 are chosen by the feature `webcpp-secp256k1-tables`: `auto`, `small` or
 `large`), and, for its native backend, libdatachannel 0.24.6 and OpenSSL 3.
-Nothing is installed in `.local/` or found on the system, and no `-s` option
-names them. Its page says how each is built.
+With the pinned submodules initialised, nothing is installed in `.local/` or
+found on the system, and no `-s` option names them. Its page says how each is built.
 
 ## Documentation
 

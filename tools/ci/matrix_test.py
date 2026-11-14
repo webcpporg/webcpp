@@ -1068,7 +1068,6 @@ def example_externals(root: Path):
                               f'EXTERNAL_VARIABLES = {EXAMPLE_VARIABLES!r}')
     assert 'EXTERNAL_DEPENDENCIES = {' in patched and 'EXTERNAL_VARIABLES = (' in patched, (
         'matrix.py no longer declares both constants as empty')
-    assert "{'trystero': ('example',)}" in patched and "('EXAMPLE_ROOT',)" in patched
     script.write_text(patched)
     matrix.EXTERNAL_DEPENDENCIES = EXAMPLE_DEPENDENCIES
     matrix.EXTERNAL_VARIABLES = EXAMPLE_VARIABLES

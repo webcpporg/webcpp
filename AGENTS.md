@@ -244,15 +244,16 @@ Jamroot is its build configuration, and `libs/<name>` is its repository.
   toolsets compile;
 - for emscripten: Emscripten 6.0.11, from emsdk, and Node, which runs its
   programs; the tests of the build need it too;
-- for trystero: nothing installed: libsecp256k1 0.8.0 is `/third_party//secp256k1`,
+- for trystero: nothing installed, with the pinned submodules initialised: libsecp256k1 0.8.0 is `/third_party//secp256k1`,
   built by `b2` from the pinned `third_party/libs/secp256k1` (small tables on
   emscripten, large natively; `<webcpp-secp256k1-tables>` asks otherwise). No
   library of `libs/` needs an externally provisioned dependency today, though
   `webcpp.external` and `webcpp-require-external=on` stay for a later one;
 - for native Trystero: CMake and Make (nmake on Windows), and the pinned
   `third_party/libs/libdatachannel` checkout with its required nested sources.
-  Initialize it with `git submodule update --init --recursive
-  third_party/libs/libdatachannel`. B2 builds static libdatachannel and its
+  Initialize it, and the libsecp256k1 every room links, with `git submodule
+  update --init --recursive third_party/libs/libdatachannel
+  third_party/libs/secp256k1`. B2 builds static libdatachannel and its
   nested dependencies with the consumer's compiler and runtime settings.
   Every consumer of `/webcpp/third_party//libdatachannel` requires
   `threading=multi`: a single-thread request is refused, since libdatachannel

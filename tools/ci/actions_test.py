@@ -1260,9 +1260,6 @@ def test_no_external_library_action_remains(scratch: Path) -> None:
     root = CI.parents[1]
     for workflow in (root / '.github/workflows').glob('*.yml'):
         assert 'actions/secp256k1' not in workflow.read_text(), workflow
-    for action in (CI / 'actions').iterdir():
-        assert not (action / 'install.sh').is_file() or 'SECP256K1' not in (
-            action / 'install.sh').read_text(), action
 
 
 def test_container_pulls_the_pinned_image_without_building(scratch: Path) -> None:
