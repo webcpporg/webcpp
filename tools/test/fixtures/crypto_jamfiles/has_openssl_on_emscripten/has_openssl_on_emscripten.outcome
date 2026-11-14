@@ -1,0 +1,12 @@
+# Copyright (c) 2026 WebCpp.org
+#
+# Distributed under the Boost Software License, Version 1.0. (See
+# accompanying file LICENSE_1_0.txt or copy at
+# https://www.boost.org/LICENSE_1_0.txt)
+
+# Until Task 6 merges, this case is left out of a run (NOT_YET). When it is enabled, rewrite the
+# message below as b2's whole output line(s), with a line: directive.
+[all]
+targets: emscripten
+build: fails
+webcpp::crypto: OpenSSL is not built for Emscripten. In the program's Jamfile, replace /webcpp/crypto//openssl with /third_party//bearssl.
