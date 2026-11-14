@@ -18,8 +18,10 @@ the value as English writes a number, with a comma between each three digits fro
   never read here): `n-examples` and `n-examples-<target>`, the programs of kind example; `n-tests`
   and `n-tests-<target>`, every other one, each header that webcpp.headers-alone compiles alone one,
   each HTTP component that webcpp.serve serves one, each program that webcpp.link links and never
-  runs one, and each test that webcpp.drive drives one; `n-served` and `n-served-<target>`, those
-  served components alone; `n-linked` and `n-linked-<target>`, those linked programs alone;
+  runs one, each test that webcpp.drive drives one, and each pair that
+  webcpp.same-program compares one (a test of its targets);
+  `n-served` and `n-served-<target>`, those served components alone;
+  `n-linked` and `n-linked-<target>`, those linked programs alone;
   `n-driven` and `n-driven-<target>`, those driven tests alone; `n-boost-test-suites`; and
   `n-headers`, the headers webcpp.headers-alone compiles alone, one program each. A target is
   native, emscripten, wasip2 or wasip3, and every one is counted, so a count of programs may be 0:
@@ -61,7 +63,8 @@ TWINS = HERE.parent / 'oracle/twins.py'
 SELF = 'tools/doc/counts.py'
 
 KINDS = ('example', 'run', 'run-fail', 'compile', 'compile-fail', 'compile-diagnostic',
-         'boost-test', 'headers-alone', 'serve', 'link', 'link-fail', 'drive')
+         'boost-test', 'headers-alone', 'serve', 'link', 'link-fail', 'drive',
+         'same-program')
 TARGETS = ('native', 'emscripten', 'wasip2', 'wasip3')
 
 # What each generic count is counted from, by its name, as a fault names it.

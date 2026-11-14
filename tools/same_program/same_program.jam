@@ -9,13 +9,14 @@
 # the same sources, one with the library and one without, each renamed by a
 # tag rule to the test's name so that both outputs have the same name (ld64's
 # ad hoc signature embeds it), each in a directory of its own (b2's
-# <location-prefix>, which a target's name alone would not give it), and a test whose action compares
-# them byte for byte. Release, without debug information, and, with MSVC,
-# /Brepro, which keeps a time stamp out of the link. Both programs link with
-# the same flags, the linker's removal of unused sections included (the
-# usage requirement of a C library, which the program with the library would
-# otherwise alone have), so that only the named library differs between them.
-# This file is loaded as the module webcpp-same-program.
+# <location-prefix>, which a target's name alone would not give it), and a
+# test whose action compares them byte for byte. Release, without debug
+# information, and, with MSVC, /Brepro, which keeps a time stamp out of the
+# link. Both programs link with the same flags, the linker's removal of
+# unused sections included (the usage requirement of a C library, which the
+# program with the library would otherwise alone have), and with the library
+# as an archive, so that only the named library differs between them. This
+# file is loaded as the module webcpp-same-program.
 import feature ;
 import generators ;
 import modules ;
@@ -41,7 +42,11 @@ if [ os.name ] = NT { .python = python ; } else { .python = python3 ; }
 
 # What both programs link with, whichever has the library: the linker's
 # removal of unused sections, which a C library's usage requirements give the
-# program that links it (WebAssembly's linkers remove them by default).
+# program that links it (WebAssembly's linkers remove them by default). The
+# spelling is the one of those usage requirements, tools/webcpp-openssl.jam's
+# declare and, for a C library, the third_party recipe's (CODING-GUIDELINES.md
+# chapter 5, rule 4): a recipe that spells it another way must change it here
+# too, or the pair would differ by that flag.
 .link = <target-os>darwin:<linkflags>-Wl,-dead_strip
     <target-os>linux:<linkflags>-Wl,--gc-sections
     <target-os>windows:<linkflags>"/OPT:REF" ;
@@ -58,25 +63,46 @@ rule tag ( name : type ? : property-set )
 }
 
 # found is tools/webcpp.jam's `where`; only is the program's requirements of
-# its targets.
+# its targets. The pair is linked with <link>static, so that the library is an
+# archive whatever its own request says, and requirements, which only the two
+# programs get, hold the handler of a build without exceptions.
 rule same-program ( found + : name : sources + : library : only * : requirements * )
 {
     local pair = $(requirements) $(only) <variant>release <debug-symbols>off
         <toolset>msvc:<linkflags>/Brepro <toolset>msvc:<cxxflags>/Brepro
-        $(.link) <webcpp-same-name>$(name) <tag>@webcpp-same-program%tag ;
+        $(.link) <link>static <webcpp-same-name>$(name) <tag>@webcpp-same-program%tag ;
     exe $(name)_with : $(sources) $(library) : $(pair) <location-prefix>$(name)_with ;
     exe $(name)_without : $(sources) : $(pair) <location-prefix>$(name)_without ;
     $(found[1]).mark-target-as-explicit $(name)_with $(name)_without ;
-    testing.make-test same-program : $(name)_with $(name)_without : $(only) : $(name) ;
+    testing.make-test same-program : $(name)_with $(name)_without
+        : $(only) <webcpp-same-name>$(name) : $(name) ;
 }
 
+# The two programs are the sources whose name is the pair's, in the directory
+# of their side, never the first and the second source: a link may add files
+# (MSVC's .pdb) or order them as it likes.
 rule compare ( target : sources * : properties * )
 {
+    local name = [ feature.get-values <webcpp-same-name> : $(properties) ] ;
+    for local source in $(sources)
+    {
+        if $(source:B) = $(name) && ! ( $(source:S) = .pdb )
+        {
+            if [ MATCH "/($(name)_with)/" : $(source) ]
+            {
+                WITH on $(target) = $(source) ;
+            }
+            else if [ MATCH "/($(name)_without)/" : $(source) ]
+            {
+                WITHOUT on $(target) = $(source) ;
+            }
+        }
+    }
     PYTHON on $(target) = $(.python) ;
     COMPARE on $(target) = $(.compare) ;
 }
 
-actions compare
+actions compare bind WITH WITHOUT
 {
-    "$(PYTHON)" "$(COMPARE)" --output "$(<)" "$(>[1])" "$(>[2])"
+    "$(PYTHON)" "$(COMPARE)" --output "$(<)" "$(WITH)" "$(WITHOUT)"
 }

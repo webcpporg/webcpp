@@ -24,6 +24,11 @@ def main(argv: list[str]) -> int:
     pairs = [(Path(args.with_library), Path(args.without_library))]
     if pairs[0][0].suffix == '.js':
         pairs.append((pairs[0][0].with_suffix('.wasm'), pairs[0][1].with_suffix('.wasm')))
+    missing = [str(path) for pair in pairs for path in pair if not path.is_file()]
+    if missing:
+        for path in missing:
+            print(f'same_program: missing: {path} was not written by the link', file=sys.stderr)
+        return 1
     lines, faults = [], []
     for a, b in pairs:
         same = a.read_bytes() == b.read_bytes()

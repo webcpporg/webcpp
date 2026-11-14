@@ -813,7 +813,7 @@ every build, so that no count drifts from the tree:
 - from the programs b2 records as it loads the library's test and example
   Jamfiles: `{n-examples}` and `{n-examples-<target>}`, `{n-tests}` and
   `{n-tests-<target>}` (each header compiled alone is one test, and so is
-  each served component, each linked program and each driven test),
+  each served component, each linked program, each driven test and each same-program pair),
   `{n-served}` and `{n-served-<target>}`, the served components alone,
   `{n-linked}` and `{n-linked-<target>}`, the programs `webcpp.link` links
   and never runs, `{n-driven}` and `{n-driven-<target>}`, the tests
@@ -1043,7 +1043,6 @@ webcpp.example      <source> : <requirements> * : <targets> * ;
 webcpp.headers-alone <library> : <include-root> : <only> * : <requirements> * : <targets> * ;
 webcpp.link         <name> : <sources> + : <requirements> * : <targets> * ;
 webcpp.link-fail    <name> : <sources> + : <requirements> * : <targets> * ;
-webcpp.same-program <name> : <sources> + : <library> : <targets> * : <requirements> * ;
 webcpp.data         <directory> + ;   (requirements)
 webcpp.source-only <directory> + ;   (reference source trees)
 ```
@@ -1238,7 +1237,7 @@ webcpp.same-program <name> : <sources> + : <library> : <targets> * : <requiremen
 
 | Rule | Passes when | Notes |
 | --- | --- | --- |
-| `webcpp.same-program` | `<sources>` built with `<library>` and without it, as two programs of b2 under the one output name `<name>`, give byte-identical files (on emscripten the `.js` and the `.wasm` beside it) | a test of type `SAME_PROGRAM`, listed by `--dump-tests` and recorded by `--out-xml`; `<requirements>` are properties given to both programs (`<library>/webcpp/crypto//crypto`), `<targets>` as for any program. The pair is built in two directories of its own (`<name>_with`, `<name>_without`), release, without debug information, with `/Brepro` on MSVC, and with the same link flags, the linker's removal of unused sections (`-Wl,--gc-sections`, `-Wl,-dead_strip`, `/OPT:REF`) included, so that a C library's usage requirement is not what differs: only `<library>` does. It fails naming both files with their sizes. Nothing runs b2 inside b2 |
+| `webcpp.same-program` | `<sources>` built with `<library>` and without it, as two programs of b2 under the one output name `<name>`, give byte-identical files (on emscripten the `.js` and the `.wasm` beside it) | a test of type `SAME_PROGRAM`, listed by `--dump-tests` and recorded by `--out-xml`; `<requirements>` are properties given to both programs (`<library>/webcpp/crypto//crypto`), `<targets>` as for any program. The pair is built in two directories of its own (`<name>_with`, `<name>_without`), release, without debug information, with `/Brepro` on MSVC, with the library linked as an archive whatever its own request (`<link>static`), with the handler of a build without exceptions as every program has it, and with the same link flags, the linker's removal of unused sections (`-Wl,--gc-sections`, `-Wl,-dead_strip`, `/OPT:REF`) included, so that a C library's usage requirement is not what differs: only `<library>` does. It fails naming both files with their sizes. Nothing runs b2 inside b2 |
 
 The rules of the doc Jamfiles are in chapter 3: `webcpp.doc <library> :
 <page>.adoc ;`, `webcpp.reference <library> : <requirements> * :

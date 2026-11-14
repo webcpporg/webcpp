@@ -21,10 +21,11 @@ library are recorded by kind, a link-only program and a driven test among them; 
 is built and run natively only, its framework always with exceptions; Boost.JSON's definitions link
 on every target; every program sees C++20 and exceptions, on every target; and a test reads the
 directory webcpp.data gives it, which must be absolute and hold no character the shell would read,
-at the same path on every target, wasmtime being given it on WASI; and webcpp.same-program passes when
-its sources built with a library and without it give byte-identical programs, the same name in two
-directories, the linker's removal of unused sections on both or neither, and fails naming both files
-and their sizes when the library's code is called. Each case builds a scratch
+at the same path on every target, wasmtime being given it on WASI; and webcpp.same-program passes
+when its sources built with a library and without it give byte-identical programs, the same name in
+two directories, linked with the same flags, the linker's removal of unused sections included, with
+exceptions on or off, and fails naming both files and their sizes when the library's code is
+called. Each case builds a scratch
 superproject with the fixture library demo. Run with the names of some cases to run only those."""
 
 from __future__ import annotations
@@ -1174,7 +1175,10 @@ def test_a_library_called_differs(root):
     differ = re.search(r'differ: (\S+) \((\d+) bytes\) and (\S+) \((\d+) bytes\)', result.stdout)
     assert differ, result.stdout[-4000:]
     with_file, with_size, without_file, without_size = differ.groups()
-    assert with_file != without_file and with_size != without_size, differ.group(0)
+    assert with_file != without_file, differ.group(0)
+    assert (root / with_file).read_bytes() != (root / without_file).read_bytes(), differ.group(0)
+    assert (int(with_size), int(without_size)) == ((root / with_file).stat().st_size,
+                                                  (root / without_file).stat().st_size)
     assert with_file.rsplit('/', 1)[-1] == without_file.rsplit('/', 1)[-1] == 'hello_unused', (
         differ.group(0))
     assert passed(result) == set(), result.stdout[-4000:]
@@ -1199,7 +1203,8 @@ def test_the_pair_shares_one_name(root):
         directories = linked_as(result, 'hello_unused', suffix)
         assert len(directories) == 2 and len(set(directories)) == 2, (
             request, directories, result.stdout[-4000:])
-        assert sorted(d.split('/')[4] for d in directories) == [
+        assert sorted(part for d in directories for part in d.split('/')
+                      if part.startswith('hello_unused_')) == [
             'hello_unused_with', 'hello_unused_without'], directories
 
 
@@ -1218,6 +1223,36 @@ def test_the_pair_shares_one_name_on_emscripten(root):
     result = harness.run_b2(root, '-a', *EMSCRIPTEN, 'libs/same/test')
     harness.expect(result, False, 'same_program: differ: ')
     assert '.wasm (' in result.stdout, result.stdout[-4000:]
+
+
+# A program that throws through Boost's handler: built without exceptions it links only with
+# tools/throw_exception.cpp, which every program rule gives it, the pair's two programs included.
+SAME_THROWS = ('#include <boost/throw_exception.hpp>\n'
+               '#include <stdexcept>\n'
+               'int main(int argc, char**) {\n'
+               '    if (argc > 5) boost::throw_exception(std::runtime_error("planted"));\n'
+               '    return 0;\n'
+               '}\n')
+
+
+def test_a_pair_built_without_exceptions_links_the_handler_and_compares_equal(root):
+    harness.link_wasi_tools(root)
+    add_same_program(root, sources=dict(SAME_SOURCES, **{'hello.cpp': SAME_THROWS}))
+    for request in ((), WASIP2):
+        result = harness.run_b2(root, '-a', '-j3', *request, 'exception-handling=off',
+                                'libs/same/test')
+        harness.expect(result, True)
+        assert passed(result) == {'hello_unused'}, (request, passed(result), result.stdout[-4000:])
+
+
+def test_a_shared_library_is_compared_as_a_static_one(root):
+    # The library's own request is the default, shared: the pair still links it as an archive, or
+    # the program with it would differ by its load command alone.
+    add_same_program(root, SAME_JAMFILE.replace('unused.cpp : <link>static : :',
+                                                'unused.cpp : : :'))
+    harness.expect(harness.run_b2(root, '-a', '-j3', 'libs/same/test'), True)
+    assert list((root / 'bin').glob('**/release/**/link-static/libunused.a')), sorted(
+        path.name for path in (root / 'bin').rglob('libunused*'))
 
 
 # A library that carries the usage requirement a C library's third_party recipe gives it, the
@@ -1292,6 +1327,8 @@ CASES = [
     test_the_pair_shares_one_name,
     test_the_pair_shares_one_name_on_emscripten,
     test_a_library_with_gc_flags_still_compares_equal,
+    test_a_pair_built_without_exceptions_links_the_handler_and_compares_equal,
+    test_a_shared_library_is_compared_as_a_static_one,
 ]
 
 

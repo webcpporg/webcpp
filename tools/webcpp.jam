@@ -325,7 +325,7 @@ rule targets ( targets + )
 # <target> is recorded for declared, and each program as "<kind> <name>
 # <target>..." for programs: kind is the rule that declares it, run,
 # run-fail, compile, compile-fail, compile-diagnostic, boost-test, example,
-# headers-alone, serve, link or drive.
+# headers-alone, serve, link, drive or same-program.
 local rule program ( kind : names + : targets * )
 {
     local jamfile = [ jamfile ] ;
@@ -1393,5 +1393,5 @@ rule same-program ( name : sources + : library : targets * : requirements * )
 {
     local only = [ program same-program : $(name) : $(targets) ] ;
     webcpp-same-program.same-program [ where ] : $(name) : $(sources) : $(library) : $(only)
-      : $(requirements) ;
+      : $(requirements) $(.handler) ;
 }
