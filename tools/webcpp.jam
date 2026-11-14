@@ -59,7 +59,8 @@
 # builds sources with the library and without it, and passes when the two
 # programs are byte-identical:
 #
-#     webcpp.same-program name : sources + : library : targets * : requirements * ;
+#     webcpp.same-program name : sources + : library : targets *
+#       : requirements * ;
 #
 # and the rules of the oracle, tools/oracle/oracle.jam's, with which a
 # library's test/oracle/Jamfile runs its original over its twins and cases:
