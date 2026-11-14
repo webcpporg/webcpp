@@ -88,6 +88,7 @@ None.
 * Changed release checks to accept the tested compiler subset.
 * Added agent skills with validated metadata for common contributor workflows.
 * Changed the libdatachannel target's single-thread refusal to name libdatachannel's threads.
+* Added BearSSL, built from source as `/third_party//bearssl`.
 * *Breaking change:* changed wasip2 programs to build with exceptions, as
 wasip3 does; whether a program uses them is its developer's choice.
 * Added emscripten as a tested target (Emscripten 6.0.11 under Node):

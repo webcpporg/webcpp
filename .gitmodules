@@ -53,3 +53,6 @@
 	path = third_party/libs/wycheproof
 	url = https://github.com/C2SP/wycheproof.git
 	shallow = true
+[submodule "third_party/libs/bearssl"]
+	path = third_party/libs/bearssl
+	url = ../bearssl.git

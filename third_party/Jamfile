@@ -9,7 +9,8 @@
 # licence, declared here as /webcpp/third_party//<target>, whose usage
 # requirements give a program what it needs. A target whose submodule is not
 # checked out stops the build that needs it, naming the command that checks
-# it out; a build that needs none never looks.
+# it out; a build that needs none never looks. The C libraries of
+# webcpp::crypto's backends are built here from their own sources, file by file.
 import errors ;
 import path ;
 import regex ;
@@ -132,3 +133,75 @@ import webcpp-ca-certificates ;
 webcpp-ca-certificates.declare ca_certificates/cacert.pem ca_certificates/manifest.json
     ../tools/ca_certificates/generate.py ../tools/ca_certificates/bundle.py ;
 explicit ca_certificates ca_certificates-header ;
+
+# The C libraries of webcpp::crypto's backends: each a static library compiled
+# file by file in the library's own C dialect (no -std), every function and
+# datum in a section of its own, so that a program keeps only what it calls
+# (CODING-GUIDELINES.md chapter 5, "Bringing a C library into webcpp"). Upstream's
+# warnings are not ours. webcpp's libs/crypto/src/canary_<name>.c joins each:
+# it defines the symbol the backend's header reads, which names the commit
+# and the configuration.
+path-constant CRYPTO : ../libs/crypto ;
+
+# The canaries and their header are webcpp::crypto's: a checkout without
+# libs/crypto stops the build of a C library of crypto's, naming the command,
+# and leaves the other targets of this Jamfile as they are.
+rule crypto-checked-out ( properties * )
+{
+    if ! [ path.exists [ path.native $(CRYPTO)/src/canary_bearssl.c ] ]
+    {
+        errors.user-error "libs/crypto is not checked out: it holds no"
+            "src/canary_bearssl.c, which the C libraries of webcpp::crypto's backends"
+            "are built with. Check it out with `git submodule update --init libs/crypto`." ;
+    }
+}
+
+.c-library = <link>static <warnings>off <warnings-as-errors>off
+    <conditional>@crypto-checked-out
+    <toolset>clang:<cflags>"-ffunction-sections -fdata-sections"
+    <toolset>gcc:<cflags>"-ffunction-sections -fdata-sections"
+    <toolset>emscripten:<cflags>"-ffunction-sections -fdata-sections"
+    <toolset>msvc:<cflags>"/Gy /Gw"
+    <include>$(CRYPTO)/include ;
+
+# What a program that links one of them needs: the linker's removal of unused
+# sections, which wasm-ld, Emscripten and MSVC's release link do by default
+# (link.exe leaves /OPT:REF off under /DEBUG, so it is asked for).
+.gc = <target-os>darwin:<linkflags>-Wl,-dead_strip
+    <target-os>linux:<linkflags>-Wl,--gc-sections
+    <toolset>msvc:<linkflags>/OPT:REF ;
+
+# BearSSL (MIT), from webcpp's unmodified mirror webcpporg/bearssl. Every .c
+# of src/, the POWER8 ones too, which off POWER compile to the stubs other
+# files call. One source of entropy, getentropy, with RDRAND and /dev/urandom
+# off (libs/crypto's random_device reads the same source): wasi-libc and
+# Emscripten declare getentropy only under _DEFAULT_SOURCE, and macOS only in
+# <sys/random.h>, which src/rand/sysrng.c does not include. On Windows
+# BearSSL's only seeder is CryptGenRandom, not the system's BCryptGenRandom,
+# so every seeder is off there and BearSSL has none.
+path-constant BEARSSL : libs/bearssl ;
+
+rule bearssl-checked-out ( properties * )
+{
+    if ! [ path.exists [ path.native $(BEARSSL)/inc/bearssl.h ] ]
+    {
+        errors.user-error "third_party/libs/bearssl is not checked out: it holds no"
+            "inc/bearssl.h. Check it out with `git submodule update --init"
+            "third_party/libs/bearssl`." ;
+    }
+}
+
+lib bearssl
+  : [ glob libs/bearssl/src/*.c libs/bearssl/src/*/*.c ] $(CRYPTO)/src/canary_bearssl.c
+  : $(.c-library) <conditional>@bearssl-checked-out
+    <include>libs/bearssl/inc <include>libs/bearssl/src
+    <define>BR_RDRAND=0 <define>BR_USE_URANDOM=0
+    <target-os>windows:<define>BR_USE_GETENTROPY=0
+    <target-os>windows:<define>BR_USE_WIN32_RAND=0
+    <toolset>gcc:<define>BR_USE_GETENTROPY=1 <toolset>gcc:<define>_DEFAULT_SOURCE
+    <toolset>clang:<define>BR_USE_GETENTROPY=1 <toolset>clang:<define>_DEFAULT_SOURCE
+    <toolset>emscripten:<define>BR_USE_GETENTROPY=1
+    <toolset>emscripten:<define>_DEFAULT_SOURCE
+    <target-os>darwin:<cflags>"-include sys/random.h"
+  : : <include>libs/bearssl/inc <define>WEBCPP_CRYPTO_HAS_BEARSSL=1 $(.gc) ;
+explicit bearssl ;

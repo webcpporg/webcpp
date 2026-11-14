@@ -10,7 +10,8 @@
 emscripten, and on wasip2 and wasip3, where wasmtime is given that directory; a changed file of the
 suite runs such a test again; and a suite that is not checked out stops a build that needs it,
 naming the command that checks it out, and no other build. Each case builds a scratch superproject
-with the fixture library demo, whose path holds a space. Run with the names of some cases to run
+with the fixture library demo, whose path holds a space; BearSSL is built from its real sources, with
+the canary of libs/crypto. Run with the names of some cases to run
 only those."""
 
 from __future__ import annotations
@@ -28,6 +29,11 @@ import harness
 WASIP2 = ('toolset=clang-wasip2', 'testing.launcher=wasmtime')
 WASIP3 = ('toolset=clang-wasip3', 'testing.launcher=wasmtime')
 EMSCRIPTEN = ('toolset=emscripten',)
+
+BEARSSL = 'third_party/libs/bearssl'
+
+# The commit BearSSL is pinned at, of the mirror webcpporg/bearssl.
+BEARSSL_COMMIT = '7bea48e5e850ab4cafbe68d3765cdaba13a86d6f'
 
 PASSED = re.compile(r'^\*\*passed\*\* (.*)$', re.MULTILINE)
 
@@ -157,6 +163,37 @@ def test_a_changed_suite_file_runs_the_test_again(root: Path) -> None:
         assert passed(again) == set(), (changed, again.stdout[-4000:])
 
 
+def test_bearssl_is_pinned(_: Path) -> None:
+    listed = subprocess.run(['git', '-C', str(harness.ROOT), 'ls-files', '-s', BEARSSL],
+                            capture_output=True, text=True, check=True)
+    assert listed.stdout.split()[:2] == ['160000', BEARSSL_COMMIT], listed.stdout
+
+
+def test_bearssl_is_built_file_by_file(root: Path) -> None:
+    harness.copy_integration_libraries(root, 'config', 'crypto')
+    result = harness.run_b2(root, '-a', '-d+2', 'third_party//bearssl')
+    harness.expect(result, True)
+    compiles = [line for line in result.stdout.splitlines()
+                if re.search(r'(clang|gcc)\S* .*-x c ', line) and ' -c ' in line]
+    # The 294 files of BearSSL's src/ and webcpp::crypto's canary.
+    assert len(compiles) == 295, (len(compiles), result.stdout[-4000:])
+    required = ['-ffunction-sections', '-fdata-sections', '-DBR_RDRAND=0', '-DBR_USE_URANDOM=0',
+                '-DBR_USE_GETENTROPY=1', '-D_DEFAULT_SOURCE']
+    if sys.platform == 'darwin':
+        required.append('-include sys/random.h')
+    for line in compiles:
+        for flag in required:
+            assert flag in line, (flag, line)
+        assert '-std=' not in line, line
+    archive = sorted((root / 'bin').rglob('libbearssl.a'))
+    assert len(archive) == 1, archive
+    symbols = subprocess.run(['nm', str(archive[0])], capture_output=True, text=True, check=True)
+    prefix = '_' if sys.platform == 'darwin' else ''
+    canary = (f'{prefix}webcpp_crypto_bearssl_7bea48e_getentropy__add_third_party_bearssl'
+              '_to_your_link')
+    assert canary in symbols.stdout.split(), symbols.stdout[-2000:]
+
+
 def test_a_suite_not_checked_out_is_refused(root: Path) -> None:
     harness.third_party_of_its_own(root, 'JSON-Schema-Test-Suite', checked_out=False)
     add_reader(root)
@@ -175,6 +212,8 @@ CASES = [
     test_the_suite_reaches_a_test_on_wasi,
     test_a_changed_suite_file_runs_the_test_again,
     test_a_suite_not_checked_out_is_refused,
+    test_bearssl_is_pinned,
+    test_bearssl_is_built_file_by_file,
 ]
 
 
