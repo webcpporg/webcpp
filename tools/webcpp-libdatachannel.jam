@@ -175,7 +175,7 @@ rule configuration ( properties * )
     }
     if [ $(ps).get <threading> ] != multi
     {
-        errors.user-error "Trystero's native backend uses worker threads. Add <threading>multi to the consuming target or pass threading=multi." ;
+        errors.user-error "libdatachannel runs worker threads of its own. Add <threading>multi to the consuming target or pass threading=multi." ;
     }
 }
 

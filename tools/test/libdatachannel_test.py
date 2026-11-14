@@ -77,7 +77,10 @@ def test_one_native_provider_in_a_path_with_spaces(root: Path) -> None:
 def test_single_threaded_and_unsupported_consumers_are_refused(root: Path) -> None:
     result = harness.run_b2(root, '-n', 'toolset=clang', 'threading=single',
                             'third_party//libdatachannel')
-    harness.expect(result, False, 'native backend uses worker threads', 'threading=multi')
+    # The refusal speaks of libdatachannel, every consumer's dependency, not of one library.
+    harness.expect(result, False, 'libdatachannel runs worker threads of its own',
+                   'threading=multi')
+    assert 'Trystero' not in result.stdout, result.stdout
     result = harness.run_b2(root, '-n', 'toolset=clang-wasip3', 'threading=multi',
                             'third_party//libdatachannel')
     harness.expect(result, False, 'requires native Clang/GCC')

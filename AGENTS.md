@@ -257,8 +257,9 @@ Jamroot is its build configuration, and `libs/<name>` is its repository.
   Initialize it with `git submodule update --init --recursive
   third_party/libs/libdatachannel`. B2 builds static libdatachannel and its
   nested dependencies with the consumer's compiler and runtime settings.
-  Native Trystero requires `threading=multi` and exceptions; a single-thread
-  request is refused because this backend uses worker threads;
+  Every consumer of `/webcpp/third_party//libdatachannel` requires
+  `threading=multi`: a single-thread request is refused, since libdatachannel
+  runs worker threads of its own. Native Trystero also requires exceptions;
 - for native or WASIp2/P3 guest TLS: Python 3, Perl, Make (nmake on Windows),
   the selected compiler and `third_party/libs/openssl`, initialized with
   `git submodule update --init third_party/libs/openssl`. B2 builds the pinned
