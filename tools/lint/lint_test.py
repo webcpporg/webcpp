@@ -1059,7 +1059,7 @@ def test_clang_tidy_uses_shipped_cobalt_sources_on_a_clean_tree(root):
     harness.copy_integration_libraries(root, 'config', 'asio', 'cobalt')
     prepare(root)
     append(root, 'libs/demo/test/Jamfile',
-           'webcpp.run cobalt : cobalt.cpp : <library>/webcpp//boost_cobalt : wasip3 ;\n')
+           'webcpp.run cobalt : cobalt.cpp : <library>/webcpp/cobalt//core : wasip3 ;\n')
     write(root, 'libs/demo/test/cobalt.cpp', CPP + '\n'
           'int main() {\n'
           '    return 1;\n'

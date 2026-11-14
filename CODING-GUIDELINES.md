@@ -6519,7 +6519,7 @@ Asio's first library-main CI and the final joint candidate remain separate gates
   owner asked on 2026-10-10 that every variant be tested; native runs without
   exceptions are departure 5.
   Source: `genesis/specs/asio/spec.md`, Exceptions (proposals).
-- **`/webcpp//boost_cobalt` follows the consumer's exception setting, and
+- **`/webcpp/cobalt//core` follows the consumer's exception setting, and
   without exceptions b2 prints a non-fatal warning that names Cobalt's issue
   287.** The owner asked on 2026-10-14 to remove the blanket refusal; in Boost
   1.92 moving a pending task calls `std::make_exception_ptr`, which aborts
@@ -6626,8 +6626,9 @@ Asio's first library-main CI and the final joint candidate remain separate gates
 **Boost.Cobalt.**
 
 - **Cobalt owns separate native and Wasm core and runner sources, selected
-  by `/webcpp/cobalt//cobalt`; the old Asio and root names are compatibility
-  aliases.** Native `src/native/main.cpp` retains upstream behavior. Wasm
+  by `/webcpp/cobalt//cobalt`; neither Asio nor the Jamroot declares an alias
+  to a Cobalt target (the owner's decision of 2026-11-14).** Native
+  `src/native/main.cpp` retains upstream behavior. Wasm
   `src/wasm/main.cpp` supplies `main_promise::run_main` and `final_suspend`
   over `webcpp::asio::io_context{WEBCPP_ASIO_BACKEND_CONCURRENCY_HINT_1}`,
   which adds bounded turns on Emscripten. `co_main` calls the separately
@@ -6680,7 +6681,6 @@ supersedes the temporary system-OpenSSL choice; it does not reopen every rule.
   Boost's unchanged constructors.
 - Plain `/webcpp/cobalt//core` omits SSL; the explicit
   `/webcpp/cobalt//io_ssl` supplies the corrected native or WASI wrapper.
-  The old `/webcpp//boost_cobalt` and `boost_cobalt_io_ssl` names are aliases.
 - The former shared system OpenSSL/native-only bridge is superseded by the
   pinned static source provider on native and WASIp3, without waiting for crypto.
   Chapter 5 rule 7 retains its Configure/Make and exact-archive canary exception.
@@ -6780,9 +6780,8 @@ The closure record distinguishes the baseline CI from validation of later change
 - **`/webcpp/cobalt//cobalt` builds on WASIp2/P3 from its shipped Wasm headers
   and sources: signal, serial-port and seqpacket sources are left out,
   `src/wasm/thread.cpp` comes only with threads, and the archive and its
-  consumers share the selected Asio backend and thread profile.** The old
-  `/webcpp/asio//cobalt` name is a compatibility alias. Unsupported local
-  sockets, signals and serial ports must not break the IP APIs, and an archive
+  consumers share the selected Asio backend and thread profile.** Unsupported
+  local sockets, signals and serial ports must not break the IP APIs, and an archive
   and its program must agree about headers, threads and exceptions.
   Source: `sources.json`, `src/Jamfile` (cobalt);
   `docs/superpowers/plans/2026-10-16-cobalt-wasip3.md` records the original port.
@@ -7114,12 +7113,12 @@ What webcpp does not have yet, and the chapters that mention it:
   user's allocator, applied first to xactor, xstate and wasi, whose response
   holds its body as a `std::string`; pratt is born with the rule, and
   trystero through `std::pmr` (chapter 4).
-- **Compiled Boost libraries.** Boost.URL, Boost.Charconv, Boost.Locale and
-  Boost.Cobalt are built from Boost's sources (`/webcpp//boost_url`,
-  `/webcpp//boost_charconv`, `/webcpp//boost_locale`, `/webcpp//boost_cobalt`).
-  Boost.Locale requires exceptions. Boost.Cobalt follows the consumer's exception
-  setting with a non-fatal warning when disabled (AGENTS.md chapter 1). This is not a
-  guarantee that all of Cobalt
+- **Compiled Boost libraries.** Boost.URL, Boost.Charconv and Boost.Locale are
+  built from Boost's sources (`/webcpp//boost_url`, `/webcpp//boost_charconv`,
+  `/webcpp//boost_locale`); Boost.Cobalt from the sources libs/cobalt ships
+  (`/webcpp/cobalt//core`). Boost.Locale requires exceptions. Boost.Cobalt
+  follows the consumer's exception setting with a non-fatal warning when
+  disabled (AGENTS.md chapter 1). This is not a guarantee that all of Cobalt
   works without exceptions: in Boost 1.92, moving a pending task calls
   std::make_exception_ptr, which aborts with libc++ and -fno-exceptions, even
   when the application uses as_result. Eager promises and timer cancellation

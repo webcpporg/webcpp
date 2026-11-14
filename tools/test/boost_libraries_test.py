@@ -537,7 +537,7 @@ def test_boost_locale_is_refused_without_exceptions(root: Path) -> None:
 
 COBALT_JAMFILE = ('import webcpp ;\n'
                   'webcpp.targets native emscripten ;\n'
-                  'webcpp.run coroutines : coroutines.cpp : <library>/webcpp//boost_cobalt '
+                  'webcpp.run coroutines : coroutines.cpp : <library>/webcpp/cobalt//core '
                   '<toolset>clang,<exception-handling>off:'
                   '<cxxflags>-Wno-error=coroutine-missing-unhandled-exception ;\n')
 
@@ -631,7 +631,7 @@ int main() {
 def test_cobalt_consumes_shipped_sources_without_external_boost_source(root: Path) -> None:
     harness.copy_integration_libraries(root, 'config', 'asio', 'cobalt')
     harness.without_boost_source(root)
-    target = '/webcpp//boost_cobalt'
+    target = '/webcpp/cobalt//core'
     harness.expect(harness.run_b2(root, '-a', '-j4', target), True)
     assert len(list((root / 'bin').rglob('libnative-core.a'))) == 1
     # An unrelated source-tree option does not replace the shipped Cobalt inventory.
@@ -649,7 +649,7 @@ def test_cobalt_core_omits_shipped_runner_and_ssl(root: Path) -> None:
     for name in ('native/main.cpp', 'native/io/ssl.cpp', 'native_ssl.cpp',
                  'native_ssl_transfer.cpp', 'wasm/main.cpp', 'wasm/io/ssl.cpp'):
         (root / 'libs/cobalt/src' / name).write_text('#error Core compiled an optional source\n')
-    result = harness.run_b2(root, '-a', '-j4', '-d+2', '/webcpp//boost_cobalt')
+    result = harness.run_b2(root, '-a', '-j4', '-d+2', '/webcpp/cobalt//core')
     harness.expect(result, True)
     compiled = {name for line in result.stdout.splitlines() if ' -c ' in line
                 for name in re.findall(r'"libs/cobalt/(src/[^" ]+[.]cpp)"', line)}
@@ -659,7 +659,7 @@ def test_cobalt_core_omits_shipped_runner_and_ssl(root: Path) -> None:
     assert not list((root / 'bin').rglob('libssl.a'))
 
 
-def test_boost_cobalt_warns_only_for_disabled_exceptions(root: Path) -> None:
+def test_cobalt_core_warns_only_for_disabled_exceptions(root: Path) -> None:
     harness.copy_integration_libraries(root, 'config', 'asio', 'cobalt')
     # Missing, unconditional or repeated warnings would hide or misrepresent the risk.
     # Dry runs exercise dependency configuration without recompiling the archive.
@@ -685,8 +685,8 @@ def test_boost_cobalt_warns_only_for_disabled_exceptions(root: Path) -> None:
     harness.expect(variants, True)
     assert variants.stdout.count(issue) == 1, variants.stdout
     # A consumer may require exceptions even in an otherwise exception-free build.
-    forced = COBALT_JAMFILE.replace('<library>/webcpp//boost_cobalt',
-                                   '<library>/webcpp//boost_cobalt <exception-handling>on')
+    forced = COBALT_JAMFILE.replace('<library>/webcpp/cobalt//core',
+                                   '<library>/webcpp/cobalt//core <exception-handling>on')
     (root / 'libs/coroutines/test/Jamfile').write_text(forced)
     result = harness.run_b2(root, '-a', '-n', 'exception-handling=off', targets[0])
     harness.expect(result, True)
@@ -780,7 +780,7 @@ def test_msvc_commands_preserve_native_header_identity(root: Path) -> None:
         assert '/external:anglebrackets' not in words, command
 
 
-def test_boost_cobalt_thread_joins_without_exceptions(root: Path) -> None:
+def test_cobalt_core_thread_joins_without_exceptions(root: Path) -> None:
     harness.copy_integration_libraries(root, 'config', 'asio', 'cobalt')
     # Native Boost retains the missing no-EH hook. Keep that known Clang
     # diagnostic visible while checking thread execution and joining separately.
@@ -808,7 +808,7 @@ int main() {
     harness.add_library(root, 'thread_probe',
                         'import webcpp ;\nwebcpp.targets native ;\n'
                         'webcpp.run thread : thread.cpp : <threading>multi '
-                        '<library>/webcpp//boost_cobalt '
+                        '<library>/webcpp/cobalt//core '
                         '<toolset>clang,<exception-handling>off:'
                         '<cxxflags>-Wno-error=coroutine-missing-unhandled-exception ;\n',
                         {'thread.cpp': source})
@@ -819,7 +819,7 @@ int main() {
         assert passed(result) == {'thread'}, result.stdout[-4000:]
 
 
-def test_boost_cobalt_preserves_exception_setting(root: Path) -> None:
+def test_cobalt_core_preserves_exception_setting(root: Path) -> None:
     harness.copy_integration_libraries(root, 'config', 'asio', 'cobalt')
     # A blanket exception requirement would reject a valid result-based consumer.
     # Build the real archive and execute eager promises and cancellation in each mode.
@@ -900,9 +900,9 @@ CASES = [
     test_boost_context_refuses_unverified_wasm,
     test_cobalt_consumes_shipped_sources_without_external_boost_source,
     test_cobalt_core_omits_shipped_runner_and_ssl,
-    test_boost_cobalt_warns_only_for_disabled_exceptions,
-    test_boost_cobalt_thread_joins_without_exceptions,
-    test_boost_cobalt_preserves_exception_setting,
+    test_cobalt_core_warns_only_for_disabled_exceptions,
+    test_cobalt_core_thread_joins_without_exceptions,
+    test_cobalt_core_preserves_exception_setting,
     test_native_sources_and_consumers_do_not_select_windows_overlays,
     test_msvc_commands_preserve_native_header_identity,
     test_boost_url_links_on_every_target,

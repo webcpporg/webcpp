@@ -257,10 +257,3 @@ compiled boost_locale : $(.locale)
   : libs/locale/src holds no Boost.Locale sources, or only some of them
   : <define>BOOST_LOCALE_SOURCE <conditional>@locale-configuration
   : <define>BOOST_LOCALE_NO_LIB=1 <target-os>darwin:<library>iconv ;
-
-# Boost.Cobalt without its default co_main runner (main.cpp), which webcpp
-# supplies separately, and io/ssl.cpp, which needs OpenSSL.
-# Cobalt-specific sources and checked corrections belong to libs/cobalt.
-alias boost_cobalt : /webcpp/cobalt//core ;
-alias boost_cobalt_io_ssl : /webcpp/cobalt//io_ssl ;
-explicit boost_cobalt boost_cobalt_io_ssl ;

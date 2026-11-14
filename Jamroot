@@ -435,13 +435,6 @@ for local name in boost_url boost_charconv boost_locale boost_context
     alias $(name) : tools/boost//$(name) : <conditional>@boost-source-usable ;
 }
 
-# Cobalt owns shipped sources and needs matching Boost headers, not an external
-# Boost source checkout. Legacy aliases retain the same dependency contract.
-for local name in boost_cobalt boost_cobalt_io_ssl
-{
-    alias $(name) : tools/boost//$(name) ;
-}
-
 # What every test and example of a library links (tools/webcpp.jam): the
 # header webcpp/test/exit_status.hpp on every target, and on emscripten the
 # pre-js that fails a test under node whose main did not finish, and stops
@@ -794,7 +787,7 @@ notfile dist : @dist : : <dependency>doc <webcpp-boost-check>off ;
 webcpp-lint-headers.declare-lint-headers ;
 
 explicit boost_version throw_exception boost_json boost_url boost_charconv
-    boost_locale boost_cobalt boost_cobalt_io_ssl node-test emscripten-reference test example doc install $(.install)
+    boost_locale node-test emscripten-reference test example doc install $(.install)
     declared-targets declared-lanes site site-serve check-release whats-new
     dist ;
 if [ glob site/Jamfile ]

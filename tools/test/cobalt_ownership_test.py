@@ -40,12 +40,32 @@ int main() {
     assert not list((root / 'bin').rglob('libssl.a'))
 
 
-def test_legacy_and_canonical_runner_have_one_definition(root: Path) -> None:
+def test_only_the_cobalt_library_names_cobalt(root: Path) -> None:
+    harness.copy_integration_libraries(root, 'config', 'asio', 'cobalt')
+    # One name per target: the old Asio and root names are gone, not forwarded.
+    # A program that still names one stops at its Jamfile, naming the target.
+    old = ('/webcpp/asio//cobalt', '/webcpp/asio//cobalt_ssl',
+           '/webcpp//boost_cobalt', '/webcpp//boost_cobalt_io_ssl')
+    for index, target in enumerate((*old, '/webcpp/cobalt//cobalt')):
+        harness.add_library(root, f'consumer{index}', f'''import webcpp ;
+webcpp.targets native ;
+webcpp.run main : main.cpp : <library>{target} ;
+''', {'main.cpp': '''#include <webcpp/cobalt.hpp>
+webcpp::cobalt::main co_main(int, char**) { co_return 0; }
+'''})
+        result = harness.run_b2(root, '-n', f'libs/consumer{index}/test')
+        if target in old:
+            harness.expect(result, False, 'Unable to find file or target named', target)
+        else:
+            harness.expect(result, True)
+
+
+def test_core_and_runner_have_one_definition(root: Path) -> None:
     harness.copy_integration_libraries(root, 'config', 'asio', 'cobalt')
     harness.add_library(root, 'consumer', '''import webcpp ;
 webcpp.targets native ;
-webcpp.run main : main.cpp : <library>/webcpp/asio//cobalt
-  <library>/webcpp/cobalt//cobalt <library>/webcpp//boost_cobalt ;
+webcpp.run main : main.cpp : <library>/webcpp/cobalt//cobalt
+  <library>/webcpp/cobalt//core ;
 ''', {'main.cpp': '''#include <webcpp/cobalt.hpp>
 webcpp::cobalt::main co_main(int, char**) { co_return 0; }
 '''})
@@ -79,7 +99,8 @@ def test_native_archive_rejects_mismatched_headers(root: Path) -> None:
 
 
 CASES = [test_asio_builds_without_cobalt_or_openssl,
-         test_legacy_and_canonical_runner_have_one_definition,
+         test_only_the_cobalt_library_names_cobalt,
+         test_core_and_runner_have_one_definition,
          test_native_archive_rejects_mismatched_headers]
 
 if __name__ == '__main__':

@@ -29,7 +29,7 @@ int main() {
 JAM = '''import webcpp ;
 webcpp.targets native wasip3 ;
 webcpp.run cobalt_ssl : cobalt_ssl.cpp
-  : <library>/webcpp//boost_cobalt_io_ssl
+  : <library>/webcpp/cobalt//io_ssl
     <library>/webcpp/third_party//openssl ;
 '''
 
@@ -76,13 +76,13 @@ def test_ssl_is_optional_and_unsupported_targets_are_refused(root: Path) -> None
     harness.copy_integration_libraries(root, 'config', 'asio', 'cobalt')
     harness.link_wasi_tools(root)
     harness.third_party_of_its_own(root, 'openssl', checked_out=False)
-    harness.expect(harness.run_b2(root, '-n', '/webcpp//boost_cobalt'), True)
+    harness.expect(harness.run_b2(root, '-n', '/webcpp/cobalt//core'), True)
     for target in ('clang', 'clang-wasip2', 'clang-wasip3'):
         harness.expect(harness.run_b2(root, 'toolset=' + target,
-                                      '/webcpp//boost_cobalt_io_ssl'), False,
+                                      '/webcpp/cobalt//io_ssl'), False,
                        'OpenSSL sources are missing')
     harness.expect(harness.run_b2(root, 'toolset=emscripten',
-                                  '/webcpp//boost_cobalt_io_ssl'), False,
+                                  '/webcpp/cobalt//io_ssl'), False,
                    'Cobalt SSL requires native or WASI OpenSSL; '
                    'browser TLS is managed by HTTPS/WSS.')
 

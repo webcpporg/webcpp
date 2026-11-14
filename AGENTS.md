@@ -123,8 +123,7 @@ webcpp/
     boost_test_runner.cpp  Boost.Test's header-only framework, for webcpp.boost-test
                       (guidelines chapter 8)
     boost/            Jamfile: the compiled Boost libraries built from Boost's sources
-                      (/webcpp//boost_url, boost_charconv, boost_locale and
-                      boost_cobalt)
+                      (/webcpp//boost_url, boost_charconv and boost_locale)
     node-test/        the test support every test and example links (/webcpp//node-test,
                       chapter 4): include/webcpp/test/exit_status.hpp on every target, and
                       node-pre.js, the pre-js on emscripten that fails a test under node whose
@@ -327,8 +326,8 @@ cannot read stops the build too, naming the directory.
 
 **Boost's sources.** A compiled Boost library that a webcpp library needs is
 built from Boost's own sources, for every target, as Boost.JSON's definitions
-are: `/webcpp//boost_url`, `/webcpp//boost_charconv`, `/webcpp//boost_locale`
-and `/webcpp//boost_cobalt` (`tools/boost/Jamfile`). An installed Boost has none
+are: `/webcpp//boost_url`, `/webcpp//boost_charconv` and `/webcpp//boost_locale`
+(`tools/boost/Jamfile`). An installed Boost has none
 (Homebrew's ships its own `libboost_url` and no `libs/url/src`), so the build
 reads them from `-sBOOST_SOURCE=<dir>` on b2's command line (or `-s
 BOOST_SOURCE=<dir>`), which wins, else `BOOST_SOURCE` as a user-config.jam's
@@ -350,9 +349,10 @@ looks.
 
 **Cobalt shipped sources.** `libs/cobalt/sources.json` declares the core,
 runner, optional SSL and additional threaded sources per target. The independent
-library owns them. `/webcpp//boost_cobalt` aliases its plain core;
+library owns them. `/webcpp/cobalt//core` is its plain core;
 `/webcpp/cobalt//cobalt` supplies exactly one runner for a user-defined `co_main`.
-The older Asio Cobalt targets are compatibility aliases. Native core and runner
+Cobalt's targets have one name each: neither Asio nor the Jamroot declares an
+alias to them. Native core and runner
 sources are unchanged Boost 1.92. Wasm implementations are shipped under explicit
 WebCPP paths; consumers never run an importer or prepare replacement Boost headers.
 Cobalt does not require an external `BOOST_SOURCE` tree. Boost.URL, Charconv,
@@ -372,8 +372,8 @@ with the shared source-built OpenSSL/CA provider. This is the owner-approved
 exception to native Boost identity. `/webcpp/cobalt//cobalt_ssl` adds the runner.
 Plain Cobalt does not link OpenSSL. Browser HTTPS/WSS uses the browser's TLS.
 State, transfer cancellation and shutdown drivers live in `libs/cobalt/test/tls`.
-Asio's existing integration aliases preserve their callers. Native upstream
-OpenSSL tests remain distinct from WebCPP TLS witnesses and from WASI tests.
+Native upstream OpenSSL tests remain distinct from WebCPP TLS witnesses and from
+WASI tests.
 
 **Native upstream limitations.** Native Cobalt retains Boost's composition,
 accept, write-at and missing-no-exceptions-promise-hook limitations, documented
@@ -382,7 +382,7 @@ retains Boost's Windows IOCP worker/timer allocation limitation. Historical patc
 inputs survive in `libs/asio/upstream/reference/windows-iocp`, without a consumer
 build rule. A dry run on this machine is not Windows runtime evidence.
 
-**Cobalt without exceptions.** A build that uses `/webcpp//boost_cobalt` with
+**Cobalt without exceptions.** A build that uses `/webcpp/cobalt//core` with
 `exception-handling=off` emits a non-fatal configuration warning with
 https://github.com/boostorg/cobalt/issues/287 and recommends enabling exception
 handling. Boost 1.92 with libc++ can abort when a pending task is moved, including

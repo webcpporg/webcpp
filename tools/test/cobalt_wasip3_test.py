@@ -25,7 +25,7 @@ int main() {
 '''
 JAM = '''import webcpp ;
 webcpp.targets native wasip3 ;
-webcpp.run cobalt : cobalt.cpp : <library>/webcpp//boost_cobalt ;
+webcpp.run cobalt : cobalt.cpp : <library>/webcpp/cobalt//core ;
 '''
 
 
