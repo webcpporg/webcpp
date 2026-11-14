@@ -521,12 +521,13 @@ single page, from the library's Doc Comments. `webcpp.reference <name> ;` in
   library and Emscripten's give one function two (trystero's reference read
   as a native and an emscripten translation unit had 555 sections for 461).
   Such a library also gives the target of its native backend, if it has
-  one, which brings that backend's dependencies, and the defines its
-  browser build has, which a requirement conditioned on the emscripten
-  toolset does not give a reference built natively: `webcpp.reference
-  trystero : <library>/webcpp/trystero//native
-  <library>/webcpp//emscripten-reference <define>BOOST_ASIO_DISABLE_THREADS
-  ;`. Read so, trystero's reference is the same on Linux and on macOS, byte
+  one, which brings that backend's dependencies, and the defines that parse
+  needs, which a requirement conditioned on the emscripten toolset does not
+  give a reference built natively; trystero's names Boost.Asio without
+  threads, as wasm32 has none, for its native backend's Beast and timers:
+  `webcpp.reference trystero : <library>/webcpp/trystero//native
+  <threading>multi <library>/webcpp//emscripten-reference
+  <define>BOOST_ASIO_DISABLE_THREADS ;`. Read so, trystero's reference is the same on Linux and on macOS, byte
   for byte. The emsdk is `-sWEBCPP_EMSDK=<dir>`, read from b2's command line
   alone, else `.local/emsdk`, never the environment's `EMSDK`, which
   `emsdk_env.sh` exports and b2 would read as `-sEMSDK`; its
