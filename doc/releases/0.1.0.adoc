@@ -228,6 +228,7 @@ Emscripten's notice that the runtime is kept alive.
 `EM_JS` function or an `EM_ASM` block.
 * Added the project id /third_party, the form a user's Jamfile writes for third-party
 code.
+* Added the lint rule canary pins, which checks crypto's canaries against their submodules.
 
 [#webcpp-0-1-0-compilers-tested]
 == Compilers tested
