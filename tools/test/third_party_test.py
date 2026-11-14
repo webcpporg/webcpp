@@ -267,6 +267,14 @@ def test_a_suite_not_checked_out_is_refused(root: Path) -> None:
     harness.expect(harness.run_b2(root, 'libs/demo/test//pass'), True)
 
 
+def test_ctaes_not_checked_out_is_refused(root: Path) -> None:
+    harness.copy_integration_libraries(root, 'config', 'crypto')
+    harness.third_party_of_its_own(root, 'bitcoin', checked_out=False)
+    result = harness.run_b2(root, 'third_party//ctaes')
+    harness.expect(result, False, 'third_party/libs/bitcoin is not checked out',
+                   'git submodule update --init --depth 1 third_party/libs/bitcoin')
+
+
 CASES = [
     test_the_suite_is_pinned,
     test_wycheproof_is_pinned,
@@ -282,6 +290,7 @@ CASES = [
     test_crypto_not_checked_out_is_refused,
     test_ctaes_is_pinned,
     test_ctaes_is_built_from_one_file_and_the_canary,
+    test_ctaes_not_checked_out_is_refused,
 ]
 
 
