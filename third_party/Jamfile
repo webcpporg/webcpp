@@ -248,11 +248,15 @@ rule bearssl-seeder ( properties * )
 alias bearssl-test-config : : : : $(.bearssl-config) <include>libs/bearssl/src ;
 explicit bearssl-test-config ;
 
+# webcpp::hash's canary joins crypto's when libs/hash is checked out
+# (bearssl-hash-canary, after the C libraries of webcpp::hash below).
 lib bearssl
   : [ glob libs/bearssl/src/*.c libs/bearssl/src/*/*.c ] $(CRYPTO)/src/canary_bearssl.c
   : $(.c-library) <conditional>@bearssl-checked-out
     <include>libs/bearssl/inc <include>libs/bearssl/src $(.bearssl-config)
-  : : <include>libs/bearssl/inc <define>WEBCPP_CRYPTO_HAS_BEARSSL=1 $(.gc) ;
+    <conditional>@bearssl-hash-canary
+  : : <include>libs/bearssl/inc <define>WEBCPP_CRYPTO_HAS_BEARSSL=1 $(.gc)
+    <conditional>@bearssl-hash-usage ;
 explicit bearssl ;
 
 # ctaes (MIT), Pieter Wuille's constant-time AES as Bitcoin Core v31.1 ships it
@@ -362,6 +366,32 @@ rule hash-checked-out ( properties * )
     <toolset>emscripten:<cflags>"-ffunction-sections -fdata-sections"
     <toolset>msvc:<cflags>"/Gy /Gw"
     <include>$(HASH)/include ;
+
+# BearSSL, /third_party//bearssl above, is webcpp::crypto's target and carries
+# webcpp::hash's canary too: an object of its own, compiled with BearSSL's
+# defines, which the library's sources gain only when libs/hash holds it, so
+# that a checkout without libs/hash builds crypto's BearSSL as before. The
+# check runs at build time; WEBCPP_HASH_HAS_BEARSSL then joins the usage
+# requirements.
+obj bearssl_hash_canary : $(HASH)/src/canary_bearssl.c
+  : $(.hash-c-library) $(.bearssl-config) ;
+explicit bearssl_hash_canary ;
+
+rule bearssl-hash-canary ( properties * )
+{
+    if [ path.exists [ path.native $(HASH)/src/canary_bearssl.c ] ]
+    {
+        return <source>bearssl_hash_canary ;
+    }
+}
+
+rule bearssl-hash-usage ( properties * )
+{
+    if [ path.exists [ path.native $(HASH)/src/canary_bearssl.c ] ]
+    {
+        return <define>WEBCPP_HASH_HAS_BEARSSL=1 ;
+    }
+}
 
 # XKCP (CC0; brg_endian.h under Brian Gladman's terms), the Keccak team's code
 # package at d20c8fc (2026-11-10; XKCP has no release tags): its Keccak-p[1600]

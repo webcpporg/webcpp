@@ -282,6 +282,8 @@ portable on WebAssembly and dispatched to its intrinsics files natively, its vec
 /third_party//blake3_vectors, and the feature webcpp-blake3-testing, which builds it
 with BLAKE3_TESTING for BLAKE3's own test program. On a native toolset whose build request
 names no architecture, the configured compiler is probed for x86-64 or arm64.
+* Changed /third_party//bearssl to carry webcpp::hash's canary beside webcpp::crypto's,
+and WEBCPP_HASH_HAS_BEARSSL, when libs/hash is checked out.
 
 [#webcpp-0-1-0-compilers-tested]
 == Compilers tested

@@ -302,14 +302,14 @@ def test_bearssl_is_pinned(_: Path) -> None:
     assert listed.stdout.split()[:2] == ['160000', BEARSSL_COMMIT], listed.stdout
 
 
-def test_bearssl_is_built_file_by_file(root: Path) -> None:
-    harness.copy_integration_libraries(root, 'config', 'crypto')
+def bearssl_compiles(root: Path, expected: int) -> str:
+    """Builds /third_party//bearssl in the scratch superproject, checks that each of its
+    `expected` compiles has BearSSL's flags, and returns the symbols of its archive."""
     result = harness.run_b2(root, '-a', '-d+2', 'third_party//bearssl')
     harness.expect(result, True)
     compiles = [line for line in result.stdout.splitlines()
                 if re.search(r'(clang|gcc)\S* .*-x c ', line) and ' -c ' in line]
-    # The 294 files of BearSSL's src/ and webcpp::crypto's canary.
-    assert len(compiles) == 295, (len(compiles), result.stdout[-4000:])
+    assert len(compiles) == expected, (len(compiles), result.stdout[-4000:])
     required = ['-ffunction-sections', '-fdata-sections', '-DBR_RDRAND=0', '-DBR_USE_URANDOM=0',
                 '-DBR_USE_GETENTROPY=1', '-D_DEFAULT_SOURCE']
     if sys.platform == 'darwin':
@@ -321,10 +321,29 @@ def test_bearssl_is_built_file_by_file(root: Path) -> None:
     archive = sorted((root / 'bin').rglob('libbearssl.a'))
     assert len(archive) == 1, archive
     symbols = subprocess.run(['nm', str(archive[0])], capture_output=True, text=True, check=True)
+    return symbols.stdout
+
+
+def bearssl_canary(library: str) -> str:
     prefix = '_' if sys.platform == 'darwin' else ''
-    canary = (f'{prefix}webcpp_crypto_bearssl_7bea48e_getentropy__add_third_party_bearssl'
-              '_to_your_link')
-    assert canary in symbols.stdout.split(), symbols.stdout[-2000:]
+    return (f'{prefix}webcpp_{library}_bearssl_7bea48e_getentropy__add_third_party_bearssl'
+            '_to_your_link')
+
+
+def test_bearssl_is_built_file_by_file(root: Path) -> None:
+    harness.copy_integration_libraries(root, 'config', 'crypto', 'hash')
+    # The 294 files of BearSSL's src/, webcpp::crypto's canary and webcpp::hash's.
+    symbols = bearssl_compiles(root, 296)
+    for library in ('crypto', 'hash'):
+        assert bearssl_canary(library) in symbols.split(), symbols[-2000:]
+
+
+def test_bearssl_without_hash_has_cryptos_canary_alone(root: Path) -> None:
+    # A checkout without libs/hash builds crypto's BearSSL as before: 294 files and one canary.
+    harness.copy_integration_libraries(root, 'config', 'crypto')
+    symbols = bearssl_compiles(root, 295)
+    assert bearssl_canary('crypto') in symbols.split(), symbols[-2000:]
+    assert 'webcpp_hash_' not in symbols, symbols[-2000:]
 
 
 def test_third_party_jamfile_loads_without_noise(root: Path) -> None:
@@ -777,6 +796,7 @@ CASES = [
     test_bips_is_pinned,
     test_bearssl_is_pinned,
     test_bearssl_is_built_file_by_file,
+    test_bearssl_without_hash_has_cryptos_canary_alone,
     test_third_party_jamfile_loads_without_noise,
     test_bearssl_not_checked_out_is_refused,
     test_crypto_not_checked_out_is_refused,
