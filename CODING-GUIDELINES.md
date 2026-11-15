@@ -5293,13 +5293,16 @@ webcpp 0.1.0 (trystero `e9326e9`), which includes the change
 2026-10-14), implemented and archived on 2026-11-14, and of webrtc's
 increment 3 (trystero's branch `webrtc-backend`, 2026-11-14), which moved both
 backends' WebRTC onto webcpp::webrtc and trystero's Asio onto webcpp::asio,
-and of the first phase of trystero's refactor onto webcpp's libraries and
-Boost (trystero's branch `refactor`, 2026-11-14), which moved the browser
-onto webcpp::asio's run model, the native relays onto webcpp::beast and
-Boost.URL, and what the core wrote itself onto Boost, replaced its two
-backends by one platform backend (trystero's branch `wp4`), and moved the
-core's times onto `std::chrono` and its integers to a fixed meaning
-(trystero's branch `wp5`), both merged into `refactor`.
+and of trystero's refactor onto webcpp's libraries and Boost (trystero's
+branch `refactor`, at `459b08c` on 2026-11-15). The refactor moved the
+browser onto webcpp::asio's run model, the native relays onto webcpp::beast
+and Boost.URL, and what the core wrote itself onto Boost; replaced the two
+backends by one platform backend; moved the core's times, then the backend
+interface's clocks, onto `std::chrono` and its integers to a fixed meaning;
+gave the examples a relay of their own and twins on Trystero JS; read and
+wrote every JSON text with webcpp::document, in the room's resource since
+document took an allocator; and bounded what a relay's refused handshake
+makes a room read, through webcpp::beast's bounded handshake layer.
 
 **Scope and differences from Trystero JS.**
 
@@ -5439,22 +5442,27 @@ core's times onto `std::chrono` and its integers to a fixed meaning
   `random` fills from a cryptographically secure source.** The bytes become
   secret keys and nonces.
   Source: `libraries/trystero/openspec/specs/trystero/spec.md` (proposals).
-- **The core keeps its times as `std::chrono` and its integers at a fixed
-  meaning: a time of the backend's monotonic clock is a
-  `std::chrono::steady_clock::time_point` (`detail::time_point`) and a delay
-  a `std::chrono::milliseconds`; a Nostr event's `created_at` and a
-  subscription's `since` are `std::chrono::sys_seconds`; a Nostr kind and a
-  counter are `std::uint32_t`, an index or a count a `std::size_t`; and the
+- **The core and the backend interface keep their times as `std::chrono`
+  and their integers at a fixed meaning: a time of the backend's monotonic
+  clock is a `std::chrono::steady_clock::time_point` (`detail::time_point`),
+  which `backend::factory::steady_now()` returns from an origin of the
+  backend's, and a delay a `std::chrono::milliseconds`; a Nostr event's
+  `created_at` and a subscription's `since` are `std::chrono::sys_seconds`,
+  which `backend::factory::unix_now()` returns; a Nostr kind and a counter
+  are `std::uint32_t`, an index or a count a `std::size_t`; and the
   backend's clocks reach the core only through `detail::steady_now` and
-  `detail::unix_now`.** Chapter 4's types of a fixed meaning. Every value is
-  Trystero's number, truncated where Trystero's is, so nothing a peer sees
-  changes. `double` stays where it is JavaScript's Number on Trystero's side,
-  which the oracle's fixtures pin: `str_to_num` and the sum of UTF-16 code
-  units it takes, the relay shuffle, and the action wire's float64 sizes and
-  offsets. The backend interface itself still gives its clocks as a `double`
-  of milliseconds (`now_ms`) and an `std::int64_t` of seconds
-  (`unix_seconds`), which those two functions convert (chapter 19).
-  Source: `include/webcpp/trystero/detail/clock.hpp` and
+  `detail::unix_now`, which return the seam's values unconverted.** Chapter
+  4's types of a fixed meaning. Every value is Trystero's number, truncated
+  where Trystero's is, so nothing a peer sees changes. `double` stays where
+  it is JavaScript's Number on Trystero's side, which the oracle's fixtures
+  pin: `str_to_num` and the sum of UTF-16 code units it takes, the relay
+  shuffle, and the action wire's float64 sizes and offsets. The seam's two
+  methods lost the unit their names carried (`now_ms`, `unix_seconds`) when
+  their types took it, and the memory backend's virtual clock is a time
+  point from the steady clock's epoch, so that its tests compare durations
+  exactly.
+  Source: `include/webcpp/trystero/backend.hpp`,
+  `include/webcpp/trystero/detail/clock.hpp` and
   `include/webcpp/trystero/protocol/nostr.hpp` (libs/trystero).
 - **ICE servers are checked in the core: an unusable URL, or a TURN server
   without credentials, is dropped when the app is made and reported, and every
@@ -5531,7 +5539,7 @@ core's times onto `std::chrono` and its integers to a fixed meaning
 - **Two parts are the target's own, chosen by `WEBCPP_TARGET_EMSCRIPTEN`: the
   sealer, natively OpenSSL's AES-256-GCM and in a page `crypto.subtle`, and
   the source of randomness, natively OpenSSL's `RAND_bytes` and in a page
-  `getentropy`; the WebRTC, the relays' session, the timer
+  `crypto.getRandomValues`; the WebRTC, the relays' session, the timer
   (`detail::timer`) and the clocks (`std::chrono::system_clock` and
   `std::chrono::steady_clock`) are one code on both.** Until webcpp::crypto
   is built (chapter 17), the platform's crypto is the target's own;
@@ -5542,9 +5550,13 @@ core's times onto `std::chrono` and its integers to a fixed meaning
   Source: `doc/platform.adoc` and `doc/design.adoc` (libs/trystero).
 - **The platform's one source of randomness is checked wherever it is drawn:
   `random()` aborts the program without it, and a seal fails with
-  `error::backend_failure`.** Without secure randomness nothing is safe; the
-  browser backend ignored a failed `getentropy` before trystero's refactor,
-  as chapter 17 recalls, and that is not repeated.
+  `error::backend_failure`; in a page it is `crypto.getRandomValues`, called
+  from JavaScript that catches what it throws, so that a page whose function
+  is missing or throws has none.** Without secure randomness nothing is
+  safe: the browser backend ignored a failed `getentropy` before trystero's
+  refactor, as chapter 17 recalls, and that is not repeated; and Emscripten's
+  `getentropy` lets the page's exception into WebAssembly, which no call may
+  (below).
   Source: `include/webcpp/trystero/platform/entropy.hpp` and
   `include/webcpp/trystero/platform/backend.hpp` (libs/trystero).
 - **The window of `backend_config::max_peer_connections_per_minute` (256)
@@ -5578,16 +5590,28 @@ core's times onto `std::chrono` and its integers to a fixed meaning
   `libraries/trystero/openspec/changes/archive/2026-10-09-genesis/reference/research/TRYSTERO_CPP_SPIKE/FINDINGS.md`
   (proposals).
 - **The relays' WebSocket is one session of webcpp::beast on both targets,
-  natively over Boost.Beast's own stream and in a page over webcpp::beast's
-  page `WebSocket`: Asio operations composed by callbacks (resolve, connect,
-  TLS, handshake, a read loop, one write at a time), each handler bound to
-  the room's allocator, and a connection that ends during a write clears its
-  queue while the write finishes on the text it moved out of it.** Beast
+  natively Boost.Beast's own WebSocket stream, over webcpp::beast's bounded
+  handshake layer, and in a page webcpp::beast's page `WebSocket`: Asio
+  operations composed by callbacks (resolve, connect, TLS, handshake, a read
+  loop, one write at a time), each handler bound to the room's allocator,
+  and a connection that ends during a write clears its queue while the write
+  finishes on the text it moved out of it.** Beast
   allows one write at a time, and the write's completion must never touch
   the cleared container; callbacks rather than coroutines, so that no
   coroutine frame, and no read buffer, is allocated outside the room's
   resource. The session names webcpp::asio and webcpp::beast only, and
   serves both targets.
+  Source: `include/webcpp/trystero/platform/websocket.hpp` (libs/trystero).
+- **The session's reads and writes complete into a handler of its own, which
+  carries the room's allocator and no executor, never into Asio's
+  `any_completion_handler`, and which calls the session's member through a
+  pointer.** An `any_completion_handler`'s executor is of another type than
+  the stream's, so Asio made an `any_completion_executor` with `new` for each
+  operation and wrapped each completion in a function object of its own
+  (measured natively: six `operator new` for a text sent and its echo
+  received, and none now, `platform_websocket_allocation`); and through the
+  pointer misc-no-recursion sees no cycle through Asio's post, on either
+  target.
   Source: `include/webcpp/trystero/platform/websocket.hpp` (libs/trystero).
 - **A write that fails ends the connection at once, reporting one close,
   unless the session is already closing; and in a page
@@ -5600,13 +5624,18 @@ core's times onto `std::chrono` and its integers to a fixed meaning
   that fail while the session closes are expected and change nothing, so a
   socket reports one close (`platform_page_websocket_late_events`).
   Source: `include/webcpp/trystero/platform/websocket.hpp` (libs/trystero).
+- **A relay's binary message is dropped, on both targets.** NIP-01's
+  messages are texts, and the room would drop a text that is no Nostr
+  message.
+  Source: `include/webcpp/trystero/platform/websocket.hpp` (libs/trystero).
 - **A relay's URL is read with Boost.URL on both targets, by the same rules,
   as a page's `WebSocket` reads a `ws://` or `wss://` one: an IPv6 address in
   brackets reaches the resolver without them, the scheme in any case, a host
   name decoded and in lower case, the scheme's port by default; userinfo, a
-  fragment, a port beyond 65535, an IPvFuture host, and `http://` and
-  `https://`, which a page's `WebSocket` alone takes as `ws://` and `wss://`,
-  are refused, and report a close.** Boost before one's own (chapter 4), and
+  fragment, a port beyond 65535, an IPvFuture host, a host holding a byte
+  that a page's URL parser refuses in a host, and `http://` and `https://`,
+  which a page's `WebSocket` alone takes as `ws://` and `wss://`, are
+  refused, and report a close.** Boost before one's own (chapter 4), and
   one reading of a relay URL on both targets, which refuses none of
   Trystero's default relays, all `wss://`; the hand-written parser kept the
   brackets, so a relay at an IPv6 address was unreachable.
@@ -5614,10 +5643,24 @@ core's times onto `std::chrono` and its integers to a fixed meaning
 - **A relay URL that a page's URL parser reads otherwise fails closed: an
   IPv4 address in another form than a dotted quad (`127.1`), and so any host
   whose last label is a number; an international name, which a page turns
-  into its A-label and Boost.URL does not; and a tab, a newline or a
-  backslash anywhere in it.** `ws://127.1/` reached 127.0.0.1 through the
-  system's resolver, and an international name went to it as raw UTF-8.
+  into its A-label and Boost.URL does not; a tab, a newline or a backslash
+  anywhere in it; and a character that RFC 3986 allows in no path, as a
+  space or `{`, which a page escapes and Boost.URL refuses.** `ws://127.1/`
+  reached 127.0.0.1 through the system's resolver, and an international name
+  went to it as raw UTF-8.
   Source: `doc/platform.adoc` (libs/trystero).
+- **A relay over TLS is verified on both targets whatever the verify mode of
+  the context: the session sets `verify_peer` on its stream before the
+  handshake, and leaves the context as it is.** Asio's
+  `ssl::context(tls_client)` is `verify_none`, and `set_verify_callback`
+  does not change the mode, so natively a program's context made with
+  `load_verify_file` alone accepted any certificate for any name; and
+  webcpp::beast's page stream refuses a mode other than `verify_peer`, which
+  it reads from the stream before the context, so in a page such a context
+  failed every `wss://` relay, though the page's `WebSocket` always
+  verifies.
+  Source: `doc/platform.adoc` and
+  `include/webcpp/trystero/platform/websocket.hpp` (libs/trystero).
 - **No function of the platform backend throws, its constructors included: a
   TLS context OpenSSL cannot make, or a program's `result` that holds an
   error, is kept as that error, `tls_context()` returns it as a
@@ -5700,10 +5743,14 @@ core's times onto `std::chrono` and its integers to a fixed meaning
   and `doc/platform.adoc` (libs/trystero).
 - **Text crosses into JavaScript through `platform::js_string`, straight from
   WebAssembly memory, and a relay's text back through webcpp::beast's page
-  stream, its UTF-8 length checked against `read_message_max` (1 MiB) before
-  any copy.** No `std::string` is made to carry it, and a string over its
-  bound is never copied into WebAssembly.
-  Source: `doc/platform.adoc` (libs/trystero).
+  stream, its UTF-8 length checked before any copy against
+  `read_message_max` (1 MiB), which the session sets before the
+  handshake.** No `std::string` is made to carry it, and a string over its
+  bound is never copied into WebAssembly; a page can deliver a relay's first
+  messages in the task of its open, before the handshake's completion runs,
+  so a bound set after it had those checked against the stream's 16 MiB.
+  Source: `doc/platform.adoc` and
+  `include/webcpp/trystero/platform/websocket.hpp` (libs/trystero).
 - **A page makes at most `runtime_options::max_peer_connections` (256 by
   default) peer connections across all its apps and rooms, the cap of the
   backend's webcpp::webrtc runtime over webcpp::webrtc's census of the page,
@@ -5726,13 +5773,32 @@ core's times onto `std::chrono` and its integers to a fixed meaning
 - **In a page the sealer imports its key on its first operation and queues
   the operations that arrive while it imports.** (reason not recorded)
   Source: `libraries/trystero/openspec/specs/trystero/spec.md` (proposals).
-- **A `page_call`'s handler lets no JavaScript error out: it checks the type
-  of the page's value before converting it.** A `BindingError` or a
-  `TypeError` out of a handler leaves `run` with it, and the program's run
-  never resumes (measured with Emscripten 6.0.11 under node, in either
-  suspension variant), as webcpp::asio's guide says; before `page_call`,
-  embind's typed functions refused a wrong type outside WebAssembly.
+- **A page's sealer reads a Web Crypto settlement only when it is an
+  `ArrayBuffer`, and fails the seal or the open with
+  `error::backend_failure` otherwise.** Only a page whose `crypto.subtle`
+  was replaced settles with another value, whose reading as one could throw
+  (`new Uint8Array(-1)`) or read what it is not.
+  Source: `include/webcpp/trystero/platform/sealer.hpp` (libs/trystero).
+- **In a page, under webcpp::beast's default policy, a TLS context that asks
+  for what a page cannot honour makes every `wss://` relay report a close:
+  authorities added, a client certificate or key, options, a method other
+  than `tls_client` or `sslv23_client`, or a verify callback other than
+  `host_name_verification` of the relay's host.** The browser makes the
+  handshake against its own authorities, and webcpp::beast's page stream
+  refuses what it cannot honour unless `webcpp-beast-unsupported=ignore`
+  leaves it to the browser (chapter 15, beast).
   Source: `doc/platform.adoc` (libs/trystero).
+- **A `page_call`'s handler lets no JavaScript error out: it checks the type
+  of the page's value before converting it, and reads a number as a
+  `double`, checking its range before it becomes an integer.** A
+  `BindingError` or a `TypeError` out of a handler leaves `run` with it, and
+  the program's run never resumes (measured with Emscripten 6.0.11 under
+  node, in either suspension variant), as webcpp::asio's guide says; before
+  `page_call`, embind's typed functions refused a wrong type outside
+  WebAssembly; and in a build with assertions embind's `as<std::int32_t>()`
+  of a number beyond the type's range, as `1e10`, throws a `TypeError`.
+  Source: `doc/platform.adoc` and
+  `include/webcpp/trystero/platform/page.hpp` (libs/trystero).
 - **A `page_call`'s resource holds each call the page made until the
   `io_context` runs it or is destroyed, so it outlives the `io_context`; and
   the handler reads the page's value as it is when the handler runs.** A
@@ -5751,6 +5817,17 @@ core's times onto `std::chrono` and its integers to a fixed meaning
   like everything else, and the native peer connections are the browser's in
   interface.
   Source: `doc/platform.adoc` and `doc/building.adoc` (libs/trystero).
+- **Natively the relays' WebSocket runs over webcpp::beast's
+  `bounded_handshake_stream`, made with the room's allocator, with
+  `response_limits::body` 0: a relay that refuses the upgrade has its
+  response's header read, at most 8 KiB, and no byte of its body; in a page
+  the browser reads its own response.** Beast's WebSocket stream reads the
+  response with a parser of its own, whose limits none of its options
+  reaches, so a refusal's body was read up to 8 MiB outside the room's
+  resource (measured: a 4 MiB refusal had the room's thread allocate
+  4,199,353 bytes, and 5,144 with the layer, `platform_websocket_allocation`).
+  Source: `doc/platform.adoc` and
+  `include/webcpp/trystero/platform/websocket.hpp` (libs/trystero).
 - **webcpp::webrtc posts every event of libdatachannel to the executor,
   through a weak reference; no handler runs on libdatachannel's threads.** Its
   callbacks run on its own threads, and an event that arrives after its object
@@ -5783,13 +5860,6 @@ core's times onto `std::chrono` and its integers to a fixed meaning
   peers of one machine connect with no other network, which a test wants.
   Natively only: a page cannot bind, and webcpp::webrtc refuses every
   connection a page asks it to bind.
-  Source: `doc/platform.adoc` (libs/trystero).
-- **Natively a relay over TLS is verified whatever the verify mode of the
-  context: the session sets `verify_peer` on its stream before the
-  handshake.** Asio's `ssl::context(tls_client)` is `verify_none`, and
-  `set_verify_callback` does not change the mode, so a program's context
-  made with `load_verify_file` alone accepted any certificate for any name;
-  a page's `WebSocket` always verifies.
   Source: `doc/platform.adoc` (libs/trystero).
 - **Over TLS the connection names the host (SNI) through
   `webcpp::beast::set_server_name` only when it is a name once decoded, never
@@ -5864,16 +5934,32 @@ core's times onto `std::chrono` and its integers to a fixed meaning
 - **`async_receive` refuses a view type at compile time.** A received view
   would outlive the message.
   Source: `libraries/trystero/openspec/specs/trystero/spec.md` (proposals).
-- **The JSON payload is webcpp::document's: `webcpp::document::document`, the
-  user's choice of document's own allocation, and `pmr_document`, received
-  into a buffer of the room's resource; a C++ peer sends what
-  `JSON.stringify` writes of the document.** The owner's decision 5 of
-  trystero's refactor keeps no specialization for `boost::json::value`; the
-  pair mirrors `std::string` and `std::pmr::string`, and a sent document is
-  written into a string of the room's resource in pieces of 8 bytes, which
-  no standard library's string keeps outside its own object.
-  Source: `doc/usage.adoc` and `include/webcpp/trystero/protocol/json.hpp`
-  (libs/trystero).
+- **The JSON payload is document's own pair, `webcpp::document::document`,
+  in the standard allocator, the user's choice, and
+  `webcpp::document::pmr::document`, received in the room's resource; a C++
+  peer sends what `JSON.stringify` writes of the document, and a rejected
+  `async_receive` completes with document's `nothing()`, which allocates
+  nothing.** The owner's decision 5 of trystero's refactor keeps no
+  specialization for `boost::json::value`, and the owner's decision of
+  2026-11-14 gave webcpp::document an allocator; the pair mirrors
+  `std::string` and `std::pmr::string`, with no alias of trystero's, and a
+  handle keeps document's rule: it refers to its document object, and moving
+  the document invalidates it. A sent document is written into a string of
+  the room's resource in pieces of 8 bytes, which no standard library's
+  string keeps outside its own object.
+  Source: `doc/usage.adoc`, `include/webcpp/trystero/room.hpp` and
+  `include/webcpp/trystero/protocol/json.hpp` (libs/trystero).
+- **A received JSON payload's image grows to at most 96 times its length and
+  64 KiB, which every valid payload fits, and to at most
+  `room_options::max_json_document_bytes`, webcpp::document's 64 MiB by
+  default.** Each value is a node of 192 bytes and takes at least two bytes
+  of text (measured on every shape, and pinned by the test `protocol`). A
+  ceiling tied tighter to the text, as a protocol text's is, refused arrays
+  of a few hundred numbers that Trystero JS delivers, so the program bounds
+  the memory instead; the bound is a difference, which `diff_json_refused`
+  shows.
+  Source: `doc/protocol.adoc`, `doc/differences.adoc` and
+  `include/webcpp/trystero/protocol/json.hpp` (libs/trystero).
 - **Actions of different types may share a name, which has one receiver
   slot.** One may receive as views while another sends by moving strings, as
   the chat example does.
@@ -6170,9 +6256,30 @@ core's times onto `std::chrono` and its integers to a fixed meaning
   own; the digest is of the opened text, whose sealed encoding a resender can
   vary.
   Source: `libraries/trystero/openspec/specs/trystero/spec.md` (proposals).
-- **A room holds at most 32 negotiations with peers it is not connected to: an
-  idle one gives its place to a new peer, and a refused peer is logged once.**
-  Anyone who knows the app and room ids can announce any number of peer ids.
+- **A room holds at most 32 negotiations with peers it is not connected to:
+  an idle one, holding no connection and no offer of its peer being opened,
+  gives its place to a new peer, the one idle longest and, of those idle as
+  long, the one the room took first; a refused peer is logged once.** Anyone
+  who knows the app and room ids can announce any number of peer ids.
+  Opening an offer is the sealer's asynchronous step (Web Crypto in a page).
+  While it counted as idle, a tie in id order at one instant of a page's
+  coarse clock let new ids arriving meanwhile have honest offers dropped
+  unopened, their peers joining 2 s later, and let a flood of fresh ids have
+  every offer opened at once (measured: `room`'s
+  `an_offer_being_opened_keeps_its_place` and
+  `a_flood_of_offers_at_one_instant_is_bounded`); now the room opens offers
+  of at most 32 peers, one offer of each at a time.
+  Source: `doc/protocol.adoc` (libs/trystero).
+- **A negotiation opens one offer of its peer at a time, as Trystero answers
+  one at a time: until it is opened, another offer in that name is ignored,
+  and the same offer through another relay has the answer sent there too.**
+  Each offer sent in a peer's name started an open of its own, holding its
+  copy, up to 64 KiB, in the room's resource, which only the relays' rate
+  bounded (measured: 42 offers in one name, 40 of them of 48 KiB, held 42
+  opens and 1,976,152 bytes; `room`'s
+  `offers_in_one_name_are_opened_one_at_a_time`). As with Trystero, a forged
+  offer opened first has the peer's own wait until the peer sends it again,
+  2 s later.
   Source: `doc/protocol.adoc` (libs/trystero).
 - **A room makes at most 64 connections in any 57,333 ms, counted from when
   they were made.** A place freed early by a connection that failed or closed
@@ -6182,20 +6289,23 @@ core's times onto `std::chrono` and its integers to a fixed meaning
   relay, and once in 5.3 s, Trystero's announce interval, per relay.** A flood
   of low ids must not have the relays rate-limit the room.
   Source: `doc/protocol.adoc` (libs/trystero).
-- **The strategy remembers the last 4096 event ids and drops a repeated one,
-  in a `boost::unordered_flat_set` hashed with SipHash under a key it draws
-  when it is made.** A signal reaches the room on several relays and must
-  reach the signaling once; an id is a relay's choice, and ids chosen to
-  share a bucket of the standard library's unseeded hash cost 26.7 us an
-  event against 0.12 us (measured).
+- **The strategy remembers the ids of the newest 4096 events whose ids it
+  checked, and drops a repeated one, in a `boost::unordered_flat_set` hashed
+  with SipHash under a key it draws when it is made.** A signal reaches the
+  room on several relays and must reach the signaling once; an id is a
+  relay's choice, and ids chosen to share a bucket of the standard library's
+  unseeded hash cost 26.7 us an event against 0.12 us (measured).
   Source: `libraries/trystero/openspec/specs/trystero/spec.md` (proposals)
   and `include/webcpp/trystero/detail/nostr_strategy.hpp` (libs/trystero).
-- **A Nostr event is acted on once only when its id is NIP-01's, 64 lowercase
-  hexadecimal digits, among the 4096 newest; any other id is acted on each
-  time and never stored.** Trystero remembers no id and acts on every event;
-  storing any id, a relay could fill the room's resource with ids of nearly
-  1 MiB each.
-  Source: `include/webcpp/trystero/detail/nostr_strategy.hpp` (libs/trystero).
+- **A Nostr event is dropped as a repeat only when its id is checked to be
+  its own, the SHA-256 of its NIP-01 serialization
+  (`protocol::nostr::has_own_id`); any other event is acted on each time
+  and its id never stored, as Trystero 0.26.0 acts on every event.** A relay
+  chooses the id it sends, so trusting it would let one relay hide a genuine
+  event behind a forged one sent first under its id; and a remembered id is
+  then 64 bytes, whatever a relay sends.
+  Source: `include/webcpp/trystero/detail/nostr_strategy.hpp` and
+  `include/webcpp/trystero/protocol/nostr.hpp` (libs/trystero).
 - **A lost relay is retried after a random share of a bound that starts at
   3.3 s and doubles to 60 s, and comes back down only after a connection
   lasted 60 s.** A relay that closes the room at once after each open is then
@@ -6283,15 +6393,16 @@ core's times onto `std::chrono` and its integers to a fixed meaning
   no allocator since C++17; the app moves `app_config::log` into its resource,
   which makes `app_config` move-only.
   Source: `doc/allocation.adoc` (libs/trystero).
-- **Every JSON text a room reads is parsed by webcpp::document into a buffer
-  of the room's resource (of the app's for a remote candidate), an external
-  document that its owner, `protocol::json::document`, frees with the
-  buffer: twice the text and 4 KiB, made again twice as large when the parse
-  fills it, up to twice the caller's bound and 64 KiB.** document's external
-  storage allocates every value inside the buffer, so the values are in the
-  resource without a storage of the room's; and the image's bound refuses a
-  text of thousands of values once it has cost that bound.
-  Source: `doc/allocation.adoc` and
+- **Every JSON text a room reads is parsed by `webcpp::document::parse` into
+  a `webcpp::document::pmr::document` of the room's resource, of the app's
+  for a remote candidate, which holds its image and the parse's working
+  state; a protocol text nests at most 16 deep, and its image grows in place
+  to at most twice the caller's bound and 64 KiB; trystero keeps no owner of
+  its own.** document's allocator holds every value and the working state,
+  so neither is outside the resource; Trystero's texts nest 4 deep at most,
+  and the image's bound refuses a text of thousands of values once it has
+  cost that bound.
+  Source: `doc/allocation.adoc`, `doc/protocol.adoc` and
   `include/webcpp/trystero/protocol/json.hpp` (libs/trystero).
 - **A post goes through the `io_context`'s own executor when the room's
   executor is one, and in a page the sealer awaits each Web Crypto promise
@@ -6316,10 +6427,11 @@ core's times onto `std::chrono` and its integers to a fixed meaning
 - **`trystero::bytes` and `trystero::payload` keep `std::allocator`; every
   other container trystero declares is a `std::pmr` one or a Boost container
   over `std::pmr::polymorphic_allocator`.** Those two are the user's choice,
-  as `webcpp::document::document` is, whose image a received one takes from
-  the global `operator new`, as document's owned documents do;
-  `std::pmr::string`, `pmr_bytes` and `pmr_document` are the types that
-  receive in the room's resource.
+  as `webcpp::document::document` is, a received one holding its image and
+  its parse's working state in the standard allocator, as document's
+  `document` does; `std::pmr::string`, `pmr_bytes` and
+  `webcpp::document::pmr::document` are the types that receive in the
+  room's resource.
   Source: `doc/allocation.adoc` (libs/trystero).
 - **libsecp256k1 signs with a context preallocated in the room's resource, and
   verifies with its static context.** No allocation of a room escapes its
@@ -6327,25 +6439,26 @@ core's times onto `std::chrono` and its integers to a fixed meaning
   Source: `doc/allocation.adoc` (libs/trystero).
 - **The allocations outside the resources are listed on the page, not claimed:
   libdatachannel's and OpenSSL's, with the copy libdatachannel's C API makes
-  of a message, `emscripten::val`'s, webcpp::document's working state while
-  it reads or writes a JSON text (its parser's stack, path and pending text,
-  its tree's record of each change, its writer's stack), each piece freed
-  before the call returns, Asio's once per context and its wrapper on an
-  executor that is not an `io_context`'s, a strand for one, which
+  of a message, `emscripten::val`'s, Asio's once per context and its wrapper
+  on an executor that is not an `io_context`'s, a strand for one, which
   webcpp::webrtc's completions get through `any_io_executor`; natively, for
   each relay connection, what Boost.Beast and Asio allocate of their own
   (the WebSocket's and the TCP stream's state, the WebSocket's write buffer,
   the TLS stream's two buffers, the resolver's state and results, the
-  handshake's request and response and, for a response that is not 101, its
-  body up to Beast's 8 MiB, which no option of its stream lowers, the verify
-  callback and its copy of the host, the waits of Beast's timers and each
-  keep-alive ping's frame), where in a page the stream's state is in the
-  room's resource; Emscripten's `select()`, Asyncify's unwind data when the
-  run suspends, and the storage of the map in which webcpp::asio's bridge
-  finds each pending Web Crypto promise.** They belong to a dependency or to
-  Asio, and webcpp::webrtc's posts from libdatachannel's threads may not
-  touch a resource used only on the executor; document's working state waits
-  for the owner's decision (chapter 19).
+  handshake's request and response, the response's header at most 8 KiB,
+  which webcpp::beast's bounded handshake layer reads, keeping a split
+  header line in the room's resource, and no byte of a refusal's body, the
+  verify callback and its copy of the host, the waits of Beast's timers and
+  each keep-alive ping's frame), where in a page the stream's state is in
+  the room's resource; in a page, for each relay connection, the results of
+  webcpp::asio's page resolver, and the strings embind makes of each event's
+  type, two for a message; Emscripten's `select()`, Asyncify's unwind data
+  when the run suspends, and the storage of the map in which webcpp::asio's
+  bridge finds each pending Web Crypto promise.** They belong to a
+  dependency or to Asio, and webcpp::webrtc's posts from libdatachannel's
+  threads may not touch a resource used only on the executor; and removing
+  a page relay's needs a change to webcpp::beast's page stream and to
+  webcpp::asio's page resolver (chapter 19).
   Source: `doc/allocation.adoc` (libs/trystero).
 - **No check catches a resource that ends too early: it is declared before the
   `io_context`, and its lifetime is the user's.** trystero holds a raw pointer
@@ -6385,6 +6498,16 @@ core's times onto `std::chrono` and its integers to a fixed meaning
   a native program and a page's both name; a page's program links neither
   libdatachannel nor OpenSSL, as OpenSSL is optional for Asio.
   Source: `doc/design.adoc` and `build.jam` (libs/trystero).
+- **Under Asyncify, `/webcpp/trystero//trystero` leaves Boost.JSON's
+  recursive descent, the `parse_*` functions of its `basic_parser`, out of
+  Asyncify's instrumentation (`-sASYNCIFY_REMOVE=@asyncify-remove.json`).**
+  None of them suspends. Instrumented, a level of a parse took some 6.5 KB of
+  node's stack in a debug build, so that a peer's first payload nested 256
+  deep, document's default, overflowed node's 984 KB at about 150 levels;
+  uninstrumented it reaches 400, and in a release build more than 1,000
+  (measured). A program whose own parse suspends from a selector's callback
+  cannot link this alias under Asyncify; under JSPI nothing is left out.
+  Source: `build.jam` and `doc/protocol.adoc` (libs/trystero).
 - **Only libsecp256k1 is externally provisioned, through command-line
   `SECP256K1_ROOT` / `SECP256K1_EMSCRIPTEN_ROOT`, then `.local/`, then native
   system paths outside Windows; the environment is never read.** Native
@@ -6475,14 +6598,18 @@ core's times onto `std::chrono` and its integers to a fixed meaning
   container with no network but the loopback.
   Source: `doc/guarantees.adoc` (libs/trystero).
 - **The memory backend has a virtual clock, a deliver, drop or hold frame
-  filter, deferred opens, injection, failure and a buffering channel, and a
-  virtual run is bounded by 10^6 timers.** The sharing cases cannot be written
-  without them, timing cases on a scaled wall clock flake on loaded machines,
-  and a timer re-armed without delay fails a test by name instead of hanging
-  it.
+  filter, deferred opens, held sealer opens, injection, failure and a
+  buffering channel; the cases whose outcome depends on time run on the
+  virtual clock, which moves only from timer to timer, and a virtual run is
+  bounded by 10^6 timers.** The sharing cases cannot be written without
+  them; on a wall clock, scaled to run faster, a loaded or paused machine had
+  the rooms' timers fire while a case waited, which changed what it
+  compared, so those cases failed by chance; and a timer re-armed without
+  delay fails a test by name instead of hanging it.
   Source:
   `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/reference/spec.md`
-  (proposals).
+  (proposals); `test/support/memory_backend.hpp` and `test/room_test.cpp`
+  (libs/trystero).
 - **The hooks' storage uses the default resource, and only when a test sets
   them.** The allocation test sets none, so its counts do not change.
   Source:
@@ -6500,15 +6627,15 @@ core's times onto `std::chrono` and its integers to a fixed meaning
   `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/reference/spec.md`
   (proposals).
 - **The allocation test tracks every global allocation until it is freed:
-  exchanging a `std::pmr::string` or a `pmr_bytes` sees none, a
-  `pmr_document` exactly what its write and read cost webcpp::document,
-  counted apart; each protocol text costs at most 8 allocations a value and
-  16 more; nothing is left at a drain.** webcpp::document's working state
-  comes and goes inside each parse and write, so the test keeps each global
-  allocation by its address until it is freed. It replaces the global
+  exchanging a `std::pmr::string`, a `pmr_bytes` or a
+  `webcpp::document::pmr::document`, reading each protocol text, and both
+  long cases see none, natively and on emscripten; a planted allocation is
+  seen, so the zeros are not vacuous.** It replaces the global
   `operator new`, counts the C library's allocation functions where the
-  platform shows them, and makes Asio's once-per-context allocations before
-  it counts: without them, the 6 they make would still be out at the drain.
+  platform shows them (not MSVC's, nor any under AddressSanitizer), keeps
+  each global allocation by its address until it is freed, and makes Asio's
+  once-per-context allocations before it counts: without them, the 6 they
+  make would still be out at the drain.
   Source: `doc/allocation.adoc` and `test/allocation_test.cpp`
   (libs/trystero).
 - **On Emscripten the allocation test replaces `select()` with one that keeps
@@ -6529,6 +6656,18 @@ core's times onto `std::chrono` and its integers to a fixed meaning
   `webcpp::test::exit_status`.** trystero links webcpp::asio's runtime, and
   under Asyncify a `main` that suspended loses what it returns.
   Source: `AGENTS.md` (libs/trystero).
+- **Under Asyncify the room, `app_impl` and allocation tests run once more in
+  a `release` build, with webcpp::asio's 8,192 bytes of Asyncify stack, and a
+  test whose cases suspend runs each through `webcpp::test::run_case`
+  (`test/cases.hpp`), in a frame of its own that `main`'s frame never
+  holds.** b2's emscripten toolset links a `release` build without
+  optimization, so each suspension saves every local of every frame from
+  `main` down; at `-O3` a case that `main` alone calls is inlined into it,
+  and the room test's `main` saved 29,776 bytes at each suspension and
+  stopped at its first, where through `run_case` its deepest suspension
+  wrote 3,096 (measured on 2026-11-15 with Emscripten 6.0.11).
+  Source: `test/cases.hpp`, `test/Jamfile` and `doc/testing.adoc`
+  (libs/trystero).
 - **`platform_websocket`, the native interop peer and `shared_hardened` are
   built with the standard libraries' own checks
   (`_LIBCPP_HARDENING_MODE_EXTENSIVE`, `_GLIBCXX_ASSERTIONS`).** A completion
@@ -6540,9 +6679,37 @@ core's times onto `std::chrono` and its integers to a fixed meaning
   build fails on a citation that names no anchor.** A comment sends its reader
   to the promise it relies on, and a stale citation fails the build.
   Source: `doc/guarantees.adoc` (libs/trystero).
-- **The examples are linked and never run, and none has a twin in Trystero's
-  language; the interop lane compares trystero with Trystero instead.** Each
-  example needs the public relays or a browser.
+- **The examples that join a room run over a relay of their own, and every
+  example that can have one has its twin on Trystero JS (the owner's
+  decision 8 of trystero's refactor).** The quick start and each program of
+  the appendix "Differences" that joins a room run natively in the own lane
+  `relayed`: `example/run_over_relay.mjs` starts
+  `test/oracle/interop/relay.mjs` on 127.0.0.1 and names it in
+  `TRYSTERO_RELAY_URL`, which the program reads; their twins in
+  `test/oracle/twins/` run in the `oracle` lane, the original as
+  `node --conditions=development`, through `test/oracle/run_twin.mjs` over a
+  relay of their own the same way. The public relays are a third party a
+  build must not depend on, and a relay of the build's own runs Trystero's
+  code unchanged. A twin's second peer is a second page, a worker thread
+  (`test/oracle/page.mjs`), since Trystero JS has one `selfId` per page;
+  Node's WebRTC is werift 0.24.4 as `rtcPolyfill`, which Trystero 0.26.0's
+  README names for Node. Of 14 programs, the twins agree with 1, the quick
+  start, and diverge from 11; the chat page and `diff_self_id_not_utf8` have
+  none, each with its reason in `test/oracle/twins/without-twin.txt`.
+  Source: `doc/testing.adoc` and `example/Jamfile` (libs/trystero).
+- **One quick start, native and deterministic: two apps with self ids the
+  program fixes meet in `lobby`, exchange one message each way, print them,
+  leave and exit; without `TRYSTERO_RELAY_URL` they meet over Trystero's
+  public relays, as a user's program does; its twin agrees.** An example
+  whose output depends on who joins, and which runs until stopped, has
+  nothing to compare. The chat page shows the browser, linked and without a
+  twin: doc-check refuses an `.expected` beside a linked source, so one
+  source cannot be both (chapter 19).
+  Source: `example/quick_start.cpp` and `doc/testing.adoc` (libs/trystero);
+  `tools/doc/doc-check.py` (webcpp).
+- **A difference no program can show is recorded with its reason on the
+  page.** Programs observe only through the public API, and through a
+  forwarding `backend::factory` where a room hands out nothing.
   Source: `doc/differences.adoc` (libs/trystero).
 
 ### asio (Boost.Asio on native, Emscripten and WASIp2/P3; implemented for 0.1.0 in preparation)
@@ -7388,6 +7555,27 @@ facilities separately; a successful compile never proves runtime parity.
   a per-operation PMR resource may be destroyed inside that callback. Supplied
   HTTP reads respect the remaining DynamicBuffer maximum capacity and report
   `http::error::buffer_overflow` when an incomplete parser exhausts it.
+- **A WebSocket client bounds the HTTP response its handshake reads with
+  `websocket::bounded_handshake_stream`, a next layer between the stream and
+  its transport: it parses the response's header with Beast's own parser
+  under `response_limits` (by default 8 KiB of header and 1 KiB after a
+  refusal's header), fails the handshake with `http::error::header_limit` or
+  `body_limit` after reading at most both bounds, and lets a 101 pass
+  through unchanged; the plain stream keeps upstream's limits.** The owner's
+  decision of 2026-11-14: upstream's handshake reads with Beast's default
+  parser limits, 8 KiB of header and 8 MiB of a refusal's body, outside the
+  caller's allocator, and natively that is Boost.Beast's own code and on
+  WASI the shipped copy, neither of which is corrected; a client that
+  connects to servers it does not trust selects the layer, as
+  webcpp::trystero's relays do. The layer starts its transport's operations
+  through a pointer, so that misc-no-recursion sees no cycle through it in a
+  consumer's lint, and the WASI facade passes an allocator-tagged
+  construction on to a next layer that uses an allocator
+  (`std::uses_allocator`), as Boost does natively. The browser's WebSocket
+  reads its own response; on Emscripten the layer serves only the guest
+  engine over a supplied channel.
+  Source: `include/webcpp/beast/websocket/bounded_handshake_stream.hpp` and
+  `doc/beast.adoc` (libs/beast).
 - The immutable upstream application corpus contains all 53 executable
   definitions at its pinned commit. Inventory checks validate original hashes,
   Jamfiles, CMake definitions and entry points. All adaptations are generated
@@ -7409,7 +7597,7 @@ facilities separately; a successful compile never proves runtime parity.
   controls accompany TLS application evidence. Documentation follows Diataxis
   in AsciiDoc with MrDocs API reference and executable examples.
 
-### webrtc (WebRTC data channels in Asio's model; own; implementing, increments 1 and 2 of 3)
+### webrtc (WebRTC data channels in Asio's model; own; implementing, its three increments built)
 
 webcpp::webrtc is a header-only C++20 library of webcpp's own (`kind: own`,
 although it wraps libdatachannel natively) for peer connections and data
@@ -7420,7 +7608,8 @@ where they differ, and `reference/plan.md` holds three increments: the
 interface, the runtime and the native implementation (built, in `libs/webrtc`,
 from one import commit of `reference/source/`), the browser implementation
 over webcpp::asio's bridge with its `browser` and `interop` lanes (built), and
-trystero on it.
+trystero on it (built, trystero's branch `webrtc-backend`, in its
+`refactor`).
 
 - **A library of its own on webcpp::asio, not a part of webcpp::beast.** The
   owner's decision of 2026-11-14: beast is a source-compatible facade of
@@ -7489,17 +7678,31 @@ trystero on it.
 - **In the browser it follows webcpp::beast's browser WebSocket as built:
   one intrusive registration of the bridge per object, arrivals staged and
   charged on arrival to the receive bound, one notification posted per batch,
-  JavaScript's exceptions caught in JavaScript and reported by DOMException
-  name, and the unsupported policy in an inline namespace with a propagated b2
-  feature.** Those patterns are proved; where webrtc differs (a send refused
-  before the browser sees it leaves the channel open; several event kinds;
-  terminal cancellation only for the description operations, and in the
-  browser for adding a candidate, whose promise cannot be called back) the
-  design and the page say why. The page's census of `RTCPeerConnection`s,
-  kept in JavaScript until a `FinalizationRegistry` sees each collected, is
-  what `max_peer_connections` caps there.
-  Source: `libraries/webrtc/openspec/changes/genesis/design.md` D6, D8, D11,
-  D12 and D14 (proposals); `doc/browser.adoc` (libs/webrtc).
+  and JavaScript's exceptions caught in JavaScript and reported by
+  DOMException name.** Those patterns are proved; where webrtc differs (a
+  send refused before the browser sees it leaves the channel open; several
+  event kinds; terminal cancellation only for the description operations,
+  and in the browser for adding a candidate, whose promise cannot be called
+  back) the design and the page say why. The page's census of
+  `RTCPeerConnection`s, kept in JavaScript until a `FinalizationRegistry`
+  sees each collected, is what `max_peer_connections` caps there.
+  Source: `libraries/webrtc/openspec/changes/genesis/design.md` D6, D8, D11
+  and D12 (proposals); `doc/browser.adoc` (libs/webrtc).
+- **What a target cannot honour fails with `operation_not_supported` by
+  default, or is ignored under the propagated b2 feature
+  `webcpp-webrtc-unsupported=ignore` where the platform does something
+  equivalent of its own; on both targets the classes live in an inline
+  namespace named after the policy, so translation units that disagree fail
+  to link.** Natively the policy decides a data channel's
+  `max_packet_life_time` of 0, which libdatachannel's C API takes as 0
+  retransmissions, so that a browser peer would read it as `maxRetransmits`
+  0 (ruled on 2026-11-15); in the browser, `configuration::bind_address`. A
+  getter cannot fail: a native channel the peer announced with a lifetime of
+  0 reads as `max_retransmits()` 0, whatever the policy. The design put the
+  native classes outside the namespace, as honouring every setting (chapter
+  19).
+  Source: `libraries/webrtc/openspec/changes/genesis/design.md` D14
+  (proposals); `doc/differences.adoc` and `doc/native.adoc` (libs/webrtc).
 - **The tests run on both targets: natively, on emscripten under Node with a
   fake connection where a real one is not needed, in headless Chrome with two
   peers in one page (the `browser` lane), and native against Chrome through a
@@ -9100,8 +9303,9 @@ Open questions for the owner:
 
 ### trystero: bounded JSON parse (draft, superseded)
 
-**Superseded** by trystero's JSON on webcpp::document (trystero `a0cfac5`;
-chapter 15's trystero entry). document's objects are ordered indices, not
+**Superseded** by trystero's JSON on webcpp::document (trystero `a0cfac5`,
+then on its `webcpp::document::pmr::document`, `2af7906`; chapter 15's
+trystero entry). document's objects are ordered indices, not
 hashed, so the quadratic parse this draft answers is gone, and with it the
 bound of 18 members, its `static_assert`, the colliding keys' generator
 (question 7) and `parse_payload`; the draft's byte bound for each caller is
@@ -9110,10 +9314,10 @@ bound and 64 KiB. Of its questions, 1 is moot, since no numbered guarantee is
 added; 2 no longer matters, since no object's size is bounded; 3 is
 answered, the page's differences listing the bounds; 4 is answered, the
 platform backend reading a remote candidate, at most 16 KiB of it, on both
-targets; 5 and 6 are moot, the allocation test measuring document's cost per
-text. Its proposal is still marked `draft` (`.openspec.yaml`, proposals);
-archiving it as withdrawn is the owner's (chapter 14). The draft's record
-follows as it was.
+targets; 5 and 6 are moot, the allocation test showing that no text a room
+reads allocates outside its resource. Its proposal is still marked `draft`
+(`.openspec.yaml`, proposals); archiving it as withdrawn is the owner's
+(chapter 14). The draft's record follows as it was.
 
 A relay or a peer can stall a room with a text well under the 1 MiB bound:
 keys that collide in Boost.JSON's object hash, seeded with the object's
@@ -9318,10 +9522,7 @@ it says.
 - **Fidelity and evidence (chapters 11 and 12).** Sixteen entries of xstate's
   appendix "Differences" have no `diff_` program (names, src, targets,
   undefined, system, time, deadlines, timers, tick, stop, gone, core-clock
-  among them); trystero has no `diff_` program, no twins and no
-  `without-twin.txt`, and its `test/oracle/Jamfile:16` runs the original
-  without `--conditions=development`; document has no twins, and its Node is
-  not pinned.
+  among them); document has no twins, and its Node is not pinned.
 
 ### The text of the rules
 
@@ -9437,6 +9638,10 @@ says what the tree does.
   which `doc/roadmap.adoc` leaves out; `test/oracle/interop/js.html:149`
   still cites Trystero's source with a private shorthand, `C/`, where every
   other comment writes `dist/`.
+- **webrtc.** The genesis `design.md` D14 puts the native classes outside the
+  unsupported policy's inline namespace, since they honoured every setting;
+  the tree puts them inside it, since natively the policy decides a data
+  channel's `max_packet_life_time` of 0 (webrtc `871a4ef`).
 - **asio.** The 2026-11-03 amendment reconciles default turn limit 100,
   supported targets, source-built TLS, private configuration/allocation fixes
   and guide order. Proposal source snapshots must name the final committed
@@ -9456,10 +9661,11 @@ says what the tree does.
 
 ### trystero's refactor: open items
 
-The first phase of trystero's refactor onto webcpp's libraries and Boost
-(trystero's branch `refactor`, 2026-11-14), with its one platform backend,
-the core's `std::chrono` and its JSON on webcpp::document since, leaves
-these to their owners.
+trystero's refactor onto webcpp's libraries and Boost (trystero's branch
+`refactor`, at `459b08c` on 2026-11-15), with its one platform backend, its
+`std::chrono` clocks, its examples' twins, its JSON on webcpp::document's
+`pmr::document` and its relays' bounded handshake, leaves these to their
+owners.
 
 - **asio.** `libs/asio/include/webcpp/asio/browser/src.hpp:189` cites a
   measurement made "in trystero's browser_event_loop_test.cpp", which the
@@ -9468,54 +9674,43 @@ these to their owners.
   `/webcpp/trystero//native`, which is now `/webcpp/trystero//platform`, and
   says such a program selects exceptions for Trystero's worker-thread
   backend, which needs none since webcpp::webrtc's move.
-- **Chapter 16.** Its "webcpp::webrtc and webcpp::crypto" still leaves the
-  relays' WebSockets to Beast, and its "Trystero on Asio and Beast" calls Asio
-  and Beast foundations for Trystero's later migration, which this phase made
-  for the relays (chapter 15's trystero entry).
-- **trystero, its tests and examples.** `test/allocation_test.cpp` still
-  selects its target by the compiler's `__EMSCRIPTEN__`, where the library
-  uses config's `WEBCPP_TARGET_EMSCRIPTEN`, the condition chapter 8 asks a
-  program to share with its library; and the two quick starts,
-  `example/quick_start.cpp` and `example/native_quick_start.cpp`, are one
-  program over one backend now, which a later change may make one example on
-  both targets.
+- **Chapter 16.** Its "webcpp::webrtc and webcpp::crypto" says webrtc's
+  increment 2 "brings" the browser implementation, built since, and still
+  leaves the relays' WebSockets to Beast; its "Trystero on Asio and Beast"
+  calls Asio and Beast foundations for Trystero's later migration, which the
+  refactor made (chapter 15's trystero entry).
+- **trystero, its examples.** trystero's quick start is native alone, its
+  browser counterpart the chat page: a program with an `.expected` cannot
+  also be a `webcpp.link` page program, which doc-check refuses; a quick
+  start on both targets would need doc-check to accept a linked source whose
+  output another declaration compares.
 - **trystero, deferred.** Reaching a relay whose host is an international
   name, through webcpp::idna, or one written with a WHATWG IPv4 shorthand,
-  both failing closed today; natively, a deadline on the resolution of a
+  both failing closed today; and natively, a deadline on the resolution of a
   relay's name, which has none (the system's resolver on Asio's resolver
-  thread); and a bound on the body of a handshake response that is not 101,
-  which Boost.Beast reads up to 8 MiB outside the room's resource, and which
-  no option of its WebSocket stream lowers: it needs a change to Beast, or a
-  next layer that caps the bytes, which would change the native stream's
-  type.
-- **trystero, the seam's clocks (in progress).** The backend interface still
-  gives its clocks as `now_ms()`, a `double`, and `unix_seconds()`, an
-  `std::int64_t`, which `detail/clock.hpp` converts, and making it return
-  `std::chrono::steady_clock::time_point` and `std::chrono::sys_seconds`,
-  with the memory backend's virtual clock, is under way in trystero's
-  refactor.
-- **trystero, document's working state: an open decision of the owner.**
-  webcpp::document's parser and writer keep their working state (Boost.JSON's
-  parser stack, the path and the pending text, the tree's record of each
-  change, the writer's stack) in the standard allocator, about seven
-  allocations a value for each text a room reads, each freed before the call
-  returns. trystero's guarantee 5 and its allocation page
-  (`doc/guarantees.adoc`, `doc/allocation.adoc`) name it outside the
-  resources, and measure it; chapter 4 admits such storage only as an
-  approved exception, and none is approved. Whether the owner approves it,
-  or document takes a scratch resource for it, is open.
-- **trystero, document's cost.** As WP7 measured it, natively at `-O2`,
-  document reads a relay's event in about 12 us, where Boost.JSON took
-  1.6 us, and the chat's debug WebAssembly grew from 29.2 MB to 33.7 MB; the
-  release size is not measured. Neither figure is recorded in trystero's
-  tree.
-- **The refactor's inventory understated document's working state.** Its
-  correction of the owner's decision 4 named, outside a document's buffer,
-  Boost.JSON's parser stack and `stringify`'s string alone; what document
-  allocates while it reads a text grows with its values, about seven
-  allocations a value, the tree recording each change. The inventory is the
-  integrator's working file, outside the tree; trystero's
-  `doc/allocation.adoc` has the measured list.
+  thread).
+- **trystero, a page relay's allocations outside the room's resource.** In a
+  page webcpp::beast's stream reads, through embind, the type of each event
+  of the page's `WebSocket` into a `std::string` (`deliver`), and a
+  message's data type into another (`receive_message`), each a C library
+  allocation: two for each message a relay sends, one each for its open and
+  its close; and
+  webcpp::asio's page resolver makes its results with `new`, three for each
+  connection, five for a host longer than 10 bytes. trystero's
+  `doc/allocation.adoc` lists them, and `platform_page_relay_allocation`
+  counts exactly these; removing them needs a change to webcpp::beast's page
+  stream and to webcpp::asio's page resolver, which the owner has not
+  decided.
+- **trystero, document's cost.** As WP7 measured it, natively at `-O2` and
+  before document took an allocator, document reads a relay's event in
+  about 12 us, where Boost.JSON took 1.6 us, and the chat's debug
+  WebAssembly grew from 29.2 MB to 33.7 MB; neither is measured since, nor
+  the release size, and neither figure is recorded in trystero's tree.
+- **Emscripten's release link.** b2's emscripten toolset links a `release`
+  build without optimization, so that Asyncify's instrumentation is not
+  optimized and each suspension saves every frame from `main` down
+  (trystero's `doc/testing.adoc`), which a separate pull request against
+  `main` is fixing.
 
 ### webrtc: open questions
 
