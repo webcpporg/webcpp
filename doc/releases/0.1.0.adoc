@@ -296,6 +296,9 @@ webcpp::hash's and webcpp::crypto's OpenSSL, when libs/hash is checked out.
 its capability table's programs on the four targets in one command.
 * Added own lanes that build for every target in one command, whose CI job installs and
 registers the WebAssembly toolsets beside Clang 18: webcpp::hash's measure.
+* Added tools/hash/doc_tables.py, which generates webcpp::hash's comparison tables,
+backend lists and llms.txt from its capability table and its measurements, and checks them
+when its page is built.
 
 [#webcpp-0-1-0-compilers-tested]
 == Compilers tested
