@@ -8248,7 +8248,11 @@ are unchanged. No crypto implementation or new backend coverage is claimed.
   Emscripten), and `BCryptGenRandom` with `BCRYPT_USE_SYSTEM_PREFERRED_RNG` on
   Windows, with no cache, no generator in user space and no weaker fallback.**
   The owner's decision of 2026-10-11: entropy always takes the safest path, in
-  code simple enough to be read and checked by anyone.
+  code simple enough to be read and checked by anyone. Open: on Emscripten,
+  `getentropy` lets a JavaScript exception from a missing or throwing
+  `crypto.getRandomValues` into WebAssembly, which trystero measured and
+  avoided by calling it from a JavaScript block that catches (chapter 15,
+  trystero); crypto's Emscripten path needs the same guard.
   Source: `libraries/crypto/openspec/changes/genesis/design.md` D10
   (proposals).
 - **The entropy function asks in pieces of at most 256 bytes, checks the
