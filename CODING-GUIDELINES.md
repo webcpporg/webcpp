@@ -6211,6 +6211,13 @@ makes a room read, through webcpp::beast's bounded handshake layer.
   Source:
   `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/specs/trystero/spec.md`
   (proposals).
+- **A room frame of a room of the app that the connection keeps is the peer's
+  own advertisement of the room, as its presence is.** Trystero sends a
+  room's presence once per connection, and Chrome can drop what a page sends
+  on an answering channel as it opens, so a room waiting for that presence
+  alone would never bind a Trystero JS peer; only the peer writes its
+  connection's frames, so a forged announcement still binds nothing.
+  Source: `AGENTS.md` (libs/trystero).
 - **A bound room keeps its negotiation entry marked connected, and binds by
   signaling reuse only on its first meeting with that peer over that
   connection.** Otherwise a room bound by presence or reuse would offer to the
