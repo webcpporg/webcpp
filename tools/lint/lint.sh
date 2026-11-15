@@ -849,6 +849,17 @@ else
     printf "every canary's commit is its submodule's\n"
 fi
 
+# 20. A library that asks for it in its meta/lint.json, "nodiscard-results" and the reason,
+#     declares every function of its headers that returns boost::system::result [[nodiscard]]:
+#     boost::system::result carries no [[nodiscard]] of its own, so a dropped result, a
+#     verification's or an open's, compiles silently otherwise (tools/lint/rules.py).
+rule 'nodiscard results'
+if python3 tools/lint/rules.py nodiscard-results < "${work_directory}/files"; then
+    printf 'every library that asks for it declares its results [[nodiscard]]\n'
+else
+    fail 'a function returns boost::system::result without [[nodiscard]]'
+fi
+
 printf '\n'
 if [ "${#failed_rules[@]}" -eq 0 ]; then
     printf 'lint: clean\n'

@@ -219,9 +219,9 @@ rule bearssl-checked-out ( properties * )
     }
 }
 
-# The seeder's defines, keyed on one condition for both sides of it: Windows has no
-# getentropy and BearSSL's CryptGenRandom seeder is off there too (it has none); every other
-# target, whatever its toolset (a MinGW build included), has getentropy.
+# The seeder's defines, keyed on one condition for both sides of it: a Windows
+# target, MSVC's or MinGW's, has no getentropy, and BearSSL's CryptGenRandom
+# seeder is off there too; every other target has getentropy.
 rule bearssl-seeder ( properties * )
 {
     if <target-os>windows in $(properties)

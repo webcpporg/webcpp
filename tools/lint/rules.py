@@ -35,7 +35,9 @@ Exit 0 when there is none, 1 when there is one, 2 on a usage error.
   changelog           a library's changelog and a version's release notes keep AGENTS.md
                       chapter 5's form, every line a bullet in it;
   include-boundaries  a library keeps to the include boundaries its own
-                      libs/<name>/meta/include-boundaries.json declares, when it has one.
+                      libs/<name>/meta/include-boundaries.json declares, when it has one;
+  nodiscard-results   a library whose libs/<name>/meta/lint.json asks for it declares every
+                      function of its headers that returns boost::system::result [[nodiscard]].
 """
 
 from __future__ import annotations
@@ -723,6 +725,85 @@ def include_boundaries(paths: list[str]) -> Iterator[Finding]:
             yield from library_findings(config_path, paths)
 
 
+LINT_CONFIG = re.compile(r'libs/([^/]+)/meta/lint\.json')
+
+# The keys of a library's meta/lint.json, each the reason the library gives for its rule.
+LINT_CONFIG_KEYS = frozenset({'nodiscard-results'})
+
+
+def results_without_nodiscard(path: str, text: str) -> Iterator[int]:
+    """The line of each function a C++ header declares returning boost::system::result<...>
+    (system::result<...> too) with no [[nodiscard]] among the words of its declaration before
+    the return type: back to the ;, { or } before it, or to an access specifier's colon. A
+    result that is a variable's type, a cast's or a constructor call's, has no name and a
+    parenthesis after the >, and is not read."""
+    tokens = [token for token in cpp_tokens(text) if not token[0].endswith('-comment')]
+    count = len(tokens)
+    for index, (kind, word, line) in enumerate(tokens):
+        qualified = (index >= 3 and tokens[index - 1][1] == ':' and tokens[index - 2][1] == ':'
+                     and tokens[index - 3][1] == 'system')
+        if kind != 'word' or word != 'result' or not qualified:
+            continue
+        if index + 1 >= count or tokens[index + 1][1] != '<':
+            continue
+        depth, close = 0, index + 1
+        while close < count:
+            depth += {'<': 1, '>': -1}.get(tokens[close][1], 0)
+            if depth == 0:
+                break
+            close += 1
+        name = close + 1
+        if not (name + 1 < count and tokens[name][0] == 'word' and tokens[name][1] != 'operator'
+                and tokens[name + 1][1] == '('):
+            continue
+        before = index - 4
+        words: set[str] = set()
+        while before >= 0:
+            token = tokens[before][1]
+            if token in (';', '{', '}'):
+                break
+            if (token == ':' and tokens[before - 1][1] != ':'
+                    and (before + 1 >= count or tokens[before + 1][1] != ':')):
+                break
+            words.add(token)
+            before -= 1
+        if 'nodiscard' not in words:
+            yield line
+
+
+def nodiscard_results(paths: list[str]) -> Iterator[Finding]:
+    """Each library of libs/ whose meta/lint.json holds "nodiscard-results", its reason, is held
+    to it: a function of its include/ headers that returns boost::system::result and is not
+    [[nodiscard]] fails at its line, with the reason. A malformed file, or an unknown key, fails
+    naming the file. A library without the file, or without the key, passes silently."""
+    for config_path in sorted(paths):
+        if not LINT_CONFIG.fullmatch(config_path):
+            continue
+        with open(config_path, encoding='utf-8', errors='replace') as file:
+            text = file.read()
+        try:
+            document = json.loads(text)
+        except json.JSONDecodeError as error:
+            yield (config_path, 1, f'not valid JSON: {error}')
+            continue
+        if not isinstance(document, dict) or not set(document) <= LINT_CONFIG_KEYS or any(
+                not isinstance(value, str) or not value for value in document.values()):
+            yield (config_path, 1, f'the file holds only the keys {sorted(LINT_CONFIG_KEYS)}, '
+                   'each with a non-empty string, its reason')
+            continue
+        why = document.get('nodiscard-results')
+        if why is None:
+            continue
+        prefix = config_path[:-len('meta/lint.json')] + 'include/'
+        for path in sorted(paths):
+            if path.startswith(prefix) and LIBRARY_HEADER.fullmatch(path):
+                with open(path, encoding='utf-8', errors='replace') as file:
+                    header = file.read()
+                for line in results_without_nodiscard(path, header):
+                    yield (path, line, f'a function returning boost::system::result without '
+                           f'[[nodiscard]]: {why}')
+
+
 def changelog_lines(path: str, text: str) -> Iterator[Finding]:
     """A library's changelog and a version's release notes keep AGENTS.md chapter 5's form, each
     line of them a bullet in it (tools/release/changelog.py)."""
@@ -750,6 +831,7 @@ PER_FILE_RULES: dict[str, Callable[[str, str], Iterator[Finding]]] = {
 # Rules that need every path at once, to find a library's own files from among them.
 WHOLE_TREE_RULES: dict[str, Callable[[list[str]], Iterator[Finding]]] = {
     'include-boundaries': include_boundaries,
+    'nodiscard-results': nodiscard_results,
 }
 
 RULES = sorted({*PER_FILE_RULES, *WHOLE_TREE_RULES})

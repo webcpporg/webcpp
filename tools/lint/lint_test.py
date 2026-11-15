@@ -2114,6 +2114,86 @@ def test_include_boundaries_missing_key(root):
     expect_alone(lint(root), 'include boundaries', [f"{config}:1: a boundary is missing 'why'"])
 
 
+NODISCARD_HEADER = 'libs/demo/include/webcpp/demo/results.hpp'
+
+
+def plant_results(root) -> None:
+    """Writes NODISCARD_HEADER: functions returning boost::system::result with and without
+    [[nodiscard]], and results that are no function's."""
+    write(root, NODISCARD_HEADER, CPP + '\n'
+          '#ifndef WEBCPP_DEMO_RESULTS_HPP\n'
+          '#define WEBCPP_DEMO_RESULTS_HPP\n'
+          '\n'
+          '#include <boost/system/result.hpp>\n'
+          '\n'
+          '#include <utility>\n'
+          '\n'
+          'namespace webcpp::demo {\n'
+          '\n'
+          '[[nodiscard]] inline boost::system::result<int> kept_free() noexcept {\n'
+          '    return 1;\n'
+          '}\n'
+          '\n'
+          'inline boost::system::result<int> dropped_free() noexcept {\n'
+          '    return 1;\n'
+          '}\n'
+          '\n'
+          'template <class T>\n'
+          'boost::system::result<std::pair<T, int>> dropped_template() {\n'
+          '    return std::pair<T, int>{};\n'
+          '}\n'
+          '\n'
+          'template <class T>\n'
+          '[[nodiscard]] boost::system::result<T> kept_template() {\n'
+          '    return T{};\n'
+          '}\n'
+          '\n'
+          'class holder {\n'
+          'public:\n'
+          '    [[nodiscard]] static boost::system::result<void> kept_member() { return {}; }\n'
+          '\n'
+          'protected:\n'
+          '    static boost::system::result<void> dropped_member() { return {}; }\n'
+          '};\n'
+          '\n'
+          '// boost::system::result<int> commented_out();\n'
+          'inline boost::system::result<int> const constant_value{1};\n'
+          '\n'
+          '}  // namespace webcpp::demo\n'
+          '\n'
+          '#endif\n')
+
+
+def test_nodiscard_results(root):
+    prepare(root)
+    # A library that asks for it in meta/lint.json declares each function returning a result
+    # [[nodiscard]]: a free function, a template's and a member after an access specifier fail
+    # at their lines, with the library's reason; what is kept, commented out or a variable's type
+    # does not.
+    write(root, 'libs/demo/meta/lint.json', '{"nodiscard-results": "a dropped result is lost"}\n')
+    plant_results(root)
+    message = 'a function returning boost::system::result without [[nodiscard]]: '
+    expect_alone(lint(root), 'nodiscard results', [
+        at(root, NODISCARD_HEADER, 'dropped_free') + ' ' + message + 'a dropped result is lost',
+        at(root, NODISCARD_HEADER, 'dropped_template') + ' ' + message,
+        at(root, NODISCARD_HEADER, 'dropped_member') + ' ' + message,
+    ], spared=(at(root, NODISCARD_HEADER, 'kept_free'),
+               at(root, NODISCARD_HEADER, 'kept_template'),
+               at(root, NODISCARD_HEADER, 'kept_member'),
+               at(root, NODISCARD_HEADER, 'commented_out'),
+               at(root, NODISCARD_HEADER, 'constant_value')))
+
+
+def test_nodiscard_results_is_asked_for(root):
+    prepare(root)
+    # Without meta/lint.json the same header passes; a file with another key fails, naming it.
+    plant_results(root)
+    expect_clean(lint(root))
+    write(root, 'libs/demo/meta/lint.json', '{"nodiscard": "misspelled"}\n')
+    expect_alone(lint(root), 'nodiscard results', [
+        "libs/demo/meta/lint.json:1: the file holds only the keys ['nodiscard-results']"])
+
+
 def test_include_boundaries_glob_matches_nothing(root):
     prepare(root)
     config = boundaries_config(root, [{
@@ -2641,6 +2721,8 @@ CASES = [
     test_include_boundaries_headers_glob_does_not_reach_a_deeper_path,
     test_include_boundaries_prefix_catches_bare_header,
     test_include_boundaries_glob_matches_nothing,
+    test_nodiscard_results,
+    test_nodiscard_results_is_asked_for,
     test_include_boundaries_unknown_key,
     test_include_boundaries_missing_key,
     test_include_boundaries_non_string_list_element,
