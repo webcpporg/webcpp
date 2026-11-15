@@ -16,7 +16,9 @@ library needs and holds the canary's symbol; that a BearSSL or a libs/crypto tha
 stops the build that needs it, naming the command; and that loading third_party/Jamfile prints
 nothing b2 warns of. libsecp256k1, pinned, is built file by file with every module and
 webcpp::crypto's canary, with the large tables natively and the small ones on request and on
-emscripten. Run with the names of some cases to run only those."""
+emscripten. XKCP, pinned, is built from its one file of Keccak-p[1600] with webcpp::hash's
+adapter and canary, and an XKCP or a libs/hash that is not checked out stops it, naming the
+command. Run with the names of some cases to run only those."""
 
 from __future__ import annotations
 
@@ -76,6 +78,19 @@ SECP256K1_FILES = ['secp256k1.c', 'precomputed_ecmult.c', 'precomputed_ecmult_ge
 SECP256K1_MODULES = [f'-DENABLE_MODULE_{name}=1' for name in
                      ('ECDH', 'RECOVERY', 'EXTRAKEYS', 'SCHNORRSIG', 'MUSIG', 'ELLSWIFT',
                       'SILENTPAYMENTS')]
+
+XKCP = 'third_party/libs/xkcp'
+
+# The commit XKCP is pinned at, of 2026-11-10 (XKCP has no release tags).
+XKCP_COMMIT = 'd20c8fcaecc543f816a0721d0dfc13b4cf27c14d'
+
+# The C files /third_party//xkcp compiles: XKCP's Keccak-p[1600] in the plain-64bits
+# implementation, and webcpp::hash's adapter and canary.
+XKCP_FILES = ['KeccakP-1600-opt64.c', 'xkcp_adapter.c', 'canary_xkcp.c']
+
+# The adapter's four functions (spec section 2.6).
+XKCP_ADAPTER = ['webcpp_hash_xkcp_initialize', 'webcpp_hash_xkcp_add_bytes',
+                'webcpp_hash_xkcp_permute', 'webcpp_hash_xkcp_extract_bytes']
 
 # The small tables: window 2 and comb 2x5.
 SECP256K1_SMALL = ['-DECMULT_WINDOW_SIZE=2', '-DCOMB_BLOCKS=2', '-DCOMB_TEETH=5']
@@ -363,6 +378,51 @@ def test_secp256k1_not_checked_out_is_refused(root: Path) -> None:
                    'git submodule update --init third_party/libs/secp256k1')
 
 
+def test_xkcp_is_pinned(_: Path) -> None:
+    listed = subprocess.run(['git', '-C', str(harness.ROOT), 'ls-files', '-s', XKCP],
+                            capture_output=True, text=True, check=True)
+    assert listed.stdout.split()[:2] == ['160000', XKCP_COMMIT], listed.stdout
+
+
+def test_xkcp_is_built_file_by_file(root: Path) -> None:
+    harness.copy_integration_libraries(root, 'config', 'hash')
+    result = harness.run_b2(root, '-a', '-d+2', 'third_party//xkcp')
+    harness.expect(result, True)
+    lines = C_COMPILE.findall(result.stdout)
+    compiled = sorted(Path(line.rsplit(' ', 1)[-1].strip('"')).name for line in lines)
+    # XKCP's one file and webcpp::hash's two: nothing else of XKCP's tree.
+    assert compiled == sorted(XKCP_FILES), (compiled, result.stdout[-4000:])
+    for line in lines:
+        for flag in ('-ffunction-sections', '-fdata-sections'):
+            assert flag in line.split(), (flag, line)
+        assert '-std=' not in line, line
+    archive = sorted((root / 'bin').rglob('libxkcp.a'))
+    assert len(archive) == 1, archive
+    symbols = subprocess.run(['nm', '-g', str(archive[0])], capture_output=True, text=True,
+                             check=True).stdout.split()
+    prefix = '_' if sys.platform == 'darwin' else ''
+    canary = 'webcpp_hash_xkcp_d20c8fc_generic64__add_third_party_xkcp_to_your_link'
+    for name in [canary, *XKCP_ADAPTER]:
+        assert f'{prefix}{name}' in symbols, (name, symbols[-200:])
+
+
+def test_xkcp_not_checked_out_is_refused(root: Path) -> None:
+    harness.copy_integration_libraries(root, 'config', 'hash')
+    harness.third_party_of_its_own(root, 'xkcp', checked_out=False)
+    result = harness.run_b2(root, 'third_party//xkcp')
+    harness.expect(result, False, 'third_party/libs/xkcp is not checked out',
+                   'git submodule update --init third_party/libs/xkcp')
+    # A build that needs no XKCP never looks for it.
+    harness.expect(harness.run_b2(root, 'libs/demo/test//pass'), True)
+
+
+def test_hash_not_checked_out_is_refused(root: Path) -> None:
+    # No libs/hash in the scratch superproject: XKCP's adapter and canary are missing.
+    result = harness.run_b2(root, 'third_party//xkcp')
+    harness.expect(result, False, 'libs/hash is not checked out',
+                   'git submodule update --init libs/hash')
+
+
 CASES = [
     test_the_suite_is_pinned,
     test_wycheproof_is_pinned,
@@ -385,6 +445,10 @@ CASES = [
     test_secp256k1_small_tables_on_request,
     test_secp256k1_on_emscripten_has_the_small_tables,
     test_secp256k1_not_checked_out_is_refused,
+    test_xkcp_is_pinned,
+    test_xkcp_is_built_file_by_file,
+    test_xkcp_not_checked_out_is_refused,
+    test_hash_not_checked_out_is_refused,
 ]
 
 

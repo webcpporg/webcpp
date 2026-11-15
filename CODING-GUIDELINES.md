@@ -957,6 +957,7 @@ update --init third_party/libs/<name>`; a build that needs none never looks.
 | `openssl` | OpenSSL 3.5.9 at `45e844fa2a14ec92d146bd8f5778ac130b6625fb`; static libssl/libcrypto and matching generated headers, built by upstream Configure/Make through B2 for native Clang/GCC/MSVC, WASIp2 single and WASIp3 single/cooperative | Apache-2.0 |
 | `secp256k1` | libsecp256k1 v0.8.0 at `6e2c8bc`; a static library built file by file by `third_party/Jamfile` (`src/secp256k1.c` and its two precomputed tables, every module on) with webcpp::crypto's canary, on every target; its tables by `webcpp-secp256k1-tables` (`auto`: small on Emscripten, large elsewhere); `WEBCPP_CRYPTO_HAS_SECP256K1=1` | MIT |
 | `wycheproof` | C2SP's Wycheproof at `12fd3aaf` (2026-10-06), shallow, test data: crypto's tests read its `testvectors_v1/` at run time under the directory its define `WEBCPP_TEST_WYCHEPROOF` gives, on every target (wasmtime is given it, `webcpp.data`), and run again when one of its files changes | Apache-2.0 |
+| `xkcp` | XKCP (the Keccak team's code package) at `d20c8fc` (2026-11-10, no release tags); `third_party/Jamfile` compiles its `KeccakP-1600-opt64.c` alone (Keccak-p[1600], the generic64 profile) with webcpp::hash's adapter, `config.h` and canary, on every target; `WEBCPP_HASH_HAS_XKCP=1` | CC0; `brg_endian.h` under Brian Gladman's terms |
 
 OpenSSL builds from a checkout or a source distribution. Before Configure, its
 builder stages the distributable tree and checks a digest of paths, Git file

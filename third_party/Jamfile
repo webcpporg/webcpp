@@ -359,3 +359,35 @@ rule hash-checked-out ( properties * )
     <toolset>emscripten:<cflags>"-ffunction-sections -fdata-sections"
     <toolset>msvc:<cflags>"/Gy /Gw"
     <include>$(HASH)/include ;
+
+# XKCP (CC0; brg_endian.h under Brian Gladman's terms), the Keccak team's code
+# package at d20c8fc (2026-11-10; XKCP has no release tags): its Keccak-p[1600]
+# alone, in the plain-64bits implementation with all rounds unrolled
+# ("generic64"), on every target: wasm32 has 64-bit integers, MSVC compiles it
+# with _rotl64, and XKCP's faster profiles are GNU assembly. Its config.h, which
+# XKCP's build generates, is webcpp's libs/hash/src/xkcp/config.h. A program
+# reaches it through webcpp::hash's adapter (libs/hash/src/xkcp_adapter.c), so
+# no include directory of XKCP's is a usage requirement.
+path-constant XKCP : libs/xkcp ;
+
+rule xkcp-checked-out ( properties * )
+{
+    if ! [ path.exists [ path.native
+        $(XKCP)/lib/low/KeccakP-1600/plain-64bits/KeccakP-1600-opt64.c ] ]
+    {
+        errors.user-error "third_party/libs/xkcp is not checked out: it holds no"
+            "lib/low/KeccakP-1600/plain-64bits/KeccakP-1600-opt64.c. Check it out"
+            "with `git submodule update --init third_party/libs/xkcp`." ;
+    }
+}
+
+lib xkcp
+  : libs/xkcp/lib/low/KeccakP-1600/plain-64bits/KeccakP-1600-opt64.c
+    $(HASH)/src/xkcp_adapter.c $(HASH)/src/canary_xkcp.c
+  : $(.hash-c-library) <conditional>@xkcp-checked-out <include>$(HASH)/src/xkcp
+    <include>libs/xkcp/lib/common <include>libs/xkcp/lib/low/common
+    <include>libs/xkcp/lib/low/KeccakP-1600/common
+    <include>libs/xkcp/lib/low/KeccakP-1600/plain-64bits
+    <include>libs/xkcp/lib/low/KeccakP-1600/plain-64bits/SnP
+  : : <define>WEBCPP_HASH_HAS_XKCP=1 $(.gc) ;
+explicit xkcp ;
