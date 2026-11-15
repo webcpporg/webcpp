@@ -332,8 +332,8 @@ def backends_table(data: Data, algorithm: dict) -> str:
         out.append('')
     has_hmac = any(held['hmacs'] is not None for function in algorithm['functions']
                    for held in function['backends'].values())
-    over = ('The orders shown are those over `hmac_sha2_256`, and over every hmac measured '
-            'with none of its own; `hmac_sha2_512` has its own orders, which can differ '
+    over = ('The orders shown are those over `hmac_sha2_256`, and over every hmac the table '
+            'does not measure; `hmac_sha2_512` has its own orders, which can differ '
             '(<<hash-measurements>>). ') if has_hmac else ''
     out.append(f'{over}Each order is measured with every backend linked; a backend '
                'the program does not link is skipped. A named profile, '
