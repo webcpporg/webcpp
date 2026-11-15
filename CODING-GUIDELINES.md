@@ -6778,16 +6778,21 @@ makes a room read, through webcpp::beast's bounded handshake layer.
   `webcpp::test::exit_status`.** trystero links webcpp::asio's runtime, and
   under Asyncify a `main` that suspended loses what it returns.
   Source: `AGENTS.md` (libs/trystero).
-- **Under Asyncify the room, `app_impl` and allocation tests run once more in
-  a `release` build, with webcpp::asio's 8,192 bytes of Asyncify stack, and a
-  test whose cases suspend runs each through `webcpp::test::run_case`
-  (`test/cases.hpp`), in a frame of its own that `main`'s frame never
-  holds.** b2's emscripten toolset links a `release` build without
-  optimization, so each suspension saves every local of every frame from
-  `main` down; at `-O3` a case that `main` alone calls is inlined into it,
-  and the room test's `main` saved 29,776 bytes at each suspension and
-  stopped at its first, where through `run_case` its deepest suspension
-  wrote 3,096 (measured on 2026-11-15 with Emscripten 6.0.11).
+- **A test whose cases suspend runs each through `webcpp::test::run_case`
+  (`test/cases.hpp`), in a frame of its own that `main`'s frame never holds,
+  whatever the link; under Asyncify the room, `app_impl` and allocation tests
+  run once more in a `release` build, with webcpp::asio's 8,192 bytes of
+  Asyncify stack.** At `-O3` a case that `main` alone calls is inlined into
+  it, and a program linked without optimization, as b2 linked a `release`
+  build until the Jamroot gave the link its compile's level and as
+  `<linkflags>-O0` still links one, then saves every case's locals in
+  `main`'s frame at each suspension: the room test's `main` saved 29,776
+  bytes so and the test stopped at its first suspension. Linked at `-O3`,
+  the three tests' deepest suspensions write 564, 440 and 408 bytes, and a
+  `main` with every case inlined fits too (616 for the room test); in
+  `debug`, now the deepest build, 2,344, 2,068 and 2,020 (measured on
+  2026-11-15 with Emscripten 6.0.11). The `release` runs stay as trystero's
+  only runs under Asyncify in the CI's emscripten lane, which builds JSPI.
   Source: `test/cases.hpp`, `test/Jamfile` and `doc/testing.adoc`
   (libs/trystero).
 - **`platform_websocket`, the native interop peer and `shared_hardened` are
@@ -9833,11 +9838,6 @@ owners.
   about 12 us, where Boost.JSON took 1.6 us, and the chat's debug
   WebAssembly grew from 29.2 MB to 33.7 MB; neither is measured since, nor
   the release size, and neither figure is recorded in trystero's tree.
-- **Emscripten's release link.** b2's emscripten toolset links a `release`
-  build without optimization, so that Asyncify's instrumentation is not
-  optimized and each suspension saves every frame from `main` down
-  (trystero's `doc/testing.adoc`), which a separate pull request against
-  `main` is fixing.
 
 ### webrtc: open questions
 
