@@ -630,7 +630,7 @@ def ordered(values: dict[str, float], previous: list[str] | None, base: list[str
                            key=lambda b: values[b])
 
     def beats(b: str, a: str) -> bool:
-        return values[b] * (1 + margin) < values[a]
+        return values[b] < values[a] * (1 - margin)
 
     moved = True
     while moved:

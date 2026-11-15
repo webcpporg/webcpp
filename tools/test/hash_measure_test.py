@@ -305,6 +305,15 @@ def test_throughput_moving_under_ten_percent_keeps_the_order(scratch: Path) -> N
     a_little = changed(data, row('pbkdf2', 'hmac_sha2_256', 'native'), faster(952.0))
     passes(run('--library', str(directory), '--check', '--measured',
                str(write_measured(scratch, a_little))))
+    # 9.5 percent below OpenSSL's median: not more than 10 percent, the order stays.
+    just_under = changed(data, row('pbkdf2', 'hmac_sha2_256', 'native'), faster(905.0))
+    passes(run('--library', str(directory), '--check', '--measured',
+               str(write_measured(scratch, just_under))))
+    # 10.5 percent below: the order changes.
+    just_past = changed(data, row('pbkdf2', 'hmac_sha2_256', 'native'), faster(895.0))
+    fails(run('--library', str(directory), '--check', '--measured',
+              str(write_measured(scratch, just_past))),
+          'pbkdf2 over hmac_sha2_256 on native', 'by throughput', WRITE)
     # 25 percent faster, the spreads apart: the order changes.
     much = changed(data, row('pbkdf2', 'hmac_sha2_256', 'native'), faster(750.0))
     fails(run('--library', str(directory), '--check', '--measured',
