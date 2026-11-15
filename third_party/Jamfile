@@ -330,3 +330,32 @@ lib secp256k1
     <toolset>emscripten,<webcpp-secp256k1-tables>auto:<define>WEBCPP_CRYPTO_SECP256K1_SMALL_TABLES=1
     $(.gc) ;
 explicit secp256k1 ;
+
+# The C libraries of webcpp::hash: each a static library compiled file by file
+# in the library's own C dialect (no -std), every function and datum in a
+# section of its own, so that a program keeps only what it calls
+# (CODING-GUIDELINES.md chapter 5, "Bringing a C library into webcpp").
+# Upstream's warnings are not ours. webcpp's libs/hash/include/webcpp/hash/
+# detail/canary.h is the header of the canaries each of them defines.
+path-constant HASH : ../libs/hash ;
+
+# The canaries' header is webcpp::hash's: a checkout without libs/hash stops
+# the build of a C library of hash's, naming the command, and leaves the other
+# targets of this Jamfile as they are.
+rule hash-checked-out ( properties * )
+{
+    if ! [ path.exists [ path.native $(HASH)/build.jam ] ]
+    {
+        errors.user-error "libs/hash is not checked out: it holds no build.jam,"
+            "which the C libraries of webcpp::hash are built with. Check it out"
+            "with `git submodule update --init libs/hash`." ;
+    }
+}
+
+.hash-c-library = <link>static <warnings>off <warnings-as-errors>off
+    <conditional>@hash-checked-out
+    <toolset>clang:<cflags>"-ffunction-sections -fdata-sections"
+    <toolset>gcc:<cflags>"-ffunction-sections -fdata-sections"
+    <toolset>emscripten:<cflags>"-ffunction-sections -fdata-sections"
+    <toolset>msvc:<cflags>"/Gy /Gw"
+    <include>$(HASH)/include ;
