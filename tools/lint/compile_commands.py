@@ -659,6 +659,17 @@ def webassembly(compiler: str) -> bool:
     return wasi_sdk(compiler) or emscripten(compiler)
 
 
+def natively(root: str, target: str, commands: list[list[str]]) -> list[list[str]]:
+    """commands, less, in a native dry run, the WebAssembly commands of a source that the run
+    also compiles natively: a native own lane may build its programs for every target in one
+    command (libs/hash's measure), and such a source is analysed natively alone."""
+    if target != 'native':
+        return commands
+    native = {source_path(root, words[-1]) for words in commands if not webassembly(words[0])}
+    return [words for words in commands
+            if not (webassembly(words[0]) and source_path(root, words[-1]) in native)]
+
+
 def read(root: str, target: str, lines: list[str], entries: list[dict[str, object]],
          seen: set[tuple[str, ...]], earlier: set[str],
          wasi_clang: str | None, request: list[str]) -> tuple[Units, set[str]]:
@@ -672,12 +683,7 @@ def read(root: str, target: str, lines: list[str], entries: list[dict[str, objec
     units: Units = {}
     sources: set[str] = set()
     selected: list[list[str]] = []
-    commands = compiles(lines)
-    # A native own lane may build its programs for every target in one command: a source it also
-    # compiles natively is analysed natively, never with its WebAssembly commands as well.
-    native = ({source_path(root, words[-1]) for words in commands
-               if not webassembly(words[0])} if target == 'native' else set())
-    for words in commands:
+    for words in natively(root, target, compiles(lines)):
         source = words[-1]
         unit = ALONE.match(source)
         if unit:
@@ -689,8 +695,6 @@ def read(root: str, target: str, lines: list[str], entries: list[dict[str, objec
             continue
         words = [*words[:-1], source]
         sources.add(source)
-        if source in native and webassembly(words[0]):
-            continue
         key = tuple(without_output(words))
         if source in earlier or key in seen:
             continue
@@ -799,7 +803,7 @@ def twins(root: str, target: str, chosen: dict[str, list[Aggregate]], units: Uni
     selected: list[list[str]] = []
     request = [*TARGETS[target], WITHOUT_EXCEPTIONS, *PROGRAMS, *lanes, *handler, *requested]
     lines = dry_run(root, request)
-    for words in compiles(lines):
+    for words in natively(root, target, compiles(lines)):
         source = words[-1]
         unit = ALONE.match(source)
         if unit:
