@@ -24,6 +24,7 @@ system.
 | --- | --- | --- |
 | [asio](https://github.com/webcpporg/asio) | Boost.Asio and Cobalt with browser event-loop suspension, WASIp3 networking and optional source-built TLS. | native, emscripten, wasip3 |
 | [beast](https://github.com/webcpporg/beast) | Beast-compatible HTTP and WebSocket applications, with native/WASIp3 sockets, browser WebSocket and fetch, WASI host HTTP and supplied streams. Its guide records compatibility and results for all 53 upstream applications. | native, emscripten, wasip2, wasip3, by backend |
+| [crypto](https://github.com/webcpporg/crypto) | Authenticated encryption, randomness and secp256k1 for C++20 on every target, over BearSSL, OpenSSL, ctaes and libsecp256k1. | native, wasip2, wasip3, emscripten |
 | [xactor](https://github.com/webcpporg/xactor) | A header-only, deterministic actor system: actors that handle one message at a time, with fuel per execution, timers and a lifecycle. | native, wasip2, wasip3 |
 | [xstate](https://github.com/webcpporg/xstate) | A header-only port of XState's state machines and actors: machines read from XState's JSON config, stepped by XState's pure functions or run as actors on xactor. Ports XState 5.33.2, and is proven against it. | native, wasip2, wasip3 |
 | [pratt](https://github.com/webcpporg/pratt) | A header-only Pratt parser engine, generic through concepts, with a calculator built on it, exact in decimal by default; a library of webcpp's own. | native, emscripten, wasip2, wasip3 |

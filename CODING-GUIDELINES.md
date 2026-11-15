@@ -354,7 +354,10 @@ exactly its authors' and the program carries only what it calls.
 5. A program names the C library in its own Jamfile, beside the webcpp library
    that uses it, so that its choice is explicit:
    `exe app : app.cpp /webcpp/crypto//crypto /third_party//bearssl ;`. A
-   library named and never called adds no byte to the program.
+   library named and never called adds no byte to the program. webcpp::crypto
+   follows this rule (chapter 15): the third-party project answers to both
+   ids, `/webcpp/third_party//<name>` and `/third_party//<name>`, and a
+   user's Jamfile writes the latter.
 6. Three layers stop a wrong build, each saying exactly what to add:
    - at compile time, the backend's header checks `WEBCPP_<LIB>_HAS_<NAME>`
      and `#error`s with the Jamfile line to add;
@@ -6255,6 +6258,400 @@ archived on 2026-11-14.
   example needs the public relays or a browser.
   Source: `doc/differences.adoc` (libs/trystero).
 
+### crypto (authenticated encryption, randomness and secp256k1 over C backends; own; implemented in 0.1.0)
+
+webcpp::crypto gives C++20 programs on every target the primitives of
+cryptography over widely used C libraries that webcpp builds from their
+sources: AES-GCM and the AES block cipher, a `random_device` on the system's
+generator, a constant-time `equal`, and secp256k1's BIP340 Schnorr and ECDSA
+signatures, ECDH, strict DER and the x-only tweak. Version 0.1 is the
+proposal's increments 1 and 2, as the owner set them on 2026-11-14; what is
+decided and not built is in chapter 17.
+
+**Scope.**
+
+- **crypto holds primitives only, grouped in namespaces whose headers mirror
+  them: the root (`error`, `random_device`, `equal`, `config`), `backends`,
+  `ciphers` (`aes128`, `aes192`, `aes256`, `gcm`, `aes128_gcm`, `aes256_gcm`,
+  under `<webcpp/crypto/ciphers/>`) and `curves::secp256k1` (under
+  `<webcpp/crypto/curves/>`).** The owner's rule of 2026-11-15: a protocol's
+  steps (BIPs, EIPs, NIPs) belong to a domain library built on these
+  primitives (a future webcpp::bitcoin, ethereum or nostr), so the Taproot
+  functions became a generic x-only tweak and lax DER left the library; the
+  removed code is kept on the library's branch `save/bitcoin-taproot`.
+  Source: `libraries/crypto/openspec/changes/genesis/design.md` (proposals).
+- **Hashing and HMAC stay with Boost.Hash2, and HKDF, when a program needs
+  it, is written on `boost::hash2::hmac`; every call is synchronous, and
+  WebCrypto is not a backend.** The owner's amendment C1 of 2026-10-10; with C
+  code on every target nothing waits.
+  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
+  sections 1.1 and 1.2 (proposals).
+
+**Interface.**
+
+- **Algorithm types follow Boost.Hash2: sizes as `static constexpr` members,
+  the output `result_type`, modes as templates over a cipher
+  (`ciphers::gcm<ciphers::aes256<>>`), tags as `boost::hash2::digest<16>`,
+  and the backend a template parameter defaulting to the default backend; a
+  keyed object is built by `static make(...)`, which returns
+  `boost::system::result<T>`, never by a constructor.** Boost's own shape is
+  what a Boost user expects; a key can have the wrong size and a backend can
+  fail to allocate, and the library works without exceptions.
+  Source: `libraries/crypto/openspec/changes/genesis/design.md` D2
+  (proposals); `include/webcpp/crypto/ciphers/gcm.hpp` (libs/crypto).
+- **The algorithm types do every guard, the moved-from state, the
+  incremental seal's state machine, the length accounting and the zeroing of
+  a failed `open` once for every backend; a backend supplies only the traits
+  `detail::block_state`, `block_engine`, `gcm_state` and `gcm_engine`.** The
+  same guards on every backend are what lets the agreement tests compare
+  them; a state trait never refuses, so `ciphers::aes256<backends::bearssl>`
+  is a complete type `gcm` can name, and an engine trait refuses only where
+  the algorithm is called.
+  Source: `libraries/crypto/openspec/changes/genesis/design.md` D3
+  (proposals); `include/webcpp/crypto/detail/engines.hpp` (libs/crypto).
+- **A keyed object is move-only, its destructor wipes the key schedule, and a
+  move leaves the source empty: every function of it but assignment and
+  destruction returns `invalid_state` before it reads a secret byte.**
+  Without that guard a moved-from BearSSL `gcm`, whose vtable survives the
+  move, would seal under an all-zero key schedule.
+  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
+  section 2.4 (proposals).
+- **Data and keys are `std::span<std::uint8_t const>` and
+  `std::span<std::uint8_t>`, sizes `std::size_t`, and a limit wider than
+  `size_t` on wasm32 is a `std::uint64_t` compared through
+  `detail::exceeds`.** No comparison is then tautological on wasm32, which
+  clang refuses under `<warnings-as-errors>on`.
+  Source: `include/webcpp/crypto/detail/limits.hpp` (libs/crypto).
+- **One public header per responsibility; a backend's header checks that its
+  library is linked; `config.hpp`, `error.hpp`, `equal.hpp`,
+  `random_device.hpp` and `<webcpp/crypto.hpp>` compile with no backend
+  linked.** A program that only draws random bytes or compares tags names no
+  backend library, and one that only signs names `/third_party//secp256k1`
+  alone.
+  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
+  section 2.2 (proposals); `test/Jamfile`'s headers-alone list (libs/crypto).
+- **`equal` compares in constant time: it reads every byte, accumulates the
+  XOR of each pair in a `volatile` local read once after the loop and reduces
+  it without a branch; spans of different sizes compare unequal without their
+  contents being read.** Hash2's `digest<N>::operator==` is `memcmp`; a size
+  is public.
+  Source: `include/webcpp/crypto/equal.hpp` (libs/crypto).
+- **`<windows.h>` is reached only through `detail/windows.hpp`, which defines
+  `NOMINMAX` and `WIN32_LEAN_AND_MEAN` only when absent and undefines only
+  what it defined, and every header writes `(max)()`, `(min)()` and
+  `(std::numeric_limits<T>::max)()`; tests include every public header after
+  a bare `<windows.h>` and before one.** `<windows.h>`'s `min` and `max`
+  macros break any `max()` after them, and without `WIN32_LEAN_AND_MEAN` it
+  brings `winsock.h`, which clashes with Boost.Asio's `winsock2.h`; only the
+  MSVC lanes give the tests their teeth, since libc++ undefines the macros.
+  Source: `include/webcpp/crypto/detail/windows.hpp`,
+  `test/windows_h_before_test.cpp`, `test/windows_h_after_test.cpp`
+  (libs/crypto).
+
+**Authenticated encryption.**
+
+- **`seal` and `open` work in place on `data`, with the tag apart; an AEAD
+  copies the tag into a local array and consumes the IV and the additional
+  data before it writes the first byte of `data`.** No buffer is copied, and a
+  tag, IV or additional data in the same buffer as `data` gives correct
+  results.
+  Source: `libraries/crypto/openspec/changes/genesis/specs/crypto/spec.md`
+  "GCM: in place, the tag apart" (proposals).
+- **Every function checks its conditions first, in a fixed order (key size,
+  moved-from, the incremental state, IV size, tag size, the length limits),
+  and returns before it reads a secret byte; a refusal leaves `data`
+  untouched.** The rulebook's rule that a function starts with its guards.
+  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
+  section 2.4 (proposals).
+- **A failed `open` zeroes the whole of `data` by `volatile` stores after any
+  failure that follows the start of decryption; there is no incremental
+  `open`.** Every backend decrypts and checks the tag in one pass, and not all
+  of them clear what they decrypted; an incremental decryption would hand out
+  plaintext before the tag is known.
+  Source: `libraries/crypto/openspec/changes/genesis/design.md` D5
+  (proposals).
+- **The incremental seal is `begin_seal(iv, additional_data)`, `update(data)`
+  and `result()`, and any error in it ends the message and wipes its state.**
+  Additional data is taken whole, so no piece of it needs a growing buffer.
+  Source: `libraries/crypto/openspec/changes/genesis/design.md` D6
+  (proposals).
+- **GCM accepts IVs of 1 to 128 bytes, keys of 16, 24 and 32 bytes and tags
+  of 16 bytes on every backend, and refuses a message over 2^36 - 32 bytes
+  and additional data over 2^61 - 1 bytes with `message_too_long`.** OpenSSL
+  accepts no IV longer than 128 bytes, so without webcpp's cap the same call
+  would succeed or fail by backend; the limits are NIST SP 800-38D's; the
+  page says that a key meant for WebCrypto is of 16 or 32 bytes.
+  Source: `libraries/crypto/openspec/changes/genesis/design.md` D7 and D8
+  (proposals).
+- **An AEAD object is used by one thread at a time, and the page says that an
+  IV is never repeated under one key and gives the limit of 2^32 messages per
+  key with random IVs.** It holds a message's state and a key; a repeated IV
+  exposes the XOR of the plaintexts and lets an attacker forge tags.
+  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
+  section 2.4 (proposals); `doc/aead.adoc` (libs/crypto).
+
+**Block cipher.**
+
+- **`ciphers::aes128`, `aes192` and `aes256` are complete types for every
+  backend; `make`, `encrypt` and `decrypt` exist on ctaes and OpenSSL, and
+  BearSSL's `make` stops with a `static_assert` that names them; the block
+  cipher has no default backend of its own.** BearSSL exports AES only inside
+  its modes; `aes256<>` stays the cipher of `aes256_gcm`, which a second
+  default would break.
+  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
+  section 2.3 (proposals).
+- **webcpp builds no GCM on another library's AES:
+  `ciphers::gcm<ciphers::aes256<backends::ctaes>>` does not compile, with a
+  message that names the backends that export GCM.** That would be the port
+  the owner refused.
+  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
+  section 2.4 (proposals).
+
+**secp256k1.**
+
+- **libsecp256k1 v0.8.0 is the only secp256k1 backend, and its whole C API
+  stays reachable through `<secp256k1*.h>`.** OpenSSL has ECDSA on secp256k1
+  but no BIP340, and the owner named libsecp256k1.
+  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
+  section 2.8 (proposals).
+- **`curves::secp256k1::keypair::make` takes a `std::pmr::memory_resource*`,
+  creates libsecp256k1's context in it with
+  `secp256k1_context_preallocated_create`, aligned to
+  `alignof(std::max_align_t)`, and randomizes it from `random_device`;
+  `verify_schnorr` and `verify_ecdsa` use `secp256k1_context_static` after
+  `secp256k1_selftest()` on every call and allocate nothing.** The resource
+  serves the context alone, so that the counting test sees every allocation;
+  a run-once flag would be the static mutable state the rulebook forbids.
+  Source: `include/webcpp/crypto/curves/secp256k1.hpp` (libs/crypto).
+- **`ecdh` takes the secret into a local array, wipes it on every path, and
+  returns the SHA-256 of the compressed shared point.** libsecp256k1's
+  default hash.
+  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
+  section 2.8 (proposals).
+- **ECDSA's DER is strict (`to_der`, `from_der`, at most 72 bytes) and
+  `normalize_ecdsa` gives the low-S form; the x-only tweak takes any 32-byte
+  tweak, as a free `tweak_xonly` on an x-only key, giving the key and its
+  parity, and as `keypair::tweak_xonly` in place, and a tweak not below the
+  group order is `invalid_secret_key` and wipes the key pair.** A wallet's
+  needs without a protocol's rules: the caller computes BIP341's TapTweak,
+  and BIP341's vectors test the tweak that way.
+  Source: `libraries/crypto/openspec/changes/genesis/design.md` (proposals);
+  `test/secp256k1_xonly_tweak_test.cpp` (libs/crypto).
+
+**Errors and exceptions.**
+
+- **Every operation that can fail returns `boost::system::result<T>` or
+  `result<void>`; the category `webcpp.crypto` declares the values 1 to 12,
+  fixed and never reused, and 13 and 14 are reserved for OpenSSL's memory
+  option.** The owner's rule that every library works with exceptions on and
+  off; a value once given is never given again.
+  Source: `include/webcpp/crypto/error.hpp` (libs/crypto); a ruling of the
+  plan's revision of 2026-11-14 (proposals, `reference/plan.md`).
+- **One function throws, `random_device::operator()`, declared only with
+  exceptions and raising through `boost::throw_exception`; `config.hpp`
+  derives `WEBCPP_CRYPTO_NO_EXCEPTIONS` from `WEBCPP_HAS_EXCEPTIONS`.**
+  `std::random_device`'s shape has no other way to report a failure.
+  Source: `include/webcpp/crypto/config.hpp`,
+  `include/webcpp/crypto/random_device.hpp` (libs/crypto).
+
+**Backends.**
+
+- **A backend is the C library itself, named after it (`backends::bearssl`,
+  `openssl`, `ctaes`, `secp256k1`), never a port of it.** The owner refused a
+  port of BearSSL's AES-GCM on 2026-10-10: a proven library is reviewed and
+  measured, a port is a new thing to review.
+  Source: `libraries/crypto/openspec/changes/genesis/design.md` D1
+  (proposals).
+- **BearSSL comes unmodified from webcpp's mirror `webcpporg/bearssl`; its
+  notice ships as `LICENSE-BEARSSL.txt`, and webcpp's canary lives in the
+  library's `src/`. The backend names its code itself: the CTR class of
+  AES-NI, then POWER8, then `aes_ct64`, and GHASH by PCLMUL, then POWER8,
+  then `ghash_ctmul64`; the test seam `WEBCPP_CRYPTO_DETAIL_BEARSSL_PORTABLE`
+  keeps it on the portable pair.** On wasm32 BearSSL's own default would be
+  its 32-bit code; the seam lets the agreement test compare both of BearSSL's
+  code paths with OpenSSL's on x86-64.
+  Source: `include/webcpp/crypto/backends/bearssl.hpp`,
+  `test/agreement_gcm_portable_test.cpp` (libs/crypto).
+- **OpenSSL is the superproject's source-built OpenSSL 3.5.9, static,
+  through crypto's alias `/webcpp/crypto//openssl`, which on native, wasip2
+  and wasip3 links `/webcpp/third_party//openssl` and defines
+  `WEBCPP_CRYPTO_HAS_OPENSSL=1`, and on Emscripten stops the compile with a
+  forced `#error` that names `/third_party//bearssl`; the header refuses an
+  OpenSSL older than 3.0.** The alias follows asio's; webcpp builds no
+  OpenSSL for Emscripten; version 3 is needed for `EVP_CIPHER_fetch`.
+  Source: `build.jam`, `src/openssl_on_emscripten.hpp` (libs/crypto).
+- **The source-built OpenSSL is compiled `no-asm` on MSVC, wasip2 and wasip3:
+  table-based AES and 4-bit GHASH, neither constant time, and no AES-NI; the
+  page says so and how a program chooses BearSSL there.** The provider's
+  profile (chapter 5 rule 7); `OPENSSL_AES_CONST_TIME` would make only the AES
+  core constant time.
+  Source: `doc/jamfile.adoc`, `doc/backends.adoc` (libs/crypto); the owner's
+  decision 2 of 2026-11-14 (proposals, `reference/plan.md`).
+- **OpenSSL is given the key once, in `make`; each message re-initialises
+  the context with a null key; lengths go in pieces of at most `INT_MAX`
+  rounded down to a multiple of 16; `make` maps a null `EVP_CIPHER_CTX_new`
+  to `not_enough_memory` and a failed fetch or init to `backend_failure`; and
+  the thread's error queue is left as it was found.** EVP takes lengths as
+  `int`; the error queue cannot tell a memory failure apart across versions;
+  nothing webcpp raises may be left for Beast's TLS to misread.
+  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
+  section 3.3 (proposals); `include/webcpp/crypto/backends/openssl.hpp`
+  (libs/crypto).
+- **ctaes is the copy Bitcoin Core v31.1 ships, `src/crypto/ctaes` of the
+  shallow submodule `third_party/libs/bitcoin`, built from `ctaes.c` alone and
+  exposed as the block cipher alone.** The owner named "the ctaes of Bitcoin
+  Core"; `bitcoin-core/ctaes` is another copy, which adds CBC.
+  Source: `libraries/crypto/openspec/changes/genesis/design.md` D12
+  (proposals).
+- **libsecp256k1 is built every module on, and its precomputed tables are the
+  b2 feature `webcpp-secp256k1-tables` (`auto`, `small`, `large`), whose
+  `auto` is small on Emscripten and large natively and on WASI.** Emscripten
+  is the browser's target, where size counts most, and WASI the server's.
+  Source: `libraries/crypto/openspec/changes/genesis/design.md` D11
+  (proposals); `third_party/Jamfile` (webcpp).
+
+**Default backend.**
+
+- **The AEADs' default backend is BearSSL on Emscripten, wasip2 and wasip3,
+  OpenSSL natively when it is linked, BearSSL natively otherwise, and a
+  program picks BearSSL with `<define>WEBCPP_CRYPTO_DEFAULT_BACKEND_BEARSSL`;
+  on MSVC the default follows the same rule.** OpenSSL's assembly uses the
+  CPU's AES and carry-less multiplication instructions on x86-64 and ARMv8,
+  and BearSSL has them on x86 only; on WebAssembly BearSSL is constant time
+  where the `no-asm` OpenSSL is not (the owner's decision 2 of 2026-11-14).
+  Speed and size are not measured until the deferred lanes (chapter 17).
+  Source: `include/webcpp/crypto/config.hpp` (libs/crypto); the plan's
+  revision of 2026-11-14 (proposals, `reference/plan.md`).
+- **The page warns that natively without OpenSSL a server on ARM runs
+  BearSSL's portable code, and names `/webcpp/crypto//openssl`; it states no
+  factor.** BearSSL has no ARMv8 AES or PMULL code; the slowdown on the
+  source-built OpenSSL is not measured.
+  Source: `doc/aead.adoc` (libs/crypto).
+
+**Randomness and memory.**
+
+- **`random_device` is shaped as `std::random_device` and adds
+  `fill(std::span<std::uint8_t>)`, returning `result<void>`; entropy comes
+  from one source per platform and nothing else (`getentropy` on Linux, macOS
+  and WASI, and through it `crypto.getRandomValues` on Emscripten;
+  `BCryptGenRandom` on Windows), in pieces of at most 256 bytes, with no cache
+  and no fallback.** The owner's decision of 2026-10-11: entropy always takes
+  the safest path, in code simple enough to be checked by anyone.
+  Source: `libraries/crypto/openspec/changes/genesis/design.md` D10
+  (proposals); `include/webcpp/crypto/detail/entropy.hpp` (libs/crypto).
+- **The backends draw from the same source: BearSSL is compiled with
+  `BR_USE_GETENTROPY=1`, `BR_RDRAND=0` and `BR_USE_URANDOM=0`, its seeders
+  off on Windows; libsecp256k1's context is randomized from `random_device`;
+  webcpp never calls `RAND_bytes`.** No backend chooses its own entropy.
+  Source: `third_party/Jamfile` (webcpp).
+- **webcpp's code allocates only `keypair::make`'s context, in the resource
+  the user gives; no seal, open, `encrypt`, `fill`, signature, `ecdh` or
+  verification allocates on any backend; OpenSSL's `make` allocates its
+  context through OpenSSL's own allocator, which its page states and
+  `allocation_openssl` counts.** The owner's allocators decision, with
+  OpenSSL's departure accepted on 2026-10-11 until its memory option.
+  Source: `libraries/crypto/openspec/changes/genesis/design.md` D17
+  (proposals); `test/support/counting.hpp` (libs/crypto).
+- **Key schedules inside webcpp's objects are wiped on destruction and on
+  move by stores through a `volatile` pointer followed by
+  `std::atomic_signal_fence(std::memory_order_seq_cst)`.** The optimiser
+  cannot drop these stores, where it can drop a `memset`.
+  Source: `include/webcpp/crypto/detail/wipe.hpp` (libs/crypto).
+
+**Build.**
+
+- **BearSSL, libsecp256k1 and ctaes are pinned submodules under
+  `third_party/libs/`, built by `third_party/Jamfile` from their own sources,
+  file by file, as static libraries, on every target, with `<warnings>off`
+  and a section per function and datum (chapter 5).** Neither BearSSL nor
+  libsecp256k1 compiles as C++; a program keeps only what it calls.
+  Source: `third_party/Jamfile` (webcpp).
+- **A program names `/webcpp/crypto//crypto`, a header-only alias, and each
+  backend it uses, `/third_party//<name>` (OpenSSL: `/webcpp/crypto//openssl`);
+  the Jamroot registers the third-party project as `/third_party` beside
+  `/webcpp/third_party`.** The user's form is `/third_party//<name>`, as
+  chapter 5 rule 5 writes it, and the existing consumers keep theirs.
+  Source: `Jamroot`, `libs/crypto/build.jam` (webcpp).
+- **A library named and not called adds no byte, which the rule
+  `webcpp.same-program` proves on every target for each backend.** No rule
+  built a pair and compared it before.
+  Source: `tools/same_program/same_program.jam` (webcpp);
+  `test/unused/Jamfile` (libs/crypto).
+- **Three layers stop a wrong build, each naming what to add, for BearSSL,
+  libsecp256k1 and ctaes: an `#error` or `static_assert` at compile time; a
+  link-time canary, `webcpp_crypto_<name>_<commit7>_<configuration>`
+  followed by `__add_third_party_<name>_to_your_link`, defined by
+  `src/canary_<name>.c`; and on MSVC `#pragma detect_mismatch`, one key per
+  backend and one for the default backend. OpenSSL has no canary: its layers
+  are the `#error`s and the default backend's key.** A library missing, or of
+  another commit or configuration, then fails to link with that name; the
+  provider injects nothing into upstream (chapter 5 rule 7).
+  Source: `include/webcpp/crypto/detail/canary.h`, `src/canary_*.c`
+  (libs/crypto).
+- **Every message has a test of its own, in a directory of its own, that
+  checks its text: clang's with `webcpp.compile-diagnostic` under
+  `test/messages/`, MSVC's as `webcpp.compile-fail` or `webcpp.link-fail`
+  under `test/msvc/`, and the build's and the linker's as fixtures of
+  `tools/test/crypto_jamfiles_test.py`.** b2 shares one object file between
+  two programs that differ only by a free define or a library;
+  `compile-diagnostic` is clang's, and skips Emscripten.
+  Source: `test/messages/`, `test/msvc/` (libs/crypto).
+- **The user's Jamfiles are the fixtures `tools/test/fixtures/crypto_jamfiles/<case>/`,
+  each with its `<case>.outcome` (targets, build, what runs print, what each
+  linker prints), built on a scratch superproject: `web`, `server`,
+  `both_bearssl_default`, `block`, `encrypt_and_sign`, `openssl_linked`,
+  `sign`, `sign_small`, and the stops (canaries, OpenSSL on Emscripten); a
+  `same-as:` line keeps a copied program equal to its original, and the page
+  includes each Jamfile and outcome by tag.** A user's Jamfile is what an
+  agent copies, so each one shown is built and run as it is shown.
+  Source: `tools/test/crypto_jamfiles_test.py` (webcpp).
+- **One copy per program: trystero links `/third_party//secp256k1` and no
+  other libsecp256k1, and asio and crypto name the one source-built
+  OpenSSL.** libsecp256k1's tables are global symbols, and two libcrypto would
+  be two error queues.
+  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
+  section 4.5 (proposals).
+
+**Targets and evidence.**
+
+- **crypto targets native, wasip2, wasip3 and Emscripten: BearSSL, ctaes and
+  libsecp256k1 on every target, OpenSSL on native, wasip2 and wasip3; on
+  Windows `/webcpp/crypto//crypto` adds `bcrypt`.** webcpp builds no OpenSSL
+  for Emscripten; MSVC has no `getentropy`.
+  Source: `build.jam`, `test/Jamfile` (libs/crypto).
+- **The vectors run on every backend that has the algorithm: the GCM
+  specification's cases and Wycheproof's AES-GCM files, sealed whole and in
+  pieces; FIPS 197 for the block cipher; BIP340's vectors, Wycheproof's
+  Bitcoin ECDSA file and DER through `from_der`, and BIP341's wallet
+  vectors through the tweak.** Every case runs because keys of 24 bytes and
+  IVs of any size up to 128 are accepted.
+  Source: `test/Jamfile` (libs/crypto); `third_party/libs/wycheproof`,
+  `third_party/libs/bips` (webcpp).
+- **BearSSL and OpenSSL are compared on AES-GCM, and ctaes and OpenSSL on the
+  block cipher, on random inputs from a fixed seed and a drawn one, natively,
+  on wasip2 and on wasip3; on x86-64 BearSSL runs once on AES-NI and PCLMUL
+  and once on its portable code.** A failure prints its seed; on WASI OpenSSL
+  runs its portable C code, another pair of implementations.
+  Source: `test/support/agreement.hpp`, `test/agreement_gcm_test.cpp`
+  (libs/crypto).
+- **The test Jamfile's rule `crypto-run` declares every test program twice,
+  the second with `<exception-handling>off`, and every test ends with
+  `webcpp::test::exit_status(boost::report_errors())`.** No ordinary lane
+  builds without exceptions.
+  Source: `test/Jamfile` (libs/crypto).
+- **The C libraries' own test programs run on webcpp's build in the own lane
+  `c-suites`, on native, wasip2, wasip3 and Emscripten, on every push.**
+  Chapter 5 rule 11; the CI has no nightly level (Task 25b, chapter 17).
+  Source: `test/c_suites/Jamfile` (libs/crypto).
+- **The page is generated where it states support: `doc/tables/generate.py`
+  writes the comparison, backend, default, message and Jamfile tables and
+  `llms.txt` from `doc/tables/crypto.json` and the tests, and the doc build
+  fails when they are stale; size, throughput and measured constant time say
+  "not measured yet".** Every table that states support, size or speed comes
+  from what tests or measurements produce (the owner's documentation
+  requirements of 2026-11-15).
+  Source: `doc/tables/generate.py`, `doc/Jamfile` (libs/crypto).
+
 ### asio (Boost.Asio on native, Emscripten and WASIp2/P3; implemented for 0.1.0 in preparation)
 
 
@@ -7156,9 +7553,13 @@ What webcpp does not have yet, and the chapters that mention it:
   migration. Their coexistence is required; dependency provenance must not be
   addressed by prohibiting a combined program. Actor-based libraries use
   xactor's scheduler through an application-owned loop.
-- **webcpp::webrtc and webcpp::crypto.** WebRTC peer connections and data
-  channels, and authenticated encryption/randomness, remain separate proposals.
-  Trystero can then retain its protocol over those shared facilities.
+- **webcpp::webrtc.** WebRTC peer connections and data channels remain a
+  separate proposal (chapter 17). Trystero can then retain its protocol over
+  that shared facility and over webcpp::crypto.
+- **crypto after 0.1** (chapter 17): OpenSSL's memory option, constant time
+  checked, sizes and throughput measured, the browser lane, the CI's nightly
+  level, NIST CAVP's vectors, ChaCha20-Poly1305, Botan, and trystero's code on
+  the library (its sealers, its random and its signer).
 - **The libraries web developers use most,** brought to C++: a JavaScript
   interpreter (QuickJS), libp2p, HTTP fetch.
 - **The site, increments 2 to 8.** Increment 1 is done: the site's
@@ -7219,494 +7620,23 @@ each with its decisions as decided. While a proposal is open, its own
 change that builds it moves its decisions into chapter 14 or 15. Their
 conflicts with chapters 1 to 13 are in chapter 19.
 
-### crypto (authenticated encryption, randomness and secp256k1 over C backends; wrapper; accepted 2026-10-11, not built)
+### crypto, after 0.1 (accepted 2026-10-11; increments 1 and 2 built in 0.1.0, chapter 15)
 
-The plan (`reference/plan.md`, a draft of 2026-10-11) builds the library in 43
-tasks over five increments: the foundation and AES-GCM on BearSSL and OpenSSL;
-libsecp256k1 and ctaes; webcpp::trystero moved onto the library;
-ChaCha20-Poly1305 on BearSSL and OpenSSL; Botan, native and with exceptions
-only. Nothing is built and `webcpporg/crypto` has no commit: the work waits on
-the owner's rewrite of `main`'s history, then Task 0a (`infra/shared`
-integrated into `main`) and asio's Task 2 (`webcpp::test::exit_status`), and
-on the owner's gates G1 and G2 (the repository and its submodule), O2 (the
-CI's nightly level), O3 (NIST's archives), O5 (the departures C14, C16 and
-C17, and `brew install botan`) and G4 (every push).
+The plan (`reference/plan.md`, revised on 2026-11-14) built version 0.1 from
+its increments 1 and 2; the owner deferred the rest, kept as written and
+re-read before it runs. What 0.1 built is in chapter 15; what follows is
+decided and not built.
 
-**Provider amendment, 2026-11-03.** The owner's explicit source-build request
-supersedes this accepted design's old OpenSSL provisioning and default-link
-choices (D15 and reference sections 3.3/4.4). Future crypto uses the shared
-pinned `/webcpp/third_party//openssl` provider, whose current support is
-native, WASIp2 single and WASIp3, static, with chapter 5 rule 7's exact-archive
-boundary, and which crypto names through its own alias
-`/webcpp/crypto//openssl`. Statements
-below about finding a machine OpenSSL, refusing all WebAssembly or defaulting
-to shared linkage record the older design, not current provider requirements.
-Botan's provisioning, future algorithms, APIs and explicit allocator policy
-are unchanged. No crypto implementation or new backend coverage is claimed.
+**OpenSSL's memory option (plan Tasks 15, 16 and 33).**
 
-**Scope.**
-
-- **Hashing and HMAC stay with Boost.Hash2, and HKDF, when a library needs it,
-  is written on `boost::hash2::hmac`.** The owner's amendment C1 of 2026-10-10
-  moved them out of the library, which offers no second interface for them; no
-  further reason is recorded.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 1.2 (proposals).
-- **Every call is synchronous: no promise, callback or awaitable, and
-  WebCrypto is not a backend.** The first design was asynchronous only because
-  WebCrypto is promise-based; the owner removed WebCrypto (amendment C1), and
-  with C code on every target nothing waits.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 1.1 (proposals).
-
-**Interface.**
-
-- **Algorithm types follow Boost.Hash2: sizes as `static constexpr` members
-  (`key_size`, `iv_size`, `tag_size`, `block_size`), the output named
-  `result_type`, modes as templates over a cipher (`gcm<aes256<>>`), tags as
-  `boost::hash2::digest<16>`, and the backend a template parameter defaulting
-  to `default_backend`.** Boost's own shape is what a Boost user expects, and
-  it keeps `gcm` parallel to `hmac<H>`.
-  Source: `libraries/crypto/openspec/changes/genesis/design.md` D2
-  (proposals).
-- **A keyed object is built by `static make(...)`, which returns
-  `boost::system::result<T>`, never by a constructor.** A key can have the
-  wrong size and a backend can fail to allocate; a constructor that throws was
-  rejected because the library works without exceptions.
-  Source: `libraries/crypto/openspec/changes/genesis/design.md` D2
-  (proposals).
-- **The algorithm types do every guard, the moved-from state, the incremental
-  seal's state machine, the length accounting and the zeroing of a failed
-  `open` once for every backend, and a backend supplies only six traits in
-  `detail` (`block_state`, `block_engine`, `gcm_state`, `gcm_engine`,
-  `chacha_state`, `chacha_engine`).** The same guards on every backend are
-  what lets the agreement tests compare them. A state trait never refuses, so
-  `aes256<backends::bearssl>` is a complete type `gcm` can name, and an engine
-  trait refuses only where the algorithm is called.
-  Source: `libraries/crypto/openspec/changes/genesis/design.md` D3
-  (proposals).
-- **A keyed object is move-only, its destructor wipes the key schedule, and a
-  move leaves the source empty, every function of which but assignment and
-  destruction returns `invalid_state` before it reads a secret byte.** Without
-  that guard a moved-from BearSSL `gcm`, whose vtable survives the move, would
-  seal under an all-zero key schedule and return a valid-looking tag.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 2.4 (proposals).
-- **Data and keys are `std::span<std::uint8_t const>` and
-  `std::span<std::uint8_t>`, sizes are `std::size_t`, and a limit wider than
-  `size_t` on wasm32 is a `std::uint64_t` compared through
-  `detail::exceeds`.** The comparison goes through `detail::exceeds` so that
-  no comparison is tautological on wasm32; the types are the rulebook's rule
-  of types of a fixed meaning.
-  Source: `libraries/crypto/openspec/changes/genesis/specs/crypto/spec.md`
-  "Interface: results are values" (proposals).
-- **There is one public header per responsibility, the check that a backend is
-  linked sits in that backend's own header, and `config.hpp`, `error.hpp`,
-  `equal.hpp`, `random_device.hpp` and the convenience header compile with no
-  backend linked.** A program that only draws random bytes or compares tags
-  names no backend library, and one that only signs names
-  `/third_party//secp256k1` and no encryption backend.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 2.2 (proposals).
-- **`equal` compares in constant time: it reads every byte, accumulates the
-  XOR of each pair with OR in a `volatile` local read once after the loop and
-  reduces it to one bit without a branch, and spans of different sizes compare
-  unequal without their contents being read.** Hash2's `digest<N>::operator==`
-  is `memcmp`, not constant time; `equal` compiles in the user's translation
-  unit, where a compiler could otherwise turn the reduction into an early
-  exit; a size is public.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 2.6 (proposals).
-- **`<windows.h>` is reached only through
-  `<webcpp/crypto/detail/windows.hpp>`, which defines `NOMINMAX` and
-  `WIN32_LEAN_AND_MEAN` only when they are absent and undefines only what it
-  defined, and every header writes `(max)()`, `(min)()` and
-  `(std::numeric_limits<T>::max)()`.** `<windows.h>` defines `min` and `max`
-  as function-like macros that break any `max()` after it, in webcpp's headers
-  and in the user's, and without `WIN32_LEAN_AND_MEAN` it brings `winsock.h`,
-  which clashes with a later `winsock2.h` (Boost.Asio's).
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 2.2 (proposals).
-
-**Authenticated encryption.**
-
-- **`seal` and `open` work in place on `data`, with the tag apart: a
-  `digest<16>` out of `seal`, and a dynamic span into `open`.** `data` is both
-  input and output, so no buffer is copied and no overlap can be partial; a
-  separate tag makes a wire format that appends it (trystero's, WebCrypto's)
-  or sends it apart a matter of the caller's spans, and a dynamic span takes a
-  `digest<16>` and a `std::array<std::uint8_t, 16>` alike, without a cast.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 2.4 (proposals).
-- **An AEAD copies the tag into a local array and consumes the IV and the
-  additional data before it writes the first byte of `data`.** So that a tag
-  that follows or overlaps `data` in one buffer, and an IV or additional data
-  in the same buffer, give correct results.
-  Source: `libraries/crypto/openspec/changes/genesis/specs/crypto/spec.md`
-  "GCM: in place, the tag apart" (proposals).
-- **Every function checks its conditions first, in a fixed order (key size,
-  the memory option, moved-from, the incremental state, IV size, tag size, the
-  length limits), and returns before it reads a secret byte; a guard's refusal
-  leaves `data` untouched.** The rulebook's rule that a function starts with
-  its guards, before any work begins.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 2.4 (proposals).
-- **A failed `open` zeroes the whole of `data`, by `volatile` stores, after
-  any failure that follows the start of decryption (`authentication_failed`,
-  `backend_failure`).** Every backend decrypts and checks the tag in one pass,
-  and not all of them clear what they decrypted; verifying before decrypting
-  would need a GHASH of webcpp's own over the backend's AES, the port the
-  owner refused (a ruling of the controller).
-  Source: `libraries/crypto/openspec/changes/genesis/design.md` D5
-  (proposals).
-- **There is no incremental `open`; a later increment may add one only with
-  the plaintext withheld until the tag verifies.** An incremental decryption
-  returns plaintext before the tag is known, and nothing prevents its use when
-  the tag later fails; no user needs streaming decryption, since trystero
-  opens whole messages.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 2.4 (proposals).
-- **The incremental seal is `begin_seal(iv, additional_data)`, `update(data)`
-  and `result()`, and any error in it ends the message and wipes its state.**
-  Botan's public interface takes the associated data whole, before the nonce,
-  so pieces of additional data could only be joined in a growing buffer, an
-  allocation.
-  Source: `libraries/crypto/openspec/changes/genesis/design.md` D6
-  (proposals).
-- **GCM accepts IVs of 1 to 128 bytes on every backend, and the documentation
-  recommends 12.** OpenSSL accepts no GCM IV longer than 128 bytes (measured
-  on 3.6.4) while BearSSL and Botan accept longer ones, so without a cap of
-  webcpp's the same call would succeed or fail by backend.
-  Source: `libraries/crypto/openspec/changes/genesis/design.md` D7
-  (proposals).
-- **Keys of 16, 24 and 32 bytes are accepted, AES-192 included, and the
-  documentation says that a key meant for a browser's WebCrypto is of 16 or 32
-  bytes.** AES-192 is part of the standard, every AEAD backend has it, and it
-  lets every test vector run; Chrome's WebCrypto refuses it.
-  Source: `libraries/crypto/openspec/changes/genesis/design.md` D8
-  (proposals).
-- **Tags are of 16 bytes only.** Trystero and WebCrypto's default use 16-byte
-  tags, so NIST CAVP's cases with shorter tags are skipped.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 8.1 (proposals).
-- **`gcm` refuses a message over 2^36 - 32 bytes and additional data over
-  2^61 - 1 bytes, and `chacha20_poly1305` a message over 2^38 - 64 bytes, with
-  `message_too_long`.** These are the limits of NIST SP 800-38D section
-  5.2.1.1 and of RFC 8439.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  sections 2.4 and 2.5 (proposals).
-- **An AEAD object is used by one thread at a time, its functions are not
-  `const`, and its page lists it as not shareable.** It holds the state of a
-  message, as a Hash2 algorithm does, and a key; OpenSSL's and Botan's hold
-  pointers into their libraries' heaps.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 2.4 (proposals).
-- **The documentation states that an IV or a nonce is never repeated under one
-  key, and gives the limit of 2^32 messages per key with random IVs, for GCM
-  and ChaCha20-Poly1305 alike.** A repeated IV exposes the XOR of the
-  plaintexts and lets an attacker forge tags (NIST SP 800-38D section 8, RFC
-  8439 section 4), and 2^32 random 96-bit nonces repeat with a probability
-  inside the 2^-32 that NIST sets for GCM's random IVs.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  sections 2.4 and 2.5 (proposals).
-- **ChaCha20-Poly1305 is one shot only, with an IV of exactly 12 bytes, and
-  where BearSSL leaves the tag check to its caller the backend compares with
-  `equal` and zeroes `data` on a mismatch.** BearSSL's ChaCha20-Poly1305 is
-  one function over the whole message, so an incremental form would not be
-  uniform across backends; 12 bytes is RFC 8439 section 2.8; the comparison is
-  BearSSL's documented contract, not a mode of webcpp's.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 2.5 (proposals).
-
-**Block cipher.**
-
-- **`aes128`, `aes192` and `aes256` are complete types for every backend,
-  their `make`, `encrypt` and `decrypt` exist only where the backend exports
-  the block cipher (ctaes, OpenSSL, Botan), and BearSSL's `make` stops with a
-  `static_assert` that names the backends that do.** So that
-  `gcm<aes256<backends::bearssl>>` can name its cipher; BearSSL exports AES
-  only inside its modes.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 2.3 (proposals).
-- **The block cipher has no default backend of its own: on WebAssembly a
-  program names `aes256<backends::ctaes>` and includes its header.**
-  `aes256<>` must stay the cipher of `aes256_gcm = gcm<aes256<>>`, which a
-  second default would break.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 2.3 (proposals).
-- **webcpp builds no GCM on another library's AES:
-  `gcm<aes256<backends::ctaes>>` does not compile, with a message that names
-  the backends that export GCM.** That would be the port the owner refused.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 2.4 (proposals).
-
-**secp256k1.**
-
-- **libsecp256k1 is the only secp256k1 backend, and its whole C API of v0.8.0
-  (82 functions, every module built) stays reachable through
-  `<secp256k1*.h>`.** OpenSSL and Botan have ECDSA on secp256k1 but no BIP340,
-  and the owner named libsecp256k1 for this; what the C++ types do not wrap is
-  used directly.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 2.8 (proposals).
-- **`keypair::make` takes a `std::pmr::memory_resource*`, creates
-  libsecp256k1's context in it with `secp256k1_context_preallocated_create`,
-  aligned to `alignof(std::max_align_t)`, randomizes it with 32 bytes of
-  `random_device`, and is not `noexcept`.** The resource serves the context
-  alone, so that the counting test sees every allocation; libsecp256k1 asks
-  for memory aligned to hold an object of any type; the resource reports a
-  failed allocation as it does.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 2.8 (proposals).
-- **`verify_schnorr` and `verify_ecdsa` use `secp256k1_context_static`,
-  allocate nothing, and call `secp256k1_selftest()` on every call, keeping no
-  flag.** libsecp256k1 recommends the static context only after its self-test,
-  and a run-once flag would be the static mutable state the rulebook forbids;
-  the self-test is one SHA-256 of a 63-byte string beside a verification of
-  about 20 microseconds.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 2.8 (proposals).
-- **`ecdh` takes the secret out of the key pair into a local array, wipes it
-  before returning on every path, and returns the SHA-256 of the compressed
-  shared point.** libsecp256k1's `secp256k1_ecdh` takes the secret key; the
-  hash is libsecp256k1's default.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 2.8 (proposals).
-
-**Errors and exceptions.**
-
-- **Every operation that can fail returns `boost::system::result<T>` or
-  `result<void>`, with exceptions on and off.** The owner's rule that every
-  library builds and works with exceptions on and off.
-  Source: `libraries/crypto/openspec/changes/genesis/design.md` D4
-  (proposals).
-- **The category `webcpp.crypto` has the fixed values 1 to 14, never reused,
-  and the two generic conditions use `errc::not_enough_memory` and
-  `errc::not_supported`.** Nothing of the draft of 2026-10-10 was released, so
-  the values start afresh; the two conditions are generic.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 2.9 (proposals).
-- **One function throws, `random_device::operator()`, declared only with
-  exceptions and raising through `boost::throw_exception`; `keypair::make`
-  lets the user's resource report a failed allocation as it does.**
-  `std::random_device`'s shape has no other way to report a failure.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 2.10 (proposals).
-- **`config.hpp` defines `WEBCPP_CRYPTO_NO_EXCEPTIONS` under
-  `BOOST_NO_EXCEPTIONS`, keeps a developer's definition, and its Doc Comment
-  names what depends on it: `random_device::operator()`, the Botan backend and
-  the `try` of OpenSSL's memory adapter.** The rulebook's rule for exceptions;
-  no further reason is recorded.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 2.10 (proposals).
-- **Botan's backend calls Botan inside one `try` and maps what it throws:
-  `Invalid_Authentication_Tag` to `authentication_failed`, `Invalid_IV_Length`
-  to `invalid_iv_size`, `Invalid_Key_Length` to `invalid_key_size`,
-  `std::bad_alloc` to `not_enough_memory`, anything else to
-  `backend_failure`.** So that no exception leaves a webcpp function.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 3.6 (proposals).
-
-**Backends.**
-
-- **A backend is the C or C++ library itself, named after it
-  (`backends::bearssl`, `openssl`, `ctaes`, `secp256k1`, `botan`), and never a
-  port of it.** The owner refused a webcpp port of BearSSL's AES-GCM on
-  2026-10-10: a proven library is audited and measured, a port is a new thing
-  to audit.
-  Source: `libraries/crypto/openspec/changes/genesis/design.md` D1
-  (proposals).
-- **BearSSL comes unmodified from webcpp's mirror `webcpporg/bearssl` at
-  `7bea48e5`; no BearSSL file is copied into webcpp, its notice ships as
-  `LICENSE-BEARSSL.txt`, and webcpp's canary lives in the library's `src/`,
-  never in the mirror.** BearSSL is published only on its author's host, and
-  the rulebook keeps an unmodified mirror for an upstream that is not on
-  GitHub.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  sections 3.2 and 3.4 (proposals).
-- **The BearSSL backend names its code itself: for GCM the CTR class of
-  AES-NI, then POWER8, then the 64-bit constant-time `aes_ct64`, and GHASH by
-  PCLMUL, then POWER8, then `ghash_ctmul64`; for ChaCha20-Poly1305
-  `br_chacha20_sse2_get()` else `br_chacha20_ct_run`, and
-  `br_poly1305_ctmulq_get()` else `br_poly1305_ctmul_run`.** On wasm32 `BR_64`
-  is not set, and BearSSL's own default there is the 32-bit code, half as fast
-  (159 against 79 MiB/s).
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 3.2 (proposals).
-- **A move of BearSSL's `gcm` copies the key schedule and calls `br_gcm_init`
-  again on the destination, through the public API, abandoning a message in
-  progress.** BearSSL's GCM context points at the key schedule
-  (`br_gcm_context::bctx`).
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 3.2 (proposals).
-- **OpenSSL is the superproject's source-built OpenSSL 3.5.9, static, named
-  through `/webcpp/crypto//openssl`, which gives `WEBCPP_CRYPTO_HAS_OPENSSL` on
-  native, wasip2 and wasip3 and refuses Emscripten by a forced `#error`; the
-  backend's header stops with an `#error` when it is not linked or older than
-  3.0.** Version 3 is needed for `EVP_CIPHER_fetch`; the alias follows asio's,
-  and OpenSSL has no canary (chapter 5 rule 7).
-  Source: `libs/crypto/build.jam`, `tools/webcpp-openssl.jam` (superproject).
-- **OpenSSL is given the key once, in `make`, webcpp keeps no copy of it, each
-  message re-initialises the same context with a null key, and lengths are fed
-  in pieces of at most `INT_MAX` rounded down to a multiple of 16.** A null
-  key keeps the expanded key, and a seal then an `open` on the reused context
-  works (measured on 3.6.4); EVP takes lengths as `int`.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 3.3 (proposals).
-- **OpenSSL's `make` maps its errors by the call that failed: a null
-  `EVP_CIPHER_CTX_new` is `not_enough_memory`, a null `EVP_CIPHER_fetch` or a
-  failed `EVP_EncryptInit_ex` is `backend_failure`.** The error queue cannot
-  tell a memory failure apart across versions: 3.6.4 raises `malloc failure`,
-  3.0.13 raises nothing.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 3.3 (proposals).
-- **The OpenSSL backend leaves the thread's error queue as it found it: `make`
-  sets `ERR_set_mark()` after its guards and pops to it on every path, and the
-  functions of a message set no mark and call `ERR_clear_error()` only on a
-  `backend_failure`.** Nothing webcpp raises may be left for the program's
-  other users of OpenSSL (Beast's TLS) to misread; an earlier mark would
-  initialise OpenSSL and make the memory option's install impossible, and the
-  first `ERR_*` call of a thread allocates its error state (6 blocks), which
-  would break the rule that a message allocates nothing.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 3.3 (proposals).
-- **ctaes is the copy Bitcoin Core ships, `src/crypto/ctaes` of
-  `bitcoin/bitcoin` at tag v31.1 as a shallow submodule, built from `ctaes.c`
-  alone and exposed as the block cipher alone, and not the repository
-  `bitcoin-core/ctaes`.** The owner named "the ctaes of Bitcoin Core";
-  `bitcoin-core/ctaes` is a different copy, which adds CBC.
-  Source: `libraries/crypto/openspec/changes/genesis/design.md` D12
-  (proposals).
-- **libsecp256k1 is v0.8.0 built as its CMake build does, every module on, and
-  its precomputed tables are the b2 feature `webcpp-secp256k1-tables` (`auto`,
-  `small`, `large`), whose `auto` is small on Emscripten and large natively
-  and on WASI.** The small tables make an Emscripten program 141,922 bytes
-  against 1,211,251, for verification about a third slower, and the large ones
-  verify 1.7 times faster on wasip2; the owner's mission makes Emscripten the
-  browser's target and WASI the server's and the cloud's (a ruling of the
-  controller).
-  Source: `libraries/crypto/openspec/changes/genesis/design.md` D11
-  (proposals).
-- **Botan 3 is found and never built, native only and only with exceptions:
-  `backends/botan.hpp` declares nothing under `WEBCPP_CRYPTO_NO_EXCEPTIONS`,
-  and a program built without exceptions that names it gets an `#error`.** No
-  Botan for Emscripten exists that webcpp's build can find, Botan 3.13.0 has
-  no OS definition for wasip2 or wasip3, and Botan reports every error by
-  throwing, the tag check included.
-  Source: `libraries/crypto/openspec/changes/genesis/design.md` D19
-  (proposals).
-- **Botan's backend calls `set_associated_data` before every `start`, with an
-  empty span when there is none, and runs the bulk of a message through
-  `process` on the caller's span, finishing on a scratch `secure_vector`
-  reserved in `make`.** Botan keeps the additional data between messages, so a
-  message without it would be authenticated with the previous one's; the
-  reserved scratch never grows, so `seal` and `open` allocate nothing.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 3.6 (proposals).
-
-**Default backend.**
-
-- **The AEADs' default backend is BearSSL on Emscripten, wasip2 and wasip3,
-  OpenSSL natively when it is linked, and BearSSL natively otherwise; with
-  several linked it is the first of OpenSSL, BearSSL and Botan, and a program
-  picks another with `<define>WEBCPP_CRYPTO_DEFAULT_BACKEND_<NAME>`.** The
-  owner's rule is the smallest binary on the web and the fastest on servers:
-  OpenSSL is 1.4 times as fast as BearSSL's AES-NI on x86-64 and 30 to 62
-  times on ARM; Botan comes last because it needs exceptions.
-  Source: `libraries/crypto/openspec/changes/genesis/design.md` D9
-  (proposals).
-- **The architecture does not enter the choice of the default backend.**
-  BearSSL picks AES-NI and PCLMUL by CPUID inside its own code.
-  Source: `libraries/crypto/openspec/changes/genesis/design.md` D9
-  (proposals).
-- **The backends' page and `gcm`'s page warn that natively without OpenSSL
-  BearSSL is 30 to 62 times slower than OpenSSL on ARM, and that a server on
-  ARM names `/webcpp/crypto//openssl`.** BearSSL has no ARMv8 AES or PMULL code.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 5 (proposals).
-
-**Randomness.**
-
-- **`random_device` is shaped as `std::random_device` (`result_type`
-  `unsigned int`, `(min)()`, `(max)()`, `entropy()`, `operator()`), adds
-  `fill(std::span<std::uint8_t>)` returning `result<void>`, holds no state and
-  needs no backend.** So that it is a UniformRandomBitGenerator with
-  exceptions on; without exceptions `operator()` has no way to report a
-  failure, and `fill` is the interface.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 2.7 (proposals).
-- **Entropy comes from one source per platform and nothing else: `getentropy`
-  on Linux, macOS and WASI (and through it `crypto.getRandomValues` on
-  Emscripten), and `BCryptGenRandom` with `BCRYPT_USE_SYSTEM_PREFERRED_RNG` on
-  Windows, with no cache, no generator in user space and no weaker fallback.**
-  The owner's decision of 2026-10-11: entropy always takes the safest path, in
-  code simple enough to be read and checked by anyone.
-  Source: `libraries/crypto/openspec/changes/genesis/design.md` D10
-  (proposals).
-- **The entropy function asks in pieces of at most 256 bytes, checks the
-  result of every call, fits on one screen with each branch commented with the
-  contract it relies on, and on failure zeroes the buffer and returns
-  `entropy_unavailable`, or `errc::not_supported` where the environment has no
-  generator.** 256 bytes is the limit of `getentropy`; trystero's browser
-  backend ignores the result today, which is not repeated; an Emscripten audio
-  worklet has no `crypto`.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 6 (proposals).
-- **A lint rule fails a header whose path ends `entropy.hpp` or
-  `random_device.hpp` that names `rand`, `time`, `clock` or `__rdrand`, even
-  with `lint-world:`.** No weaker source, ever: no clock, no `rand`, no
-  `rdrand` alone.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  sections 6 and 8.4 (proposals).
-- **The backends draw from the same source: BearSSL is compiled with
-  `BR_USE_GETENTROPY=1`, `BR_RDRAND=0` and `BR_USE_URANDOM=0`, with every
-  seeder compiled out on Windows; libsecp256k1's context is randomized from
-  `random_device`; webcpp never calls `RAND_bytes` or a Botan RNG.** No
-  backend chooses its own entropy: on the x86-64 runner BearSSL had picked
-  `rdrand` by itself, and its only Windows seeder is `CryptGenRandom`, not the
-  platform's `BCryptGenRandom` (a ruling of the controller).
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 6 (proposals).
-
-**Memory and wiping.**
-
-- **webcpp's own code allocates only `keypair::make`'s context, in the
-  resource the user gives; no seal, open, step of the incremental seal,
-  `encrypt`, `decrypt`, `fill`, signature, `ecdh` or verification allocates on
-  any backend; BearSSL, ctaes and libsecp256k1 keep their key schedules and
-  contexts inside the webcpp object.** The owner's allocators decision:
-  run-time objects route allocation through the user's allocator, and a
-  counting test proves that none goes elsewhere; a backend that needs memory
-  takes it in `make`.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 2.11 (proposals).
-- **OpenSSL's and Botan's `make` allocate their contexts through their own
-  allocators, outside the user's, and each backend's page states it.** A
-  departure the owner accepted on 2026-10-11: OpenSSL's only hook,
-  `CRYPTO_set_mem_functions`, is process-global and so not a library's to set
-  on its own, and Botan 3.13.0 has no hook (fixed functions with no setter, a
-  stateless allocator, objects from the global `operator new`).
-  Source: `libraries/crypto/openspec/changes/genesis/design.md` D17
-  (proposals).
-- **The key schedules inside webcpp's objects (BearSSL's, ctaes's,
-  libsecp256k1's key pair, `ecdh`'s local secret) are wiped on destruction and
-  on move by stores through a `volatile` pointer followed by
-  `std::atomic_signal_fence(std::memory_order_seq_cst)`; OpenSSL and Botan
-  wipe their own.** The optimiser cannot drop these stores as dead, where it
-  can drop a plain `memset`.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 2.11 (proposals).
-
-**OpenSSL's memory option.**
-
-- **`<define>WEBCPP_CRYPTO_OPENSSL_MEMORY_RESOURCE`, native only, sends every
-  allocation of OpenSSL in the process to a `std::pmr::memory_resource`; the
-  program gives it with `/webcpp/crypto//openssl` in its project's
-  requirements, and `config.hpp` refuses it on Emscripten and without OpenSSL
-  linked.** The owner's decision of 2026-10-11 made `CRYPTO_set_mem_functions`
-  an option of the config, so that a program that wants OpenSSL's allocations
-  in its own allocator can say so; the library beside the define keeps every
-  target that gets the define linked with OpenSSL.
+- **`<define>WEBCPP_CRYPTO_OPENSSL_MEMORY_RESOURCE` sends every allocation of
+  OpenSSL in the process to a `std::pmr::memory_resource`; the program gives
+  it with `/webcpp/crypto//openssl` in its project's requirements, and
+  `config.hpp` refuses it on Emscripten and without OpenSSL linked.** The
+  owner's decision of 2026-10-11 made `CRYPTO_set_mem_functions` an option of
+  the config, so that a program that wants OpenSSL's allocations in its own
+  allocator can say so; the library beside the define keeps every target that
+  gets it linked with OpenSSL.
   Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
   section 3.7 (proposals).
 - **Under the option the program defines
@@ -7715,280 +7645,153 @@ are unchanged. No crypto implementation or new backend coverage is claimed.
   `backends::openssl::install_memory_functions()` as the first statement of
   `main`; webcpp never installs from a static initialiser.** OpenSSL's hook
   carries no user data, so any other form would keep the resource in a global
-  variable of webcpp's, which the rulebook forbids, and Boost uses this form
-  for `boost::assertion_failed` and `boost::throw_exception`; static
-  initialisation order is unspecified and cannot return an error.
+  variable of webcpp's, which the rulebook forbids; static initialisation
+  order is unspecified and cannot return an error.
   Source: `libraries/crypto/openspec/changes/genesis/design.md` D16
   (proposals).
-- **The program's resource is never destroyed (made with `new` and never
-  deleted, or constructed with placement `new` in static storage), is
-  thread-safe wherever OpenSSL may run on two threads, and is reached without
-  an exception.** OpenSSL frees through it after `main`, and on Windows with a
-  shared libcrypto after every static destructor of the program.
+- **The program's resource is never destroyed, is thread-safe wherever
+  OpenSSL may run on two threads, and is reached without an exception.**
+  OpenSSL frees through it after `main`.
   Source: `libraries/crypto/openspec/changes/genesis/design.md` D16
   (proposals).
 - **`install_memory_functions()` only reads OpenSSL's state until its guards
   pass: webcpp's adapter already in place is a success that changes nothing,
   another party's functions are `memory_functions_refused`, then the resource
   is constructed, then the adapter is installed, and OpenSSL's refusal is
-  `memory_functions_refused`.** Replacing another party's functions would make
-  OpenSSL free that party's blocks through webcpp's adapter; OpenSSL refuses
-  an install once it has allocated with its own functions.
+  `memory_functions_refused`; every OpenSSL `make` under the option checks
+  that the adapter is in place and otherwise returns
+  `memory_functions_not_installed`.** Replacing another party's functions
+  would make OpenSSL free that party's blocks through webcpp's adapter; a
+  forgotten install gives an error, not an allocation outside the resource.
+  The two values are 13 and 14, reserved in 0.1.
   Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 3.7 (proposals).
-- **Under the option every OpenSSL `make` checks that OpenSSL's functions are
-  webcpp's adapter and otherwise returns `memory_functions_not_installed`, and
-  a program that does not define `openssl_memory_resource()` fails to link on
-  that name.** So that a forgotten install, or functions another party
-  replaced after it, gives an error and not an allocation outside the
-  resource.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 3.7 (proposals).
+  sections 2.9 and 3.7 (proposals).
 - **The adapter is three `extern "C"`, `inline`, `noexcept` functions of
-  external linkage, and each block starts with a header that holds its size,
-  aligned to the larger of `alignof(std::max_align_t)` and
-  `__STDCPP_DEFAULT_NEW_ALIGNMENT__`.** OpenSSL calls them as C functions, and
-  the install and `make` recognise them by address, so every file of the
-  program must see one function; OpenSSL's free passes no size, which
-  `deallocate` needs; the alignment is what the system's `malloc` gives
-  OpenSSL without the option.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 3.7 (proposals).
-- **With exceptions each call into the resource sits in a `try` whose
-  `catch (...)` returns null; without them there is no `try`, and a resource
-  that throws ends the process.** OpenSSL is C, and no exception may cross it.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 3.7 (proposals).
-- **OpenSSL's default functions are recognised by address, and on Windows also
-  when the module that holds the address exports `CRYPTO_malloc` there
-  (`GetModuleHandleExW`, `GetProcAddress`).** OpenSSL declares its functions
-  without `__declspec(dllimport)`, so a program linked against the DLL takes
-  its own import thunk, never the address OpenSSL holds.
+  external linkage, each block headed by its size and aligned to the larger
+  of `alignof(std::max_align_t)` and `__STDCPP_DEFAULT_NEW_ALIGNMENT__`; with
+  exceptions each call into the resource sits in a `try` whose `catch (...)`
+  returns null.** OpenSSL calls them as C functions and frees without a size;
+  no exception may cross OpenSSL.
   Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
   section 3.7 (proposals).
 - **On MSVC `backends/openssl.hpp` carries
   `#pragma detect_mismatch("webcpp_crypto_openssl_memory", ...)`, `"resource"`
   with the option and `"openssl"` without it.** Two files of one program
-  compiled one with the option and one without, whose `make` differ, then fail
-  with LNK2038.
+  compiled one with the option and one without then fail with LNK2038.
   Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
   section 3.7 (proposals).
 
-**Build.**
+**Constant time (plan Task 20).**
 
-- **BearSSL, libsecp256k1 and ctaes are pinned submodules under
-  `third_party/libs/`, built by `third_party/Jamfile` from their own sources,
-  one object per file, as static libraries, on every target and with every
-  file (BearSSL's POWER8 files included), in the compiler's GNU dialect, with
-  no `-std`.** Neither BearSSL nor libsecp256k1 compiles as C++, which
-  superseded the decision of 2026-10-10 to include one source once, as
-  Boost.JSON's `src.hpp`; off POWER the POWER8 files compile to the stubs
-  other files call, and an archive without them fails to link; built file by
-  file, BearSSL's AES-GCM program is never larger in code than a unity build.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  sections 1.3, 4.1 and 4.2 (proposals).
-- **The C libraries are compiled with `<warnings>off` and
-  `-ffunction-sections -fdata-sections` (`/Gy /Gw` on MSVC), each define a
-  library cannot work out sits beside its sources with its reason, and the
-  usage requirements give the include directory, `WEBCPP_CRYPTO_HAS_<NAME>=1`,
-  the marked defines and the linker's removal of unused sections (`/OPT:REF`
-  asked for on MSVC).** Upstream's warnings are not webcpp's; a section per
-  function and datum lets a program keep only what it calls; `link.exe` leaves
-  `/OPT:REF` off under `/DEBUG`.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 4.1 (proposals).
-- **A program names `/webcpp/crypto//crypto`, a header-only alias, and
-  `/third_party//<backend>` for each backend it uses, and a library named and
-  not called adds no byte, which the new rule `webcpp.same-program` proves.**
-  Building the libraries inside the header-only alias was rejected because a
-  program would link what it does not name; no rule of `tools/webcpp.jam`
-  built a pair and compared it, and the lint refuses b2's raw `exe` in a
-  library's Jamfiles.
-  Source: `libraries/crypto/openspec/changes/genesis/design.md` D13
-  (proposals).
-- **The Jamroot registers the one third-party project under `/third_party` as
-  well as `/webcpp/third_party`.** The user's form is `/third_party//<name>`,
-  as the owner's decision and the rulebook write it, and
-  `/webcpp/third_party//<name>` keeps working for the existing consumers (a
-  ruling of the plan, C1).
-  Source: `libraries/crypto/openspec/changes/genesis/reference/plan.md`
-  "Conflicts with the spec" (proposals).
-- **Three layers stop a wrong build, each saying exactly what to add: an
-  `#error` or `static_assert` at compile time from `config.hpp` and the
-  backend's header; a link-time canary, a symbol named
-  `webcpp_crypto_<name>_<commit7>_<configuration>` followed by
-  `__add_third_party_<name>_to_your_link`, that every function calling a C
-  library reads and `src/canary_<name>.c` defines; and on MSVC
-  `#pragma detect_mismatch`, one key per backend and one for the default
-  backend.** A library missing, of another commit or configuration, or built
-  without the canary then fails to link with that name, for one byte and one
-  load; one key for all backends would fail a program that uses BearSSL and
-  libsecp256k1 with a false mismatch; the default backend's key turns a silent
-  ODR violation into LNK2038.
-  Source: `libraries/crypto/openspec/changes/genesis/design.md` D14
-  (proposals).
-- **Botan is found by `webcpp.external` (`-s<NAME>_ROOT`, then
-  `.local/<name>`, then the system), declared in `libs/crypto/build.jam`; a
-  user's program that names a missing one stops the build with three ways out,
-  and a WebAssembly build that names one stops before compiling (later work,
-  increment 5).** A program that names a backend has asked for it
-  (the owner's decision of 2026-10-11); the index's "left out" reads every
-  library's `build.jam`, while `third_party/Jamfile` loads only when a target
-  names it.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 4.4 (proposals).
-- **One copy per program: webcpp's build of a C library is never linked with
-  another copy of it, trystero links `/third_party//secp256k1` and no
-  other libsecp256k1, and asio and crypto name the one source-built
-  OpenSSL.** libsecp256k1's tables are global symbols; two copies of libcrypto
-  would be two error queues and two allocation hooks in one process.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  sections 3.5, 3.7 and 4.5 (proposals).
-- **Every error case of the build has a directory of its own.** b2 shares one
-  object file between two `exe` of one source that differ only by a free
-  define or a `/third_party` library.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 4.3 (proposals).
-
-**Targets.**
-
-- **The library targets native (Linux x86-64 and arm64, macOS arm64, Windows
-  with MSVC), wasip2, wasip3 and Emscripten, and each backend runs where its
-  library exists: BearSSL, ctaes and libsecp256k1 on every target, OpenSSL on
-  native, wasip2 and wasip3, Botan natively only; a Botan WebAssembly build is
-  a later increment's.** The rulebook's targets; webcpp builds no OpenSSL for
-  Emscripten and no Botan for WebAssembly.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 3.1 (proposals).
-- **On Windows `/webcpp/crypto//crypto` adds `bcrypt` to its usage
-  requirements, and a static libsecp256k1 gives `SECP256K1_STATIC` to its
-  users.** MSVC has no `getentropy`, so `random_device` calls
-  `BCryptGenRandom`; the static library's declarations need the define.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  sections 3.5 and 6 (proposals).
-
-**Evidence.**
-
-- **Every vector runs on every backend that has the algorithm, sealed and
-  opened one shot and, for GCM, sealed in pieces of every size from 1 byte to
-  the whole: the GCM specification's 18 cases, Wycheproof's AES-GCM and
-  ChaCha20-Poly1305 files, NIST CAVP's cases with 128-bit tags, RFC 8439, and
-  FIPS-197 and AESAVS for the block cipher.** All 18 cases run because keys of
-  24 bytes and IVs of 8 and 60 bytes are accepted; the three Wycheproof cases
-  with a 257-byte IV are expected refusals, by the IV cap.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 8.1 (proposals).
-- **secp256k1 is proven by BIP340's `test-vectors.csv`, Wycheproof's Bitcoin
-  ECDSA file through `verify_ecdsa`, Wycheproof's ECDH files through
-  libsecp256k1's C API, and two parties agreeing on `ecdh`.** Wycheproof's
-  general ECDSA file gives DER signatures and counts high-S ones valid, and
-  its ECDH file gives the raw x-coordinate as the secret, neither of which
-  fits the interface.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 8.1 (proposals).
-- **Every backend is compared with every other on the same inputs from a
-  seeded generator, and on x86-64 BearSSL runs once on AES-NI and PCLMUL and
-  once forced onto its portable code.** So that a failure replays and both of
-  BearSSL's code paths are compared; on WebAssembly, where one backend exists,
-  the vectors and WebCrypto stand in for a second.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 8.2 (proposals).
-- **WebCrypto in node and in Chrome is an outside oracle, random messages
-  under 16-byte IVs included.** Those are the IVs trystero exchanges with
-  Trystero's JavaScript peers.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 8.1 (proposals).
 - **Constant time is checked deterministically on Linux x86-64 and arm64
   (Valgrind memcheck and MemorySanitizer, each harness failing on a planted
   leak, and libsecp256k1's `ctime_tests`), and statistically by dudect's
-  method natively and under wasmtime.** `equal` compiles in the user's
-  translation unit, so it is checked in a test program at -O2 and -Os; under
-  wasmtime the engine's compiler is what matters for BearSSL's `bmul64`, which
-  assumes a constant-time 64-bit multiplication.
+  method natively and under wasmtime, through the seam
+  `WEBCPP_CRYPTO_DETAIL_DECLASSIFY`, empty in 0.1.** `equal` compiles in the
+  user's translation unit, so it is checked at -O2 and -Os; under wasmtime the
+  engine's compiler decides whether BearSSL's `bmul64` stays constant time.
+  The page's "measured" columns say "not measured yet" until then.
   Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
   sections 3.2 and 8.3 (proposals).
-- **The C libraries' own test programs run on webcpp's build on every target,
-  in the own lane `c-suites`, outside the ordinary lanes.** The rulebook's
-  rule for a C library asks it; BearSSL's 88 tests take 28 to 46 seconds per
-  target.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  sections 8 and 8.1 (proposals).
-- **Allocation is proven by a counting `std::pmr::memory_resource`, a counting
-  global `operator new` and, for OpenSSL, counting hooks and an interposer on
-  the C library's allocator, and each test of the memory option is a program
-  of its own.** OpenSSL's functions are the process's and cannot be put back
-  once allocated through; what Botan's `make` allocates, and OpenSSL's without
-  the option, is counted and reported, not refused.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 8.5 (proposals).
-- **The test Jamfile's rule `crypto-run` declares every test program twice,
-  the second with `<exception-handling>off` and the suffix `_no_exceptions`,
-  and every test `main` ends with
-  `return webcpp::test::exit_status(boost::report_errors());`.** No lane of
-  the matrix builds without exceptions; under node `exit_status` bounds each
-  test and turns a `main` that never finished into a failure.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/plan.md` C15
-  and "The base" (proposals).
-- **Every message (each `#error`, `static_assert`, canary, b2 stop and
-  run-time error) comes from a test of its own that checks its exact text, and
-  the user's Jamfiles are fixtures of `tools/test/crypto_jamfiles_test.py`.**
-  The lint refuses b2's raw `exe` in a library's test and example Jamfiles (a
-  ruling of the plan, C10).
-  Source: `libraries/crypto/openspec/changes/genesis/reference/plan.md`
-  "Conflicts with the spec" (proposals).
-- **The heavy own lanes (`c-suites`, `constant-time`, `browser`, `throughput`)
-  run at a nightly level the plan builds, and `sizes` on every push.**
-  BearSSL's own suite alone takes 28 to 46 seconds per target; the owner's CI
-  levels put the heavy lanes at night (gate O2).
-  Source: `libraries/crypto/openspec/changes/genesis/design.md` Risks
-  (proposals).
-- **Sizes are measured at b2's `speed` and `space`, and throughput by webcpp's
-  own program on ubuntu-24.04, ubuntu-24.04-arm and macos-15 (departures C17
-  and C16, for the owner).** b2 has no -O2 that reaches the libraries a
-  program names, and no tree holds the workflow of the run the specification
-  named.
+
+**Sizes and throughput (plan Task 22).**
+
+- **Sizes are measured at b2's `speed` and `space` on every target, and
+  throughput by webcpp's own program on ubuntu-24.04, ubuntu-24.04-arm and
+  macos-15, in the own lanes `sizes` and `throughput` (`runners.yml`); the
+  page's size and speed cells and the defaults' speed reasons come from
+  them.** b2 has no -O2 that reaches the libraries a program names
+  (departures C16 and C17, for the owner). Until then a moved pin updates no
+  size table (chapter 19).
   Source: `libraries/crypto/openspec/changes/genesis/reference/plan.md`
   "Departures for the owner (O5)" (proposals).
-- **NIST CAVP's archives are pinned by URL and SHA-256 and fetched into
-  `.local/nist-cavp`, never tracked, and BIP340's vectors come from a shallow
-  submodule `third_party/libs/bips`.** NIST publishes the archives as zip
-  files on csrc.nist.gov only, and the rulebook's mirror is for C libraries,
-  not test data; BIP340's file lives only in `bitcoin/bips`.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/plan.md` C11
-  and C12 (proposals).
 
-**Documentation.**
+**The browser lane (plan Task 23).**
 
-- **The documentation has a page on the user's Jamfiles and a page per
-  subject, gives per backend its Jamfile line, its headers and functions and
-  every message with its fix, builds and runs every Jamfile line and printed
-  result as a fixture, and gives every public symbol a Doc Comment.** The
-  rulebook asks it, so that an AI agent writes a correct Jamfile at once.
+- **WebCrypto in node and in Chrome is an outside oracle for AES-GCM, random
+  messages under 16-byte IVs included.** Those are the IVs trystero exchanges
+  with Trystero's JavaScript peers; on Emscripten, where one AEAD backend
+  exists, WebCrypto stands in for a second.
   Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  sections 3.1 and 7 (proposals).
+  sections 8.1 and 8.2 (proposals).
 
-**Migration.**
+**The CI's nightly level (plan Task 25b).**
 
-- **Increment 3 moves webcpp::trystero onto the library: `aes256_gcm` with its
-  16-byte IVs replaces its native and browser sealers, `random_device::fill`
-  its `random`, `secp256k1::keypair` and `/third_party//secp256k1` its signer
-  and so no other libsecp256k1, and its direct use of OpenSSL goes.** Errors are
-  values, so a system without entropy fails the operation that needed the
-  bytes with `entropy_unavailable` where trystero aborts today; one copy of
-  libsecp256k1 per program.
-  Source: `libraries/crypto/openspec/changes/genesis/design.md` Migration Plan
+- **The heavy own lanes (`constant-time`, `browser`, `throughput`) run at a
+  nightly level the plan builds, `sizes` on every push.** In 0.1 the CI has no levels, and
+  every own lane, `c-suites` included, runs on every push (gate O2).
+  Source: `libraries/crypto/openspec/changes/genesis/design.md` Risks
   (proposals).
+
+**NIST CAVP (gate O3).**
+
+- **NIST CAVP's GCM cases with 128-bit tags and AESAVS run on every backend
+  that has the algorithm; the archives are pinned by URL and SHA-256 and
+  fetched into `.local/nist-cavp`, never tracked.** NIST publishes them as zip
+  files on csrc.nist.gov only, and the rulebook's mirror is for C libraries,
+  not test data.
+  Source: `libraries/crypto/openspec/changes/genesis/reference/plan.md` C11
+  (proposals).
+
+**ChaCha20-Poly1305 (increment 4).**
+
+- **`ciphers::chacha20_poly1305` on BearSSL and OpenSSL is one shot only,
+  with an IV of exactly 12 bytes, refuses a message over 2^38 - 64 bytes with
+  `message_too_long`, and where BearSSL leaves the tag check to its caller the
+  backend compares with `equal` and zeroes `data` on a mismatch; the traits
+  `chacha_state` and `chacha_engine` join the four of 0.1.** BearSSL's
+  ChaCha20-Poly1305 is one function over the whole message; 12 bytes and the
+  limit are RFC 8439's.
+  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
+  section 2.5 (proposals).
+- **The BearSSL backend takes `br_chacha20_sse2_get()` else
+  `br_chacha20_ct_run`, and `br_poly1305_ctmulq_get()` else
+  `br_poly1305_ctmul_run`; Wycheproof's ChaCha20-Poly1305 file and RFC 8439
+  are its vectors.** BearSSL's own default on wasm32 is its 32-bit code.
+  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
+  sections 3.2 and 8.1 (proposals).
+
+**Botan (increment 5).**
+
+- **Botan 3 is found by `webcpp.external` (`-sBOTAN_ROOT`, then
+  `.local/botan`, then the system), never built, native only and only with
+  exceptions: `backends/botan.hpp` declares nothing under
+  `WEBCPP_CRYPTO_NO_EXCEPTIONS`, a program built without exceptions that names
+  it gets an `#error`, a user's program that names a missing one stops the
+  build with three ways out, and a WebAssembly build that names it stops
+  before compiling.** Botan 3.13.0 has no OS definition for wasip2 or wasip3,
+  and reports every error by throwing; a program that names a backend has
+  asked for it. `webcpp.external` comes back for it.
+  Source: `libraries/crypto/openspec/changes/genesis/design.md` D19 and
+  `reference/spec.md` section 4.4 (proposals).
+- **Botan's backend calls Botan inside one `try` and maps what it throws
+  (`Invalid_Authentication_Tag`, `Invalid_IV_Length`, `Invalid_Key_Length`,
+  `std::bad_alloc`, anything else), calls `set_associated_data` before every
+  `start`, and finishes a message on a scratch `secure_vector` reserved in
+  `make`; its `make` allocates through Botan's own allocator, which the page
+  states; it joins the block cipher and the AEADs' default order after OpenSSL
+  and BearSSL.** No exception may leave a webcpp function; Botan keeps the
+  additional data between messages; Botan 3.13.0 has no allocation hook.
+  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
+  section 3.6, and `design.md` D9 and D17 (proposals).
+
+**trystero's migration (increment 3).**
+
+- **trystero moves onto the library: `ciphers::aes256_gcm` with its 16-byte
+  IVs replaces its native and browser sealers, `random_device::fill` its
+  `random`, `curves::secp256k1::keypair` its signer, and its direct use of
+  OpenSSL goes.** 0.1 built only its build's half: trystero links
+  `/third_party//secp256k1`, its code unchanged. Errors are values, so a
+  system without entropy fails the operation that needed the bytes with
+  `entropy_unavailable` where trystero aborts today.
+  Source: `libraries/crypto/openspec/changes/genesis/design.md` Migration
+  Plan (proposals).
 
 **Open questions for the owner.**
 
-- The base: the owner's rewrite of `main`'s history, after which Task 0a
-  integrates `infra/shared`; nothing of the plan starts before.
-- Gates G1 and G2: the owner creates `webcpporg/crypto` and adds it as the
-  submodule `libs/crypto`.
-- Gate O2: the heavy own lanes at the CI's nightly level (recommended), built
-  by Task 25b.
-- Gate O3: NIST CAVP's archives pinned by URL and SHA-256 and fetched into
-  `.local/nist-cavp` (recommended), or a mirror repository.
+- Gate O2: the nightly level, built by Task 25b.
+- Gate O3: NIST CAVP's archives pinned by URL and SHA-256 (recommended), or a
+  mirror repository.
 - Item O5: the departures C14, C16 and C17, and `brew install botan` on the
   development machine.
 - Whether webcpp::webrtc and webcpp::beast use this library, and how.
@@ -8984,6 +8787,22 @@ it says.
   `/third_party//secp256k1`, which follows the source-target `HAS`/canary
   contract. Libdatachannel is a pinned C++ source target with nested
   dependencies; its remaining upstream-test limit is recorded above.
+- **crypto against chapter 5's rules 11 and 12.**
+  - MSVC's messages: each case of `test/msvc` fails on the `msvc-14.3` and
+    `msvc-14.5` lanes on every push (`webcpp.compile-fail`,
+    `webcpp.link-fail`), and its exact text (`C1189`, `C2338`, `LNK2001`,
+    `LNK2038`) is checked on no CI. The text is checked on clang, GNU ld and
+    wasm-ld by the tools job, and ld64's on a developer's macOS, recorded in
+    the ledger; the tools job has no macOS or Windows leg.
+  - crypto has no size table until its sizes lane (chapter 17), so a pin's
+    move (rule 12) updates the submodule, the canary's commit and the tests
+    on every target, and no table.
+  - The source-built OpenSSL is compiled `no-asm` on MSVC, wasip2 and wasip3:
+    table-based AES and 4-bit GHASH, no AES-NI, not constant time
+    (`OPENSSL_AES_CONST_TIME` would make only the AES core constant time).
+    On MSVC crypto's default backend is still OpenSSL when it is linked (on
+    wasip2 and wasip3 it is BearSSL), and the page says how to choose
+    BearSSL.
 - **Exceptions (chapter 6).** lexical's throwing IRI functions
   (`uri.hpp:281-325`) and document's throwing conveniences are not behind
   their library's `NO_EXCEPTIONS` macro; xstate's `machine.hpp:1213,1233`
@@ -9011,9 +8830,7 @@ These are errors of the rules' own text, moved here unchanged (the proposal
   twenty-one rules where the lint runs twenty-two (`octal escapes` added).
 - Chapter 16 says trystero's `config.hpp` is not yet on
   `<webcpp/config.hpp>`; it includes it
-  (`libs/trystero/include/webcpp/trystero/config.hpp:14`). It also calls the
-  specifications of asio and crypto "in review"; the owner accepted both on
-  2026-10-11.
+  (`libs/trystero/include/webcpp/trystero/config.hpp:14`).
 - Chapter 8 lets a program exclude a target with `#ifndef __wasi__`, while
   config's design chose `WEBCPP_TARGET_*` so that no library reads the
   compiler's macros (config's genesis `design.md`); xactor's `drivers.hpp`

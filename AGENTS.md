@@ -77,6 +77,7 @@ for web developers and for AI developers (`CODING-GUIDELINES.md` chapter 16).
 | beast | HTTP and WebSocket applications using native/WASIp3 sockets, browser WebSocket/fetch, WASI host HTTP or supplied streams | native, emscripten, wasip2, wasip3, by backend | a submodule at `libs/beast`; all 53 upstream applications remain in its compatibility matrix |
 | cobalt | Boost.Cobalt coroutine applications with shipped Wasm adaptations and optional corrected SSL | native, emscripten, wasip2, wasip3, by capability | a submodule at `libs/cobalt`; see its feature and application matrices for variants |
 | config | webcpp's configuration, which every library includes first: the target, exceptions and webcpp's version, as Boost.Config is Boost's; webcpp's own | native, wasip2, wasip3, emscripten | a submodule at `libs/config` |
+| crypto | AES-GCM, the AES block cipher, random_device, a constant-time equal and secp256k1 over C libraries built from source (BearSSL, OpenSSL, libsecp256k1, ctaes), webcpp's own | native, wasip2, wasip3, emscripten (OpenSSL not on emscripten); its own lane c-suites | a submodule at libs/crypto |
 | xactor | a deterministic actor system, webcpp's own | native, wasip2, wasip3 (`xactor_asio` native only) | a submodule at `libs/xactor`; the model for every port |
 | xstate | a port of XState 5.33.2's state machines and actors; depends on xactor and Boost.JSON | native, wasip2, wasip3; its oracle lane | a submodule at `libs/xstate`; the first user of the shared oracle (`CODING-GUIDELINES.md` chapter 12) |
 | pratt | a Pratt parser engine, generic through concepts, with a calculator built on it, webcpp's own | native, emscripten, wasip2, wasip3 | a submodule at `libs/pratt`; born with the allocation rule (`CODING-GUIDELINES.md` chapter 4) |
@@ -102,12 +103,16 @@ webcpp/
                       extend (below)
   .clang-tidy         clang-tidy's checks, every repository's
   pyrightconfig.json  Pyright's settings for every Python file
-  libs/<name>/        a library: a repository of its own, a submodule here (asio, config, xactor,
-                      xstate, pratt, wasi, trystero, document, idna, lexical)
+  libs/<name>/        a library: a repository of its own, a submodule here (asio, beast, cobalt,
+                      config, crypto, xactor, xstate, pratt, wasi, trystero, document, idna,
+                      lexical)
   third_party/        third-party code the libraries and their tests use, not webcpp's: each
                       a submodule under third_party/libs/, pinned at a commit and keeping its
-                      own licence, and the Jamfile that declares it as
-                      /webcpp/third_party//<target> (guidelines chapter 10)
+                      own licence (openssl, libdatachannel, bearssl, secp256k1, bitcoin for
+                      ctaes, and the test data wycheproof, bips, JSON-Schema-Test-Suite and
+                      nativejson-benchmark), and the Jamfile that declares it as
+                      /webcpp/third_party//<target> and /third_party//<target> (guidelines
+                      chapter 10)
   doc/                the index page (index.adoc, Jamfile)
     releases/         each version's release notes, which the index page shows
   site/               the site, a repository of its own, webcpporg/webcpporg.github.io, a
@@ -249,6 +254,11 @@ Jamroot is its build configuration, and `libs/<name>` is its repository.
   emscripten, large natively; `<webcpp-secp256k1-tables>` asks otherwise). No
   library of `libs/` needs an externally provisioned dependency today, though
   `webcpp.external` and `webcpp-require-external=on` stay for a later one;
+- for crypto: nothing installed, with the pinned submodules initialised:
+  `git submodule update --init third_party/libs/bearssl
+  third_party/libs/secp256k1 third_party/libs/bitcoin third_party/libs/wycheproof
+  third_party/libs/bips`, and `third_party/libs/openssl` for its OpenSSL
+  backend (below); b2 builds every backend from its sources;
 - for native Trystero: CMake and Make (nmake on Windows), and the pinned
   `third_party/libs/libdatachannel` checkout with its required nested sources.
   Initialize it, and the libsecp256k1 every room links, with `git submodule
@@ -1395,6 +1405,14 @@ oracle's targets is of the kind `programs`, so a lane names them directly.
   it is built for, so the CI's plan fails before any job runs rather than
   leave it untested.
 
+  crypto's lane `c-suites` runs the C libraries' own test programs
+  (BearSSL's, ctaes's and libsecp256k1's) on webcpp's build of them, on
+  native, wasip2, wasip3 and emscripten, ids `<target>.crypto.c-suites`:
+
+  ```
+  b2 -a --dump-tests --out-xml=wasip2.crypto.c-suites.xml toolset=clang-wasip2 testing.launcher=tools/boost/asio-wasip2/run.sh libs/crypto/test/c_suites//c-suites
+  ```
+
   A lane on emscripten is declared like any other, and runs as the
   emscripten lane runs, `toolset=emscripten` with no launcher, never natively
   in its place: browser_demo's driven test is its lane `driver`, on native and
@@ -1577,6 +1595,10 @@ jobs:
   embed-manifest-via=linker --abbreviate-paths`; b2 abbreviates each word of
   a toolset directory, and `msvc-14.3` and `msvc-14.5` are their own
   abbreviations, which `tools/ci/matrix_test.py` checks with b2's own rule.
+  On both, crypto's message cases, `libs/crypto/test/msvc`, prove that each
+  wrong build stops (`webcpp.compile-fail` at compile time,
+  `webcpp.link-fail` at link time); their exact text is checked on clang,
+  GNU ld and wasm-ld only (`CODING-GUIDELINES.md` chapter 19).
   Both Windows jobs run `python tools/drive/drive_test.py` before compiling,
   including real Job Object nesting, timeout, orphaned descendants and owner
   termination. The Linux tools shards continue to check POSIX process groups.
