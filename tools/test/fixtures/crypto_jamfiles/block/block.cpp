@@ -5,8 +5,8 @@
 // https://www.boost.org/LICENSE_1_0.txt)
 
 // Encrypts the FIPS-197 appendix C.3 block with AES-256 on ctaes, checks it, and decrypts it again.
-#include <webcpp/crypto/aes.hpp>
 #include <webcpp/crypto/backends/ctaes.hpp>
+#include <webcpp/crypto/ciphers/aes.hpp>
 
 #include <array>
 #include <cstddef>
@@ -23,7 +23,7 @@ int main() {
     std::array<std::uint8_t, 16> const expected{0x8e, 0xa2, 0xb7, 0xca, 0x51, 0x67, 0x45, 0xbf,
                                                 0xea, 0xfc, 0x49, 0x90, 0x4b, 0x49, 0x60, 0x89};
     std::array<std::uint8_t, 16> block = plain;
-    auto aes = webcpp::crypto::aes256<webcpp::crypto::backends::ctaes>::make(key);
+    auto aes = webcpp::crypto::ciphers::aes256<webcpp::crypto::backends::ctaes>::make(key);
     bool const ok =
         aes && aes->encrypt(block) && block == expected && aes->decrypt(block) && block == plain;
     std::printf("ctaes aes256 %s\n", ok ? "ok" : "FAILED");

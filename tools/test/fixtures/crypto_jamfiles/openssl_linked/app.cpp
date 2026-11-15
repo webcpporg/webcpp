@@ -8,9 +8,9 @@
 // then seals an empty message under the zero key of 32 bytes and the zero IV of 12 bytes
 // with OpenSSL's AES-256-GCM, and prints the tag (McGrew and Viega's test case 13).
 
-#include <webcpp/crypto/aes.hpp>
 #include <webcpp/crypto/backends/openssl.hpp>
-#include <webcpp/crypto/gcm.hpp>
+#include <webcpp/crypto/ciphers/aes.hpp>
+#include <webcpp/crypto/ciphers/gcm.hpp>
 
 #include <array>
 #include <cstdint>
@@ -24,7 +24,7 @@ int main() {
     namespace crypto = webcpp::crypto;
     std::array<std::uint8_t, 32> const key{};
     std::array<std::uint8_t, 12> const iv{};
-    auto made = crypto::gcm<crypto::aes256<crypto::backends::openssl>>::make(key);
+    auto made = crypto::ciphers::gcm<crypto::ciphers::aes256<crypto::backends::openssl>>::make(key);
     if (!made) {
         return 1;
     }

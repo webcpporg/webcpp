@@ -6,8 +6,8 @@
 
 // Makes an AES-256 block cipher on ctaes and encrypts one block: the program reads ctaes's
 // canary, so that a library built other than by webcpp's third_party/Jamfile fails to link.
-#include <webcpp/crypto/aes.hpp>
 #include <webcpp/crypto/backends/ctaes.hpp>
+#include <webcpp/crypto/ciphers/aes.hpp>
 
 #include <array>
 #include <cstdint>
@@ -15,6 +15,6 @@
 int main() {
     std::array<std::uint8_t, 32> const key{};
     std::array<std::uint8_t, 16> block{};
-    auto aes = webcpp::crypto::aes256<webcpp::crypto::backends::ctaes>::make(key);
+    auto aes = webcpp::crypto::ciphers::aes256<webcpp::crypto::backends::ctaes>::make(key);
     return aes && aes->encrypt(block) ? 0 : 1;
 }
