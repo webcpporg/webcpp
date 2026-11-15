@@ -303,6 +303,8 @@ natively.
 * Added tools/hash/doc_tables.py, which generates webcpp::hash's comparison tables,
 backend lists and llms.txt from its capability table and its measurements, and checks them
 when its page is built.
+* Changed tools/hash/doc_tables.py to give each chapter two comparison tables, each under the
+eight columns from which a table scrolls.
 
 [#webcpp-0-1-0-compilers-tested]
 == Compilers tested

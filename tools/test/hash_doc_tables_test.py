@@ -221,6 +221,27 @@ def test_with_measurements_the_tables_carry_them(scratch: Path) -> None:
     expect('| bearssl, sodium, hash2, openssl' in native, f'hkdf natively: {native!r}')
 
 
+def test_no_table_is_a_matrix(scratch: Path) -> None:
+    # The page scrolls a table of eight columns or more, a matrix, in its box rather than stack
+    # it (tools/doc/postprocess.mjs, MATRIX), at 1440px too. A chapter's comparison is two tables
+    # instead, what each function is and how to choose it, each led by the name and each under
+    # eight columns, with the measured columns or without them.
+    library = scratch_library(scratch)
+    for measured in (False, True):
+        if measured:
+            measurements(library)
+        files = write_ok(library)
+        for name, text in files.items():
+            for table in text.split('|===')[1::2]:
+                header = table.strip().split('\n')[0]
+                expect(header.count('| ') < 8, f'{name} ({measured}): a matrix: {header}')
+        digests = files['generated/compare-digests.adoc']
+        headers = [table.strip().split('\n')[0] for table in digests.split('|===')[1::2]]
+        expect(len(headers) == 2 and all(h.startswith('| Name |') for h in headers), headers)
+        expect('Security' in headers[0] and 'Choose it when' in headers[1], headers)
+        expect(('Fastest natively' in headers[1]) == measured, headers)
+
+
 def test_measured_chapters_are_included_when_present(scratch: Path) -> None:
     library = scratch_library(scratch)
     (library / 'doc/performance.adoc').write_text('x\n', encoding='utf-8')
@@ -254,6 +275,7 @@ CASES: list[Callable[[Path], None]] = [
     test_a_use_case_names_an_example_that_is_there,
     test_without_measurements_the_tables_say_so,
     test_with_measurements_the_tables_carry_them,
+    test_no_table_is_a_matrix,
     test_measured_chapters_are_included_when_present,
     test_the_real_library_s_files_are_its_data_s,
 ]

@@ -18,10 +18,11 @@ with a source, and the rows of "Choose by use case"), and, when they are there,
 measurements.json (each program's size per target and its throughput, and the orders that
 detail/ranking.hpp is generated from: tools/hash/measure.py, Task 21). It writes, in doc/:
 
-- generated/compare-<chapter>.adoc: the comparison table that opens each chapter, a row per
-  public name: output, security, standard, status, the browser's WebCrypto, where it is used
-  (each with its source), when to choose it, and, from measurements.json, its throughput
-  natively and its smallest program on Emscripten;
+- generated/compare-<chapter>.adoc: the comparison that opens each chapter, two tables with a
+  row per public name: what it is (output, security, standard, status, the browser's
+  WebCrypto), and how to choose it (from measurements.json, its throughput natively and its
+  smallest program on Emscripten, then where it is used, each with its source, and when to
+  choose it);
 - generated/backends-<algorithm>.adoc: the backends of each algorithm, from the capability
   table (backend, the Jamfile line, targets, hmacs, constant time), and, for an algorithm whose
   backend the profile chooses, the order of each profile on each target from measurements.json;
@@ -189,16 +190,14 @@ def compare_table(data: Data, chapter: dict) -> str:
     measured = m is not None
     out = [generated_header('doc/capabilities.json, doc/guide.json and doc/measurements.json'),
            '']
-    out.append(f'[#{chapter["anchor"]}-compare]')
-    out.append(f'.Everything in "{chapter["title"]}", side by side')
-    columns = ['Name', 'Output', 'Security', 'Standard', 'Status', 'In the browser (WebCrypto)']
-    if measured:
-        columns += ['Fastest natively', 'Smallest on Emscripten']
-    columns += ['Where it is used', 'Choose it when']
-    widths = ['2', '1', '2', '2', '1', '1'] + (['2', '2'] if measured else []) + ['4', '3']
-    out.append(f'[cols="{",".join(widths)}",options="header"]')
-    out.append('|===')
-    out.append(' '.join(f'| {c}' for c in columns))
+    # Two tables, what each function is and how to choose it, each led by the name: one of all
+    # their columns would be a matrix (tools/doc/postprocess.mjs), which scrolls in its box.
+    facts_columns = ['Name', 'Output', 'Security', 'Standard', 'Status',
+                     'In the browser (WebCrypto)']
+    choice_columns = ['Name'] + (['Fastest natively', 'Smallest on Emscripten'] if measured
+                                 else []) + ['Where it is used', 'Choose it when']
+    facts_rows: list[list[str]] = []
+    choice_rows: list[list[str]] = []
     for algorithm in data.capabilities['algorithms']:
         if algorithm['chapter'] != key:
             continue
@@ -206,17 +205,30 @@ def compare_table(data: Data, chapter: dict) -> str:
             name = function['name']
             facts = data.guide['functions'][name]
             uses = '; '.join(link(cell(u['text']), u['source']) for u in facts['uses'])
-            row = [f'<<{facts["anchor"]},`{name}`>>', facts['output'], facts['security'],
-                   facts.get('standard', algorithm['standard']), facts['status'],
-                   facts['webcrypto'] or 'no']
-            if measured:
-                row += [fastest_native(data, name, key), smallest_emscripten(data, name)]
-            row += [uses, facts['choose']]
+            named = f'<<{facts["anchor"]},`{name}`>>'
+            facts_rows.append([named, facts['output'], facts['security'],
+                               facts.get('standard', algorithm['standard']), facts['status'],
+                               facts['webcrypto'] or 'no'])
+            choice_rows.append([named] + ([fastest_native(data, name, key),
+                                           smallest_emscripten(data, name)] if measured
+                                          else []) + [uses, facts['choose']])
+    tables = ((f'[#{chapter["anchor"]}-compare]', f'What each of "{chapter["title"]}" is',
+               ['2', '1', '3', '2', '1', '2'], facts_columns, facts_rows),
+              (f'[#{chapter["anchor"]}-choose]', f'How to choose among "{chapter["title"]}"',
+               ['2'] + (['2', '2'] if measured else []) + ['4', '4'], choice_columns,
+               choice_rows))
+    for anchor, title, widths, columns, rows in tables:
+        out.append(anchor)
+        out.append(f'.{title}')
+        out.append(f'[cols="{",".join(widths)}",options="header"]')
+        out.append('|===')
+        out.append(' '.join(f'| {c}' for c in columns))
+        for row in rows:
             out.append('')
             out.extend(f'| {cell(value)}' if not value.startswith('link:') and '<<' not in value
                        else f'| {value}' for value in row)
-    out.append('|===')
-    out.append('')
+        out.append('|===')
+        out.append('')
     if m is not None:
         out.append(f'The measured columns are doc/measurements.json\'s ({m["date"]}, '
                    f'{m["machine"]["cpu"]}): the native throughput over 1 MiB, or the time of '
