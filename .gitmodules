@@ -73,3 +73,6 @@
 [submodule "third_party/libs/xkcp"]
 	path = third_party/libs/xkcp
 	url = https://github.com/XKCP/XKCP.git
+[submodule "third_party/libs/libsodium"]
+	path = third_party/libs/libsodium
+	url = https://github.com/jedisct1/libsodium.git

@@ -13,9 +13,11 @@
 # webcpp::crypto's backends are built here from their own sources, file by file.
 import errors ;
 import feature ;
+import modules ;
 import path ;
 import regex ;
 import webcpp ;
+import webcpp-target ;
 
 project /webcpp/third_party ;
 
@@ -391,3 +393,231 @@ lib xkcp
     <include>libs/xkcp/lib/low/KeccakP-1600/plain-64bits/SnP
   : : <define>WEBCPP_HASH_HAS_XKCP=1 $(.gc) ;
 explicit xkcp ;
+
+# libsodium 1.0.22 (ISC), jedisct1/libsodium at 77e1ce5: every .c of
+# src/libsodium/, one object per file, with the defines libsodium's own
+# configure finds on each target (sodium-target-defines), without its
+# assembly: HAVE_AMD64_ASM and HAVE_AVX_ASM stay off, as configure's
+# --disable-asm leaves them, so that the seven .S files are not needed and
+# the C code is used (design D11); the C files of the assembly's paths
+# compile to nothing. Shared by webcpp::hash and, later, webcpp::crypto: one
+# copy per program.
+path-constant SODIUM : libs/libsodium ;
+
+rule sodium-checked-out ( properties * )
+{
+    local core = $(SODIUM)/src/libsodium/include/sodium/core.h ;
+    if ! [ path.exists [ path.native $(core) ] ]
+    {
+        errors.user-error "third_party/libs/libsodium is not checked out. Check it"
+            "out with `git submodule update --init third_party/libs/libsodium`." ;
+    }
+}
+
+# version.h is written by libsodium's configure, from version.h.in; upstream
+# ships it generated, as builds/msvc/version.h. b2 copies that file, unchanged,
+# into the build directory, as sodium/version.h, for sodium.h's
+# "sodium/version.h", and as version.h, for sodium/version.c's "version.h":
+# the submodule is never written. Each is a generated header, whose directory
+# b2 puts on the include path of whatever names it as an
+# <implicit-dependency>; the library also depends on sodium/version.h, which
+# none of its own files includes, so that a program that includes sodium.h
+# finds it built.
+make sodium/version.h : libs/libsodium/builds/msvc/version.h : common.copy
+  : <conditional>@sodium-checked-out ;
+make version.h : libs/libsodium/builds/msvc/version.h : common.copy
+  : <conditional>@sodium-checked-out ;
+explicit sodium/version.h version.h ;
+
+# libsodium's configuration on each target, as libsodium's own configure finds
+# it at the pin, run once per target in a scratch copy (never the submodule):
+#
+#     ./configure --disable-shared --enable-static --disable-asm
+#
+# natively, and, as dist-build/wasm32-wasi.sh and dist-build/emscripten.sh run
+# it at the pin, with --without-pthreads --disable-ssp and, on WASI,
+# CC=<wasi-sdk 34>/bin/clang CFLAGS=--target=wasm32-wasip2 (or wasip3)
+# --host=wasm32-wasi, on Emscripten under emconfigure. Each group below is the
+# DEFS of `./config.status --config` and the generated Makefile that libsodium's
+# C files read, on the targets whose configure found it. A define that no C
+# file of src/libsodium/ reads is recorded here and left out: the package's
+# strings (PACKAGE*, VERSION, LT_OBJDIR), the headers' (HAVE_STDIO_H,
+# HAVE_STDLIB_H, HAVE_STRING_H, HAVE_STRINGS_H, HAVE_INTTYPES_H, HAVE_STDINT_H,
+# HAVE_SYS_STAT_H, HAVE_SYS_TYPES_H, HAVE_UNISTD_H, HAVE_WCHAR_H, HAVE_DLFCN_H,
+# STDC_HEADERS, HAVE_COMMONCRYPTO_COMMONRANDOM_H), HAVE_ARC4RANDOM_BUF,
+# HAVE_PTHREAD_PRIO_INHERIT, the system's extension macros (_GNU_SOURCE,
+# _DARWIN_C_SOURCE, _ALL_SOURCE, __EXTENSIONS__ and the rest of
+# AC_USE_SYSTEM_EXTENSIONS, which these toolchains' defaults already give),
+# and HAVE_CET_H, which only the .S files read. DEV_MODE is off everywhere.
+# Four that only libsodium's tests read (HAVE_ARC4RANDOM, HAVE_CATCHABLE_ABRT,
+# HAVE_CATCHABLE_SEGV, HAVE_CLOCK_GETTIME) are sodium-test-config's.
+
+# Every target's: webcpp's three, which the canary reads (CONFIGURED,
+# SODIUM_STATIC, NATIVE_LITTLE_ENDIAN), and those configure finds on every
+# run.
+.sodium-common = <define>CONFIGURED=1 <define>SODIUM_STATIC=1
+    <define>NATIVE_LITTLE_ENDIAN=1 <define>HAVE_ALLOCA=1 <define>HAVE_ALLOCA_H=1
+    <define>HAVE_ATOMIC_OPS=1 <define>HAVE_C11_MEMORY_FENCES=1
+    <define>HAVE_C_VARARRAYS=1 <define>HAVE_GCC_MEMORY_FENCES=1
+    <define>HAVE_INLINE_ASM=1 <define>HAVE_NANOSLEEP=1
+    <define>HAVE_POSIX_MEMALIGN=1 <define>HAVE_SYS_PARAM_H=1
+    <define>HAVE_SYS_RANDOM_H=1 ;
+
+# wasip2 and wasip3 (wasi-sdk 34, wasm32-wasi; the two runs agree): no mmap,
+# no threads, getentropy.
+.sodium-wasi = <define>HAVE_GETENTROPY=1 <define>HAVE_THREADS_H=1 ;
+
+# Emscripten 6.0.11: no getentropy (randombytes calls JavaScript's), no TI
+# mode.
+.sodium-emscripten = <define>HAVE_EXPLICIT_BZERO=1 <define>HAVE_GETPID=1
+    <define>HAVE_SYS_MMAN_H=1 <define>HAVE_THREADS_H=1 ;
+
+# Native, on macOS and Linux alike (macOS 27 arm64 with Apple Clang 21, and
+# x86-64 by a run with CC="cc -arch x86_64" --host=x86_64-apple-darwin;
+# Ubuntu 24.04 x86-64 with GCC 14 and Clang 18; Ubuntu 24.04 arm64 with GCC
+# 14 and Clang 18). TLS, the thread-local storage class, is _Thread_local:
+# autoconf 2.72 runs configure's checks under -std=gnu23 wherever the
+# compiler has it, where its check takes thread_local, a keyword only from
+# C23; Clang 18, which has no gnu23, gives _Thread_local, the keyword of
+# every dialect from C11, which webcpp's build (no -std) compiles in.
+.sodium-posix = <define>HAVE_GETENTROPY=1 <define>HAVE_GETPID=1
+    <define>HAVE_MADVISE=1 <define>HAVE_MLOCK=1 <define>HAVE_MMAP=1
+    <define>HAVE_MPROTECT=1 <define>HAVE_PTHREAD=1 <define>HAVE_RAISE=1
+    <define>HAVE_SYSCONF=1 <define>HAVE_SYS_MMAN_H=1 <define>HAVE_TI_MODE=1
+    <define>HAVE_WEAK_SYMBOLS=1 <define>TLS=_Thread_local ;
+
+# macOS: memset_s.
+.sodium-darwin = <define>HAVE_MEMSET_S=1 ;
+
+# Linux: glibc's getrandom, getauxval and explicit_bzero, on x86-64 and arm64
+# alike.
+.sodium-linux = <define>HAVE_EXPLICIT_BZERO=1 <define>HAVE_GETAUXVAL=1
+    <define>HAVE_GETRANDOM=1 <define>HAVE_SYS_AUXV_H=1
+    <define>HAVE_THREADS_H=1 ;
+
+# The architecture's, natively: x86-64's intrinsics' headers and RDRAND,
+# whose C files enable each instruction set by a target attribute of their
+# own, so that no file needs a flag (configure's CFLAGS_SSE2 and the rest are
+# empty on every run); arm64's crypto extensions, the same.
+.sodium-x86_64 = <define>HAVE_MMINTRIN_H=1 <define>HAVE_EMMINTRIN_H=1
+    <define>HAVE_PMMINTRIN_H=1 <define>HAVE_TMMINTRIN_H=1
+    <define>HAVE_SMMINTRIN_H=1 <define>HAVE_AVXINTRIN_H=1
+    <define>HAVE_AVX2INTRIN_H=1 <define>HAVE_AVX512FINTRIN_H=1
+    <define>HAVE_WMMINTRIN_H=1 <define>HAVE_RDRAND=1 ;
+.sodium-arm64 = <define>HAVE_ARMCRYPTO=1 ;
+
+# MSVC has no configure: builds/msvc/vs2022/libsodium/libsodium.props at the
+# pin defines inline=__inline, NATIVE_LITTLE_ENDIAN, SODIUM_STATIC (a static
+# library) and _CRT_SECURE_NO_WARNINGS (left out: the CRT's headers read it,
+# no C file of libsodium's), and libsodium's private/common.h defines the
+# intrinsics' HAVE_* itself under _MSC_VER. CONFIGURED is webcpp's, as on
+# every target; common.h does not require it under MSVC.
+.sodium-msvc = <define>CONFIGURED=1 <define>SODIUM_STATIC=1
+    <define>NATIVE_LITTLE_ENDIAN=1 <define>inline=__inline ;
+
+# The defines only libsodium's tests read, by the same configure runs. The
+# x86-64 macOS run, cross-compiled, could not run the checks of the catchable
+# signals, which every native run that could finds.
+.sodium-test-common = <define>HAVE_CLOCK_GETTIME=1 ;
+.sodium-test-arc4random = <define>HAVE_ARC4RANDOM=1 ;
+.sodium-test-catchable = <define>HAVE_CATCHABLE_ABRT=1
+    <define>HAVE_CATCHABLE_SEGV=1 ;
+
+# The architecture a native build is for, x86_64 or arm64, as configure's
+# runs name them: <architecture> and <address-model> when the build asks for
+# them, else the machine b2 runs on (b2's OSPLAT). Any other is returned as
+# <architecture>-<address-model>, which sodium-target-defines refuses.
+local rule sodium-architecture ( properties * )
+{
+    local architecture = [ feature.get-values <architecture> : $(properties) ] ;
+    local model = [ feature.get-values <address-model> : $(properties) ] ;
+    architecture ?= [ modules.peek : OSPLAT ] ;
+    model ?= 64 ;
+    switch $(architecture:L)-$(model)
+    {
+        case x86-64 : return x86_64 ;
+        case x86_64-64 : return x86_64 ;
+        case arm-64 : return arm64 ;
+        case arm64-64 : return arm64 ;
+    }
+    return $(architecture:L)-$(model) ;
+}
+
+# The defines of a build: the groups above by its target, its system, its
+# toolset and its architecture. A native build none of the configure runs
+# covers (another system, or another architecture) stops, naming it, rather
+# than build libsodium with a guessed configuration.
+rule sodium-target-defines ( properties * )
+{
+    local target = [ webcpp-target.target-of $(properties) ] ;
+    local toolset = [ feature.get-values <toolset> : $(properties) ] ;
+    local system = [ feature.get-values <target-os> : $(properties) ] ;
+    switch $(target)
+    {
+        case wasip2 : return $(.sodium-common) $(.sodium-wasi) ;
+        case wasip3 : return $(.sodium-common) $(.sodium-wasi) ;
+        case emscripten : return $(.sodium-common) $(.sodium-emscripten) ;
+    }
+    if $(toolset) = msvc
+    {
+        return $(.sodium-msvc) ;
+    }
+    local architecture = [ sodium-architecture $(properties) ] ;
+    local defines = $(.sodium-common) $(.sodium-posix)
+        $(.sodium-$(architecture)) ;
+    switch $(system)-$(architecture)
+    {
+        case darwin-x86_64 : return $(defines) $(.sodium-darwin) ;
+        case darwin-arm64 : return $(defines) $(.sodium-darwin) ;
+        case linux-x86_64 : return $(defines) $(.sodium-linux) ;
+        case linux-arm64 : return $(defines) $(.sodium-linux) ;
+    }
+    errors.user-error "/third_party//sodium: libsodium's configuration is"
+        "derived for macOS and Linux on x86-64 and arm64, WASI, Emscripten and"
+        "MSVC; this build is for $(system:E=no system) on $(architecture)" ;
+}
+
+# What libsodium's own tests add on each target: the four defines only they
+# read, as configure found them (HAVE_ARC4RANDOM natively and on WASI, the
+# catchable signals natively, not on MSVC, whose build defines none of them).
+rule sodium-test-defines ( properties * )
+{
+    local target = [ webcpp-target.target-of $(properties) ] ;
+    if [ feature.get-values <toolset> : $(properties) ] = msvc
+    {
+        return ;
+    }
+    switch $(target)
+    {
+        case native : return $(.sodium-test-common) $(.sodium-test-arc4random)
+            $(.sodium-test-catchable) ;
+        case emscripten : return $(.sodium-test-common) ;
+    }
+    return $(.sodium-test-common) $(.sodium-test-arc4random) ;
+}
+
+lib sodium
+  : [ glob-tree-ex libs/libsodium/src/libsodium : *.c ]
+    $(HASH)/src/canary_sodium.c
+  : $(.hash-c-library) <conditional>@sodium-checked-out
+    <conditional>@sodium-target-defines
+    <implicit-dependency>sodium/version.h <implicit-dependency>version.h
+    <dependency>sodium/version.h <include>libs/libsodium/src/libsodium/include
+    <include>libs/libsodium/src/libsodium/include/sodium
+  : : <include>libs/libsodium/src/libsodium/include
+    <implicit-dependency>sodium/version.h <define>SODIUM_STATIC=1
+    <define>WEBCPP_HASH_HAS_SODIUM=1 $(.gc) ;
+explicit sodium ;
+
+# What a program that compiles against libsodium's private headers adds, as
+# libsodium's own tests and webcpp::hash's RFC 9106 test do: the library's
+# include directories, the directory of include/sodium/private, argon2's, the
+# copied version.h's, and the library's defines, with those only the tests
+# read.
+alias sodium-test-config : : <conditional>@sodium-checked-out : :
+    <include>libs/libsodium/src/libsodium/include
+    <include>libs/libsodium/src/libsodium/include/sodium
+    <include>libs/libsodium/src/libsodium/crypto_pwhash/argon2
+    <implicit-dependency>sodium/version.h <implicit-dependency>version.h
+    <conditional>@sodium-target-defines <conditional>@sodium-test-defines ;
+explicit sodium-test-config ;

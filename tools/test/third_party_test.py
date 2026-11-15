@@ -18,11 +18,14 @@ nothing b2 warns of. libsecp256k1, pinned, is built file by file with every modu
 webcpp::crypto's canary, with the large tables natively and the small ones on request and on
 emscripten. XKCP, pinned, is built from its one file of Keccak-p[1600] with webcpp::hash's
 adapter and canary, and an XKCP or a libs/hash that is not checked out stops it, naming the
-command. Run with the names of some cases to run only those."""
+command. libsodium, pinned, is built file by file with the defines its own configure finds on
+each target and webcpp::hash's canary, its version.h copied into the build directory and its
+checkout left as it was. Run with the names of some cases to run only those."""
 
 from __future__ import annotations
 
 import os
+import platform
 import re
 import shutil
 import subprocess
@@ -94,6 +97,60 @@ XKCP_ADAPTER = ['webcpp_hash_xkcp_initialize', 'webcpp_hash_xkcp_add_bytes',
 
 # The small tables: window 2 and comb 2x5.
 SECP256K1_SMALL = ['-DECMULT_WINDOW_SIZE=2', '-DCOMB_BLOCKS=2', '-DCOMB_TEETH=5']
+
+SODIUM = 'third_party/libs/libsodium'
+
+# libsodium 1.0.22, the commit it is pinned at.
+SODIUM_COMMIT = '77e1ce5d6dee871c49ef211222ba18ef0c486bda'
+
+# The canary /third_party//sodium defines when its defines are the ones third_party/Jamfile derives
+# from libsodium's configure.
+SODIUM_CANARY = ('webcpp_hash_sodium_77e1ce5_configured__add_third_party_sodium_to_your_link')
+
+# The defines of every target: webcpp's three, then those libsodium's configure finds on every
+# target and its C files read.
+SODIUM_COMMON = {'CONFIGURED=1', 'SODIUM_STATIC=1', 'NATIVE_LITTLE_ENDIAN=1', 'HAVE_ALLOCA=1',
+                 'HAVE_ALLOCA_H=1', 'HAVE_ATOMIC_OPS=1', 'HAVE_C11_MEMORY_FENCES=1',
+                 'HAVE_C_VARARRAYS=1', 'HAVE_GCC_MEMORY_FENCES=1', 'HAVE_INLINE_ASM=1',
+                 'HAVE_NANOSLEEP=1', 'HAVE_POSIX_MEMALIGN=1', 'HAVE_SYS_PARAM_H=1',
+                 'HAVE_SYS_RANDOM_H=1'}
+
+# What configure finds natively, on macOS and Linux alike.
+SODIUM_POSIX = {'HAVE_GETENTROPY=1', 'HAVE_GETPID=1', 'HAVE_MADVISE=1', 'HAVE_MLOCK=1',
+                'HAVE_MMAP=1', 'HAVE_MPROTECT=1', 'HAVE_PTHREAD=1', 'HAVE_RAISE=1',
+                'HAVE_SYSCONF=1', 'HAVE_SYS_MMAN_H=1', 'HAVE_TI_MODE=1', 'HAVE_WEAK_SYMBOLS=1',
+                'TLS=_Thread_local'}
+
+# The intrinsics' headers and RDRAND, which configure finds on x86-64 alone; ARM's crypto
+# extensions, on arm64 alone.
+SODIUM_X86_64 = {'HAVE_MMINTRIN_H=1', 'HAVE_EMMINTRIN_H=1', 'HAVE_PMMINTRIN_H=1',
+                 'HAVE_TMMINTRIN_H=1', 'HAVE_SMMINTRIN_H=1', 'HAVE_AVXINTRIN_H=1',
+                 'HAVE_AVX2INTRIN_H=1', 'HAVE_AVX512FINTRIN_H=1', 'HAVE_WMMINTRIN_H=1',
+                 'HAVE_RDRAND=1'}
+SODIUM_ARM64 = {'HAVE_ARMCRYPTO=1'}
+
+SODIUM_DEFINES = {
+    'wasi': SODIUM_COMMON | {'HAVE_GETENTROPY=1', 'HAVE_THREADS_H=1'},
+    'emscripten': SODIUM_COMMON | {'HAVE_EXPLICIT_BZERO=1', 'HAVE_GETPID=1',
+                                   'HAVE_SYS_MMAN_H=1', 'HAVE_THREADS_H=1'},
+    'darwin': SODIUM_COMMON | SODIUM_POSIX | {'HAVE_MEMSET_S=1'},
+    'linux': SODIUM_COMMON | SODIUM_POSIX | {'HAVE_EXPLICIT_BZERO=1', 'HAVE_GETAUXVAL=1',
+                                             'HAVE_GETRANDOM=1', 'HAVE_SYS_AUXV_H=1',
+                                             'HAVE_THREADS_H=1'},
+}
+
+
+def sodium_native_defines() -> set[str]:
+    """The defines libsodium's configure finds on this machine."""
+    found = SODIUM_DEFINES[sys.platform if sys.platform == 'darwin' else 'linux']
+    machine = platform.machine().lower()
+    return found | (SODIUM_ARM64 if machine in ('arm64', 'aarch64') else SODIUM_X86_64)
+
+
+def defines_of(line: str) -> set[str]:
+    """The -D options of a compile line, without -D, unquoted."""
+    return {word[2:].strip('"\'') for word in line.split() if word.startswith('-D')}
+
 
 # The compile line of a C file, as b2 prints it at -d+2.
 C_COMPILE = re.compile(r'^\s*"?\S*(?:clang|gcc|emcc|em\+\+)\S*"? -x c .*$', re.MULTILINE)
@@ -419,6 +476,108 @@ def test_xkcp_not_checked_out_is_refused(root: Path) -> None:
 def test_hash_not_checked_out_is_refused(root: Path) -> None:
     # No libs/hash in the scratch superproject: XKCP's adapter and canary are missing.
     result = harness.run_b2(root, 'third_party//xkcp')
+
+def compiled_sodium(result: subprocess.CompletedProcess) -> list[str]:
+    """The C compile lines of /third_party//sodium that b2 printed at -d+2."""
+    return [line for line in C_COMPILE.findall(result.stdout)
+            if '/libsodium/' in line or 'canary_sodium.c' in line]
+
+
+def expect_sodium_defines(lines: list[str], expected: set[str] | None) -> None:
+    """Asserts that every line compiles in the library's own dialect, without assembly, with the
+    expected defines (this machine's natively, when expected is None) and no other of
+    libsodium's."""
+    for line in lines:
+        assert '-std=' not in line, line
+        # NDEBUG is the variant's, BOOST_ALL_NO_LIB the Jamroot's, for every program.
+        defines = {define for define in defines_of(line)
+                   if define.split('=')[0] not in ('NDEBUG', 'BOOST_ALL_NO_LIB')}
+        wanted = expected if expected is not None else sodium_native_defines()
+        assert defines == wanted, (sorted(defines ^ wanted), line)
+        assert 'HAVE_AMD64_ASM' not in line and 'HAVE_AVX_ASM' not in line, line
+
+
+def test_sodium_is_pinned(_: Path) -> None:
+    listed = subprocess.run(['git', '-C', str(harness.ROOT), 'ls-files', '-s', SODIUM],
+                            capture_output=True, text=True, check=True)
+    assert listed.stdout.split()[:2] == ['160000', SODIUM_COMMIT], listed.stdout
+
+
+def test_sodium_is_built_file_by_file(root: Path) -> None:
+    harness.copy_integration_libraries(root, 'config', 'hash')
+    result = harness.run_b2(root, '-a', '-d+2', 'third_party//sodium')
+    harness.expect(result, True)
+    lines = compiled_sodium(result)
+    # The 141 C files of libsodium's src/libsodium and webcpp::hash's canary.
+    assert len(lines) == 142, (len(lines), result.stdout[-4000:])
+    for line in lines:
+        for flag in ('-ffunction-sections', '-fdata-sections'):
+            assert flag in line, (flag, line)
+    expect_sodium_defines(lines, None)
+    copies = sorted((root / 'bin').rglob('version.h'))
+    upstream = (harness.ROOT / SODIUM / 'builds/msvc/version.h').read_bytes()
+    assert copies and all(copy.read_bytes() == upstream for copy in copies), copies
+    assert any(copy.parent.name == 'sodium' for copy in copies), copies
+    status = subprocess.run(['git', '-C', str(harness.ROOT / SODIUM), 'status', '--porcelain'],
+                            capture_output=True, text=True, check=True)
+    assert status.stdout == '', status.stdout
+    archive = sorted((root / 'bin').rglob('libsodium.a'))
+    assert len(archive) == 1, archive
+    symbols = subprocess.run(['nm', str(archive[0])], capture_output=True, text=True, check=True)
+    prefix = '_' if sys.platform == 'darwin' else ''
+    assert f'{prefix}{SODIUM_CANARY}' in symbols.stdout.split(), symbols.stdout[-2000:]
+
+
+def test_sodium_defines_on_each_webassembly_target(root: Path) -> None:
+    # -n prints each command without running it: the defines, not the build, are the case's.
+    harness.link_emsdk(root)
+    harness.copy_integration_libraries(root, 'config', 'hash')
+    for request, defines in ((WASIP2, SODIUM_DEFINES['wasi']), (WASIP3, SODIUM_DEFINES['wasi']),
+                             (EMSCRIPTEN, SODIUM_DEFINES['emscripten'])):
+        result = harness.run_b2(root, '-a', '-n', '-d+2', *request, 'third_party//sodium')
+        harness.expect(result, True)
+        lines = compiled_sodium(result)
+        assert len(lines) == 142, (request, len(lines), result.stdout[-4000:])
+        expect_sodium_defines(lines, defines)
+
+
+def test_sodium_test_config_reaches_the_private_headers(root: Path) -> None:
+    harness.copy_integration_libraries(root, 'config', 'hash')
+    harness.add_library(root, 'sodium_private', 'import webcpp ;\n'
+                        '\n'
+                        'webcpp.run private : private.c : <library>/third_party//sodium-test-config\n'
+                        '  <library>/third_party//sodium ;\n',
+                        {'private.c': '#include <sodium.h>\n'
+                                      '#include "private/common.h"\n'
+                                      '#include "argon2.h"\n'
+                                      '#include "version.h"\n'
+                                      '\n'
+                                      'int main(void) {\n'
+                                      '    return sodium_init() < 0 ||\n'
+                                      '           sodium_library_version_major() !=\n'
+                                      '               SODIUM_LIBRARY_VERSION_MAJOR;\n'
+                                      '}\n'})
+    result = harness.run_b2(root, '-a', '-d+2', 'libs/sodium_private/test')
+    harness.expect(result, True, '**passed**')
+    # The program compiles with the library's defines, the test-only ones too.
+    line = [line for line in C_COMPILE.findall(result.stdout) if 'private.c' in line]
+    assert len(line) == 1, result.stdout[-4000:]
+    assert {'CONFIGURED=1', 'SODIUM_STATIC=1', 'HAVE_CLOCK_GETTIME=1'} <= defines_of(line[0]), line
+
+
+def test_sodium_not_checked_out_is_refused(root: Path) -> None:
+    harness.copy_integration_libraries(root, 'config', 'hash')
+    harness.third_party_of_its_own(root, 'libsodium', checked_out=False)
+    result = harness.run_b2(root, 'third_party//sodium')
+    harness.expect(result, False, 'third_party/libs/libsodium is not checked out',
+                   'git submodule update --init third_party/libs/libsodium')
+    # A build that needs no libsodium never looks for it.
+    harness.expect(harness.run_b2(root, 'libs/demo/test//pass'), True)
+
+
+def test_hash_not_checked_out_is_refused_by_sodium(root: Path) -> None:
+    # No libs/hash in the scratch superproject: the canary is missing.
+    result = harness.run_b2(root, 'third_party//sodium')
     harness.expect(result, False, 'libs/hash is not checked out',
                    'git submodule update --init libs/hash')
 
@@ -449,6 +608,13 @@ CASES = [
     test_xkcp_is_built_file_by_file,
     test_xkcp_not_checked_out_is_refused,
     test_hash_not_checked_out_is_refused,
+
+    test_sodium_is_pinned,
+    test_sodium_is_built_file_by_file,
+    test_sodium_defines_on_each_webassembly_target,
+    test_sodium_test_config_reaches_the_private_headers,
+    test_sodium_not_checked_out_is_refused,
+    test_hash_not_checked_out_is_refused_by_sodium,
 ]
 
 
