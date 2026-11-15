@@ -672,6 +672,103 @@ def test_style_gives_the_content_a_right_gutter_from_the_toc(_: None) -> None:
         assert ems(toc['width']) == ems(body['padding-left']), (media, toc, body)
 
 
+def test_a_word_longer_than_any_line_breaks_at_every_width(_: None) -> None:
+    # A word of code longer than any line from 600px holds, 60 characters, such as a linker's
+    # symbol, is marked long, and the style keeps its breaks and lets it wrap at every width:
+    # kept whole, it would make the page wider than the screen at 900px. A word of 60 stays as a
+    # word a phone breaks.
+    symbol = 'webcpp_crypto_bearssl_7bea48e_getentropy__add_third_party_bearssl_to_your_link'
+    sixty = 'a' * 20 + '_' + 'b' * 19 + '_' + 'c' * 19
+    html = body(convert(f'The link says `+{symbol}+`, `+undefined symbol: {symbol}+` and\n'
+                        f'`{sixty}`.\n'))
+    broken = parts('webcpp_|crypto_|bearssl_|7bea48e_|getentropy__|add_|third_|party_|'
+                   'bearssl_|to_|your_|link')
+    assert f'<code class="long">{broken}</code>' in html, html
+    assert (f'<code class="words"><span class="whole">undefined</span> <span class="whole">'
+            f'symbol:</span> <span class="long">{broken}</span></code>') in html, html
+    assert f'<code>{parts("a" * 20 + "_|" + "b" * 19 + "_|" + "c" * 19)}</code>' in html, html
+    rules = [(media or '', selector, declarations)
+             for media, selectors, declarations in page_style()
+             for selector in selectors if '.long' in selector]
+    assert sorted(rules, key=str) == sorted([
+        ('', '#content code.long', {'white-space': 'normal'}),
+        ('', '#content code.words>span.long', {'white-space': 'normal'}),
+        ('screen and (min-width: 37.5em)', '#content code.long span.wbr', {'display': 'inline'}),
+        ('screen and (min-width: 37.5em)', '#content code.words>span.long span.wbr',
+         {'display': 'inline'}),
+    ], key=str), rules
+
+
+def test_style_breaks_names_in_a_table_between_their_parts(_: None) -> None:
+    # In a table narrower than 1200px, and in a table of the role wrap-names at every width,
+    # inline code wraps and keeps its part breaks, so that a column is as narrow as the longest
+    # part of its names: a table of long names fits its page instead of scrolling from 900px to
+    # 1199px. A word a phone keeps whole stays whole.
+    rules = {(media, selector): declarations for media, selectors, declarations in page_style()
+             for selector in selectors}
+    wrapping = {'white-space': 'normal', 'overflow-wrap': 'break-word'}
+    for media, scope in (('screen and (max-width: 74.9375em)', 'table.tableblock'),
+                         (None, 'table.tableblock.wrap-names')):
+        for selector in (f'{scope} :not(pre):not([class^=L])>code', f'{scope} code.words>span'):
+            assert rules.get((media, selector)) == wrapping, (media, selector)
+    assert rules.get(('screen and (min-width: 37.5em) and (max-width: 74.9375em)',
+                      '#content table.tableblock code span.wbr')) == {'display': 'inline'}, rules
+    assert rules.get(('screen and (min-width: 37.5em)',
+                      '#content table.tableblock.wrap-names code span.wbr')) == {
+                          'display': 'inline'}, rules
+    assert rules.get((None, '#content code.whole')) == {'white-space': 'nowrap'}, rules
+    html = body(convert('[.wrap-names,cols="1,1,1",options="header"]\n|===\n| A | B | C\n\n'
+                        '| x | y | z\n|===\n'))
+    assert '<table class="tableblock frame-all grid-all stretch wrap-names">' in html, html
+
+
+def test_style_lifts_a_link_s_underline_off_underscores(_: None) -> None:
+    # A link's underline at its default height covers the underscores of a name of code, which
+    # then reads as words: under a link that holds code, or in code that holds a link, it is
+    # drawn lower.
+    lifted = {selector for media, selectors, declarations in page_style()
+              if media is None and declarations.get('text-underline-offset') == '.3em'
+              for selector in selectors}
+    assert {'#content a:has(>code)', '#content code a'} <= lifted, lifted
+
+
+def test_a_table_too_wide_stacks_as_on_a_phone(_: None) -> None:
+    # A table whose columns do not fit the page stacks its rows as a phone's style does, at any
+    # width: the page's script measures each table's box and marks it stacked, and the style
+    # lays out a stacked box's table as the phone's rules lay out every table.
+    docinfo = (HERE / 'docinfo.html').read_text()
+    script = re.search(r'<script>(.*?)</script>', docinfo, flags=re.S)
+    assert script, docinfo
+    for part in ("querySelectorAll('div.table-scroll')", "classList.remove('stacked')",
+                 'box.scrollWidth > box.clientWidth', "classList.add('stacked')",
+                 "addEventListener('DOMContentLoaded', stack)",
+                 "addEventListener('resize', stack)"):
+        assert part in script.group(1), (part, script.group(1))
+    phone = {}
+    for media, selectors, declarations in page_style():
+        if media == 'screen and (max-width: 56.1875em)':
+            for selector in selectors:
+                if selector.startswith('table.') and 'admonition' not in selector:
+                    phone[selector] = declarations
+    stacked = {selector[len('.table-scroll.stacked>'):]: declarations
+               for media, selectors, declarations in page_style() if media is None
+               for selector in selectors if selector.startswith('.table-scroll.stacked>')}
+    assert phone and stacked == phone, (stacked, phone)
+
+
+def test_detail_macros_stay_out_of_the_reference(_: None) -> None:
+    # A detail macro, WEBCPP_<NAME>_DETAIL_*, is the library's own business, as a detail
+    # namespace is: the shared settings exclude it, and reference.py fails a reference that
+    # shows one.
+    shared = reference.settings('demo', {'LIBRARY': 'demo', 'MACROS': 'WEBCPP_DEMO_',
+                                         'SOURCE_ROOT': '"r"', 'DATABASE': '"d"', 'INPUT': '"i"',
+                                         'OUTPUT': '"o"'}, None)
+    excluded = shared[shared.index('exclude-macros:'):].split('\n')[1:3]
+    assert excluded == ["  - 'WEBCPP_*_HPP'", "  - 'WEBCPP_*_DETAIL_*'"], excluded
+    text = '[#WEBCPP_DEMO_DETAIL_SEAM]\n== x\n\n[#WEBCPP_DEMO_NO_EXCEPTIONS]\n== y\n'
+    assert reference.detail_macros(text) == ['WEBCPP_DEMO_DETAIL_SEAM'], text
+
+
 CASES: list[Callable[[None], None]] = [
     test_prose_shows_what_mrdocs_read,
     test_synopsis_keeps_its_links,
@@ -703,6 +800,11 @@ CASES: list[Callable[[None], None]] = [
     test_breaks_are_never_wbr_and_never_copied,
     test_style_scrolls_a_wide_table_in_its_box,
     test_style_gives_the_content_a_right_gutter_from_the_toc,
+    test_a_word_longer_than_any_line_breaks_at_every_width,
+    test_style_breaks_names_in_a_table_between_their_parts,
+    test_style_lifts_a_link_s_underline_off_underscores,
+    test_a_table_too_wide_stacks_as_on_a_phone,
+    test_detail_macros_stay_out_of_the_reference,
 ]
 
 

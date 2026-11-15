@@ -31,6 +31,9 @@
 // stacks the table's rows; a table of two columns, a name and what it is,
 // reads stacked without them.
 //
+// A word of inline code too long for any line from 600px, more than 60
+// characters, is marked `long`, and the style keeps its breaks at every width.
+//
 // A name too long for a phone's line, in inline code, in a heading of the
 // reference, `webcpp::xactor::scheduler::run_one`, or in a bare URL, may break
 // between its parts, which an empty `<span class="wbr">` marks: after a `::`,
@@ -105,6 +108,13 @@ const INLINE_CODE = /<code>((?:[^<]|<a\b[^>]*>|<\/a>)*)<\/code>/g;
 // a list item or a stacked table cell narrows to about 260px.
 const WHOLE = 24;
 
+// The longest word of inline code that every line from 600px holds whole: at
+// 600px the content is about 565px wide, about 65 characters of the code font.
+// A longer word, a linker's symbol of 80 characters, keeps its breaks between
+// its parts at every width, marked `long`: kept whole, it would make the page
+// wider than the screen.
+const LONG = 60;
+
 // A break after a `::`, which a heading of the reference keeps at every width;
 // and one between the other parts of a name, which the style keeps only on a
 // phone: from 600px every such name has room on a line.
@@ -173,12 +183,19 @@ function isWhole(word) {
   return decodeEntities(textOf(word), { markup: true }).length <= WHOLE;
 }
 
-// A word of inline code, as an element: `whole`, or breakable between its
-// parts.
+// Whether a word of inline code is longer than a line from 600px holds.
+function isLong(word) {
+  return decodeEntities(textOf(word), { markup: true }).length > LONG;
+}
+
+// A word of inline code, as an element: `whole`, breakable between its parts
+// on a phone, or `long`, breakable between its parts at every width.
 function wordOf(element, word) {
-  return isWhole(word)
-    ? `<${element} class="whole">${word}</${element}>`
-    : `<${element}>${breakableCode(word)}</${element}>`;
+  if (isWhole(word)) {
+    return `<${element} class="whole">${word}</${element}>`;
+  }
+  const kind = isLong(word) ? ' class="long"' : '';
+  return `<${element}${kind}>${breakableCode(word)}</${element}>`;
 }
 
 function wordsOfCode(html) {

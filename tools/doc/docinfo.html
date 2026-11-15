@@ -29,6 +29,9 @@ code, kbd, pre, samp {
 pre.highlight > code.hljs { background: none; padding: 0; }
 /* Code inside a link reads as part of the link, with no box of its own to break its underline. */
 #content a > code { padding: 0; background: none; color: inherit; }
+/* A link's underline is drawn below the underscores of a name of code, not over them: at its
+   default height it covers them, and `WEBCPP_CRYPTO_DEFAULT` reads as three words. */
+#content a:has(> code), #content code a { text-underline-offset: .3em; }
 /* A line of code stays whole and scrolls, as it reads in an editor. */
 .listingblock pre, .literalblock pre {
   white-space: pre;
@@ -95,11 +98,33 @@ span.wbr::after { content: "\200B"; content: "\200B" / ""; }
 @media screen and (min-width: 37.5em) {
   #content :not(pre):not([class^=L]) > code span.wbr, span.wbr.part { display: none; }
 }
+/* In a table narrower than 1200px, and in a table of the role wrap-names at every width, a name
+   longer than a phone's word breaks between its parts, where postprocess.mjs marks them, and a
+   part still wider than its column where it must: a column is then as narrow as the longest part
+   of its names, not as the longest name, and the table fits its page rather than scroll. From
+   1200px a table keeps its names whole, as its columns have room for them; wrap-names is for a
+   table whose names would leave its key column of prose too narrow. A name a phone keeps whole,
+   code.whole, stays whole in a table too. A table that does not fit even so stacks (below). */
 @media screen and (max-width: 74.9375em) {
   table.tableblock :not(pre):not([class^=L]) > code,
   table.tableblock code.words > span { white-space: normal; overflow-wrap: break-word; }
 }
+@media screen and (min-width: 37.5em) and (max-width: 74.9375em) {
+  #content table.tableblock code span.wbr { display: inline; }
+}
+table.tableblock.wrap-names :not(pre):not([class^=L]) > code,
+table.tableblock.wrap-names code.words > span { white-space: normal; overflow-wrap: break-word; }
+@media screen and (min-width: 37.5em) {
+  #content table.tableblock.wrap-names code span.wbr { display: inline; }
+}
 #content code.whole, #content code.words > span.whole { white-space: nowrap; }
+/* A word of code longer than any line from 600px holds, code.long (postprocess.mjs), such as a
+   linker's symbol, breaks between its parts at every width: kept whole, it would make the page
+   wider than the screen. */
+#content code.long, #content code.words > span.long { white-space: normal; }
+@media screen and (min-width: 37.5em) {
+  #content code.long span.wbr, #content code.words > span.long span.wbr { display: inline; }
+}
 /* The hyphens that open a flag stay with its first character (postprocess.mjs), at any width. */
 #content code .lead { white-space: nowrap; }
 /* A table too wide for the page, for a word of code it does not break, scrolls in its own box
@@ -146,4 +171,41 @@ span.wbr::after { content: "\200B"; content: "\200B" / ""; }
   .admonitionblock > table td.icon { text-align: left; padding: 0 0 .25em; }
   .admonitionblock > table td.content { padding: 0 0 0 .75em; }
 }
+/* Wider than a phone, a table whose columns do not fit the page even with its names broken
+   between their parts stacks its rows as a phone's do: the script below marks its box stacked,
+   since only a measure tells whether a table fits. A table that fits is laid out as a table;
+   without the script, one that does not scrolls in its box. */
+.table-scroll.stacked > table.tableblock, .table-scroll.stacked > table.tableblock > tbody,
+.table-scroll.stacked > table.tableblock > tbody > tr,
+.table-scroll.stacked > table.tableblock > tbody > tr > td,
+.table-scroll.stacked > table.tableblock > tbody > tr > th { display: block; width: auto; }
+.table-scroll.stacked > table.tableblock > thead,
+.table-scroll.stacked > table.tableblock > colgroup { display: none; }
+.table-scroll.stacked > table.tableblock { border-width: 0; }
+.table-scroll.stacked > table.tableblock > tbody > tr {
+  border: 1px solid #dedede; margin-bottom: .75em;
+}
+.table-scroll.stacked > table.tableblock > tbody > tr:last-child { margin-bottom: 0; }
+.table-scroll.stacked > table.grid-all > tbody > tr > * { border-width: 0; }
+.table-scroll.stacked > table.tableblock > tbody > tr > * + * { padding-top: 0; }
+.table-scroll.stacked > table.tableblock td[data-label]::before {
+  content: attr(data-label); display: block; font-weight: 600; font-size: .875em;
+  color: rgba(0, 0, 0, .8); margin-bottom: .125em;
+}
 </style>
+<script>
+// Marks the box of each table wider than its box stacked, which the style lays out as a phone's
+// stacked rows, at load and at each resize: every mark is cleared first, so that a table that
+// fits again, the window widened, is a table again; the boxes are all measured before any is
+// marked, which lays the page out once.
+(() => {
+  const stack = () => {
+    const boxes = [...document.querySelectorAll('div.table-scroll')];
+    boxes.forEach((box) => box.classList.remove('stacked'));
+    const wide = boxes.filter((box) => box.scrollWidth > box.clientWidth + 1);
+    wide.forEach((box) => box.classList.add('stacked'));
+  };
+  addEventListener('DOMContentLoaded', stack);
+  addEventListener('resize', stack);
+})();
+</script>

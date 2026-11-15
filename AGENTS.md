@@ -202,6 +202,7 @@ libs/<name>/
   meta/include-boundaries.json
                              the include boundaries the lint checks, when it has any
                              (guidelines chapter 9)
+  meta/lint.json             the lint's rules the library asks for, when it asks for any
   README.md
   AGENTS.md                  only what is specific to this library
   LICENSE_1_0.txt
@@ -249,8 +250,9 @@ Jamroot is its build configuration, and `libs/<name>` is its repository.
   toolsets compile;
 - for emscripten: Emscripten 6.0.11, from emsdk, and Node, which runs its
   programs; the tests of the build need it too;
-- for trystero: nothing installed, with the pinned submodules initialised: libsecp256k1 0.8.0 is `/third_party//secp256k1`,
-  built by `b2` from the pinned `third_party/libs/secp256k1` (small tables on
+- for trystero: nothing installed, with the pinned submodules initialised:
+  libsecp256k1 0.8.0 is `/third_party//secp256k1`, built by `b2` from the
+  pinned `third_party/libs/secp256k1` (small tables on
   emscripten, large natively; `<webcpp-secp256k1-tables>` asks otherwise). No
   library of `libs/` needs an externally provisioned dependency today, though
   `webcpp.external` and `webcpp-require-external=on` stay for a later one;

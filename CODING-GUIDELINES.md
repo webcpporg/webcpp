@@ -598,6 +598,9 @@ aliases, concepts, variables, data members and macros.
   a line that starts with `#`, `[` or such a word,
   and `contains: <text>` (after `build: fails`) a text that one line of b2's
   output contains, for a line that starts with a path of the machine;
+  `not-contains: <text>` (after `build: fails`) states that no line of b2's
+  output contains the text, and `not-contains: <text> unless <allowed>` that
+  every line containing it also contains the allowed text;
   `run: <program>`, after `build: succeeds`, runs the program as its lane runs
   one and every other line is its standard
   output, exactly; `arguments: <word> ...` gives b2 words for this case alone
@@ -647,6 +650,7 @@ with `lint: failed: <rule>` for each rule that failed.
 | bare throw | a `throw` expression in a library's public header (`libs/*/include/**`), outside comments and literals, at its line: inside `#ifndef WEBCPP_<NAME>_NO_EXCEPTIONS` too, in a template that nothing instantiates, which clang-tidy's analysis without exceptions does not see, and as a rethrow, `throw;`; `boost::throw_exception` is the one way to raise, `std::rethrow_exception` the one way to rethrow (above) |
 | changelog form | a library's changelog or a version's release notes out of `AGENTS.md` chapter 5's form: a section or a region missing or out of order, a line that starts with no verb of the list, a cross-reference, more than ten lines for a library and a version, text outside a bullet |
 | canary pins | a `WEBCPP_CRYPTO_<NAME>_COMMIT` of crypto's `detail/canary.h` that is not the first seven digits of the commit the superproject records for its submodule (`ctaes`: `bitcoin`) |
+| nodiscard results | a function of a library's `include/` that returns `boost::system::result` without `[[nodiscard]]`, at its line, when the library asks for the rule in its `meta/lint.json` (`"nodiscard-results"` and its reason; crypto does): `boost::system::result` carries no `[[nodiscard]]` of its own; and a malformed file or an unknown key |
 
 A source b2 expects not to compile (`webcpp.compile-fail`), and one that
 must stop with the error it states (`webcpp.compile-diagnostic`), are left
@@ -943,16 +947,16 @@ update --init third_party/libs/<name>`; a build that needs none never looks.
 
 | Target | What it is | Licence |
 | --- | --- | --- |
+| `bearssl` | BearSSL from webcpp's unmodified mirror `webcpporg/bearssl` at `7bea48e`; a static library built file by file by `third_party/Jamfile` with webcpp::crypto's canary, on every target; `WEBCPP_CRYPTO_HAS_BEARSSL=1` | MIT |
 | `bips` | `bitcoin/bips` at `927b6de9`, shallow, test data: crypto's tests read BIP340's `bip-0340/test-vectors.csv` and BIP341's `bip-0341/wallet-test-vectors.json` at run time under the directory its define `WEBCPP_TEST_BIPS` gives, on every target (wasmtime is given it, `webcpp.data`), and run again when it changes | BSD-2-Clause, as BIP340's header states |
 | `ca_certificates` | Dated Mozilla/curl CA data snapshot under `third_party/ca_certificates`, verified against its manifest and embedded by a build-generated header; updated explicitly by `tools/ca_certificates/update.py` | MPL-2.0 |
-| `bearssl` | BearSSL from webcpp's unmodified mirror `webcpporg/bearssl` at `7bea48e`; a static library built file by file by `third_party/Jamfile` with webcpp::crypto's canary, on every target; `WEBCPP_CRYPTO_HAS_BEARSSL=1` | MIT |
-| `libdatachannel` | libdatachannel 0.24.6 at `6b1e2e620f1e37f0eafeee702eaea0043cb305fd`, with pinned libjuice, libsrtp, plog and usrsctp sources; static native archives built by upstream CMake through B2 against the same source-built OpenSSL | MPL-2.0 and the nested dependencies' own licences |
-| `openssl` | OpenSSL 3.5.9 at `45e844fa2a14ec92d146bd8f5778ac130b6625fb`; static libssl/libcrypto and matching generated headers, built by upstream Configure/Make through B2 for native Clang/GCC/MSVC, WASIp2 single and WASIp3 single/cooperative | Apache-2.0 |
+| `ctaes` | `src/crypto/ctaes` of `bitcoin/bitcoin` v31.1 at `9be056a` (commit `9be056a8a72b624dae9623b2f7bded92c2a21c91`), the submodule `third_party/libs/bitcoin`, shallow; `third_party/Jamfile` compiles its `ctaes.c` alone, with webcpp::crypto's canary, on every target (`WEBCPP_CRYPTO_HAS_CTAES=1`); the tree's `src/secp256k1/` subtree is never on an include path and no glob over `third_party/libs` reaches it | MIT |
 | `json-schema-test-suite` | the JSON Schema Test Suite at `5b0ee16` (2026-09-21), test data: a test that names it reads the suite at run time from the directory its define `WEBCPP_TEST_JSON_SCHEMA_TEST_SUITE` gives, on every target (wasmtime is given it, `webcpp.data`), and runs again when a file of the suite changes | MIT |
+| `libdatachannel` | libdatachannel 0.24.6 at `6b1e2e620f1e37f0eafeee702eaea0043cb305fd`, with pinned libjuice, libsrtp, plog and usrsctp sources; static native archives built by upstream CMake through B2 against the same source-built OpenSSL | MPL-2.0 and the nested dependencies' own licences |
 | `nativejson-benchmark` | Milo Yip's nativejson-benchmark at `478d572` (2022-10-28), test data: document's benchmarks (`libs/document/bench`) read its `data/canada.json`, `data/citm_catalog.json` and `data/twitter.json` at run time under the directory its define `WEBCPP_TEST_NATIVEJSON_BENCHMARK` gives, on every target (wasmtime is given it, `webcpp.data`), and run again when one of them changes; its own submodules are never checked out | MIT |
+| `openssl` | OpenSSL 3.5.9 at `45e844fa2a14ec92d146bd8f5778ac130b6625fb`; static libssl/libcrypto and matching generated headers, built by upstream Configure/Make through B2 for native Clang/GCC/MSVC, WASIp2 single and WASIp3 single/cooperative | Apache-2.0 |
 | `secp256k1` | libsecp256k1 v0.8.0 at `6e2c8bc`; a static library built file by file by `third_party/Jamfile` (`src/secp256k1.c` and its two precomputed tables, every module on) with webcpp::crypto's canary, on every target; its tables by `webcpp-secp256k1-tables` (`auto`: small on Emscripten, large elsewhere); `WEBCPP_CRYPTO_HAS_SECP256K1=1` | MIT |
 | `wycheproof` | C2SP's Wycheproof at `12fd3aaf` (2026-10-06), shallow, test data: crypto's tests read its `testvectors_v1/` at run time under the directory its define `WEBCPP_TEST_WYCHEPROOF` gives, on every target (wasmtime is given it, `webcpp.data`), and run again when one of its files changes | Apache-2.0 |
-| `ctaes` | `src/crypto/ctaes` of `bitcoin/bitcoin` v31.1 at `9be056a` (commit `9be056a8a72b624dae9623b2f7bded92c2a21c91`), the submodule `third_party/libs/bitcoin`, shallow; `third_party/Jamfile` compiles its `ctaes.c` alone, with webcpp::crypto's canary, on every target (`WEBCPP_CRYPTO_HAS_CTAES=1`); the tree's `src/secp256k1/` subtree is never on an include path and no glob over `third_party/libs` reaches it | MIT |
 
 OpenSSL builds from a checkout or a source distribution. Before Configure, its
 builder stages the distributable tree and checks a digest of paths, Git file
@@ -8794,9 +8798,13 @@ it says.
     `LNK2038`) is checked on no CI. The text is checked on clang, GNU ld and
     wasm-ld by the tools job, and ld64's on a developer's macOS, recorded in
     the ledger; the tools job has no macOS or Windows leg.
-  - crypto has no size table until its sizes lane (chapter 17), so a pin's
+  - crypto has no measured size until its sizes lane (chapter 17), so a pin's
     move (rule 12) updates the submodule, the canary's commit and the tests
     on every target, and no table.
+  - The c-suites lane runs BearSSL's and libsecp256k1's own suites on one
+    native toolset per target, so they never run on the MSVC build, whose
+    BearSSL configuration (no seeder, `BR_USE_WIN32_RAND=0`) differs most from
+    the others; only webcpp's own tests exercise it.
   - The source-built OpenSSL is compiled `no-asm` on MSVC, wasip2 and wasip3:
     table-based AES and 4-bit GHASH, no AES-NI, not constant time
     (`OPENSSL_AES_CONST_TIME` would make only the AES core constant time).
