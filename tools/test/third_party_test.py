@@ -565,6 +565,54 @@ def test_sodium_test_config_reaches_the_private_headers(root: Path) -> None:
     assert {'CONFIGURED=1', 'SODIUM_STATIC=1', 'HAVE_CLOCK_GETTIME=1'} <= defines_of(line[0]), line
 
 
+def test_sodium_msvc_inline_reaches_c_alone(root: Path) -> None:
+    # MSVC's build of libsodium defines inline as __inline for its C files; a C++ translation unit
+    # of a program that uses sodium-test-config never gets it, since the standard library's headers
+    # refuse a macro named after a keyword. A dry run with a stand-in MSVC prints the commands.
+    harness.copy_integration_libraries(root, 'config', 'hash')
+    harness.add_library(root, 'sodium_msvc', 'import webcpp ;\n'
+                        '\n'
+                        'webcpp.run both : both.cpp private.c\n'
+                        '  : <library>/third_party//sodium-test-config <library>/third_party//sodium ;\n',
+                        {'both.cpp': 'int main() { return 0; }\n',
+                         'private.c': 'int sodium_private(void) { return 0; }\n'})
+    config = harness.user_config(root).read_text()
+    harness.configure(root, config + f'\nusing msvc : 14.3 : "{sys.executable}"'
+                      ' : <setup> <rewrite-setup-scripts>off ;\n')
+    jamroot = root / 'Jamroot'
+    original = jamroot.read_text()
+    # A foreign-toolset dry run cannot run cmd.exe for the configuration checks.
+    jamroot.write_text(original.replace('<conditional>@boost-check', '<webcpp-boost-check>off'))
+    try:
+        result = harness.run_b2(root, '-a', '-n', '-d+2', 'toolset=msvc-14.3',
+                                'target-os=windows', 'architecture=x86', 'address-model=64',
+                                'libs/sodium_msvc/test')
+    finally:
+        jamroot.write_text(original)
+        harness.configure(root, config)
+    harness.expect(result, True)
+    lines = result.stdout.splitlines()
+    c_files = [line for line in lines if ' -TC ' in line and ('/libsodium/' in line
+                                                             or 'private.c' in line)]
+    cpp_files = [line for line in lines if ' -TP ' in line and 'both.cpp' in line]
+    # The 141 files of libsodium, the canary and the program's own C file.
+    assert len(c_files) == 143, (len(c_files), result.stdout[-4000:])
+    assert len(cpp_files) == 1, result.stdout[-4000:]
+    for line in c_files:
+        assert '/Dinline=__inline' in line, line
+    assert 'inline=' not in cpp_files[0], cpp_files[0]
+
+
+def test_sodium_unknown_architecture_is_refused(root: Path) -> None:
+    # No configure run covers a 32-bit build, and a model is never guessed for an architecture
+    # given alone: each stops, naming what it is for.
+    harness.copy_integration_libraries(root, 'config', 'hash')
+    for request, named in ((('address-model=32',), 'on unknown-32'),
+                           (('architecture=arm',), 'on arm-unknown')):
+        result = harness.run_b2(root, '-n', *request, 'third_party//sodium')
+        harness.expect(result, False, "libsodium's configuration is derived for", named)
+
+
 def test_sodium_not_checked_out_is_refused(root: Path) -> None:
     harness.copy_integration_libraries(root, 'config', 'hash')
     harness.third_party_of_its_own(root, 'libsodium', checked_out=False)
@@ -613,6 +661,8 @@ CASES = [
     test_sodium_is_built_file_by_file,
     test_sodium_defines_on_each_webassembly_target,
     test_sodium_test_config_reaches_the_private_headers,
+    test_sodium_msvc_inline_reaches_c_alone,
+    test_sodium_unknown_architecture_is_refused,
     test_sodium_not_checked_out_is_refused,
     test_hash_not_checked_out_is_refused_by_sodium,
 ]

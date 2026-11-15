@@ -15,6 +15,7 @@ import errors ;
 import feature ;
 import modules ;
 import path ;
+import project ;
 import regex ;
 import webcpp ;
 import webcpp-target ;
@@ -416,18 +417,17 @@ rule sodium-checked-out ( properties * )
 
 # version.h is written by libsodium's configure, from version.h.in; upstream
 # ships it generated, as builds/msvc/version.h. b2 copies that file, unchanged,
-# into the build directory, as sodium/version.h, for sodium.h's
-# "sodium/version.h", and as version.h, for sodium/version.c's "version.h":
-# the submodule is never written. Each is a generated header, whose directory
-# b2 puts on the include path of whatever names it as an
-# <implicit-dependency>; the library also depends on sodium/version.h, which
-# none of its own files includes, so that a program that includes sodium.h
-# finds it built.
+# into the build directory, as sodium-version/sodium/version.h: its directory
+# sodium-version gives sodium.h its "sodium/version.h", and sodium-version/
+# sodium gives sodium/version.c its "version.h". The submodule is never
+# written. The copy's place is fixed (<location>), so that both directories
+# are known here; it is the same file for every build.
+.sodium-version = [ project.current ] ;
+.sodium-version = [ path.root [ $(.sodium-version).build-dir ] [ path.pwd ] ] ;
+.sodium-version = $(.sodium-version)/sodium-version ;
 make sodium/version.h : libs/libsodium/builds/msvc/version.h : common.copy
-  : <conditional>@sodium-checked-out ;
-make version.h : libs/libsodium/builds/msvc/version.h : common.copy
-  : <conditional>@sodium-checked-out ;
-explicit sodium/version.h version.h ;
+  : <conditional>@sodium-checked-out <location>$(.sodium-version) ;
+explicit sodium/version.h ;
 
 # libsodium's configuration on each target, as libsodium's own configure finds
 # it at the pin, run once per target in a scratch copy (never the submodule):
@@ -511,9 +511,13 @@ explicit sodium/version.h version.h ;
 # library) and _CRT_SECURE_NO_WARNINGS (left out: the CRT's headers read it,
 # no C file of libsodium's), and libsodium's private/common.h defines the
 # intrinsics' HAVE_* itself under _MSC_VER. CONFIGURED is webcpp's, as on
-# every target; common.h does not require it under MSVC.
+# every target; common.h does not require it under MSVC. inline=__inline is
+# for C alone, a <cflags> (MSVC's C++ compile never reads <cflags>): the C++
+# translation units of a program that uses sodium-test-config, among them,
+# include the standard library's headers, which refuse a macro named after a
+# keyword.
 .sodium-msvc = <define>CONFIGURED=1 <define>SODIUM_STATIC=1
-    <define>NATIVE_LITTLE_ENDIAN=1 <define>inline=__inline ;
+    <define>NATIVE_LITTLE_ENDIAN=1 <cflags>/Dinline=__inline ;
 
 # The defines only libsodium's tests read, by the same configure runs. The
 # x86-64 macOS run, cross-compiled, could not run the checks of the catchable
@@ -524,23 +528,30 @@ explicit sodium/version.h version.h ;
     <define>HAVE_CATCHABLE_SEGV=1 ;
 
 # The architecture a native build is for, x86_64 or arm64, as configure's
-# runs name them: <architecture> and <address-model> when the build asks for
-# them, else the machine b2 runs on (b2's OSPLAT). Any other is returned as
-# <architecture>-<address-model>, which sodium-target-defines refuses.
+# runs name them: <architecture> with <address-model>, else the machine b2
+# runs on (b2's OSPLAT, X86_64 or ARM64, which names its model). A build that
+# gives one of <architecture> and <address-model> without the other, or any
+# other pair, is returned as <architecture>-<address-model>, which
+# sodium-target-defines refuses: no model is guessed.
 local rule sodium-architecture ( properties * )
 {
     local architecture = [ feature.get-values <architecture> : $(properties) ] ;
     local model = [ feature.get-values <address-model> : $(properties) ] ;
-    architecture ?= [ modules.peek : OSPLAT ] ;
-    model ?= 64 ;
-    switch $(architecture:L)-$(model)
+    if ! $(architecture) && ! $(model)
+    {
+        switch [ modules.peek : OSPLAT ]
+        {
+            case X86_64 : return x86_64 ;
+            case ARM64 : return arm64 ;
+        }
+        return [ modules.peek : OSPLAT ] ;
+    }
+    switch $(architecture:E=unknown)-$(model:E=unknown)
     {
         case x86-64 : return x86_64 ;
-        case x86_64-64 : return x86_64 ;
         case arm-64 : return arm64 ;
-        case arm64-64 : return arm64 ;
     }
-    return $(architecture:L)-$(model) ;
+    return $(architecture:E=unknown)-$(model:E=unknown) ;
 }
 
 # The defines of a build: the groups above by its target, its system, its
@@ -601,10 +612,11 @@ lib sodium
     $(HASH)/src/canary_sodium.c
   : $(.hash-c-library) <conditional>@sodium-checked-out
     <conditional>@sodium-target-defines
-    <implicit-dependency>sodium/version.h <implicit-dependency>version.h
-    <dependency>sodium/version.h <include>libs/libsodium/src/libsodium/include
+    <implicit-dependency>sodium/version.h <dependency>sodium/version.h
+    <include>libs/libsodium/src/libsodium/include
     <include>libs/libsodium/src/libsodium/include/sodium
-  : : <include>libs/libsodium/src/libsodium/include
+    <include>$(.sodium-version) <include>$(.sodium-version)/sodium
+  : : <include>libs/libsodium/src/libsodium/include <include>$(.sodium-version)
     <implicit-dependency>sodium/version.h <define>SODIUM_STATIC=1
     <define>WEBCPP_HASH_HAS_SODIUM=1 $(.gc) ;
 explicit sodium ;
@@ -618,6 +630,6 @@ alias sodium-test-config : : <conditional>@sodium-checked-out : :
     <include>libs/libsodium/src/libsodium/include
     <include>libs/libsodium/src/libsodium/include/sodium
     <include>libs/libsodium/src/libsodium/crypto_pwhash/argon2
-    <implicit-dependency>sodium/version.h <implicit-dependency>version.h
-    <conditional>@sodium-target-defines <conditional>@sodium-test-defines ;
+    <include>$(.sodium-version) <include>$(.sodium-version)/sodium
+    <implicit-dependency>sodium/version.h <conditional>@sodium-target-defines <conditional>@sodium-test-defines ;
 explicit sodium-test-config ;
