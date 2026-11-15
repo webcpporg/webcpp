@@ -222,7 +222,9 @@ def compare_table(data: Data, chapter: dict) -> str:
                    f'{m["machine"]["cpu"]}): the native throughput over 1 MiB, or the time of '
                    'one derivation over `hmac_sha2_256`, of the fastest backend, and the '
                    'smallest Emscripten program that calls the function; <<hash-measurements>> '
-                   'has every backend on every target.')
+                   'has every backend on every target.' +
+                   (' The data was measured on a loaded, shared machine, so close figures may '
+                    'swap at the next measurement.' if m.get('loaded') else ''))
     else:
         out.append('The measured columns, throughput natively and the size of a program on '
                    'Emscripten, come from doc/measurements.json, which this build of the guide '
@@ -298,6 +300,13 @@ def backends_table(data: Data, algorithm: dict) -> str:
             out.append(f'| {held["constant_time"]["value"]}')
     out.append('|===')
     out.append('')
+    sources = sorted({(backend, held['constant_time']['source'])
+                      for function in algorithm['functions']
+                      for backend, held in function['backends'].items()})
+    out.append('What each backend states on constant time, as the capability table read it:')
+    out.append('')
+    out.extend(f'* `{backend}`: {cell(source)}' for backend, source in sources)
+    out.append('')
     if not algorithm['overridable']:
         names = sorted({b for f in algorithm['functions'] for b in f['backends']})
         out.append(f'One backend, {", ".join(f"`{n}`" for n in names)}: no profile or '
@@ -321,7 +330,12 @@ def backends_table(data: Data, algorithm: dict) -> str:
         out.extend(rows)
         out.append('|===')
         out.append('')
-    out.append('The orders are measured over `hmac_sha2_256`, every backend linked; a backend '
+    has_hmac = any(held['hmacs'] is not None for function in algorithm['functions']
+                   for held in function['backends'].values())
+    over = ('The orders shown are those over `hmac_sha2_256`, and over every hmac measured '
+            'with none of its own; `hmac_sha2_512` has its own orders, which can differ '
+            '(<<hash-measurements>>). ') if has_hmac else ''
+    out.append(f'{over}Each order is measured with every backend linked; a backend '
                'the program does not link is skipped. A named profile, '
                '`WEBCPP_HASH_PROFILE_BACKEND_<NAME>`, or an override, '
                f'`WEBCPP_HASH_DEFAULT_BACKEND_{algorithm["macro"]}_<NAME>`, takes its backend '

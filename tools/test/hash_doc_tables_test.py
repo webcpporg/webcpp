@@ -109,8 +109,8 @@ def measurements(library: Path) -> dict:
                            'by_size': sorted(have, key=lambda b: sizes[b]),
                            'by_throughput': sorted(have, key=lambda b: sizes[b]),
                            'throughput_from': target})
-    data = {'date': '2026-11-15', 'machine': {'cpu': 'Fixture CPU'}, 'records': records,
-            'orders': orders}
+    data = {'date': '2026-11-15', 'machine': {'cpu': 'Fixture CPU'}, 'loaded': True,
+            'records': records, 'orders': orders}
     (library / 'doc/measurements.json').write_text(json.dumps(data), encoding='utf-8')
     return data
 
@@ -209,6 +209,13 @@ def test_with_measurements_the_tables_carry_them(scratch: Path) -> None:
         emscripten = rows.split('| emscripten')[1].split('\n\n')[0]
         expect('| hash2, sodium\n| hash2, sodium\n| hash2, sodium\n| hash2' in emscripten,
                f'{name} on Emscripten does not follow its own order: {emscripten!r}')
+    expect('own orders' in hkdf and '`hmac_sha2_512`' in hkdf,
+           'HKDF\'s note does not say that another hmac has its own orders')
+    expect('hmac_sha2_256' not in files['generated/backends-argon2id.adoc'],
+           'Argon2id\'s note names an hmac it does not have')
+    expect('a loaded, shared machine' in digests, 'the note hides that the machine was loaded')
+    expect('libsodium 1.0.22: its headers state constant time' in hkdf,
+           'the constant-time column does not give its source')
     whole = hkdf.split('default backend of `hkdf`')[1].split('|===')[1]
     native = whole.split('| native')[1].split('\n\n')[0]
     expect('| bearssl, sodium, hash2, openssl' in native, f'hkdf natively: {native!r}')
