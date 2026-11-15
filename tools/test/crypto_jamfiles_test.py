@@ -35,9 +35,7 @@ SYSTEM = {'Linux': 'linux', 'Darwin': 'darwin', 'Windows': 'windows'}[platform.s
 # (and says so), a run that names one builds it. Each entry names what it waits for. The
 # integrator empties it when the code it waits for is merged, and then rewrites the lines of those
 # cases' outcome files as b2's whole output lines (a line: directive, if need be).
-NOT_YET = {
-    'encrypt_and_sign': 'the BearSSL backend (backends/bearssl.hpp)',
-}
+NOT_YET: dict[str, str] = {}
 
 BLOCKS = {'all', 'native', 'native-linux', 'native-darwin', 'native-windows', 'wasip2', 'wasip3',
           'emscripten'}

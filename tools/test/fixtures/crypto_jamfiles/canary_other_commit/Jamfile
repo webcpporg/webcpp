@@ -1,0 +1,9 @@
+# Copyright (c) 2026 WebCpp.org
+#
+# Distributed under the Boost Software License, Version 1.0. (See
+# accompanying file LICENSE_1_0.txt or copy at
+# https://www.boost.org/LICENSE_1_0.txt)
+
+# BearSSL linked, the program built for another commit of it.
+exe app : app.cpp /webcpp/crypto//crypto /third_party//bearssl
+  : <define>WEBCPP_CRYPTO_BEARSSL_CANARY_COMMIT=0000000 ;
