@@ -11,9 +11,9 @@
 # checked out stops the build that needs it, naming the command that checks
 # it out; a build that needs none never looks. The C libraries of
 # webcpp::crypto's backends are built here from their own sources, file by file.
+import configure ;
 import errors ;
 import feature ;
-import modules ;
 import path ;
 import project ;
 import regex ;
@@ -654,12 +654,20 @@ rule blake3-checked-out ( properties * )
 }
 
 # The instruction set a build of BLAKE3 is for: wasm on WebAssembly; natively
-# x86-64 or arm64 from b2's <architecture> and <address-model>, as
-# tools/webcpp-openssl.jam reads them; other for any other native target. b2
-# sets no <architecture> on a native toolset unless the build request names
-# one (clang and gcc compile for the machine then): each missing feature is
-# then the machine's, from the platform b2 itself was built for (OSPLAT,
-# X86_64 or ARM64), which the compiler of that machine targets by default.
+# x86-64, arm64 or other. A request that names both <architecture> and
+# <address-model> is taken as it names them. Else the configured compiler is
+# asked, as tools/openssl/build.py asks it for OpenSSL's target: b2 sets
+# neither feature on a native toolset unless the request does, and the
+# compiler then builds for whatever it defaults to (MSVC for the host's
+# PROCESSOR_ARCHITECTURE, whatever b2 itself was built for). Each probe,
+# probes/blake3_<name>.c, compiles only when the macros that blake3.hpp and
+# src/canary_blake3.c read say x86-64 (__x86_64__, _M_X64) or arm64
+# (__aarch64__, _M_ARM64), so that the build, the canary and the header
+# cannot disagree.
+obj blake3_probe_x86_64 : probes/blake3_x86_64.c : <warnings>off ;
+obj blake3_probe_arm64 : probes/blake3_arm64.c : <warnings>off ;
+explicit blake3_probe_x86_64 blake3_probe_arm64 ;
+
 rule blake3-architecture ( properties * )
 {
     if [ webcpp-target.target-of $(properties) ] != native
@@ -668,16 +676,22 @@ rule blake3-architecture ( properties * )
     }
     local architecture = [ feature.get-values <architecture> : $(properties) ] ;
     local address-model = [ feature.get-values <address-model> : $(properties) ] ;
-    switch [ modules.peek : OSPLAT ]
+    if $(architecture) && $(address-model)
     {
-        case X86_64 : architecture ?= x86 ; address-model ?= 64 ;
-        case ARM64 : architecture ?= arm ; address-model ?= 64 ;
+        switch $(architecture)-$(address-model)
+        {
+            case x86-64 : return x86-64 ;
+            case arm-64 : return arm64 ;
+            case * : return other ;
+        }
     }
-    if $(architecture) = x86 && $(address-model) = 64
+    if [ configure.builds /webcpp/third_party//blake3_probe_x86_64 : $(properties)
+        : "BLAKE3's compiler targets x86-64" ]
     {
         return x86-64 ;
     }
-    if $(architecture) = arm && $(address-model) = 64
+    if [ configure.builds /webcpp/third_party//blake3_probe_arm64 : $(properties)
+        : "BLAKE3's compiler targets arm64" ]
     {
         return arm64 ;
     }
@@ -731,7 +745,7 @@ rule blake3-profile ( properties * )
     }
 }
 
-# BLAKE3's own test program (tools/test/blake3_c_suite.py) needs
+# BLAKE3's own test program (libs/hash/test/c_suites, the lane c-suites) needs
 # blake3_dispatch.c compiled with BLAKE3_TESTING, which makes the dispatcher's
 # choice of instruction sets a global it sets, so that one run checks each.
 # Propagated, so that the program's request reaches the library; off, the
