@@ -75,6 +75,9 @@ None.
 * Fixed BearSSL's entropy defines on a Windows target built by Clang or GCC.
 * Added the lint rule nodiscard results, which a library asks for in its meta/lint.json.
 * Changed the pages' tables to stack as on a phone when they do not fit, and long names in them to break between their parts.
+* Changed the pages' tables to keep names whole where they fit, and a table of eight columns or more to scroll rather than stack.
+* Added the role key-column, which keeps a table's first column wide enough for its words.
+* Fixed the table of contents breaking a name of the reference between two of its letters.
 * Added the changelog rule's refusal of inline anchors, which hid a {cpp} attribute from its line.
 * Fixed links over code hiding the underscores of names under their underline.
 * Changed the references to leave out detail macros, WEBCPP_*_DETAIL_*.

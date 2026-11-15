@@ -98,26 +98,41 @@ span.wbr::after { content: "\200B"; content: "\200B" / ""; }
 @media screen and (min-width: 37.5em) {
   #content :not(pre):not([class^=L]) > code span.wbr, span.wbr.part { display: none; }
 }
-/* In a table narrower than 1200px, and in a table of the role wrap-names at every width, a name
-   longer than a phone's word breaks between its parts, where postprocess.mjs marks them, and a
-   part still wider than its column where it must: a column is then as narrow as the longest part
-   of its names, not as the longest name, and the table fits its page rather than scroll. From
-   1200px a table keeps its names whole, as its columns have room for them; wrap-names is for a
-   table whose names would leave its key column of prose too narrow. A name a phone keeps whole,
-   code.whole, stays whole in a table too. A table that does not fit even so stacks (below). */
+/* Below 1200px a name in a table wraps, which a part wider than its column breaks where it must,
+   as before any of the rules below. A table too wide for its box with its names whole, whose
+   box the script below marks parts, and a table of the role wrap-names at every width, break a
+   name longer than a phone's word between its parts too, where postprocess.mjs marks them, and
+   a part still wider than its column where it must: a column is then as narrow as the longest
+   part of its names, not as the longest name, and the table fits its page rather than scroll. A
+   table that fits keeps its names whole, as their columns have room for them; wrap-names is for
+   a table whose names would leave its key column of prose too narrow. A name a phone keeps
+   whole, code.whole, stays whole in a table too. A table that does not fit even so stacks
+   (below). */
 @media screen and (max-width: 74.9375em) {
   table.tableblock :not(pre):not([class^=L]) > code,
   table.tableblock code.words > span { white-space: normal; overflow-wrap: break-word; }
 }
-@media screen and (min-width: 37.5em) and (max-width: 74.9375em) {
-  #content table.tableblock code span.wbr { display: inline; }
-}
+.table-scroll.parts > table.tableblock :not(pre):not([class^=L]) > code,
+.table-scroll.parts > table.tableblock code.words > span,
 table.tableblock.wrap-names :not(pre):not([class^=L]) > code,
 table.tableblock.wrap-names code.words > span { white-space: normal; overflow-wrap: break-word; }
 @media screen and (min-width: 37.5em) {
+  #content .table-scroll.parts > table.tableblock code span.wbr,
   #content table.tableblock.wrap-names code span.wbr { display: inline; }
 }
 #content code.whole, #content code.words > span.whole { white-space: nowrap; }
+/* Inline code of the role keep, such as a target or a file a reader copies, stays on one line at
+   every width, in a table too: postprocess.mjs marks no part in it. */
+#content code.keep { white-space: nowrap; }
+/* A table of the role key-column keeps room for a few words a line in its first column, the one
+   a reader starts from: without it, at 1199px, "I need to" of crypto's decision table is three
+   words wide, its other columns as wide as their names. Where the table does not fit with that
+   room and its names whole, its box marked parts, the names of its other columns break between
+   their parts, short names too, where postprocess.mjs marks them in such a table, but those of
+   the role keep. */
+table.tableblock.key-column > tbody > tr > td:first-child { min-width: 10em; }
+#content .table-scroll.parts > table.key-column code.whole,
+#content .table-scroll.parts > table.key-column code.words > span.whole { white-space: normal; }
 /* A word of code longer than any line from 600px holds, code.long (postprocess.mjs), such as a
    linker's symbol, breaks between its parts at every width: kept whole, it would make the page
    wider than the screen. */
@@ -174,7 +189,10 @@ table.tableblock.wrap-names code.words > span { white-space: normal; overflow-wr
 /* Wider than a phone, a table whose columns do not fit the page even with its names broken
    between their parts stacks its rows as a phone's do: the script below marks its box stacked,
    since only a measure tells whether a table fits. A table that fits is laid out as a table;
-   without the script, one that does not scrolls in its box. */
+   without the script, one that does not scrolls in its box. A matrix, a table of eight columns
+   or more, such as a benchmark's or a profile's, is read down its columns as much as along its
+   rows: stacked, each row would be a card of eight lines or more and its columns could no
+   longer be compared, so wider than a phone it stays a table and scrolls in its box. */
 .table-scroll.stacked > table.tableblock, .table-scroll.stacked > table.tableblock > tbody,
 .table-scroll.stacked > table.tableblock > tbody > tr,
 .table-scroll.stacked > table.tableblock > tbody > tr > td,
@@ -194,18 +212,29 @@ table.tableblock.wrap-names code.words > span { white-space: normal; overflow-wr
 }
 </style>
 <script>
-// Marks the box of each table wider than its box stacked, which the style lays out as a phone's
-// stacked rows, at load and at each resize: every mark is cleared first, so that a table that
-// fits again, the window widened, is a table again; the boxes are all measured before any is
-// marked, which lays the page out once.
+// Fits each table to its box in two steps, as only a measure tells whether a table fits: a table
+// wider than its box with its names whole is marked parts, which the style breaks between their
+// parts; one wider than its box even so is marked stacked, which the style lays out as a phone's
+// stacked rows, but a matrix, of MATRIX columns or more, which scrolls in its box (the style says
+// why). It measures once the page is read, again once its images and fonts have loaded, which
+// change the widths without a resize, and at each resize: every mark is cleared first, so that a
+// table that fits again, the window widened, is a table again with its names whole; each step
+// measures every box before it marks any, which lays the page out once a step.
 (() => {
+  const MATRIX = 8;
+  const columns = (box) => box.querySelectorAll(':scope > table > colgroup > col').length;
+  const wide = (box) => box.scrollWidth > box.clientWidth + 1;
   const stack = () => {
     const boxes = [...document.querySelectorAll('div.table-scroll')];
-    boxes.forEach((box) => box.classList.remove('stacked'));
-    const wide = boxes.filter((box) => box.scrollWidth > box.clientWidth + 1);
-    wide.forEach((box) => box.classList.add('stacked'));
+    boxes.forEach((box) => box.classList.remove('parts', 'stacked'));
+    const broken = boxes.filter(wide);
+    broken.forEach((box) => box.classList.add('parts'));
+    const stacked = broken.filter((box) => columns(box) < MATRIX && wide(box));
+    stacked.forEach((box) => box.classList.add('stacked'));
   };
   addEventListener('DOMContentLoaded', stack);
+  addEventListener('load', stack);
   addEventListener('resize', stack);
+  document.fonts?.ready.then(stack);
 })();
 </script>

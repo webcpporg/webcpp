@@ -34,8 +34,13 @@
 // A word of inline code too long for any line from 600px, more than 60
 // characters, is marked `long`, and the style keeps its breaks at every width.
 //
+// In a table of the role key-column, a word marked `whole` has its parts
+// marked too, which the style breaks between only where the table does not fit
+// with its names whole, so that the table's first column keeps room for its
+// words.
+//
 // A name too long for a phone's line, in inline code, in a heading of the
-// reference, `webcpp::xactor::scheduler::run_one`, or in a bare URL, may break
+// reference (and its entry in the table of contents, after a `::` only), `webcpp::xactor::scheduler::run_one`, or in a bare URL, may break
 // between its parts, which an empty `<span class="wbr">` marks: after a `::`,
 // a `_`, a `/`, or a `.` between letters, before the `(` or the `<` that ends
 // a name, and in code between the words of a name in camel case. So a phone
@@ -213,6 +218,21 @@ function wordsOfCode(html) {
   });
 }
 
+// A word of inline code a phone keeps whole, as code or as a word of code.
+const WHOLE_WORD = /<(code|span) class="whole">((?:(?!<\/\1>)[\s\S])*?)<\/\1>/g;
+
+// Each table of the role key-column, its words of code marked whole made
+// breakable between their parts: the style keeps them whole but where the
+// table does not fit with them whole (docinfo.html).
+function partsOfKeyColumnTables(html) {
+  return html.replace(TABLE, (table) =>
+    /^<table\b[^>]*\sclass="[^"]*\bkey-column\b/.test(table)
+      ? table.replace(WHOLE_WORD, (_word, element, text) =>
+        `<${element} class="whole">${breakableCode(text)}</${element}>`)
+      : table
+  );
+}
+
 // A bare URL, which Asciidoctor writes as the text of its link, and which holds
 // no break yet: one in a heading has its breaks already.
 const BARE_URL = /(<a href="[^"]*" class="bare">)([^<]*)(<\/a>)/g;
@@ -305,6 +325,35 @@ function boxedTables(html) {
     }
     return open.pop() ? `${tag}\n</div>` : tag;
   });
+}
+
+// The table of contents at the side of the page, up to the content, and the
+// text of a link of it.
+const TOC = /<div id="toc"[\s\S]*?(?=<div id="content">)/;
+const TOC_LINK = /(<a href="#[^"]*">)([\s\S]*?)(<\/a>)/g;
+
+// An entry of the table of contents, about 14em wide at the side of the page,
+// breaks a name of the reference after each `::`, as the name's heading does,
+// rather than between two of its letters where it must: its text outside its
+// inline code, whose breaks wordsOfCode marked, and only after a `::`, which
+// the style keeps at every width.
+function scopesOfContents(html) {
+  return html.replace(TOC, (toc) =>
+    toc.replace(TOC_LINK, (_link, open, inner, close) => {
+      let code = false;
+      const broken = inner
+        .split(TAG)
+        .map((part, index) => {
+          if (index % 2 === 1) {
+            code = /^<code\b/.test(part) || (code && !/^<\/code>/.test(part));
+            return part;
+          }
+          return code ? part : breakable(part, [BREAKS[0]]);
+        })
+        .join('');
+      return open + broken + close;
+    })
+  );
 }
 
 // A heading, with what it holds.
@@ -401,8 +450,10 @@ function curledApostrophes(html) {
 
 class Page extends Postprocessor {
   process(_document, output) {
-    const page = labelledTables(wordsOfCode(decodeEntities(output)));
-    const built = curledApostrophes(boxedTables(partsOfURLs(partsOfHeadings(page))));
+    const page = labelledTables(partsOfKeyColumnTables(wordsOfCode(decodeEntities(output))));
+    const built = curledApostrophes(
+      boxedTables(partsOfURLs(scopesOfContents(partsOfHeadings(page))))
+    );
     return tbodied(styledColumns(silentAnchors(built)));
   }
 }

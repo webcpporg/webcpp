@@ -52,16 +52,18 @@ def installed() -> None:
                    check=True)
 
 
-def convert(text: str) -> str:
+def convert(text: str, *attributes: str) -> str:
     """The HTML Asciidoctor.js writes for the AsciiDoc text, with the extensions and the options
-    of webcpp.doc."""
+    of webcpp.doc, and the attributes given, each name=value."""
     with tempfile.TemporaryDirectory(prefix='doc extensions ') as scratch:
         source = Path(scratch) / 'page.adoc'
         source.write_text(HEADER + text)
         output = Path(scratch) / 'page.html'
         command = ['node', str(ASCIIDOCTOR), '-r', str(HERE / 'highlighter.mjs'), '-r',
                    str(HERE / 'postprocess.mjs'), '-v', '--failure-level', 'INFO', '-S', 'unsafe',
-                   '-a', 'source-highlighter=hljs-static', '-o', str(output), str(source)]
+                   '-a', 'source-highlighter=hljs-static',
+                   *[part for attribute in attributes for part in ('-a', attribute)],
+                   '-o', str(output), str(source)]
         completed = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                    text=True, check=False)
         assert completed.returncode == 0, completed.stdout
@@ -533,8 +535,8 @@ def test_admonitions_wrap_their_row_in_tbody(_: None) -> None:
 
 
 def css_rules(text: str) -> list[tuple[str | None, list[str], dict[str, str]]]:
-    """The rules of a stylesheet, each as its media query (None outside one), its selectors and
-    its declarations."""
+    """The rules of a stylesheet, each as its media query (None outside one), or its container
+    query with its @container, its selectors and its declarations."""
     text = re.sub(r'/\*.*?\*/', '', text, flags=re.S)
     rules: list[tuple[str | None, list[str], dict[str, str]]] = []
 
@@ -545,12 +547,14 @@ def css_rules(text: str) -> list[tuple[str | None, list[str], dict[str, str]]]:
             if opening < 0:
                 return
             prelude = block[position:opening].strip()
-            if prelude.startswith('@media'):
+            if prelude.startswith(('@media', '@container')):
                 depth, end = 1, opening + 1
                 while depth:
                     depth += {'{': 1, '}': -1}.get(block[end], 0)
                     end += 1
-                read(block[opening + 1:end - 1], prelude[len('@media'):].strip())
+                # A media query as itself, a container query with its @container.
+                query = prelude.removeprefix('@media').strip()
+                read(block[opening + 1:end - 1], ' '.join(query.split()))
                 position = end
                 continue
             closing = block.index('}', opening)
@@ -700,22 +704,24 @@ def test_a_word_longer_than_any_line_breaks_at_every_width(_: None) -> None:
 
 
 def test_style_breaks_names_in_a_table_between_their_parts(_: None) -> None:
-    # In a table narrower than 1200px, and in a table of the role wrap-names at every width,
-    # inline code wraps and keeps its part breaks, so that a column is as narrow as the longest
-    # part of its names: a table of long names fits its page instead of scrolling from 900px to
-    # 1199px. A word a phone keeps whole stays whole.
+    # A table too wide for its box with its names whole, which the page's script marks parts,
+    # and a table of the role wrap-names at every width, wrap their inline code and keep its part
+    # breaks, so that a column is as narrow as the longest part of its names: a table of long
+    # names fits its page instead of scrolling. A table that fits keeps its names whole, as it
+    # did before the script, from 600px. A word a phone keeps whole stays whole.
     rules = {(media, selector): declarations for media, selectors, declarations in page_style()
              for selector in selectors}
     wrapping = {'white-space': 'normal', 'overflow-wrap': 'break-word'}
     for media, scope in (('screen and (max-width: 74.9375em)', 'table.tableblock'),
+                         (None, '.table-scroll.parts>table.tableblock'),
                          (None, 'table.tableblock.wrap-names')):
         for selector in (f'{scope} :not(pre):not([class^=L])>code', f'{scope} code.words>span'):
             assert rules.get((media, selector)) == wrapping, (media, selector)
-    assert rules.get(('screen and (min-width: 37.5em) and (max-width: 74.9375em)',
-                      '#content table.tableblock code span.wbr')) == {'display': 'inline'}, rules
-    assert rules.get(('screen and (min-width: 37.5em)',
-                      '#content table.tableblock.wrap-names code span.wbr')) == {
-                          'display': 'inline'}, rules
+    live = {selector for (media, selector), declarations in rules.items()
+            if declarations == {'display': 'inline'} and 'wbr' in selector
+            and media == 'screen and (min-width: 37.5em)' and 'long' not in selector}
+    assert live == {'#content .table-scroll.parts>table.tableblock code span.wbr',
+                    '#content table.tableblock.wrap-names code span.wbr'}, live
     assert rules.get((None, '#content code.whole')) == {'white-space': 'nowrap'}, rules
     html = body(convert('[.wrap-names,cols="1,1,1",options="header"]\n|===\n| A | B | C\n\n'
                         '| x | y | z\n|===\n'))
@@ -739,10 +745,18 @@ def test_a_table_too_wide_stacks_as_on_a_phone(_: None) -> None:
     docinfo = (HERE / 'docinfo.html').read_text()
     script = re.search(r'<script>(.*?)</script>', docinfo, flags=re.S)
     assert script, docinfo
-    for part in ("querySelectorAll('div.table-scroll')", "classList.remove('stacked')",
+    for part in ("querySelectorAll('div.table-scroll')",
                  'box.scrollWidth > box.clientWidth', "classList.add('stacked')",
                  "addEventListener('DOMContentLoaded', stack)",
-                 "addEventListener('resize', stack)"):
+                 "addEventListener('resize', stack)",
+                 # The web fonts and images change the widths without a resize.
+                 "addEventListener('load', stack)", 'document.fonts?.ready.then(stack)',
+                 # A table breaks its names between their parts before it stacks, and only
+                 # when it does not fit with them whole.
+                 "classList.remove('parts', 'stacked')", "classList.add('parts')",
+                 # A matrix, of eight columns or more, scrolls in its box rather than stack.
+                 'const MATRIX = 8;', "':scope > table > colgroup > col'",
+                 'columns(box) < MATRIX && wide(box)'):
         assert part in script.group(1), (part, script.group(1))
     phone = {}
     for media, selectors, declarations in page_style():
@@ -754,6 +768,52 @@ def test_a_table_too_wide_stacks_as_on_a_phone(_: None) -> None:
                for media, selectors, declarations in page_style() if media is None
                for selector in selectors if selector.startswith('.table-scroll.stacked>')}
     assert phone and stacked == phone, (stacked, phone)
+
+
+def test_a_key_column_keeps_room_for_its_words(_: None) -> None:
+    # A table of the role key-column keeps room in its first column, at every width, for the
+    # words a reader starts from: crypto's decision table. Its other columns' names, short ones
+    # too, which stay whole elsewhere, break between their parts where it does not fit
+    # otherwise (the page's script marks its box parts) to make that room.
+    rules = {selector: declarations for media, selectors, declarations in page_style()
+             if media is None for selector in selectors}
+    assert rules.get('table.tableblock.key-column>tbody>tr>td:first-child') == \
+        {'min-width': '10em'}, rules
+    # Inline code of the role keep, a target or a file a reader copies, stays on one line at
+    # every width: postprocess.mjs marks no part in it.
+    assert rules.get('#content code.keep') == {'white-space': 'nowrap'}, rules
+    kept = body(convert('[.keep]`+/third_party//ctaes+` and <<x,[.keep]`+a_b.cpp+`>>\n\n'
+                        '[#x]\n== X\n'))
+    assert '<code class="keep">/third_party//ctaes</code>' in kept, kept
+    assert '<a href="#x"><code class="keep">a_b.cpp</code></a>' in kept, kept
+    for selector in ('#content .table-scroll.parts>table.key-column code.whole',
+                     '#content .table-scroll.parts>table.key-column code.words>span.whole'):
+        assert rules.get(selector) == {'white-space': 'normal'}, (selector, rules)
+    source = ('|===\n| A | B | C\n\n| a | `+/third_party//ctaes+` '
+              '| `+x+` and `+aes256<backends::ctaes>+`\n|===\n')
+    html = body(convert('[.wrap-names.key-column,cols="1,1,1",options="header"]\n' + source
+                        + '\n[cols="1,1,1",options="header"]\n' + source))
+    keyed, plain = html.split('</table>')[:2]
+    assert 'class="tableblock frame-all grid-all stretch wrap-names key-column"' in keyed, keyed
+    part = '<span class="wbr part"></span>'
+    assert f'<code class="whole">/third_{part}party//{part}ctaes</code>' in keyed, keyed
+    assert f'<code class="whole">aes256{part}&lt;backends::<span class="wbr"></span>ctaes&gt;' \
+        '</code>' in keyed, keyed
+    assert '<code class="whole">x</code>' in keyed, keyed
+    assert '<code class="whole">/third_party//ctaes</code>' in plain, plain
+    assert '<code class="whole">aes256&lt;backends::ctaes&gt;</code>' in plain, plain
+
+
+def test_the_table_of_contents_breaks_a_name_after_its_scopes(_: None) -> None:
+    # An entry of the table of contents at the side, about 14em wide, breaks a name of the
+    # reference after a ::, as the name's heading does, rather than between two of its letters,
+    # `webcpp::crypto::ciphers::ae` and `s256_gcm`. Its other parts and its code stay as written.
+    page = convert('== webcpp::crypto::ciphers::aes256_gcm\n\n'
+                   '== Ciphers: `webcpp::crypto::ciphers`\n\n== Boost.Hash2 and a_b\n', 'toc=left')
+    toc = page[page.index('<div id="toc"'):page.index('<div id="content">')]
+    assert f'>webcpp::{SCOPE}crypto::{SCOPE}ciphers::{SCOPE}aes256_gcm</a>' in toc, toc
+    assert '>Ciphers: <code class="whole">webcpp::crypto::ciphers</code></a>' in toc, toc
+    assert '>Boost.Hash2 and a_b</a>' in toc, toc
 
 
 def test_detail_macros_stay_out_of_the_reference(_: None) -> None:
@@ -804,6 +864,8 @@ CASES: list[Callable[[None], None]] = [
     test_style_breaks_names_in_a_table_between_their_parts,
     test_style_lifts_a_link_s_underline_off_underscores,
     test_a_table_too_wide_stacks_as_on_a_phone,
+    test_a_key_column_keeps_room_for_its_words,
+    test_the_table_of_contents_breaks_a_name_after_its_scopes,
     test_detail_macros_stay_out_of_the_reference,
 ]
 
