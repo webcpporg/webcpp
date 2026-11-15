@@ -9,10 +9,12 @@
 examples run under node, which b2's emscripten toolset runs itself, and a testing.launcher is
 refused there; a program that node runs reads the host's files and standard input (-sNODERAWFS=1),
 and no other program gets the flag; every program is wasm32, whatever address model is asked for; a
-failure reaches the report; a program of webcpp.link is linked and never run, and fails on a symbol
-nothing defines; a test of webcpp.drive runs its program through a script of node's on each of its
-targets, in an own lane, a driver or a program that hangs fails it within its bound and leaves no
-process behind, and one that no own lane names is refused; and a native build needs no Emscripten.
+program links at the level of optimization it compiles at, -O3 in a release build, which b2's
+toolset leaves to em++'s default, -O0, and before its own linkflags; a failure reaches the report;
+a program of webcpp.link is linked and never run, and fails on a symbol nothing defines; a test of
+webcpp.drive runs its program through a script of node's on each of its targets, in an own lane, a
+driver or a program that hangs fails it within its bound and leaves no process behind, and one that
+no own lane names is refused; and a native build needs no Emscripten.
 The suspension variant, jspi by default and asyncify on request, builds with the exceptions each
 needs, asyncify in a directory of its own, and natively adds nothing. Every program node runs links
 the test support (/webcpp//node-test), whose fixture library node_test_demo pins each case's exact
@@ -189,6 +191,39 @@ def test_programs_are_wasm32(root):
         assert '-sMEMORY64' not in result.stdout, request
     directories = [path for path in (root / 'bin').rglob('*') if 'address-model-64' in path.name]
     assert not directories, directories
+
+
+# An option of em++'s that sets the level of optimization, a word of its own: -O0 to -O3, -Os,
+# -Oz and -Og.
+LEVEL = re.compile(r'(?<!\S)-O[0-3szg](?!\S)')
+
+
+def compile_line(result: subprocess.CompletedProcess, source: str) -> str:
+    """The command line b2 (-d+2) compiled the source named source with."""
+    compiled = re.compile(rf'-c -o "[^"]*" "[^"]*/{re.escape(source)}"$')
+    lines = [line for line in result.stdout.splitlines() if compiled.search(line)]
+    assert len(lines) == 1, (source, lines, result.stdout[-4000:])
+    return lines[0]
+
+
+def test_a_link_is_optimized_as_its_compile(root):
+    # b2 5.5.3's emscripten toolset compiles at the level <optimization> names and links with
+    # none, which em++ takes for -O0: a release program, compiled with -O3, was linked without
+    # optimization, so binaryen never optimized it, and Asyncify instrumented it unoptimized. The
+    # Jamroot gives the link its compile's level, for every value of <optimization>, before a
+    # program's own <linkflags>, so that a level they name comes last, which em++ keeps.
+    for request, level, linked_levels in (
+            (('variant=debug',), '-O0', ['-O0']), (('variant=release',), '-O3', ['-O3']),
+            (('variant=release', 'optimization=space'), '-Os', ['-Os']),
+            (('optimization=minimal',), '-O1', ['-O1']), (('optimization=debug',), '-Og', ['-Og']),
+            (('variant=release', 'linkflags=-Oz'), '-O3', ['-O3', '-Oz'])):
+        result = harness.run_b2(root, '-a', '-n', '-d+2', *EMSCRIPTEN, *request,
+                                'libs/browser_demo/test//pointer')
+        harness.expect(result, True)
+        compiled = compile_line(result, 'pointer_test.cpp')
+        assert LEVEL.findall(compiled) == [level], (request, compiled)
+        linked = link_line(root, result, 'pointer')
+        assert LEVEL.findall(linked) == linked_levels, (request, linked)
 
 
 def test_suspend_variants_build_apart(root):
@@ -606,6 +641,7 @@ CASES = [prepared(case) for case in (
     test_a_launcher_is_refused_on_emscripten,
     test_input_file_is_read_from_the_host,
     test_programs_are_wasm32,
+    test_a_link_is_optimized_as_its_compile,
     test_suspend_variants_build_apart,
     test_a_native_build_ignores_the_variant,
     test_a_test_ends_as_its_main_ends,

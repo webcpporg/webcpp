@@ -909,6 +909,26 @@ testing.launcher on emscripten", chapter 6). Every program that node runs
 without it, node gives it an empty file system of Emscripten's own, and a
 test reads its input file as empty. No other program gets it.
 
+**A program on emscripten links at its compile's level of optimization**
+(the Jamroot's region `emscripten-link-optimization`): `-O0` for
+`<optimization>off`, `-O3` for `speed`, `-Os` for `space`, `-O1` for
+`minimal` and `-Og` for `debug`, so `-O3` in a release build and `-O0` in a
+debug one. b2 5.5.3's toolset gives `<optimization>` to the compile alone,
+and `em++` given no level links at `-O0` (chapter 6), so a release program
+was linked without optimization: Binaryen's wasm-opt never ran on it, and
+Asyncify instrumented it unoptimized, saving whole frames at each
+suspension. Measured with Emscripten 6.0.11, asio's release test
+`timers` went from 735,400 bytes of `.wasm` to 489,216, and the deepest
+suspension of its `asyncify_stack` test from 2,900 bytes to 388. The level
+is among the toolset's own options, before `<linkflags>`, so a program's
+own `-O<n>` there comes last, and `em++` keeps it. A link at `-O1` or above
+also turns Emscripten's `ASSERTIONS` off, and a release link at `-O3`
+minifies the JavaScript, drops the runtime functions nothing calls and,
+outside JSPI, gives the module's exports short names: an abort prints
+`Aborted()` without the reason assertions add, and a page or a driver finds
+only what the program uses. `tools/test/emscripten_test.py` pins each level
+and its order.
+
 **The suspension variant on emscripten.** A program on emscripten that
 suspends, waiting inside a call for the browser's event loop, is built for
 one of two variants, the feature `webcpp-suspend` (the region `suspend` of
@@ -2061,6 +2081,10 @@ Each of these was measured; each has cost time.
   refuses it.
 - **With `--out-xml`, b2 exits 0 even when a test fails;** the report's exit
   status is the verdict, and the report needs `--dump-tests`.
+- **b2 5.5.3's emscripten toolset links at no level of optimization:** it
+  compiles at the one `<optimization>` names (`-O3` in release), as gcc.jam
+  maps it, and gives its link none, which `em++` runs at `-O0`. The Jamroot
+  gives the link the compile's level (chapter 4, Targets).
 - **b2 5.5.3's `--command-database` writes nothing,** so the compilation
   database comes from `tools/lint/compile_commands.py`, which reads b2's dry
   run (`b2 -n -a`).
