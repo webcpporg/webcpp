@@ -6497,9 +6497,11 @@ Asio's first library-main CI and the final joint candidate remain separate gates
   a release build without optimization (deepest 3,540 bytes, Cobalt's
   1,088); since release links at `-O3` (#18) debug is the deepest build
   (1,168 bytes, 388 in release; Cobalt's 1,036 and 384, measured on
-  2026-11-15), and 8192 stays the default and the floor that the libraries
-  built on asio and their programs are tested against, a smaller one being a
-  change of its own to measure across them.
+  2026-11-15). The owner decided on 2026-11-15 that 8192 stays: programs
+  ship release builds, where the deepest suspension of the libraries built
+  on asio wrote 564 bytes (trystero's room test), and debug, for
+  development and the tests, 2,344, within the half `asyncify_stack` asks;
+  8192 is also the floor those libraries are tested against.
   Source: `genesis/design.md`, D5 (proposals); `AGENTS.md` (asio).
 - **Artifacts are named Boost's way (`app-60-d-jspi.js`,
   `webcpp-suspend-asyncify/app-60-d-asyncify.js`), `webcpp.variants` builds a
