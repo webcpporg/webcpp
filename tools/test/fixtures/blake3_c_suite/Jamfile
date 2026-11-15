@@ -1,0 +1,19 @@
+# Copyright (c) 2026 WebCpp.org
+#
+# Distributed under the Boost Software License, Version 1.0. (See
+# accompanying file LICENSE_1_0.txt or copy at
+# https://www.boost.org/LICENSE_1_0.txt)
+
+# BLAKE3's own test program, c/main.c with BLAKE3_TESTING, on webcpp's build of
+# BLAKE3; tools/test/blake3_c_suite.py drives it as c/test.py drives c/blake3.
+# BLAKE3_TESTING must reach blake3_dispatch.c, which declares the global
+# main.c sets: <webcpp-blake3-testing>on, propagated, builds the library so.
+# Off x86 the dispatcher has neither, and cpu_features.c defines them. On
+# Emscripten node reads standard input through the host's file descriptor
+# (-sNODERAWFS=1, as webcpp.run links a program node runs): Emscripten's
+# default terminal decodes it as UTF-8, which changes every byte above 127.
+path-constant BLAKE3 : ../../../../third_party/libs/blake3 ;
+exe blake3_main : $(BLAKE3)/c/main.c cpu_features.c
+  : <library>/third_party//blake3 <webcpp-blake3-testing>on
+    <define>BLAKE3_TESTING <warnings>off <warnings-as-errors>off
+    <toolset>emscripten:<linkflags>-sNODERAWFS=1 ;

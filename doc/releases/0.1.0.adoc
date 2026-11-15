@@ -277,6 +277,10 @@ program that compiles against its private headers.
 * Added `<webcpp-node-raw-fs>off`, for a program of webcpp.run, webcpp.run-fail or webcpp.example
 that mounts on emscripten the host's directories it reads, where it reads them, as libsodium's own
 tests read `/test-data`.
+* Added BLAKE3's C implementation 1.8.7, built from source as /third_party//blake3,
+portable on WebAssembly and dispatched to its intrinsics files natively, its vectors as
+/third_party//blake3_vectors, and tools/test/blake3_c_suite.py, which runs BLAKE3's own
+test program on that build on every target.
 
 [#webcpp-0-1-0-compilers-tested]
 == Compilers tested

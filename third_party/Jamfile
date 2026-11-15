@@ -633,3 +633,126 @@ alias sodium-test-config : : <conditional>@sodium-checked-out : :
     <include>$(.sodium-version) <include>$(.sodium-version)/sodium
     <implicit-dependency>sodium/version.h <conditional>@sodium-target-defines <conditional>@sodium-test-defines ;
 explicit sodium-test-config ;
+
+# BLAKE3's C implementation (CC0-1.0, or Apache-2.0, or Apache-2.0 with LLVM
+# exception), c/ of BLAKE3-team/BLAKE3. blake3.c, blake3_dispatch.c and
+# blake3_portable.c on every target; the intrinsics files only on the targets
+# of their instruction sets, each with its flag, as BLAKE3's own CMake builds
+# them where it has no assembler: they include x86 or Arm headers that no
+# WebAssembly sysroot has (a recorded exception to CODING-GUIDELINES.md
+# chapter 5 rule 2). BLAKE3's dispatcher chooses at run time. On WebAssembly
+# the four BLAKE3_NO_* leave the portable code alone. Never BLAKE3_USE_TBB.
+path-constant BLAKE3 : libs/blake3 ;
+
+rule blake3-checked-out ( properties * )
+{
+    if ! [ path.exists [ path.native $(BLAKE3)/c/blake3.h ] ]
+    {
+        errors.user-error "third_party/libs/blake3 is not checked out. Check it out with"
+            "`git submodule update --init third_party/libs/blake3`." ;
+    }
+}
+
+# The instruction set a build of BLAKE3 is for: wasm on WebAssembly; natively
+# x86-64 or arm64 from b2's <architecture> and <address-model>, as
+# tools/webcpp-openssl.jam reads them; other for any other native target. b2
+# sets no <architecture> on a native toolset unless the build request names
+# one (clang and gcc compile for the machine then): each missing feature is
+# then the machine's, from the platform b2 itself was built for (OSPLAT,
+# X86_64 or ARM64), which the compiler of that machine targets by default.
+rule blake3-architecture ( properties * )
+{
+    if [ webcpp-target.target-of $(properties) ] != native
+    {
+        return wasm ;
+    }
+    local architecture = [ feature.get-values <architecture> : $(properties) ] ;
+    local address-model = [ feature.get-values <address-model> : $(properties) ] ;
+    switch [ modules.peek : OSPLAT ]
+    {
+        case X86_64 : architecture ?= x86 ; address-model ?= 64 ;
+        case ARM64 : architecture ?= arm ; address-model ?= 64 ;
+    }
+    if $(architecture) = x86 && $(address-model) = 64
+    {
+        return x86-64 ;
+    }
+    if $(architecture) = arm && $(address-model) = 64
+    {
+        return arm64 ;
+    }
+    return other ;
+}
+
+# Each intrinsics file is an object of its own, so that its flag reaches it
+# alone; on a target without its instruction set the object is empty of
+# sources (b2's <build>no), which the third_party test checks.
+rule blake3-x86 ( properties * )
+{
+    if [ blake3-architecture $(properties) ] = x86-64
+    {
+        return ;
+    }
+    return <build>no ;
+}
+
+obj blake3_sse2 : libs/blake3/c/blake3_sse2.c
+  : $(.hash-c-library) <conditional>@blake3-x86 <toolset>clang:<cflags>-msse2
+    <toolset>gcc:<cflags>-msse2 ;
+obj blake3_sse41 : libs/blake3/c/blake3_sse41.c
+  : $(.hash-c-library) <conditional>@blake3-x86 <toolset>clang:<cflags>-msse4.1
+    <toolset>gcc:<cflags>-msse4.1 ;
+obj blake3_avx2 : libs/blake3/c/blake3_avx2.c
+  : $(.hash-c-library) <conditional>@blake3-x86 <toolset>clang:<cflags>-mavx2
+    <toolset>gcc:<cflags>-mavx2 <toolset>msvc:<cflags>/arch:AVX2 ;
+obj blake3_avx512 : libs/blake3/c/blake3_avx512.c
+  : $(.hash-c-library) <conditional>@blake3-x86
+    <toolset>clang:<cflags>"-mavx512f -mavx512vl"
+    <toolset>gcc:<cflags>"-mavx512f -mavx512vl"
+    <toolset>msvc:<cflags>/arch:AVX512 ;
+explicit blake3_sse2 blake3_sse41 blake3_avx2 blake3_avx512 ;
+
+# What each instruction set adds: on WebAssembly, and on a native target that
+# is neither x86-64 nor arm64, the four BLAKE3_NO_*, the portable code alone;
+# on x86-64 the four intrinsics objects; on arm64 the NEON file, which
+# BLAKE3_USE_NEON=1 makes blake3_dispatch.c call.
+rule blake3-profile ( properties * )
+{
+    switch [ blake3-architecture $(properties) ]
+    {
+        case x86-64 :
+            return <source>blake3_sse2 <source>blake3_sse41 <source>blake3_avx2
+                <source>blake3_avx512 ;
+        case arm64 :
+            return <source>libs/blake3/c/blake3_neon.c <define>BLAKE3_USE_NEON=1 ;
+        case * :
+            return <define>BLAKE3_NO_SSE2 <define>BLAKE3_NO_SSE41
+                <define>BLAKE3_NO_AVX2 <define>BLAKE3_NO_AVX512 ;
+    }
+}
+
+# BLAKE3's own test program (tools/test/blake3_c_suite.py) needs
+# blake3_dispatch.c compiled with BLAKE3_TESTING, which makes the dispatcher's
+# choice of instruction sets a global it sets, so that one run checks each.
+# Propagated, so that the program's request reaches the library; off, the
+# default, everywhere else.
+feature.feature webcpp-blake3-testing : off on : propagated ;
+
+lib blake3
+  : libs/blake3/c/blake3.c libs/blake3/c/blake3_dispatch.c
+    libs/blake3/c/blake3_portable.c $(HASH)/src/canary_blake3.c
+  : $(.hash-c-library) <conditional>@blake3-checked-out <include>libs/blake3/c
+    <conditional>@blake3-profile <webcpp-blake3-testing>on:<define>BLAKE3_TESTING
+  : : <include>libs/blake3/c <define>WEBCPP_HASH_HAS_BLAKE3=1 $(.gc) ;
+explicit blake3 ;
+
+# BLAKE3's official vectors, test_vectors/test_vectors.json at the pin, read at
+# run time from the directory WEBCPP_TEST_BLAKE3_VECTORS gives, on every target.
+# Quoted as wycheproof's define is, with forward slashes, so that a path with a
+# space or a backslash survives.
+.blake3-vectors = [ regex.replace $(BLAKE3)/test_vectors "\\\\" "/" ] ;
+alias blake3_vectors : : <conditional>@blake3-checked-out : :
+    <define>"\"WEBCPP_TEST_BLAKE3_VECTORS=\\\"$(.blake3-vectors)\\\"\""
+    [ webcpp.data $(BLAKE3)/test_vectors ]
+    <dependency>libs/blake3/test_vectors/test_vectors.json ;
+explicit blake3_vectors ;

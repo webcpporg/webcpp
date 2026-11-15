@@ -16,11 +16,13 @@ library needs and holds the canary's symbol; that a BearSSL or a libs/crypto tha
 stops the build that needs it, naming the command; and that loading third_party/Jamfile prints
 nothing b2 warns of. libsecp256k1, pinned, is built file by file with every module and
 webcpp::crypto's canary, with the large tables natively and the small ones on request and on
-emscripten. XKCP, pinned, is built from its one file of Keccak-p[1600] with webcpp::hash's
-adapter and canary, and an XKCP or a libs/hash that is not checked out stops it, naming the
-command. libsodium, pinned, is built file by file with the defines its own configure finds on
-each target and webcpp::hash's canary, its version.h copied into the build directory and its
-checkout left as it was. Run with the names of some cases to run only those."""
+emscripten. XKCP, pinned, is built from its one file of Keccak-p[1600] with webcpp::hash's adapter
+and canary, and an XKCP or a libs/hash that is not checked out stops it, naming the command.
+libsodium, pinned, is built file by file with the defines its own configure finds on each target and
+webcpp::hash's canary, its version.h copied into the build directory and its checkout left as it
+was. BLAKE3's C implementation, pinned, is built file by file with webcpp::hash's canary: natively
+with the intrinsics files of the machine's instruction sets, each with its own flag, and on
+WebAssembly with the portable code alone. Run with the names of some cases to run only those."""
 
 from __future__ import annotations
 
@@ -48,6 +50,23 @@ BITCOIN = 'third_party/libs/bitcoin'
 
 # The commit ctaes's submodule, Bitcoin Core v31.1, is pinned at.
 BITCOIN_COMMIT = '9be056a8a72b624dae9623b2f7bded92c2a21c91'
+
+BLAKE3 = 'third_party/libs/blake3'
+
+# BLAKE3 1.8.7, the commit it is pinned at.
+BLAKE3_COMMIT = 'f3149ec5bb5449af877ba20377a11008ff499fa2'
+
+# The C files /third_party//blake3 compiles on every target: BLAKE3's three and webcpp::hash's
+# canary.
+BLAKE3_FILES = ['blake3.c', 'blake3_dispatch.c', 'blake3_portable.c', 'canary_blake3.c']
+
+# The intrinsics files of x86-64, each with the flags of its instruction set.
+BLAKE3_X86 = {'blake3_sse2.c': ['-msse2'], 'blake3_sse41.c': ['-msse4.1'],
+              'blake3_avx2.c': ['-mavx2'], 'blake3_avx512.c': ['-mavx512f', '-mavx512vl']}
+
+# What leaves BLAKE3's portable code alone, on WebAssembly.
+BLAKE3_PORTABLE = ['-DBLAKE3_NO_SSE2', '-DBLAKE3_NO_SSE41', '-DBLAKE3_NO_AVX2',
+                   '-DBLAKE3_NO_AVX512']
 
 PASSED = re.compile(r'^\*\*passed\*\* (.*)$', re.MULTILINE)
 
@@ -626,6 +645,123 @@ def test_sodium_not_checked_out_is_refused(root: Path) -> None:
 def test_hash_not_checked_out_is_refused_by_sodium(root: Path) -> None:
     # No libs/hash in the scratch superproject: the canary is missing.
     result = harness.run_b2(root, 'third_party//sodium')
+
+def build_blake3(root: Path, *request: str) -> tuple[dict[str, str], Path]:
+    """Builds /third_party//blake3 with every action shown, from libs/hash's real canary, and
+    returns its C compile lines by file name and its archive."""
+    harness.copy_integration_libraries(root, 'config', 'hash')
+    result = harness.run_b2(root, '-a', '-d+2', *request, 'third_party//blake3')
+    harness.expect(result, True)
+    lines = C_COMPILE.findall(result.stdout)
+    compiled = {Path(line.rsplit(' ', 1)[-1].strip('"')).name: line for line in lines}
+    assert len(compiled) == len(lines), lines
+    archives = sorted((root / 'bin').rglob('libblake3.a'))
+    assert len(archives) == 1, archives
+    return compiled, archives[0]
+
+
+def blake3_canary(configuration: str) -> str:
+    """The symbol of BLAKE3's canary for configuration."""
+    return (f'webcpp_hash_blake3_f3149ec_{configuration}'
+            '__add_third_party_blake3_to_your_link')
+
+
+def expect_blake3_portable(compiled: dict[str, str], archive: Path) -> None:
+    """Asserts that the three portable files and the canary alone were compiled, each with the
+    four BLAKE3_NO_* and no flag of an instruction set, and that the archive holds the canary of
+    the portable configuration."""
+    assert sorted(compiled) == sorted(BLAKE3_FILES), sorted(compiled)
+    for line in compiled.values():
+        for define in BLAKE3_PORTABLE:
+            assert define in line.split(), (define, line)
+        assert '-DBLAKE3_USE_NEON=1' not in line.split(), line
+        assert not re.search(r' -m(sse|avx)', line), line
+        assert '-std=' not in line, line
+    assert blake3_canary('portable').encode() in archive.read_bytes()
+
+
+def test_blake3_is_pinned(_: Path) -> None:
+    listed = subprocess.run(['git', '-C', str(harness.ROOT), 'ls-files', '-s', BLAKE3],
+                            capture_output=True, text=True, check=True)
+    assert listed.stdout.split()[:2] == ['160000', BLAKE3_COMMIT], listed.stdout
+
+
+def test_blake3_natively_has_the_machines_simd_files(root: Path) -> None:
+    compiled, archive = build_blake3(root)
+    machine = platform.machine().lower()
+    if machine in ('arm64', 'aarch64'):
+        expected = BLAKE3_FILES + ['blake3_neon.c']
+        configuration = 'neon'
+    else:
+        assert machine in ('x86_64', 'amd64'), machine
+        expected = BLAKE3_FILES + list(BLAKE3_X86)
+        configuration = 'x86'
+    assert sorted(compiled) == sorted(expected), sorted(compiled)
+    for name, line in compiled.items():
+        words = line.split()
+        for flag in ('-ffunction-sections', '-fdata-sections'):
+            assert flag in words, (flag, line)
+        assert '-std=' not in line, line
+        for define in BLAKE3_PORTABLE:
+            assert define not in words, (define, line)
+        assert ('-DBLAKE3_USE_NEON=1' in words) == (configuration == 'neon'), line
+        # Each intrinsics file has its own flags, and no other file has any.
+        own = BLAKE3_X86.get(name, [])
+        for flags in BLAKE3_X86.values():
+            for flag in flags:
+                assert (flag in words) == (flag in own), (flag, line)
+    symbols = subprocess.run(['nm', str(archive)], capture_output=True, text=True, check=True)
+    prefix = '_' if sys.platform == 'darwin' else ''
+    canary = prefix + blake3_canary(configuration)
+    assert canary in symbols.stdout.split(), symbols.stdout[-2000:]
+
+
+def test_blake3_on_x86_64_declares_the_intrinsics_files(root: Path) -> None:
+    # Whatever the machine, a native x86-64 build, shown and not run, compiles the four
+    # intrinsics files, each with its own flags.
+    harness.copy_integration_libraries(root, 'config', 'hash')
+    result = harness.run_b2(root, '-n', '-a', 'architecture=x86', 'address-model=64',
+                            'third_party//blake3')
+    harness.expect(result, True)
+    lines = C_COMPILE.findall(result.stdout)
+    compiled = {Path(line.rsplit(' ', 1)[-1].strip('"')).name: line for line in lines}
+    assert sorted(compiled) == sorted(BLAKE3_FILES + list(BLAKE3_X86)), sorted(compiled)
+    for name, line in compiled.items():
+        words = line.split()
+        own = BLAKE3_X86.get(name, [])
+        for flags in BLAKE3_X86.values():
+            for flag in flags:
+                assert (flag in words) == (flag in own), (flag, line)
+        assert '-DBLAKE3_USE_NEON=1' not in words, line
+        for define in BLAKE3_PORTABLE:
+            assert define not in words, (define, line)
+
+
+def test_blake3_on_wasi_is_portable(root: Path) -> None:
+    for request in (WASIP2, WASIP3):
+        expect_blake3_portable(*build_blake3(root, *request))
+        shutil.rmtree(root / 'bin')
+
+
+def test_blake3_on_emscripten_is_portable(root: Path) -> None:
+    harness.link_emsdk(root)
+    expect_blake3_portable(*build_blake3(root, *EMSCRIPTEN))
+
+
+def test_blake3_not_checked_out_is_refused(root: Path) -> None:
+    harness.third_party_of_its_own(root, 'blake3', checked_out=False)
+    harness.copy_integration_libraries(root, 'config', 'hash')
+    for target in ('third_party//blake3', 'third_party//blake3_vectors'):
+        result = harness.run_b2(root, target)
+        harness.expect(result, False, 'third_party/libs/blake3 is not checked out',
+                       'git submodule update --init third_party/libs/blake3')
+    # A build that needs no BLAKE3 never looks for it.
+    harness.expect(harness.run_b2(root, 'libs/demo/test//pass'), True)
+
+
+def test_hash_not_checked_out_stops_blake3(root: Path) -> None:
+    # No libs/hash in the scratch superproject: the canary is missing.
+    result = harness.run_b2(root, 'third_party//blake3')
     harness.expect(result, False, 'libs/hash is not checked out',
                    'git submodule update --init libs/hash')
 
@@ -664,6 +800,13 @@ CASES = [
     test_sodium_unknown_architecture_is_refused,
     test_sodium_not_checked_out_is_refused,
     test_hash_not_checked_out_is_refused_by_sodium,
+    test_blake3_is_pinned,
+    test_blake3_natively_has_the_machines_simd_files,
+    test_blake3_on_x86_64_declares_the_intrinsics_files,
+    test_blake3_on_wasi_is_portable,
+    test_blake3_on_emscripten_is_portable,
+    test_blake3_not_checked_out_is_refused,
+    test_hash_not_checked_out_stops_blake3,
 ]
 
 
