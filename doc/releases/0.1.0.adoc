@@ -274,8 +274,9 @@ and signing programs.
 * Added libsodium 1.0.22, built from source as /third_party//sodium with the defines
 its own configure finds on each target, and /third_party//sodium-test-config for a
 program that compiles against its private headers.
-* Added `<webcpp-node-raw-fs>off`, for a test of webcpp.run that mounts on emscripten the host's
-directories it reads, where it reads them, as libsodium's own tests read `/test-data`.
+* Added `<webcpp-node-raw-fs>off`, for a program of webcpp.run, webcpp.run-fail or webcpp.example
+that mounts on emscripten the host's directories it reads, where it reads them, as libsodium's own
+tests read `/test-data`.
 
 [#webcpp-0-1-0-compilers-tested]
 == Compilers tested
