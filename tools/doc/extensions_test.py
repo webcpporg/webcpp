@@ -899,6 +899,22 @@ def test_the_table_of_contents_breaks_a_name_after_its_scopes(_: None) -> None:
     assert '>Boost.Hash2 and a_b</a>' in toc, toc
 
 
+def test_a_stacked_cell_breaks_a_word_wider_than_its_line(_: None) -> None:
+    # Asciidoctor's style gives a table no break inside a word (word-wrap: normal), which a cell
+    # inherits, and the page gives one back only to an AsciiDoc cell's content: a plain cell of a
+    # stacked row, a block as wide as the page, then holds a word wider than its line, such as a
+    # compiler's commit in a measured table, past the row's frame. On a phone, and in a box the
+    # script stacks, a cell breaks such a word, and only such a word.
+    for wanted in ('screen and (max-width: 56.1875em)', None):
+        cells = {selector: declarations for media, selectors, declarations in page_style()
+                 if media == wanted for selector in selectors
+                 if selector.endswith('table.tableblock>tbody>tr>td')
+                 or selector.endswith('table.tableblock>tbody>tr>th')}
+        assert len(cells) == 2 and all(
+            declarations.get('overflow-wrap') == 'break-word'
+            for declarations in cells.values()), (wanted, cells)
+
+
 def test_detail_macros_stay_out_of_the_reference(_: None) -> None:
     # A detail macro, WEBCPP_<NAME>_DETAIL_*, is the library's own business, as a detail
     # namespace is: the shared settings exclude it, and reference.py fails a reference that
@@ -951,6 +967,7 @@ CASES: list[Callable[[None], None]] = [
     test_a_table_too_wide_stacks_as_on_a_phone,
     test_a_key_column_keeps_room_for_its_words,
     test_the_table_of_contents_breaks_a_name_after_its_scopes,
+    test_a_stacked_cell_breaks_a_word_wider_than_its_line,
     test_detail_macros_stay_out_of_the_reference,
 ]
 

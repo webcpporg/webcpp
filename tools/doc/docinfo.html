@@ -174,9 +174,13 @@ table.tableblock.matrix > tbody > tr > td:first-child { min-width: 9em; }
    column's header above its cell, from the data-label postprocess.mjs gives the cell; a table of
    two columns, a name and what it is, reads stacked without them. */
 @media screen and (max-width: 56.1875em) {
-  table.tableblock, table.tableblock > tbody, table.tableblock > tbody > tr,
-  table.tableblock > tbody > tr > td, table.tableblock > tbody > tr > th {
+  table.tableblock, table.tableblock > tbody, table.tableblock > tbody > tr {
     display: block; width: auto;
+  }
+  /* A cell, a block as wide as the row, breaks a word wider than its line, which Asciidoctor's
+     style for a table (word-wrap: normal) keeps whole past the row's frame. */
+  table.tableblock > tbody > tr > td, table.tableblock > tbody > tr > th {
+    display: block; width: auto; overflow-wrap: break-word;
   }
   table.tableblock > thead, table.tableblock > colgroup { display: none; }
   table.tableblock { border-width: 0; }
@@ -203,9 +207,11 @@ table.tableblock.matrix > tbody > tr > td:first-child { min-width: 9em; }
    and its columns could no longer be compared, so wider than a phone it stays a table and
    scrolls in its box. */
 .table-scroll.stacked > table.tableblock, .table-scroll.stacked > table.tableblock > tbody,
-.table-scroll.stacked > table.tableblock > tbody > tr,
+.table-scroll.stacked > table.tableblock > tbody > tr { display: block; width: auto; }
 .table-scroll.stacked > table.tableblock > tbody > tr > td,
-.table-scroll.stacked > table.tableblock > tbody > tr > th { display: block; width: auto; }
+.table-scroll.stacked > table.tableblock > tbody > tr > th {
+  display: block; width: auto; overflow-wrap: break-word;
+}
 .table-scroll.stacked > table.tableblock > thead,
 .table-scroll.stacked > table.tableblock > colgroup { display: none; }
 .table-scroll.stacked > table.tableblock { border-width: 0; }
