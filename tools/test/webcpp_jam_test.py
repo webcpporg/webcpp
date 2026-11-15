@@ -1360,6 +1360,32 @@ def test_a_library_with_gc_flags_still_compares_equal(root):
         assert passed(result) == {'hello_unused'}, (request, passed(result), result.stdout[-4000:])
 
 
+def test_the_pair_is_found_by_its_directory_on_every_path_separator(root):
+    # The compare rule tells the two programs apart by the directory of their side, which b2
+    # spells with the platform's separator: a backslash on Windows, where the pair was compared
+    # with nothing until the rule read both separators. b2 here runs on POSIX, so the rule is fed
+    # the targets' names as each platform spells them (a Jam token's backslash is doubled).
+    sources = {
+        'posix with': '<pbin/same/test/hello_unused_with/msvc/release>hello_unused.exe',
+        'posix without': '<pbin/same/test/hello_unused_without/msvc/release>hello_unused.exe',
+        'nt with': r'<pbin\\same\\test\\hello_unused_with\\msvc\\release>hello_unused.exe',
+        'nt without': r'<pbin\\same\\test\\hello_unused_without\\msvc\\release>hello_unused.exe',
+        'neither': r'<pbin\\same\\test\\hello_unused_other\\msvc\\release>hello_unused.exe',
+        'a prefix only': '<pbin/same/test/xhello_unused_with/msvc/release>hello_unused.exe',
+    }
+    jamfile = 'import modules ;\nimport webcpp ;\n\n'
+    for label, source in sources.items():
+        jamfile += (f'ECHO "side {label}:" '
+                    f'[ modules.call-in webcpp-same-program : side hello_unused : {source} ] ;\n')
+    harness.add_library(root, 'probe', jamfile, {})
+    result = harness.run_b2(root, 'libs/probe/test')
+    harness.expect(result, True)
+    found = {line.split(':', 1)[0].removeprefix('side '): line.split(':', 1)[1].strip()
+             for line in result.stdout.splitlines() if line.startswith('side ')}
+    assert found == {'posix with': 'with', 'posix without': 'without', 'nt with': 'with',
+                     'nt without': 'without', 'neither': '', 'a prefix only': ''}, found
+
+
 CASES = [
     test_link_fail_checks_linking_and_keeps_success_controls,
     test_source_only_corpus_is_not_loaded_as_a_build,
@@ -1404,6 +1430,7 @@ CASES = [
     test_the_pair_shares_one_name,
     test_the_pair_shares_one_name_on_emscripten,
     test_a_library_with_gc_flags_still_compares_equal,
+    test_the_pair_is_found_by_its_directory_on_every_path_separator,
     test_a_pair_built_without_exceptions_links_the_handler_and_compares_equal,
     test_a_shared_library_is_compared_as_a_static_one,
 ]

@@ -78,6 +78,22 @@ rule same-program ( found + : name : sources + : library : only * : requirements
         : $(only) <webcpp-same-name>$(name) : $(name) ;
 }
 
+# The side of the pair named name that the target source belongs to, with or
+# without, from the directory of that side in its path, which b2 spells with
+# the platform's separator, a backslash on Windows; nothing for another
+# directory.
+rule side ( name : source )
+{
+    if [ MATCH "[/\\]($(name)_with)[/\\]" : $(source) ]
+    {
+        return with ;
+    }
+    else if [ MATCH "[/\\]($(name)_without)[/\\]" : $(source) ]
+    {
+        return without ;
+    }
+}
+
 # The two programs are the sources whose name is the pair's, in the directory
 # of their side, never the first and the second source: a link may add files
 # (MSVC's .pdb) or order them as it likes.
@@ -88,13 +104,10 @@ rule compare ( target : sources * : properties * )
     {
         if $(source:B) = $(name) && ! ( $(source:S) = .pdb )
         {
-            if [ MATCH "/($(name)_with)/" : $(source) ]
+            switch [ side $(name) : $(source) ]
             {
-                WITH on $(target) = $(source) ;
-            }
-            else if [ MATCH "/($(name)_without)/" : $(source) ]
-            {
-                WITHOUT on $(target) = $(source) ;
+                case with : WITH on $(target) = $(source) ;
+                case without : WITHOUT on $(target) = $(source) ;
             }
         }
     }

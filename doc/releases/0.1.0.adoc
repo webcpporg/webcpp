@@ -256,6 +256,7 @@ Emscripten's notice that the runtime is kept alive.
 code.
 * Added the lint rule canary pins, which checks crypto's canaries against their submodules.
 * Added webcpp.same-program, which proves a library named and not called adds no byte.
+* Fixed webcpp.same-program comparing nothing on Windows, whose paths b2 spells with backslashes.
 * Added the lint rule entropy sources, which refuses a weaker source in a header that
 reads entropy.
 * Fixed webcpp.compile-diagnostic passing on a directive clang's -verify
