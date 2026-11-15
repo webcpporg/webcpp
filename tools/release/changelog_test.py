@@ -7,10 +7,10 @@
 
 """Checks tools/release/changelog.py: a library's changelog and a version's release notes in
 AGENTS.md chapter 5's form pass, wrapped lines included; a line with no verb of the list, a
-cross-reference, an eleventh line, text outside a bullet, a section out of order or without its
-region, and notes out of form each fail, at their line. The reader reads a list as the doc
-build's Asciidoctor.js renders it, which tools/node/install.py installs when it is not there.
-Run with the names of some cases to run only those."""
+cross-reference, an inline anchor, an eleventh line, text outside a bullet, a section out of
+order or without its region, and notes out of form each fail, at their line. The reader reads a
+list as the doc build's Asciidoctor.js renders it, which tools/node/install.py installs when it
+is not there. Run with the names of some cases to run only those."""
 
 from __future__ import annotations
 
@@ -30,6 +30,8 @@ import matrix  # noqa: E402  (tools/ci, put on the path above: its LANES are the
 VERB_LIST = 'Added, Changed, Deprecated, Fixed, Improved, Removed, Updated'
 CROSS_REFERENCE = ('a line holds no cross-reference, <<...>>, xref: or link:#: the index page '
                    'shows it too')
+ANCHOR = ('a line holds no anchor, [[...]] or anchor:, which shows no text and whose id the index '
+          'page repeats: a C++ attribute is code, `+[[nodiscard]]+`')
 NESTED = ('a line of a changelog is a bullet at the margin, "* ", with no nested list, block, '
           'attribute or directive: ')
 
@@ -137,6 +139,12 @@ class Node:
         own = [self.attributes.get('href') or ''] if self.tag == 'a' else []
         return [target for target in own if target.startswith('#')] + [
             target for child in self.elements() for target in child.links_into_the_page()]
+
+    def anchors(self) -> list[str]:
+        """The ids of the anchors this element holds, at any depth: an <a> with an id."""
+        own = [self.attributes.get('id') or ''] if self.tag == 'a' and 'id' in self.attributes \
+            else []
+        return own + [anchor for child in self.elements() for anchor in child.anchors()]
 
 
 class Tree(HTMLParser):
@@ -267,6 +275,28 @@ def test_cross_references_as_asciidoctor_reads_them() -> None:
         text = log('alpha', ('Unreleased', [line]))
         expected = [(line_of(text, line), CROSS_REFERENCE)] if line in linked else []
         assert changelog.changelog_findings(text, 'alpha') == expected, line
+
+
+def test_anchors_as_asciidoctor_reads_them() -> None:
+    # An inline anchor renders an empty <a id>, in a code span too: the line loses the text and
+    # the index page, which shows the line, gets the id twice. A C++ attribute in a passthrough,
+    # +...+, is code.
+    anchored = ['* Added every result [[nodiscard]].', '* Added `[[nodiscard]]` results.',
+                '* Added [[alpha-x,the x]]x.', '* Added anchor:alpha-x[] x.',
+                '* Added `[[gnu::always_inline]]`.']
+    plain = ['* Added every result `+[[nodiscard]]+`.', '* Added +[[maybe_unused]]+ names.',
+             '* Added `+std::array<int, 2>{{1, 2}}+`.', '* Added `a[b[0]]`.']
+    rendered = asciidoctor(''.join(f'== Case {number}\n\n{line}\n\n'
+                                   for number, line in enumerate(anchored + plain)))
+    sections = [section for section in rendered.elements() if section.kind == 'sect1']
+    for line, section in zip(anchored + plain, sections):
+        assert bool(section.elements()[1].anchors()) == (line in anchored), line
+        text = log('alpha', ('Unreleased', [line]))
+        expected = [(line_of(text, line), ANCHOR)] if line in anchored else []
+        assert changelog.changelog_findings(text, 'alpha') == expected, line
+    tools = '* Added the rule [[nodiscard]].'
+    text = notes(tools=tools)
+    assert findings_of(text) == [(line_of(text, tools), ANCHOR)]
 
 
 def test_text_outside_every_region_fails() -> None:
@@ -510,6 +540,7 @@ CASES: list[Callable[[], None]] = [
     test_text_outside_a_bullet_and_a_cross_reference_fail,
     test_a_breaking_change_goes_on_with_a_verb,
     test_cross_references_as_asciidoctor_reads_them,
+    test_anchors_as_asciidoctor_reads_them,
     test_text_outside_every_region_fails,
     test_sections_in_order_each_with_its_region,
     test_each_section_named_as_its_title,

@@ -1977,7 +1977,9 @@ superproject's new `main`. `main` is the only branch.
   a fixed bug names the symptom, with its issue or pull request when there
   is one, `https://github.com/webcpporg/<library>/issues/<n>[#<n>]`. A line
   holds no cross-reference, `<<...>>`: the index page shows it too, where the
-  library's anchors are not.
+  library's anchors are not. Nor does it hold an inline anchor, `[[...]]`,
+  which shows no text: a C++ attribute is passthrough code,
+  `` `+[[nodiscard]]+` ``.
 - **At most ten lines per library and version,** the most important first;
   a version's documentation work is one line. A library's change that no
   user sees (a test, its CI, a refactoring) gets none.

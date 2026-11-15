@@ -75,6 +75,7 @@ None.
 * Fixed BearSSL's entropy defines on a Windows target built by Clang or GCC.
 * Added the lint rule nodiscard results, which a library asks for in its meta/lint.json.
 * Changed the pages' tables to stack as on a phone when they do not fit, and long names in them to break between their parts.
+* Added the changelog rule's refusal of inline anchors, which hid a {cpp} attribute from its line.
 * Fixed links over code hiding the underscores of names under their underline.
 * Changed the references to leave out detail macros, WEBCPP_*_DETAIL_*.
 * Fixed the WASIp2 test launcher interrupting large finite workloads after 60 seconds.
