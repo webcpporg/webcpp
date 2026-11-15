@@ -878,7 +878,10 @@ def render_overrides(table: Table) -> str:
              '// with every key derivation header.', '',
              '#ifndef WEBCPP_HASH_DETAIL_OVERRIDES_HPP', '#define WEBCPP_HASH_DETAIL_OVERRIDES_HPP',
              '', '#include <webcpp/hash/config.hpp>', '',
+             '/** The spelling of `x` as a string literal, unexpanded. @param x The tokens. */',
              '#define WEBCPP_HASH_DETAIL_OVERRIDE_STRING_I(x) #x',
+             '/** The spelling of `x` as a string literal, once `x` is expanded. @param x The '
+             'macro. */',
              '#define WEBCPP_HASH_DETAIL_OVERRIDE_STRING(x) '
              'WEBCPP_HASH_DETAIL_OVERRIDE_STRING_I(x)', '',
              'namespace webcpp::hash::detail {', '', '/**',
