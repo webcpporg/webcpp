@@ -432,7 +432,10 @@ explicit xkcp ;
 # --disable-asm leaves them, so that the seven .S files are not needed and
 # the C code is used (design D11); the C files of the assembly's paths
 # compile to nothing. Shared by webcpp::hash and, later, webcpp::crypto: one
-# copy per program.
+# copy per program. On Emscripten a program that links it links with
+# -sALLOW_MEMORY_GROWTH=1: Argon2id and scrypt allocate the memory their costs
+# name (64 MiB for crypto_pwhash's interactive costs), past Emscripten's
+# fixed 16 MiB, as libsodium's own tests link.
 path-constant SODIUM : libs/libsodium ;
 
 rule sodium-checked-out ( properties * )
@@ -648,7 +651,8 @@ lib sodium
     <include>$(.sodium-version) <include>$(.sodium-version)/sodium
   : : <include>libs/libsodium/src/libsodium/include <include>$(.sodium-version)
     <implicit-dependency>sodium/version.h <define>SODIUM_STATIC=1
-    <define>WEBCPP_HASH_HAS_SODIUM=1 $(.gc) ;
+    <define>WEBCPP_HASH_HAS_SODIUM=1 $(.gc)
+    <toolset>emscripten:<linkflags>-sALLOW_MEMORY_GROWTH=1 ;
 explicit sodium ;
 
 # What a program that compiles against libsodium's private headers adds, as
