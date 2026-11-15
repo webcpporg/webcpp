@@ -37,9 +37,9 @@ Python computes, when the order by size of any row differs from the committed on
 generated file differs from what the committed data renders (a hand edit), or when the data's
 digest does not match (a hand edit of the data). With `--measured`, it compares those
 measurements instead, throughput included. It also runs bench/'s correctness program, which the
-lists name, on every target (ruling R31): it must exit 0.
+lists name, on every target: it must exit 0.
 
-The orders follow spec 4.2 and nothing else (ruling R33). By size, the smallest program first.
+The orders follow spec 4.2 and nothing else. By size, the smallest program first.
 By throughput, the lowest median (of the invocations' medians) first; a committed order changes
 only where a backend's median is more than 10 percent below the median of the one ahead of it;
 on a first measurement the medians alone order it, an exact tie keeping the capability table's
@@ -47,7 +47,7 @@ order of backends. A WebAssembly target orders by its own throughput where every
 row ran within the bound, else by the native order. The native orders are those of the native
 toolchain that measured them (native_toolchain in the data): a lane whose native toolchain is
 another builds and checks every native program and result, and says in one line that it does not
-compare the native orders (ruling R34); the WebAssembly orders, whose toolchains are pinned, are
+compare the native orders; the WebAssembly orders, whose toolchains are pinned, are
 always compared.
 """
 
@@ -121,7 +121,7 @@ RULES = {
              'order of backends). A WebAssembly target orders by its own throughput where every '
              'backend of the row ran within the bound, else by the native order. The native '
              'orders hold for the native toolchain that measured them (native_toolchain); the '
-             'lane compares them only on that toolchain (ruling R34).',
+             'lane compares them only on that toolchain.',
     'loaded': 'the larger of the two 1-minute load averages exceeds the core count',
 }
 
@@ -136,7 +136,7 @@ LAYOUT = {
               'doc/capabilities.json), and the two builds',
     'native_toolchain': 'what the native orders were measured with: the compiler, the host\'s '
               'operating system and processor, and the strip; the lane compares the native '
-              'size orders only where its own is the same (ruling R34)',
+              'size orders only where its own is the same',
     'workloads': 'per function, what one computation does (spec 4.2)',
     'records[]': 'one per cell and target: operation (the function of doc/capabilities.json), '
                  'hmac (or null), backend, target, size_bytes, result (the hexadecimal output, '
@@ -145,7 +145,7 @@ LAYOUT = {
                  'median_ns, min_ns, max_ns: nanoseconds per computation) or null with '
                  'throughput_absent saying why. operation, hmac, backend and target are the keys '
                  'of doc/measurements.throughput.json\'s cases too, which the documentation joins '
-                 'on them (ruling R21); constant time is doc/capabilities.json\'s (ruling R26).',
+                 'on them; constant time is doc/capabilities.json\'s.',
     'orders[]': 'per operation, hmac and target: by_size and by_throughput, the backends that '
                 'have it there in order, and throughput_from, the target whose throughput '
                 'ordered it; detail/ranking.hpp is generated from the rows of the key '
@@ -709,7 +709,7 @@ def data_file(table: Table, measured: dict, previous: dict | None) -> dict:
         'about': 'webcpp::hash\'s measured table (spec section 4.2): the size of one program per '
                  'cell of doc/capabilities.json on each target, and its throughput, which '
                  'detail/ranking.hpp orders the backends by. Written by tools/hash/measure.py '
-                 '--write; the documentation renders from it (ruling R21).',
+                 '--write; the documentation renders from it.',
         'version': 1,
         'layout': LAYOUT,
         'date': measured['date'],
@@ -742,8 +742,7 @@ def tag(table: Table, backend: str) -> str:
 
 def full_order(table: Table, order: list[str]) -> list[str]:
     """An order of ranking.hpp: the row's backends with a tag, then every other backend with a
-    tag in the table's order, so that the walk of first_serving always reaches one that serves
-    (ruling R23)."""
+    tag in the table's order, so that the walk of first_serving always reaches one that serves."""
     named = [b for b in order if table.backend[b]['tag']]
     return named + [b for b in table.tagged if b not in named]
 
@@ -955,7 +954,7 @@ def adoc_header(title: str, anchor: str, source: str) -> list[str]:
 
 
 def render_backends(table: Table) -> str:
-    """The capability table as the documentation shows it (ruling R13): per chapter, each
+    """The capability table as the documentation shows it: per chapter, each
     function on each backend, its hmacs and its constant time; per function, the targets each
     backend has it on."""
     lines = adoc_header('Backends', 'hash-backends', 'doc/capabilities.json')
@@ -1291,7 +1290,7 @@ def mode_check(library: Library, args: argparse.Namespace) -> None:
     native = ours == theirs
     if not native:
         print('measure: the native orders were measured with '
-              f'{describe(theirs)} and are not compared with {describe(ours)} (ruling R34); '
+              f'{describe(theirs)} and are not compared with {describe(ours)}; '
               'every native program and result is checked', flush=True)
     changes = []
     for o in again:

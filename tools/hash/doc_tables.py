@@ -6,7 +6,7 @@
 # https://www.boost.org/LICENSE_1_0.txt)
 
 """The tables of webcpp::hash's guide, generated from its data (owner's documentation
-requirements, ruling R21).
+requirements).
 
     python3 tools/hash/doc_tables.py --write [--library libs/hash]
     python3 tools/hash/doc_tables.py --check [--library libs/hash]

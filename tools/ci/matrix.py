@@ -189,8 +189,8 @@ CHROME_LANES = {('asio', 'browser'), ('asio', 'browser-workers'),
                 ('document', 'js'), ('trystero', 'interop')}
 
 # The own lanes that name no target yet build for every target in one command, (library, lane):
-# hash's measure (ruling R17), whose Jamfile names wasip2's, wasip3's and emscripten's toolsets in
-# its programs' references. Their job installs wasi-sdk, wasmtime, emsdk and the CI's node, and
+# hash's measure, whose Jamfile names wasip2's, wasip3's and emscripten's toolsets in its
+# programs' references. Their job installs wasi-sdk, wasmtime, emsdk and the CI's node, and
 # registers those three toolsets after Clang 18's, b2's default, the native target's
 # (own_lane_toolsets).
 EVERY_TARGET_LANES = {('hash', 'measure')}

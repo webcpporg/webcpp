@@ -524,11 +524,11 @@ def test_an_own_lanes_command(root):
 
 
 def test_an_every_target_lane_sets_up_and_registers_every_toolset(root):
-    # hash's own lane measure names no target and builds for the four targets in one command
-    # (ruling R17): its job installs wasi-sdk, wasmtime, emsdk and the CI's node, and registers
-    # Clang 18 first (b2's default toolset, the native target), then wasip2's, wasip3's and
-    # emscripten's toolsets, which its Jamfile names in the programs' references. No other own
-    # lane without a target gets them.
+    # hash's own lane measure names no target and builds for the four targets in one command:
+    # its job installs wasi-sdk, wasmtime, emsdk and the CI's node, and registers Clang 18
+    # first (b2's default toolset, the native target), then wasip2's, wasip3's and emscripten's
+    # toolsets, which its Jamfile names in the programs' references. No other own lane without a
+    # target gets them.
     assert matrix.EVERY_TARGET_LANES == {('hash', 'measure')}, matrix.EVERY_TARGET_LANES
     measure = matrix.parsed_own_lanes('hash measure libs/hash/test/measure programs')[0]
     entry = own_lane_entry_of(measure)

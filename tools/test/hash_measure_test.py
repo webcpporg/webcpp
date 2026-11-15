@@ -11,23 +11,24 @@ it. `--write --measured` renders doc/measurements.json, doc/measurements.adoc,
 detail/ranking.hpp, detail/overrides.hpp, doc/backends.adoc and test/measure/cells.jam, the same
 bytes each time; `--check` passes on what it wrote, and fails naming
 `python3 tools/hash/measure.py --write` when the size order of a row changes, when a throughput
-median moves more than 10 percent past the one ahead of it (spec 4.2's rule alone, ruling R33: a
+median moves more than 10 percent past the one ahead of it (spec 4.2's rule alone: a
 first measurement orders by the medians, and the runs' spread plays no part), when a generated
 file or the data was edited by hand, and when a program of a cell is missing on a target (a lane
 that built nothing); a median that moves by under 10 percent changes nothing. Each key
 derivation operation has its own ranking (hkdf_extract and hkdf_expand beside hkdf); every order
-names every backend with a tag, so that the per-operation default (ruling R23) always finds
-one; the portable order is hash2, sodium, bearssl (ruling R3). Native orders measured with
-another native toolchain are not compared, said in one line, while WebAssembly's are (ruling
-R34). `--capabilities` renders the capability table (ruling R13); `--overrides`, run on the real
-library, gives detail/overrides.hpp byte for byte; and `--check` passes on the real library's
-committed data, without a build. Run with the names of some cases to run only those."""
+names every backend with a tag, so that the per-operation default always finds one; the
+portable order is hash2, sodium, bearssl. Native orders measured with another native toolchain
+are not compared, said in one line, while WebAssembly's are. `--capabilities` renders the
+capability table; `--overrides`, run on the real library, gives detail/overrides.hpp byte for
+byte; and `--check` passes on the real library's committed data, without a build. Run with the names
+of some cases to run only those."""
 
 from __future__ import annotations
 
 import copy
 import functools
 import json
+import re
 import runpy
 import shutil
 import subprocess
@@ -322,7 +323,7 @@ def test_throughput_moving_under_ten_percent_keeps_the_order(scratch: Path) -> N
 
 
 def test_the_spread_plays_no_part_in_an_order(scratch: Path) -> None:
-    # Ruling R33: spec 4.2's rule alone. A first measurement orders by the medians, however
+    # Spec 4.2's rule alone. A first measurement orders by the medians, however
     # close (OpenSSL 5 percent faster leads); a committed order changes when a median is more
     # than 10 percent below the one ahead of it, however wide the runs' spread.
     data = measured(capabilities())
@@ -375,7 +376,7 @@ def test_each_operation_has_its_own_ranking(scratch: Path) -> None:
 
 
 def test_another_native_toolchain_compares_no_native_order(scratch: Path) -> None:
-    # Ruling R34: the native orders hold for the toolchain that measured them. Measured with
+    # The native orders hold for the toolchain that measured them. Measured with
     # another, a native order that differs is said in one line and not compared; a WebAssembly
     # order still is.
     data = measured(capabilities())
@@ -527,6 +528,29 @@ def test_usage_errors_exit_2(scratch: Path) -> None:
           'capabilities.json', status=2)
 
 
+def test_no_tracked_file_cites_a_controller_ruling(_: Path) -> None:
+    # The plan's rulings are not in the repository, so a reader cannot open one: a comment, a
+    # page or a generated file says the reason or the spec section instead. The check reads the
+    # tracked files of the library (its own repository) and of tools/hash.
+    cite = re.compile(r'\b[Rr]ulings?\s+R?[0-9]|\(R[0-9]+\)')
+    found = []
+    for base in (LIBRARY, ROOT / 'tools/hash'):
+        listed = subprocess.run(['git', '-C', str(base), 'ls-files', '-z', '--', '.'],
+                                capture_output=True, text=True, check=True).stdout
+        for name in filter(None, listed.split('\0')):
+            path = base / name
+            if not path.is_file() or 'third_party' in path.relative_to(base).parts:
+                continue
+            try:
+                text = path.read_text(encoding='utf-8')
+            except UnicodeDecodeError:
+                continue
+            for number, line in enumerate(text.splitlines(), 1):
+                if cite.search(line):
+                    found.append(f'{path.relative_to(ROOT)}:{number}')
+    assert not found, 'a controller ruling is cited in ' + ', '.join(found)
+
+
 CASES = [
     test_write_renders_deterministically,
     test_check_passes_on_its_own_write,
@@ -542,6 +566,7 @@ CASES = [
     test_the_real_library_s_generated_files_are_its_data_s,
     test_overrides_regenerate_the_committed_file,
     test_usage_errors_exit_2,
+    test_no_tracked_file_cites_a_controller_ruling,
 ]
 
 

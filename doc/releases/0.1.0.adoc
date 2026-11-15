@@ -88,6 +88,7 @@ None.
 * Fixed the header cells of a table with a header column lacking their scope, which the site's HTML check refuses.
 * Changed the references to leave out detail macros, WEBCPP_*_DETAIL_*.
 * Added the user's Jamfiles of webcpp::hash, tested as fixtures of a test of the tools.
+* Changed the lint's canary-pins rule to read webcpp::hash's detail/canary.h beside webcpp::crypto's.
 * Fixed the WASIp2 test launcher interrupting large finite workloads after 60 seconds.
 * Fixed Chrome provisioning and browser/TLS profile coverage in Asio CI lanes.
 * Added source-built OpenSSL and Cobalt SSL targets for WASIp2.
