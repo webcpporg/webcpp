@@ -246,14 +246,12 @@ def first_with(order: list[str], having: set[str]) -> str:
     return next((b for b in order if b in having), '-')
 
 
-def defaults_rows(data: Data, algorithm: dict, function: dict) -> list[str]:
-    """Per target, the order of each profile, every backend linked: the whole function's
-    rows of measurements.json (the operation whose tag is the algorithm's: hkdf for
-    hkdf_extract and hkdf_expand, as detail/ranking.hpp orders them), kept to the backends
-    that have this function."""
+def defaults_rows(data: Data, function: dict) -> list[str]:
+    """Per target, the order of each profile, every backend linked: the function's own rows
+    of measurements.json (each HKDF step is measured and ordered alone, as detail/ranking.hpp
+    orders it), kept to the backends that have this function."""
     having = set(function['backends'])
-    operation = next((f['name'] for f in algorithm['functions']
-                      if f.get('tag') == algorithm['tag']), function['name'])
+    operation = function['name']
     portable = [b['name'] for b in data.capabilities['backends'] if b['portable']]
     rows = []
     for target in data.capabilities['targets']:
@@ -307,7 +305,7 @@ def backends_table(data: Data, algorithm: dict) -> str:
         out.append('')
         return '\n'.join(out)
     for function in algorithm['functions']:
-        rows = defaults_rows(data, algorithm, function)
+        rows = defaults_rows(data, function)
         if not rows:
             out.append(f'The default backend of `{function["name"]}` on each target follows '
                        'the measured orders of doc/measurements.json, which this build of the '

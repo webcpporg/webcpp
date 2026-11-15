@@ -14,7 +14,7 @@ generated file was edited by hand, is missing or is left over. A guide that lack
 the capability table, or describes one it does not have, fails, and so does a use case whose
 example is not there. Without doc/measurements.json the tables say so and carry no measured
 column; with it (a fixture in its shape) they carry the throughput and the size, and the default
-of `hkdf_extract` on Emscripten follows HKDF's order kept to the backends that have the step, as
+of `hkdf_extract` on Emscripten follows the step's own measured order, not HKDF's, as
 detail/ranking.hpp does. The includes of the measured chapters name only those present. And
 `--check` passes on the real library's committed files. Run with the names of some cases to run
 only those."""
@@ -75,13 +75,14 @@ def write_ok(library: Path) -> dict[str, str]:
 
 def measurements(library: Path) -> dict:
     """doc/measurements.json's shape (tools/hash/measure.py), for HKDF's three operations and
-    sha2_256: HKDF on Emscripten is smallest on BearSSL, then sodium, then hash2."""
+    sha2_256: HKDF is smallest on BearSSL, then sodium, then hash2; each step alone is smallest
+    on hash2, then sodium (an order of its own, which HKDF's must not replace)."""
     records = []
-    sizes = {'hash2': 3000, 'sodium': 2000, 'bearssl': 1000, 'openssl': 9000}
-    for operation, backends in (('hkdf', ('hash2', 'sodium', 'bearssl', 'openssl')),
-                                ('hkdf_extract', ('hash2', 'sodium', 'openssl')),
-                                ('hkdf_expand', ('hash2', 'sodium', 'openssl'))):
-        for backend in backends:
+    whole = {'hash2': 3000, 'sodium': 2000, 'bearssl': 1000, 'openssl': 9000}
+    step = {'hash2': 1500, 'sodium': 2000, 'openssl': 9000}
+    for operation, sizes in (('hkdf', whole), ('hkdf_extract', step),
+                             ('hkdf_expand', step)):
+        for backend in sizes:
             for target in ('native', 'wasip2', 'wasip3', 'emscripten'):
                 if backend == 'openssl' and target == 'emscripten':
                     continue
@@ -99,7 +100,8 @@ def measurements(library: Path) -> dict:
                     'target': 'emscripten', 'size_bytes': 19235,
                     'throughput': None, 'throughput_absent': 'fixture'})
     orders = []
-    for operation in ('hkdf', 'hkdf_extract', 'hkdf_expand'):
+    for operation, sizes in (('hkdf', whole), ('hkdf_extract', step),
+                             ('hkdf_expand', step)):
         for target in ('native', 'wasip2', 'wasip3', 'emscripten'):
             have = [r['backend'] for r in records
                     if r['operation'] == operation and r['target'] == target]
@@ -201,11 +203,12 @@ def test_with_measurements_the_tables_carry_them(scratch: Path) -> None:
     expect('569 MiB/s (hash2)' in digests, 'sha2_256 throughput: 1 MiB in 1.757 ms')
     expect('19,235 bytes (hash2)' in digests, 'sha2_256 size on Emscripten')
     hkdf = files['generated/backends-hkdf.adoc']
-    # hkdf_extract on Emscripten: HKDF's order bearssl, sodium, hash2 without BearSSL.
-    extract = hkdf.split('default backend of `hkdf_extract`')[1].split('|===')[1]
-    emscripten = extract.split('| emscripten')[1].split('\n\n')[0]
-    expect('| sodium, hash2\n| sodium, hash2\n| sodium, hash2\n| hash2' in emscripten,
-           f'hkdf_extract on Emscripten does not follow HKDF\'s order: {emscripten!r}')
+    # Each step on Emscripten: its own order hash2, sodium; HKDF's would give sodium, hash2.
+    for name in ('hkdf_extract', 'hkdf_expand'):
+        rows = hkdf.split(f'default backend of `{name}`')[1].split('|===')[1]
+        emscripten = rows.split('| emscripten')[1].split('\n\n')[0]
+        expect('| hash2, sodium\n| hash2, sodium\n| hash2, sodium\n| hash2' in emscripten,
+               f'{name} on Emscripten does not follow its own order: {emscripten!r}')
     whole = hkdf.split('default backend of `hkdf`')[1].split('|===')[1]
     native = whole.split('| native')[1].split('\n\n')[0]
     expect('| bearssl, sodium, hash2, openssl' in native, f'hkdf natively: {native!r}')
