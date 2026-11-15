@@ -272,9 +272,11 @@ explicit ctaes ;
 feature.feature webcpp-secp256k1-tables : auto small large : propagated ;
 
 # libsecp256k1 v0.8.0 (MIT) as its CMake builds it: src/secp256k1.c and the two
-# precomputed tables, with every module, recovery included. A program that
-# uses MSVC's static library needs SECP256K1_STATIC, or the header declares
-# every function imported from a DLL.
+# precomputed tables, with every module, recovery included, and its unmodified
+# contrib/lax_der_parsing.c, the DER parser Bitcoin Core keeps for historical
+# signatures, which webcpp::crypto's from_lax_der calls. A program that uses
+# MSVC's static library needs SECP256K1_STATIC, or the header declares every
+# function imported from a DLL.
 path-constant SECP256K1 : libs/secp256k1 ;
 
 rule secp256k1-checked-out ( properties * )
@@ -309,7 +311,8 @@ explicit secp256k1-test-config ;
 
 lib secp256k1
   : libs/secp256k1/src/secp256k1.c libs/secp256k1/src/precomputed_ecmult.c
-    libs/secp256k1/src/precomputed_ecmult_gen.c $(CRYPTO)/src/canary_secp256k1.c
+    libs/secp256k1/src/precomputed_ecmult_gen.c libs/secp256k1/contrib/lax_der_parsing.c
+    $(CRYPTO)/src/canary_secp256k1.c
   : $(.c-library) <conditional>@secp256k1-checked-out
     <include>libs/secp256k1/include <include>libs/secp256k1/src $(.secp256k1-config)
   : : <include>libs/secp256k1/include <define>WEBCPP_CRYPTO_HAS_SECP256K1=1
