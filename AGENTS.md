@@ -109,10 +109,10 @@ webcpp/
   third_party/        third-party code the libraries and their tests use, not webcpp's: each
                       a submodule under third_party/libs/, pinned at a commit and keeping its
                       own licence (openssl, libdatachannel, bearssl, secp256k1, bitcoin for
-                      ctaes, and the test data wycheproof, bips, JSON-Schema-Test-Suite and
-                      nativejson-benchmark), and the Jamfile that declares it as
-                      /webcpp/third_party//<target> and /third_party//<target> (guidelines
-                      chapter 10)
+                      ctaes, xkcp, libsodium, blake3, and the test data wycheproof, bips,
+                      JSON-Schema-Test-Suite and nativejson-benchmark), and the Jamfile that
+                      declares it as /webcpp/third_party//<target> and
+                      /third_party//<target> (guidelines chapter 10)
   doc/                the index page (index.adoc, Jamfile)
     releases/         each version's release notes, which the index page shows
   site/               the site, a repository of its own, webcpporg/webcpporg.github.io, a
