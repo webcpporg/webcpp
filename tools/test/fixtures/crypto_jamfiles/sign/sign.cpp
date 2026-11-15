@@ -4,7 +4,6 @@
 // accompanying file LICENSE_1_0.txt or copy at
 // https://www.boost.org/LICENSE_1_0.txt)
 
-
 // Signs a message with BIP340 through libsecp256k1, verifies it, and refuses a changed one.
 #include <webcpp/crypto/secp256k1.hpp>
 

@@ -29,7 +29,8 @@ int main() {
     }
     auto const tag = aead->seal(iv, {}, data);
     bool const sealed = tag && data == cipher && webcpp::crypto::equal(*tag, expected_tag);
-    bool const opened = aead->open(iv, {}, data, expected_tag) && data == std::array<std::uint8_t, 16>{};
+    bool const opened =
+        aead->open(iv, {}, data, expected_tag) && data == std::array<std::uint8_t, 16>{};
     auto const name = webcpp::crypto::aes256_gcm::backend_type::name;
     std::printf("aes256_gcm %s backend=%.*s\n", sealed && opened ? "ok" : "FAILED",
                 static_cast<int>(name.size()), name.data());
@@ -45,8 +46,8 @@ int main() {
     if (pair) {
         auto const signature = pair->sign_schnorr(message, aux);
         auto const public_key = pair->xonly_public_key();
-        signed_ok = signature && public_key &&
-                    secp256k1::verify_schnorr(*signature, message, *public_key);
+        signed_ok =
+            signature && public_key && secp256k1::verify_schnorr(*signature, message, *public_key);
         message[0] ^= 1;
         signed_ok = signed_ok && !secp256k1::verify_schnorr(*signature, message, *public_key);
     }
