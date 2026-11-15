@@ -107,12 +107,14 @@ explicit wycheproof ;
 
 # bitcoin/bips (BSD-2-Clause, as BIP340's header states), shallow: test data,
 # never compiled. A test that names bips reads BIP340's
-# bip-0340/test-vectors.csv from the directory WEBCPP_TEST_BIPS names, with
-# forward slashes, the directory given to wasmtime on WASI (webcpp.data), and
-# runs again when the file changes.
+# bip-0340/test-vectors.csv and BIP341's bip-0341/wallet-test-vectors.json
+# from the directory WEBCPP_TEST_BIPS names, with forward slashes, the
+# directory given to wasmtime on WASI (webcpp.data), and runs again when one
+# of the two files changes.
 path-constant BIPS : libs/bips ;
 .bips = [ regex.replace $(BIPS) "\\\\" "/" ] ;
-.bips-files = [ glob libs/bips/bip-0340/test-vectors.csv ] ;
+.bips-files = [ glob libs/bips/bip-0340/test-vectors.csv
+    libs/bips/bip-0341/wallet-test-vectors.json ] ;
 
 rule bips-checked-out ( properties * )
 {

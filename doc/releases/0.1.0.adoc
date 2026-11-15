@@ -130,6 +130,8 @@ target through `/webcpp/third_party//wycheproof`.
 target through `/third_party//bips`.
 * Added libsecp256k1's `contrib/lax_der_parsing.c` to `/third_party//secp256k1`,
 for webcpp::crypto's lax DER decoding of ECDSA signatures.
+* Changed `/third_party//bips` to also serve BIP341's
+`bip-0341/wallet-test-vectors.json`, whose cases run again when it changes.
 * Changed the lint to never read third-party code under `third_party/libs/`.
 * Added `webcpp.generated`, which checks a library's generated files against
 their Python generator, and `update-generated`, their only writer.

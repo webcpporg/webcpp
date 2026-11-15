@@ -937,7 +937,7 @@ update --init third_party/libs/<name>`; a build that needs none never looks.
 
 | Target | What it is | Licence |
 | --- | --- | --- |
-| `bips` | `bitcoin/bips` at `927b6de9`, shallow, test data: crypto's tests read BIP340's `bip-0340/test-vectors.csv` at run time under the directory its define `WEBCPP_TEST_BIPS` gives, on every target (wasmtime is given it, `webcpp.data`), and run again when it changes | BSD-2-Clause, as BIP340's header states |
+| `bips` | `bitcoin/bips` at `927b6de9`, shallow, test data: crypto's tests read BIP340's `bip-0340/test-vectors.csv` and BIP341's `bip-0341/wallet-test-vectors.json` at run time under the directory its define `WEBCPP_TEST_BIPS` gives, on every target (wasmtime is given it, `webcpp.data`), and run again when it changes | BSD-2-Clause, as BIP340's header states |
 | `ca_certificates` | Dated Mozilla/curl CA data snapshot under `third_party/ca_certificates`, verified against its manifest and embedded by a build-generated header; updated explicitly by `tools/ca_certificates/update.py` | MPL-2.0 |
 | `bearssl` | BearSSL from webcpp's unmodified mirror `webcpporg/bearssl` at `7bea48e`; a static library built file by file by `third_party/Jamfile` with webcpp::crypto's canary, on every target; `WEBCPP_CRYPTO_HAS_BEARSSL=1` | MIT |
 | `libdatachannel` | libdatachannel 0.24.6 at `6b1e2e620f1e37f0eafeee702eaea0043cb305fd`, with pinned libjuice, libsrtp, plog and usrsctp sources; static native archives built by upstream CMake through B2 against the same source-built OpenSSL | MPL-2.0 and the nested dependencies' own licences |
