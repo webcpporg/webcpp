@@ -4,7 +4,8 @@
 # accompanying file LICENSE_1_0.txt or copy at
 # https://www.boost.org/LICENSE_1_0.txt)
 
-# libsecp256k1 built with the large tables (the default natively and on WASI, forced here so
-# that Emscripten agrees), and a program that names the small configuration.
+# libsecp256k1 built with the large tables (the default natively and on WASI,
+# forced here so that Emscripten agrees), and a program that names the small
+# configuration.
 exe app : app.cpp /webcpp/crypto//crypto /third_party//secp256k1
   : <webcpp-secp256k1-tables>large <define>WEBCPP_CRYPTO_SECP256K1_CANARY_CONFIGURATION=w2c2x5 ;
