@@ -10,14 +10,13 @@
 emscripten, and on wasip2 and wasip3, where wasmtime is given that directory; a changed file of the
 suite runs such a test again; and a suite that is not checked out stops a build that needs it,
 naming the command that checks it out, and no other build. Each case builds a scratch superproject
-with the fixture library demo, whose path holds a space. It also checks that BearSSL, pinned and built
-from its real sources with the canary of libs/crypto, compiles file by file with the flags a C
-library needs and holds the canary's symbol; that a BearSSL or a libs/crypto that is not checked
-out stops the build that needs it, naming the command; and that loading third_party/Jamfile prints
+with the fixture library demo, whose path holds a space. It also checks that BearSSL, pinned and
+built from its real sources with the canary of libs/crypto, compiles file by file with the flags a C
+library needs and holds the canary's symbol; that a BearSSL or a libs/crypto that is not checked out
+stops the build that needs it, naming the command; and that loading third_party/Jamfile prints
 nothing b2 warns of. libsecp256k1, pinned, is built file by file with every module and
 webcpp::crypto's canary, with the large tables natively and the small ones on request and on
-emscripten. Run with the names of some cases to run
-only those."""
+emscripten. Run with the names of some cases to run only those."""
 
 from __future__ import annotations
 
