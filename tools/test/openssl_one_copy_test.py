@@ -4,12 +4,14 @@
 # Distributed under the Boost Software License, Version 1.0. (See
 # accompanying file LICENSE_1_0.txt or copy at
 # https://www.boost.org/LICENSE_1_0.txt)
-"""Checks that asio's and crypto's OpenSSL aliases in one program link libssl.a and libcrypto.a
-once each, from one directory (CODING-GUIDELINES.md chapter 5 rule 10).
+"""Checks that the OpenSSL aliases of several libraries in one program link libssl.a and
+libcrypto.a once each, from one directory (CODING-GUIDELINES.md chapter 5 rule 10): asio's and
+crypto's in libs/crypto/test//openssl_one_copy, and, when libs/hash is checked out, hash's and
+crypto's in libs/hash/test//openssl_one_copy.
 
-It reads the link line b2 prints (-d+2 with -n, so nothing is rebuilt) for
-libs/crypto/test//openssl_one_copy and its _no_exceptions twin, and fails on any archive count
-other than one per program, or on archives from two directories.
+It reads the link line b2 prints (-d+2 with -n, so nothing is rebuilt) for each program and its
+_no_exceptions twin, and fails on any archive count other than one per program, or on archives
+from two directories.
 """
 import os
 import re
@@ -46,14 +48,20 @@ def self_test() -> None:
     assert check_link_line('-o "x/openssl_one_copy"') != []
 
 
+def programs() -> list[str]:
+    """The b2 targets checked: crypto's pair always, hash's when its library is checked out."""
+    libraries = ['crypto'] + (['hash'] if (ROOT / 'libs/hash/build.jam').is_file() else [])
+    return [f'libs/{library}/test//openssl_one_copy{suffix}'
+            for library in libraries for suffix in ('', '_no_exceptions')]
+
+
 def main() -> int:
     self_test()
+    targets = programs()
     unset = ('CPATH', 'CPLUS_INCLUDE_PATH', 'C_INCLUDE_PATH')
     env = {k: v for k, v in os.environ.items() if k not in unset}
     command = ['b2', f'--user-config={ROOT}/.local/user-config.jam', '-a', '-n', '-d+2', '-j3',
-               '--build-dir=' + str(ROOT / 'bin/lane-onecopy'), *sys.argv[1:],
-               'libs/crypto/test//openssl_one_copy',
-               'libs/crypto/test//openssl_one_copy_no_exceptions']
+               '--build-dir=' + str(ROOT / 'bin/lane-onecopy'), *sys.argv[1:], *targets]
     result = subprocess.run(command, cwd=ROOT, env=env, capture_output=True, text=True, check=False)
     if result.returncode != 0:
         print(result.stdout + result.stderr, file=sys.stderr)
@@ -65,8 +73,8 @@ def main() -> int:
     text = result.stdout
     commands = [chunk for chunk in re.split(r'\n\s*\n', text)
                 if LINK.search(chunk) and ARCHIVE.search(chunk)]
-    if len(commands) != 2:
-        print(f'openssl_one_copy: expected 2 link commands, found {len(commands)} '
+    if len(commands) != len(targets):
+        print(f'openssl_one_copy: expected {len(targets)} link commands, found {len(commands)} '
               f'({len(lines)} lines)', file=sys.stderr)
         return 1
     faults = [fault for chunk in commands for fault in check_link_line(chunk)]
