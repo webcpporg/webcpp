@@ -4598,12 +4598,14 @@ proposals is given relative to `libraries/document/openspec/`.
   floating-point `std::from_chars`, and one code path serves every target.
   Source: `include/webcpp/document/traits.hpp` (libs/document).
 - **Of Boost.Interprocess only `offset_ptr.hpp`,
-  `mem_algo/rbtree_best_fit.hpp` and `sync/null_mutex.hpp` are included, with
-  a mutex family of document's own, `detail::no_mutexes`; never
+  `mem_algo/rbtree_best_fit.hpp`, `sync/null_mutex.hpp` and, for the
+  `bad_alloc` its allocators throw, `exceptions.hpp` are included, with a
+  mutex family of document's own, `detail::no_mutexes`; never
   `managed_external_buffer`, `segment_manager`, `allocators/allocator.hpp` or
   `sync/mutex_family.hpp`.** Those throw bare and do not compile without
   exceptions.
-  Source: `include/webcpp/document/detail/heap.hpp` (libs/document).
+  Source: `include/webcpp/document/detail/heap.hpp` and
+  `include/webcpp/document/detail/allocation.hpp` (libs/document).
 - **0.1.0 leaves out BigInt and fixed 256-bit integers.** `decimal128_t` holds
   34-digit integers exactly, and Boost.Multiprecision's `int256_t` is 48
   bytes, not trivially copyable, with bytes that differ between compilers and
@@ -4651,8 +4653,9 @@ proposals is given relative to `libraries/document/openspec/`.
   `obj[3]` name nothing.** A handle names a member or an element, never both.
   Source: `doc/javascript.adoc` (libs/document).
 - **`pop`, `shift`, `splice`, `slice` and `concat` return what they remove or
-  copy in a new owned document, `result<document>`, which holds `undefined`
-  for an empty array.** The elements then outlive the array; the cost, an
+  copy in a new owned document of the source's allocator, an external
+  source's included, as a `result`, which holds `undefined` for an empty
+  array.** The elements then outlive the array; the cost, an
   image allocated per `pop`, is measured and named as a place to tune.
   Source: `doc/arrays.adoc` (libs/document).
 - **Indices follow ECMA-262's relative index: a negative index counts from
@@ -4813,11 +4816,12 @@ proposals is given relative to `libraries/document/openspec/`.
 
 **Errors and exceptions.**
 
-- **The core never throws: every operation that can fail returns `result`,
-  and every writing function is `[[nodiscard]]` and completes or changes
-  nothing, a full heap included, in a build with exceptions and in one
-  without.** The parser's input is the network's, and a failure is a value
-  the program tests, not a crash.
+- **The core never throws an error of its own: every operation that can fail
+  returns `result`, and every writing function is `[[nodiscard]]` and
+  completes or changes nothing, a full heap included, in a build with
+  exceptions and in one without; an allocator's failure is below.** The
+  parser's input is the network's, and a failure is a value the program
+  tests, not a crash.
   Source: `doc/introduction.adoc` (libs/document).
 - **`errc` names JavaScript's errors first, `syntax`, `type` and `range`,
   then `capacity`, `not_a_document`, `incompatible_document` and
@@ -4845,14 +4849,25 @@ proposals is given relative to `libraries/document/openspec/`.
   generic program can ask with the concept whether the sugar is there, and
   the test `no_exceptions` holds the diagnostics.
   Source: `include/webcpp/document/config.hpp` (libs/document).
-- **The process heap's `std::bad_alloc` is not an error value: the text
-  `stringify` returns, a missing member's key in a handle, the parser's frames
-  and pending text, and the staging of every tree change live there, mostly
-  inside `noexcept` functions, where it ends the program.** The image's heap
-  is never exhausted by surprise, since every operation finds its room
-  first; the process heap fails as it does for any C++ container, which the
-  library tolerates.
-  Source: `include/webcpp/document/detail/tree.hpp` (libs/document).
+- **An allocator's failure is an error value: with exceptions, an operation
+  catches `std::bad_alloc`, a type derived from it, or Boost.Interprocess's
+  `bad_alloc` where it can still return (`detail::unless_allocation_fails`),
+  and returns `errc::capacity` with the document's content as it was, since a
+  change allocates all its working state before its first change; anything
+  else an allocator throws, and any allocator's failure without exceptions,
+  ends the program, as it does for a standard container.** A full resource is
+  then what a full image is, a value the program tests: only the bytes of
+  the heap's free space may differ, and a failed `parse_into` leaves its
+  buffer formatted, with the part of the document it built.
+  Boost.Interprocess's allocators throw a `bad_alloc` of their own, derived
+  from `std::exception` alone, and anything else leaves a `noexcept`
+  operation. `stringify`, whose result is its text, and the move assignment
+  between allocators that neither propagate nor are always equal, which has
+  no result, throw `std::bad_alloc`; the sugar throws `capacity_error`; and
+  the standard allocator's image, from the aligned `operator new` that
+  returns null, is `errc::capacity` in either build.
+  Source: `doc/allocation.adoc` and
+  `include/webcpp/document/detail/allocation.hpp` (libs/document).
 - **An allocation in the image that fails after its probe passed is reported
   through `boost::throw_exception(std::bad_alloc())`.** It is a bug of the
   library, never a run-time event, since every operation finds its room
@@ -4920,27 +4935,89 @@ proposals is given relative to `libraries/document/openspec/`.
 
 **Memory and storage.**
 
-- **Storage is the second template parameter: `owned`, the document's own
-  16-aligned buffer, which starts at 4,096 bytes and grows to twice its size
-  or what an operation needs, up to `max_bytes` (1 GiB by default), or
-  `external`, a caller's `std::span<std::byte>` such as a browser's memory,
-  which never grows.** A document can live in memory it does not own, where a
-  full buffer is `errc::capacity` and changes nothing (the 1 GiB default and
-  the 4,096 start: reason not recorded).
-  Source: `doc/images.adoc` (libs/document).
-- **An owned buffer comes from the global aligned `operator new` with
-  `std::nothrow`; document takes no `Allocator` parameter, and `external`
-  storage is how a program places an image.** (reason not recorded)
-  Source: `include/webcpp/document/detail/heap.hpp` (libs/document).
+- **Storage is the second template parameter, `basic_owned<Allocator>`, the
+  document's own 16-aligned buffer, which starts at 4,096 bytes and grows to
+  twice its size or what an operation needs, up to `max_bytes` (1 GiB by
+  default), or `basic_external<Allocator>`, a caller's `std::span<std::byte>`
+  such as a browser's memory, which never grows, each of any allocator of
+  `std::byte`: `owned` and `external` are the standard allocator's, and
+  `wd::pmr` names a memory resource's (`pmr::owned`, `pmr::external`,
+  `pmr::document`, `pmr::basic_document`, `pmr::value`, `pmr::const_value`,
+  `pmr::parser`).** A document can live in memory it does not own, where a
+  full buffer is `errc::capacity` and changes nothing; and chapter 4 asks
+  for an allocator, which trystero needs to keep every allocation of a room
+  in the room's resource (the 1 GiB default and the 4,096 start: reason not
+  recorded).
+  Source: `doc/allocation.adoc`, `doc/images.adoc` and
+  `include/webcpp/document/storage.hpp` (libs/document).
+- **The allocator, rebound by construction, holds the owned image and the
+  working state of every operation, owned or external: the records a change
+  stages, the stacks of a deep copy and a compaction, the parser's frames,
+  path, pending text and selectors, the writer's frames and held piece past
+  its own room, a missing member's key, the buffers a value is prepared in,
+  and the keys `Object.assign` takes.** A rebound allocator is constructed
+  from the document's, as the Allocator requirements ask, so one whose
+  rebinding constructor is explicit serves as well; for an external document
+  the working state is all the allocator holds.
+  Source: `doc/allocation.adoc` (libs/document).
+- **An owned image is allocated in blocks of 16 bytes, so that a resource is
+  asked for an alignment of 16, and a buffer given misaligned is given back
+  at once and is `errc::capacity`; the region keeps the allocator's own
+  pointer to it, and every pointer inside the image is an `offset_ptr`.** The
+  image's heap needs 16-aligned addresses, which are over-aligned where
+  `std::max_align_t`'s alignment is 8, as on arm64 macOS and MSVC, so an
+  allocator that ignores the request is refused rather than trusted; an
+  allocator whose pointer carries a segment or a tag gets back what it
+  handed out; and the standard allocator's image keeps the global aligned
+  `operator new` that returns null.
+  Source: `doc/allocation.adoc` and `include/webcpp/document/detail/heap.hpp`
+  (libs/document).
+- **A document is allocator-aware as the standard containers are: a move
+  takes the allocator; a move assignment between allocators that neither
+  propagate nor are always equal copies the owned image into the target's
+  and frees the source's, and is `noexcept` for allocators that propagate or
+  are always equal and for every external document; the copy constructor
+  asks `select_on_container_copy_construction`; `clone()` keeps the
+  document's allocator, and `clone(alloc)`, `create`, `parse`, `parse_into`,
+  `from_image`, `format`, `open` and `nothing` take one.** A program that
+  keeps a document in a resource of its own copies it there with `clone()`,
+  while the copy constructor gives what a standard container's copy gives,
+  the default resource for a polymorphic allocator; an external image, which
+  no allocator holds, is taken as it is.
+  Source: `doc/allocation.adoc` and `include/webcpp/document/document.hpp`
+  (libs/document).
+- **Most `const` reads ask the allocator for nothing, `stringify` among them,
+  whose text and stack are in the standard allocator; `stringify_to` past
+  its own room (deeper than 16 containers, or a piece over 4096 bytes),
+  `operator[]` of a missing member whose key is longer than a short string
+  holds, and each copy of that handle, `clone`, `slice`, `concat` and
+  `compact_into` do, so that threads using those on one document at once
+  need a resource safe for several threads.** A standard container
+  allocates nothing in a `const` member, and several threads read it at
+  once whatever its resource; a document's reads keep that promise but for
+  those, which the page lists.
+  Source: `doc/allocation.adoc` (libs/document).
+- **The image is the shareable type; a `basic_document`, its handles, its
+  parsers, its writers and the views of the pools hold the process's
+  addresses, the image's and the allocator's, and are not.** Each process
+  that maps an image opens it with a document of its own.
+  Source: `doc/allocation.adoc` (libs/document).
 - **Every change finds its room first: it lists its blocks (a node bounded by
   `node_probe_bytes`, `sizeof(node) + 128`, a string at its exact size),
   probes the heap with the non-throwing `allocate` and frees the probes,
-  grows an owned region or returns `errc::capacity`, then allocates for real
-  and rearranges by steps that cannot allocate.** A full heap is then an
-  error value and the document is unchanged; Boost.MultiIndex does not name
-  its node type, hence the bound, and the heap is deterministic, so the
-  probed blocks are found again.
-  Source: `changes/archive/2026-10-12-genesis/design.md` (proposals).
+  grows an owned region or returns `errc::capacity`, stages its working
+  state in the document's allocator, then allocates for real and rearranges
+  by steps that cannot allocate; a change that its place cannot take is
+  refused before its value is prepared, and an erasure lists the nodes it
+  erases through those nodes themselves, so it cannot run out of room,
+  though it still returns `errc::type` or `errc::range`.** A full heap is
+  then an error value and the document is unchanged; Boost.MultiIndex does
+  not name its node type, hence the bound, and the heap is deterministic, so
+  the probed blocks are found again. A refusal that allocates nothing keeps
+  the promise that a document holding nothing allocates nothing, and a
+  lookup by key and `==` allocate nothing either.
+  Source: `changes/archive/2026-10-12-genesis/design.md` (proposals);
+  `doc/allocation.adoc` (libs/document).
 - **A `modify` only swaps prepared values.** Boost.MultiIndex erases an
   element whose `modify` throws.
   Source: `AGENTS.md` (libs/document).
@@ -4997,6 +5074,16 @@ proposals is given relative to `libraries/document/openspec/`.
   node by ids.** The document may grow and move between chunks, numbers stay
   exact, and any split gives the document a whole parse gives.
   Source: `changes/archive/2026-10-12-genesis/design.md` (proposals).
+- **A text given whole, to `parse`, `parse_into` or the `finish_with(last)`
+  of a parser given no text before, never suspends Boost.JSON's parser; a
+  parse fed in chunks makes it allocate its suspension stack in the global
+  heap, once at the first suspension and again at each deeper one, the one
+  allocation of a parse outside the document's allocator; `finish()` keeps
+  its published signature.** Boost.JSON offers no way to place that stack;
+  and `finish_with` is a member of its own, since an overload of `finish`
+  would have `&basic_parser::finish` compile no more without a cast.
+  Source: `doc/allocation.adoc` and `include/webcpp/document/parser.hpp`
+  (libs/document).
 - **A parser that failed, by its text, a limit or a callback's failure or
   exception, stays failed, and a finished one takes no more text, until
   `reset()`.** (reason not recorded)
@@ -5026,16 +5113,24 @@ proposals is given relative to `libraries/document/openspec/`.
 **Writing JSON.**
 
 - **`stringify` returns a `std::string` of `JSON.stringify(v, null,
-  indent)`'s bytes, the indent clamped to 10, and no text for `undefined`.**
-  `JSON.stringify` clamps its third argument to 10 and returns no text for
-  `undefined`.
-  Source: `include/webcpp/document/detail/writer.hpp` (libs/document).
+  indent)`'s bytes, the indent clamped to 10, and no text for `undefined`,
+  and keeps its stack in that string's allocator, asking the document's for
+  nothing.** `JSON.stringify` clamps its third argument to 10 and returns no
+  text for `undefined`; and a `const` read that asks a document's resource
+  for nothing can run on several threads at once.
+  Source: `include/webcpp/document/detail/writer.hpp` and
+  `include/webcpp/document/stringify.hpp` (libs/document).
 - **`stringify_to` writes the same bytes to a sink, a callable returning
   `void` or `result<void>` used in place and never copied, in pieces of at
-  most `chunk` bytes (4096 by default), every piece but the last full.** A
-  sink's failure stops the writing and is returned unchanged (the 4096
-  default is a ruling, reason not recorded).
-  Source: `include/webcpp/document/stringify.hpp` (libs/document).
+  most `chunk` bytes (4096 by default), every piece but the last full, and
+  allocates in the document's allocator only past its own room, for a value
+  nested deeper than 16 or a piece held back over 4096 bytes.** A sink's
+  failure stops the writing and is returned unchanged, as an allocator's is
+  as `errc::capacity`; a value nested 16 deep or less, in pieces of at most
+  4096 bytes, allocates nothing, so a dozen small texts take nothing of a
+  small arena (the 4096 default is a ruling, reason not recorded).
+  Source: `include/webcpp/document/stringify.hpp` and `doc/stringify.adoc`
+  (libs/document).
 - **`quote` is `JSON.stringify` of a string alone: it appends the string as a
   JSON string literal, its quotes included, to any string the caller gives
   (`std::string`, `std::pmr::string`, or any type with
@@ -5049,9 +5144,10 @@ proposals is given relative to `libraries/document/openspec/`.
   digits, as JavaScript does since ES2019.
   Source: `doc/stringify.adoc` (libs/document).
 - **The writer walks with a stack of its own that holds node ids, never
-  recursion and never nodes.** A document's depth is then bounded by memory,
-  not by the thread's stack, and nothing the walk holds is stale when the
-  image moves.
+  recursion and never nodes, its first 16 frames in room of its own.** A
+  document's depth is then bounded by memory, not by the thread's stack,
+  nothing the walk holds is stale when the image moves, and a shallow value
+  is written with no allocation.
   Source: `include/webcpp/document/detail/writer.hpp` (libs/document).
 
 **Streams of documents and Boost.Asio.**
@@ -5255,6 +5351,21 @@ proposals is given relative to `libraries/document/openspec/`.
   none.** The replacements are the test program's instrument, the one place
   a mutable global is allowed.
   Source: `specs/document/spec.md` (proposals).
+- **The `allocator*` tests run every operation in a counting resource over a
+  monotonic buffer whose upstream is the null resource: no global
+  `operator new` but exactly Boost.JSON's stack's in a chunked parse and
+  `stringify`'s own, every byte given back, and with exceptions each operation
+  failed at each of its allocations in turn, every failure `errc::capacity`
+  or a throwing place's `std::bad_alloc`, with the document's content as it
+  was and nothing it took kept; both traits and all three key orders; and
+  allocators of the tests' own: one that under-aligns, one whose pointer is
+  tagged, a resource that throws Boost.Interprocess's `bad_alloc`, one whose
+  rebinding constructor is explicit, one that propagates on a move
+  assignment, and one stateful but always equal.** Every allocation then has
+  a place the page names, a failure at any of them is shown to be a value,
+  and a leak on a path of failure fails.
+  Source: `doc/allocation.adoc`, `test/allocator_test.cpp` and
+  `test/counting.hpp` (libs/document).
 - **Each example's `.expected` is what Node prints for the same JavaScript,
   checked against Node before it is committed, and `document_image.expected`
   holds a digest of an image.** The page's output is then JavaScript's, and
@@ -9489,10 +9600,9 @@ it says.
   test (`include/webcpp/xactor/scheduler.hpp`); xstate's machine has no
   `Allocator` parameter and holds `std::shared_ptr` and `std::function`
   (`machine.hpp:1322-1328`, `implementations.hpp:81-145`); wasi's response
-  holds its body as a `std::string`; these three are on the roadmap. document
-  has no `Allocator` parameter either, and is not on it. The pages of pratt,
-  idna and document do not say which of their types are shareable (each
-  library's `doc/allocation.adoc`).
+  holds its body as a `std::string`; these three are on the roadmap. The
+  pages of pratt and idna do not say which of their types are shareable
+  (each library's `doc/allocation.adoc`).
 - **Types of a fixed meaning (chapter 4).** Plain `int` or `unsigned` where no
   interface asks for it: pratt's binding powers and `max_depth`
   (`parser.hpp:54,175,199,309`, `calculator.hpp:988-1017`), wasi's
@@ -9630,10 +9740,12 @@ says what the tree does.
   counts 22 functions where there are 21, names `uuid::rfc4122` where RFC
   9562 replaced it, and leaves its O6 out of its reference.
 - **document.** The tree accepts `float`, which the specification refuses;
-  staging on the process heap inside a `noexcept` path contradicts the
-  genesis and `doc/errors.adoc`; `stringify_to` allocates, against
-  `doc/stringify.adoc`; the genesis keeps O5 open though it is resolved and
-  counts 20 examples where there are 21; `doc/testing.adoc` and
+  the genesis's D5 puts the text `stringify` returns, a missing member's key
+  and the parser's frames on the process heap, whose `std::bad_alloc` is
+  "the one failure that is not a value", where the tree keeps all but
+  `stringify`'s text in the document's allocator and, with exceptions, makes
+  a failure there `errc::capacity`; the genesis keeps O5 open though it is
+  resolved and counts 20 examples where there are 22; `doc/testing.adoc` and
   `doc/exceptions.adoc` are incomplete.
 - **trystero.** The genesis ties 0.1.0 to `160f431`, while 0.1.0 also holds
   the change `shared-connection` (trystero `e9326e9`). The specification gives
