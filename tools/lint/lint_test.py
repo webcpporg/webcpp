@@ -2409,6 +2409,14 @@ CANARY = (CPP + '\n#ifndef WEBCPP_CRYPTO_DETAIL_CANARY_H\n#define WEBCPP_CRYPTO_
           '#define WEBCPP_CRYPTO_BEARSSL_COMMIT {bearssl}\n#endif\n'
           '#define WEBCPP_CRYPTO_CTAES_COMMIT {ctaes}\n#endif\n')
 CANARY_HEADER = 'libs/crypto/include/webcpp/crypto/detail/canary.h'
+HASH_CANARY = (CPP + '\n#ifndef WEBCPP_HASH_DETAIL_CANARY_H\n#define WEBCPP_HASH_DETAIL_CANARY_H\n'
+               '#ifdef WEBCPP_HASH_XKCP_CANARY_COMMIT\n'
+               '#define WEBCPP_HASH_XKCP_COMMIT WEBCPP_HASH_XKCP_CANARY_COMMIT\n#else\n'
+               '#define WEBCPP_HASH_XKCP_COMMIT {xkcp}\n#endif\n'
+               '#define WEBCPP_HASH_SODIUM_COMMIT {sodium}\n'
+               '#define WEBCPP_HASH_BLAKE3_COMMIT {blake3}\n'
+               '#define WEBCPP_HASH_BEARSSL_COMMIT {bearssl}\n#endif\n')
+HASH_CANARY_HEADER = 'libs/hash/include/webcpp/hash/detail/canary.h'
 
 
 def record_submodule(root: Path, name: str, commit_id: str) -> None:
@@ -2428,6 +2436,8 @@ def commit_recorded(root: Path, message: str) -> None:
     """Commits the header and the gitlinks recorded, without commit's git add -A, which would
     drop a gitlink whose directory is not there."""
     git(root, 'add', CANARY_HEADER)
+    if (root / HASH_CANARY_HEADER).exists():
+        git(root, 'add', '-f', HASH_CANARY_HEADER)
     git(root, 'commit', '-q', '-m', message)
 
 
@@ -2464,6 +2474,27 @@ def test_canary_pins(root):
     expect_alone(lint(root), 'canary pins', [
         f'{CANARY_HEADER}: a pin is not of the form #define WEBCPP_CRYPTO_<NAME>_COMMIT <7 hex>: '
         '#define WEBCPP_CRYPTO_CTAES_COMMIT 123456'])
+    # hash's detail/canary.h is read beside crypto's: sodium's submodule is libsodium, xkcp's,
+    # blake3's and bearssl's are their own names; a wrong pin fails at the header, naming both.
+    write(root, CANARY_HEADER, CANARY.format(bearssl='1234567', ctaes='1234567'))
+    xkcp = 'aaaaaaa' + '0' * 33
+    libsodium = 'bbbbbbb' + '0' * 33
+    blake3 = 'ccccccc' + '0' * 33
+    record_submodule(root, 'xkcp', xkcp)
+    record_submodule(root, 'libsodium', libsodium)
+    record_submodule(root, 'blake3', blake3)
+    write(root, HASH_CANARY_HEADER,
+          HASH_CANARY.format(xkcp='aaaaaaa', sodium='bbbbbbb', blake3='ccccccc',
+                             bearssl='1234567'))
+    commit_recorded(root, 'Hash canaries at the recorded commits')
+    expect_clean(lint(root))
+    write(root, HASH_CANARY_HEADER,
+          HASH_CANARY.format(xkcp='aaaaaaa', sodium='bbbbbba', blake3='ccccccc',
+                             bearssl='1234567'))
+    commit_recorded(root, 'A wrong hash pin')
+    expect_alone(lint(root), 'canary pins', [
+        f'{HASH_CANARY_HEADER}: sodium is pinned at bbbbbba and '
+        'third_party/libs/libsodium is at bbbbbbb'])
 
 
 def test_pyright(root):
