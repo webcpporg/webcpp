@@ -58,6 +58,9 @@ class Outcome:
     run: str | None = None
     lines: list[str] = field(default_factory=list)
     contains: list[str] = field(default_factory=list)
+    # (text, allowed): no line of b2's output contains text, unless it also contains allowed
+    # (none: not even then).
+    forbidden: list[tuple[str, str | None]] = field(default_factory=list)
     arguments: list[str] = field(default_factory=list)
 
 
@@ -82,10 +85,10 @@ def outcome(path: Path, target: str) -> Outcome:
         directive = re.match(r'([a-z]+(?:-[a-z]+)?):(?: |$)', raw)
         key, value = (directive.group(1), raw[directive.end():]) if directive else ('', raw)
         if key and key not in ('targets', 'build', 'run', 'arguments', 'line', 'contains',
-                               'same-as'):
+                               'not-contains', 'same-as'):
             raise OutcomeError(f'{where}: no directive {key}: (a line of one lowercase word and '
                                f'a colon is reserved for them): {raw!r}')
-        if key in ('targets', 'arguments') and not value.split():
+        if key in ('targets', 'arguments', 'not-contains') and not value.split():
             raise OutcomeError(f'{where}: {key}: names nothing')
         if key == 'targets':
             unknown = [t for t in value.split() if t not in TOOLSETS]
@@ -108,6 +111,12 @@ def outcome(path: Path, target: str) -> Outcome:
             result.arguments += value.split()
         elif key == 'contains':
             result.contains.append(value)
+        elif key == 'not-contains':
+            text, separator, allowed = value.partition(' unless ')
+            if not text.strip() or (separator and not allowed.strip()):
+                raise OutcomeError(f'{where}: not-contains: needs a text, then ` unless <text>` '
+                                   f'if any line may hold it: {raw!r}')
+            result.forbidden.append((text.strip(), allowed.strip() or None))
         else:
             result.lines.append(value if key == 'line' else raw)
     if target in result.targets:
@@ -123,8 +132,9 @@ def checked(path: Path, target: str, result: Outcome) -> None:
         raise OutcomeError(f'{path.name} on {target}: no build: line')
     if not result.succeeds and result.run is not None:
         raise OutcomeError(f'{path.name} on {target}: run: after build: fails')
-    if result.succeeds and result.contains:
-        raise OutcomeError(f'{path.name} on {target}: contains: after build: succeeds')
+    if result.succeeds and (result.contains or result.forbidden):
+        raise OutcomeError(f'{path.name} on {target}: contains: or not-contains: after build: '
+                           'succeeds')
     if not result.succeeds and not result.lines and not result.contains:
         raise OutcomeError(f'{path.name} on {target}: build: fails with no line to find')
     if result.succeeds and result.run is None and result.lines:
@@ -221,6 +231,10 @@ def run_target(root: Path, target: str, cases: list[Path]) -> list[str]:
             faults += [f'{case.name} on {target}: no line of b2 contains {text!r}'
                        for text in expected.contains
                        if not any(text in line for line in printed)]
+            faults += [f'{case.name} on {target}: b2 printed {line!r}, which contains {text!r}'
+                       f'{"" if allowed is None else f" and not {allowed!r}"}'
+                       for text, allowed in expected.forbidden for line in sorted(printed)
+                       if text in line and (allowed is None or allowed not in line)]
             continue
         if expected.run is not None:
             try:

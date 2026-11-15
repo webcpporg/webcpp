@@ -228,6 +228,14 @@ def test_third_party_has_both_ids(root):
     harness.expect(result, True)
 
 
+def test_third_party_refuses_a_name_it_does_not_have(root):
+    # A name that is no target of third_party/Jamfile stops the build and says so, by the id a
+    # user's Jamfile writes (spec section 4.1, "A user names a backend by its project id").
+    harness.add_library(root, 'nothere', 'alias one : /third_party//nothere ;\n', {})
+    result = harness.run_b2(root, '-n', 'libs/nothere/test//one')
+    harness.expect(result, False, 'Unable to find file or target named', 'nothere')
+
+
 CASES = [
     test_boost_found_and_fixture_builds,
     test_no_boost_configured_names_the_fix,
@@ -241,6 +249,7 @@ CASES = [
     test_a_relative_user_config_is_found,
     test_install_copies_headers_to_prefix,
     test_third_party_has_both_ids,
+    test_third_party_refuses_a_name_it_does_not_have,
 ]
 
 

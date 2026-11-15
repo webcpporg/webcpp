@@ -70,6 +70,9 @@ None.
 * Improved lint preparation by separating OpenSSL headers from archive builds and upstream tests.
 * Added the user's Jamfiles of webcpp::crypto, tested as fixtures of a test of the tools.
 * Added same-as: to crypto's user Jamfiles test, which keeps copied programs identical.
+* Added not-contains: to crypto's user Jamfiles test, which shows the canary is a library's only link error.
+* Added tests of a missing /third_party// name, of the BIPs' pin and of Emscripten without a crypto backend.
+* Fixed BearSSL's entropy defines on a Windows target built by Clang or GCC.
 * Fixed the WASIp2 test launcher interrupting large finite workloads after 60 seconds.
 * Fixed Chrome provisioning and browser/TLS profile coverage in Asio CI lanes.
 * Added source-built OpenSSL and Cobalt SSL targets for WASIp2.

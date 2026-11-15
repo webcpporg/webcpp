@@ -56,6 +56,12 @@ WYCHEPROOF = 'third_party/libs/wycheproof'
 # The commit Wycheproof is pinned at, of 2026-10-06.
 WYCHEPROOF_COMMIT = '12fd3aaf33eb5fa1f52e026912ee00c054f9d984'
 
+BIPS = 'third_party/libs/bips'
+
+# The commit the Bitcoin Improvement Proposals' repository is pinned at: the test vectors of
+# BIP340 and BIP341 (libs/crypto/test/secp256k1_bip340_test.cpp, secp256k1_xonly_tweak_test.cpp).
+BIPS_COMMIT = '927b6de9915c9262615a6399de51b200f81e5aa4'
+
 SECP256K1 = 'third_party/libs/secp256k1'
 
 # libsecp256k1 v0.8.0, the commit it is pinned at.
@@ -191,6 +197,12 @@ def test_a_changed_suite_file_runs_the_test_again(root: Path) -> None:
         again = harness.run_b2(root, 'libs/suite_reader/test')
         harness.expect(again, True)
         assert passed(again) == set(), (changed, again.stdout[-4000:])
+
+
+def test_bips_is_pinned(_: Path) -> None:
+    listed = subprocess.run(['git', '-C', str(harness.ROOT), 'ls-files', '-s', BIPS],
+                            capture_output=True, text=True, check=True)
+    assert listed.stdout.split()[:2] == ['160000', BIPS_COMMIT], listed.stdout
 
 
 def test_bearssl_is_pinned(_: Path) -> None:
@@ -359,6 +371,7 @@ CASES = [
     test_the_suite_reaches_a_test_on_wasi,
     test_a_changed_suite_file_runs_the_test_again,
     test_a_suite_not_checked_out_is_refused,
+    test_bips_is_pinned,
     test_bearssl_is_pinned,
     test_bearssl_is_built_file_by_file,
     test_third_party_jamfile_loads_without_noise,

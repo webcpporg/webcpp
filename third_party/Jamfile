@@ -197,7 +197,7 @@ rule crypto-checked-out ( properties * )
 # (link.exe leaves /OPT:REF off under /DEBUG, so it is asked for).
 .gc = <target-os>darwin:<linkflags>-Wl,-dead_strip
     <target-os>linux:<linkflags>-Wl,--gc-sections
-    <toolset>msvc:<linkflags>"/OPT:REF" ;
+    <target-os>windows:<linkflags>"/OPT:REF" ;
 
 # BearSSL (MIT), from webcpp's unmodified mirror webcpporg/bearssl. Every .c
 # of src/, the POWER8 ones too, which off POWER compile to the stubs other
@@ -219,15 +219,25 @@ rule bearssl-checked-out ( properties * )
     }
 }
 
+# The seeder's defines, keyed on one condition for both sides of it: Windows has no
+# getentropy and BearSSL's CryptGenRandom seeder is off there too (it has none); every other
+# target, whatever its toolset (a MinGW build included), has getentropy.
+rule bearssl-seeder ( properties * )
+{
+    if <target-os>windows in $(properties)
+    {
+        return <define>BR_USE_GETENTROPY=0 <define>BR_USE_WIN32_RAND=0 ;
+    }
+    else
+    {
+        return <define>BR_USE_GETENTROPY=1 <define>_DEFAULT_SOURCE ;
+    }
+}
+
 # The defines that make BearSSL what webcpp builds: the library's files and
 # its own test program (libs/crypto/test/c_suites) compile with the same ones.
 .bearssl-config = <define>BR_RDRAND=0 <define>BR_USE_URANDOM=0
-    <target-os>windows:<define>BR_USE_GETENTROPY=0
-    <target-os>windows:<define>BR_USE_WIN32_RAND=0
-    <toolset>gcc:<define>BR_USE_GETENTROPY=1 <toolset>gcc:<define>_DEFAULT_SOURCE
-    <toolset>clang:<define>BR_USE_GETENTROPY=1 <toolset>clang:<define>_DEFAULT_SOURCE
-    <toolset>emscripten:<define>BR_USE_GETENTROPY=1
-    <toolset>emscripten:<define>_DEFAULT_SOURCE
+    <conditional>@bearssl-seeder
     <target-os>darwin:<cflags>"-include sys/random.h" ;
 
 # What a program that compiles BearSSL's own tests against the library adds:

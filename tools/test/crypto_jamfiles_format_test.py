@@ -91,6 +91,35 @@ def test_contains_matches_part_of_a_line():
             harness.run_b2 = original
 
 
+def test_not_contains_forbids_a_text_in_every_line():
+    assert parse('[all]\nbuild: fails\ncontains: a\nnot-contains: b\n'
+                 'not-contains: c unless d\n').forbidden == [('b', None), ('c', 'd')]
+    refused('[all]\nbuild: succeeds\nrun: app\nnot-contains: x\n', 'not-contains:')
+    refused('[all]\nbuild: fails\ncontains: a\nnot-contains:\n', 'names nothing')
+    refused('[all]\nbuild: fails\ncontains: a\nnot-contains: x unless \n', 'unless')
+    refused('[all]\nbuild: fails\nnot-contains: x\n', 'no line to find')
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        case = root / 'c'
+        case.mkdir()
+        original = harness.run_b2
+        harness.run_b2 = lambda *_a, **_k: subprocess.CompletedProcess(
+            [], 1, 'undefined reference to `canary\'\nundefined reference to `other\'\n')
+        try:
+            for directive, faults in (('not-contains: unrelated', 0),
+                                      ('not-contains: undefined reference unless canary', 1),
+                                      ('not-contains: undefined reference unless canary or other',
+                                       2),
+                                      ('not-contains: reference to `other', 1),
+                                      ('not-contains: undefined reference', 2)):
+                (case / 'c.outcome').write_text(
+                    f'[all]\nbuild: fails\ncontains: canary\n{directive}\n')
+                found = jamfiles.run_target(root, 'native', [case])
+                assert len(found) == faults, (directive, found)
+        finally:
+            harness.run_b2 = original
+
+
 def test_same_as_keeps_copies_identical():
     with tempfile.TemporaryDirectory() as directory:
         cases = Path(directory)
