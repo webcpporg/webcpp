@@ -79,9 +79,10 @@ def outcome(path: Path, target: str) -> Outcome:
             continue
         if block is None:
             raise OutcomeError(f'{where}: a line before the first [block]: {raw!r}')
-        directive = re.match(r'([a-z]+):(?: |$)', raw)
+        directive = re.match(r'([a-z]+(?:-[a-z]+)?):(?: |$)', raw)
         key, value = (directive.group(1), raw[directive.end():]) if directive else ('', raw)
-        if key and key not in ('targets', 'build', 'run', 'arguments', 'line', 'contains'):
+        if key and key not in ('targets', 'build', 'run', 'arguments', 'line', 'contains',
+                               'same-as'):
             raise OutcomeError(f'{where}: no directive {key}: (a line of one lowercase word and '
                                f'a colon is reserved for them): {raw!r}')
         if key in ('targets', 'arguments') and not value.split():
@@ -95,7 +96,7 @@ def outcome(path: Path, target: str) -> Outcome:
             raise OutcomeError(f'{where}: build: is succeeds or fails, not {value!r}')
         elif key == 'run' and not value:
             raise OutcomeError(f'{where}: run: names no program')
-        if block not in applying:
+        if block not in applying or key == 'same-as':
             continue
         if key == 'targets':
             result.targets = value.split()
@@ -130,6 +131,28 @@ def checked(path: Path, target: str, result: Outcome) -> None:
         raise OutcomeError(f'{path.name} on {target}: lines after build: succeeds, with no run:')
 
 
+def same_as_faults(case: Path, cases: Path = CASES) -> list[str]:
+    """Each `same-as: <case>/<file> <file>` of case's outcome file whose two files are not
+    byte-identical: the file of another case, and case's own copy of it. A fixture's program is
+    a copy, never a symbolic link (a checkout on Windows reads a link as a text file), and this
+    keeps the copies from drifting."""
+    faults: list[str] = []
+    for number, raw in enumerate((case / f'{case.name}.outcome').read_text().splitlines(), 1):
+        if not raw.startswith('same-as:'):
+            continue
+        names = raw[len('same-as:'):].split()
+        where = f'{case.name}.outcome:{number}'
+        if len(names) != 2:
+            faults.append(f'{where}: same-as: names <case>/<file> and <file>, not {names}')
+            continue
+        original, copy = cases / names[0], case / names[1]
+        if not original.is_file() or not copy.is_file():
+            faults.append(f'{where}: {names[0]} or {case.name}/{names[1]} does not exist')
+        elif original.read_bytes() != copy.read_bytes():
+            faults.append(f'{where}: {case.name}/{names[1]} is not a copy of {names[0]}')
+    return faults
+
+
 def case_directories() -> list[Path]:
     """Every directory of CASES, each with its one outcome file named after it, and every
     outcome file read for every target (so each line of each block is checked), else an
@@ -144,6 +167,9 @@ def case_directories() -> list[Path]:
             raise OutcomeError(f'{case.name}: no Jamfile')
         for target in TOOLSETS:
             outcome(case / f'{case.name}.outcome', target)
+        faults = same_as_faults(case)
+        if faults:
+            raise OutcomeError('; '.join(faults))
     return cases
 
 

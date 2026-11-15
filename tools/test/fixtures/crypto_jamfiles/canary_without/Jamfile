@@ -6,8 +6,10 @@
 
 # BearSSL built by other means, without webcpp's canary: the program links every
 # BearSSL function it calls, and only the canary is missing.
+# tag::jamfile[]
 path-constant BEARSSL : ../../third_party/libs/bearssl ;
 lib bearssl-plain : [ glob $(BEARSSL)/src/*.c $(BEARSSL)/src/*/*.c ]
   : <link>static <warnings>off <include>$(BEARSSL)/inc <include>$(BEARSSL)/src
   : : <include>$(BEARSSL)/inc <define>WEBCPP_CRYPTO_HAS_BEARSSL=1 ;
 exe app : app.cpp bearssl-plain /webcpp/crypto//crypto ;
+# end::jamfile[]

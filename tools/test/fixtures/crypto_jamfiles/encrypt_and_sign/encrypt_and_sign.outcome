@@ -8,5 +8,7 @@
 targets: native wasip2 wasip3 emscripten
 build: succeeds
 run: app
+# tag::output[]
 aes256_gcm ok backend=bearssl
 schnorr ok
+# end::output[]

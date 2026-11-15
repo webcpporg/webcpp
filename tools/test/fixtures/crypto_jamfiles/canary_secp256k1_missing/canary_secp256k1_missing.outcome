@@ -7,6 +7,7 @@
 [all]
 targets: native wasip2 wasip3 emscripten
 build: fails
+# tag::messages[]
 [native-darwin]
 contains: Undefined symbols for architecture
 contains: _webcpp_crypto_secp256k1_6e2c8bc_w15c11x6__add_third_party_secp256k1_to_your_link
@@ -23,3 +24,4 @@ contains: undefined symbol: webcpp_crypto_secp256k1_6e2c8bc_w15c11x6__add_third_
 contains: wasm-ld: error:
 contains: undefined symbol: webcpp_crypto_secp256k1_6e2c8bc_w15c11x6__add_third_party_secp256k1_to_your_link
 contains: em++: error:
+# end::messages[]

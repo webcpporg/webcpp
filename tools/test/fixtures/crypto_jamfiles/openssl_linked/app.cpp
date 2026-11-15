@@ -18,7 +18,7 @@
 #include <span>
 
 int main() {
-#if defined(WEBCPP_CRYPTO_HAS_OPENSSL)
+#ifdef WEBCPP_CRYPTO_HAS_OPENSSL
     std::printf("HAS_OPENSSL=%d\n", WEBCPP_CRYPTO_HAS_OPENSSL);
 #endif
     namespace crypto = webcpp::crypto;

@@ -598,7 +598,10 @@ aliases, concepts, variables, data members and macros.
   `run: <program>`, after `build: succeeds`, runs the program as its lane runs
   one and every other line is its standard
   output, exactly; `arguments: <word> ...` gives b2 words for this case alone
-  (`@scratch` is the case's scratch directory). The fixtures sit outside
+  (`@scratch` is the case's scratch directory); `same-as: <case>/<file> <file>`
+  states that the case's file is a byte-identical copy of another case's,
+  checked when the outcome files are read (a copy, never a symbolic link,
+  which a checkout on Windows reads as a text file). The fixtures sit outside
   `libs/*/test/`, so the raw-rules lint does not apply to them. The tools job
   of the CI runs the test; the `[native-darwin]` blocks apply only to a run on
   macOS, and the MSVC cases are `webcpp.compile-fail` and `webcpp.link-fail`

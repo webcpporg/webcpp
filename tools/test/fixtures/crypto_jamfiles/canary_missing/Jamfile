@@ -5,5 +5,7 @@
 # https://www.boost.org/LICENSE_1_0.txt)
 
 # The header found, the library not linked.
+# tag::jamfile[]
 exe app : app.cpp /webcpp/crypto//crypto
   : <define>WEBCPP_CRYPTO_HAS_BEARSSL=1 <include>../../third_party/libs/bearssl/inc ;
+# end::jamfile[]

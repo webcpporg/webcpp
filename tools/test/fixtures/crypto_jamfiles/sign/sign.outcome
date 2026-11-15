@@ -8,4 +8,6 @@
 targets: native wasip2 wasip3 emscripten
 build: succeeds
 run: sign
+# tag::output[]
 schnorr ok
+# end::output[]

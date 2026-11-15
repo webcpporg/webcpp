@@ -24,7 +24,7 @@ int main() {
         auto const signature = key->sign_schnorr(message, aux);
         auto const public_key = key->xonly_public_key();
         ok = signature && public_key && secp256k1::verify_schnorr(*signature, message, *public_key);
-        message[0] ^= 1;
+        message[0] ^= 1U;
         ok = ok && !secp256k1::verify_schnorr(*signature, message, *public_key);
     }
     std::printf("schnorr %s\n", ok ? "ok" : "FAILED");

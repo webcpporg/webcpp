@@ -22,6 +22,8 @@ and optional corrected SSL integration, from R.
 * link:{library-pages}config/{library-page}[config]: webcpp's configuration,
 which every library includes first: the target, exceptions and the version,
 from R.
+* link:{library-pages}crypto/{library-page}[crypto]: AES-GCM, AES, random_device, equal and
+secp256k1 over C libraries built from source, from R.
 * link:{library-pages}document/{library-page}[document]: a header-only JSON
 document for {cpp}20 that behaves as JavaScript does, exact in decimal, in one
 relocatable binary image, with a JavaScript module, from R.
@@ -67,6 +69,7 @@ None.
 * Fixed driven-test executable reuse for Windows and WASI builds.
 * Improved lint preparation by separating OpenSSL headers from archive builds and upstream tests.
 * Added the user's Jamfiles of webcpp::crypto, tested as fixtures of a test of the tools.
+* Added same-as: to crypto's user Jamfiles test, which keeps copied programs identical.
 * Fixed the WASIp2 test launcher interrupting large finite workloads after 60 seconds.
 * Fixed Chrome provisioning and browser/TLS profile coverage in Asio CI lanes.
 * Added source-built OpenSSL and Cobalt SSL targets for WASIp2.

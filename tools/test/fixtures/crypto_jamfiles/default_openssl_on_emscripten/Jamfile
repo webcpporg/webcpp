@@ -4,4 +4,6 @@
 # accompanying file LICENSE_1_0.txt or copy at
 # https://www.boost.org/LICENSE_1_0.txt)
 
+# tag::jamfile[]
 exe app : app.cpp /webcpp/crypto//crypto : <define>WEBCPP_CRYPTO_DEFAULT_BACKEND_OPENSSL ;
+# end::jamfile[]

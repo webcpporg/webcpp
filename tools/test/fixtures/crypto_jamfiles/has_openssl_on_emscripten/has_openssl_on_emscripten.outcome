@@ -9,4 +9,6 @@
 [all]
 targets: emscripten
 build: fails
+# tag::messages[]
 contains: webcpp::crypto: OpenSSL is not built for Emscripten. In the program's Jamfile, replace /webcpp/crypto//openssl with /third_party//bearssl.
+# end::messages[]

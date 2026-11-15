@@ -8,4 +8,6 @@
 targets: native wasip2 wasip3 emscripten
 build: succeeds
 run: block
+# tag::output[]
 ctaes aes256 ok
+# end::output[]

@@ -91,6 +91,26 @@ def test_contains_matches_part_of_a_line():
             harness.run_b2 = original
 
 
+def test_same_as_keeps_copies_identical():
+    with tempfile.TemporaryDirectory() as directory:
+        cases = Path(directory)
+        (cases / 'a').mkdir()
+        (cases / 'b').mkdir()
+        (cases / 'a' / 'app.cpp').write_text('int main() {}\n')
+        (cases / 'b' / 'app.cpp').write_text('int main() {}\n')
+        outcome = cases / 'b' / 'b.outcome'
+        outcome.write_text('[all]\nsame-as: a/app.cpp app.cpp\nbuild: succeeds\n')
+        assert jamfiles.same_as_faults(cases / 'b', cases) == []
+        (cases / 'b' / 'app.cpp').write_text('int main() { return 1; }\n')
+        faults = jamfiles.same_as_faults(cases / 'b', cases)
+        assert len(faults) == 1 and 'a/app.cpp' in faults[0], faults
+        outcome.write_text('[all]\nsame-as: a/missing.cpp app.cpp\nbuild: succeeds\n')
+        assert jamfiles.same_as_faults(cases / 'b', cases), 'a missing copy is a fault'
+        outcome.write_text('[all]\nsame-as: a/app.cpp\nbuild: succeeds\n')
+        assert jamfiles.same_as_faults(cases / 'b', cases), 'one name is a fault'
+    assert parse('[all]\nsame-as: a/app.cpp app.cpp\nbuild: succeeds\n').succeeds
+
+
 def test_every_case_directory_is_read():
     cases = jamfiles.case_directories()
     assert {c.name for c in cases} >= {'hello', 'broken'}, cases
