@@ -279,9 +279,11 @@ that mounts on emscripten the host's directories it reads, where it reads them, 
 tests read `/test-data`.
 * Added BLAKE3's C implementation 1.8.7, built from source as /third_party//blake3,
 portable on WebAssembly and dispatched to its intrinsics files natively, its vectors as
-/third_party//blake3_vectors, and the feature webcpp-blake3-testing, which builds it
-with BLAKE3_TESTING for BLAKE3's own test program. On a native toolset whose build request
-names no architecture, the configured compiler is probed for x86-64 or arm64.
+/third_party//blake3_vectors.
+* Added the feature webcpp-blake3-testing, which builds /third_party//blake3 with
+BLAKE3_TESTING for BLAKE3's own test program.
+* Added a probe of the configured compiler for x86-64 or arm64, on a native toolset whose
+build request names no architecture, which picks BLAKE3's intrinsics files.
 * Changed /third_party//bearssl to carry webcpp::hash's canary beside webcpp::crypto's,
 and WEBCPP_HASH_HAS_BEARSSL, when libs/hash is checked out.
 * Changed the check that a program links OpenSSL's archives once to cover a program naming
