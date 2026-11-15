@@ -514,6 +514,9 @@ def test_xkcp_not_checked_out_is_refused(root: Path) -> None:
 def test_hash_not_checked_out_is_refused(root: Path) -> None:
     # No libs/hash in the scratch superproject: XKCP's adapter and canary are missing.
     result = harness.run_b2(root, 'third_party//xkcp')
+    harness.expect(result, False, 'libs/hash is not checked out',
+                   'git submodule update --init libs/hash')
+
 
 def compiled_sodium(result: subprocess.CompletedProcess) -> list[str]:
     """The C compile lines of /third_party//sodium that b2 printed at -d+2."""
@@ -583,8 +586,9 @@ def test_sodium_test_config_reaches_the_private_headers(root: Path) -> None:
     harness.copy_integration_libraries(root, 'config', 'hash')
     harness.add_library(root, 'sodium_private', 'import webcpp ;\n'
                         '\n'
-                        'webcpp.run private : private.c : <library>/third_party//sodium-test-config\n'
-                        '  <library>/third_party//sodium ;\n',
+                        'webcpp.run private : private.c\n'
+                        '  : <library>/third_party//sodium-test-config\n'
+                        '    <library>/third_party//sodium ;\n',
                         {'private.c': '#include <sodium.h>\n'
                                       '#include "private/common.h"\n'
                                       '#include "argon2.h"\n'
@@ -611,7 +615,8 @@ def test_sodium_msvc_inline_reaches_c_alone(root: Path) -> None:
     harness.add_library(root, 'sodium_msvc', 'import webcpp ;\n'
                         '\n'
                         'webcpp.run both : both.cpp private.c\n'
-                        '  : <library>/third_party//sodium-test-config <library>/third_party//sodium ;\n',
+                        '  : <library>/third_party//sodium-test-config\n'
+                        '    <library>/third_party//sodium ;\n',
                         {'both.cpp': 'int main() { return 0; }\n',
                          'private.c': 'int sodium_private(void) { return 0; }\n'})
     config = harness.user_config(root).read_text()
@@ -664,6 +669,9 @@ def test_sodium_not_checked_out_is_refused(root: Path) -> None:
 def test_hash_not_checked_out_is_refused_by_sodium(root: Path) -> None:
     # No libs/hash in the scratch superproject: the canary is missing.
     result = harness.run_b2(root, 'third_party//sodium')
+    harness.expect(result, False, 'libs/hash is not checked out',
+                   'git submodule update --init libs/hash')
+
 
 def build_blake3(root: Path, *request: str) -> tuple[dict[str, str], Path]:
     """Builds /third_party//blake3 with every action shown, from libs/hash's real canary, and
