@@ -1058,20 +1058,51 @@ def test_a_compiled_boost_library_s_sources_are_not_analysed(root):
 def test_a_native_lane_s_webassembly_commands_are_left_to_its_native_one(root):
     # An own lane that names no target runs natively, and may build its programs for every
     # target in one command (libs/hash's measure lane does): its dry run then compiles one
-    # source natively and with wasi-sdk's clang++. The source is analysed natively, as the first
-    # target that compiles it, and the WebAssembly command is left out, so that no file of the
-    # database is compiled by both kinds of compiler.
+    # source natively, with wasi-sdk's clang++ and with em++. The source is analysed natively,
+    # as the first target that compiles it, and its WebAssembly commands are left out, so that
+    # no file of the database is compiled by both kinds of compiler; in either order, and in the
+    # twins without exceptions too. A source that such a run compiles for WebAssembly alone is
+    # analysed as its compiler's target: an em++ command as emscripten's, by wasi-sdk's clang++
+    # with em++'s target, never as a host command.
     prepare(root)
+    harness.link_emsdk(root)
+    wasi = wasi_sdk_tool('clang++')
+    emxx = str(root / '.local/emsdk/upstream/emscripten/em++')
     source = 'libs/demo/test/pass.cpp'
-    native = f'"clang++" -std=c++20 -c -o "bin/native/pass.o" "{source}"'
-    wasm = (f'"{wasi_sdk_tool("clang++")}" --target=wasm32-wasip2 -std=c++20 -c '
-            f'-o "bin/wasip2/pass.o" "{source}"')
-    for lines in ([native, wasm], [wasm, native]):
+    alone = 'libs/demo/test/fails.cpp'
+
+    def line(compiler: str, where: str, file: str, *words: str) -> str:
+        return (f'"{compiler}" {" ".join(words)} -std=c++20 -c -o "bin/{where}/x.o" "{file}"')
+
+    native = line('clang++', 'native', source)
+    wasm = line(wasi, 'wasip2', source, '--target=wasm32-wasip2')
+    em = line(emxx, 'emscripten', source)
+    for lines in ([native, wasm, em], [em, wasm, native]):
         entries: list[dict[str, object]] = []
-        compile_commands.read(str(root), 'native', lines, entries, set(), set(),
-                              wasi_sdk_tool('clang++'), [])
+        compile_commands.read(str(root), 'native', lines, entries, set(), set(), wasi, [])
         compilers = [entry['arguments'][0] for entry in entries]  # type: ignore[index]
         assert compilers == ['clang++'], (lines, entries)
+    entries = []
+    compile_commands.read(str(root), 'native', [native, line(emxx, 'emscripten', alone)],
+                          entries, set(), set(), wasi, [])
+    by_file = {Path(str(entry['file'])).name: entry['arguments'] for entry in entries}
+    command = by_file['fails.cpp']
+    assert compile_commands.wasi_sdk(command[0]), command  # type: ignore[index]
+    assert 'wasm32-unknown-emscripten' in command, command  # type: ignore[operator]
+    # The twins without exceptions, from the same kind of dry run.
+    twin_lines = [line(emxx, 'emscripten', source, '-fno-exceptions'),
+                  line(wasi, 'wasip2', source, '--target=wasm32-wasip2', '-fno-exceptions'),
+                  line('clang++', 'native', source, '-fno-exceptions')]
+    dry_run = compile_commands.dry_run
+    compile_commands.dry_run = lambda _root, _request: twin_lines  # type: ignore[assignment]
+    try:
+        entries = []
+        compile_commands.twins(str(root), 'native', {}, {}, [], {source: 'native'}, entries,
+                               set(), wasi, compile_commands.Twinned())
+    finally:
+        compile_commands.dry_run = dry_run  # type: ignore[assignment]
+    compilers = [entry['arguments'][0] for entry in entries]  # type: ignore[index]
+    assert compilers == ['clang++'], entries
 
 
 def test_clang_tidy_uses_shipped_cobalt_sources_on_a_clean_tree(root):
