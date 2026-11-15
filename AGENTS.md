@@ -910,7 +910,12 @@ testing.launcher on emscripten", chapter 6). Every program that node runs
 (`webcpp.run`, `webcpp.run-fail`, `webcpp.example`) links
 `-sNODERAWFS=1`, so that it reads the host's files and its standard input:
 without it, node gives it an empty file system of Emscripten's own, and a
-test reads its input file as empty. No other program gets it.
+test reads its input file as empty. No other program gets it. A test of
+`webcpp.run` or `webcpp.run-fail` that reads a fixed path, as a C library's
+own tests read theirs (libsodium's `/test-data`), asks for
+`<webcpp-node-raw-fs>off`: it links Emscripten's NODEFS (`-lnodefs.js`) in
+place of `-sNODERAWFS=1`, under which nothing can be mounted, and mounts the
+host's directories itself where it reads them (`FS.mount`).
 
 **A program on emscripten links at its compile's level of optimization**
 (the Jamroot's region `emscripten-link-optimization`): `-O0` for
@@ -1057,7 +1062,7 @@ webcpp.source-only <directory> + ;   (reference source trees)
 | Rule | Passes when | Notes |
 | --- | --- | --- |
 | `webcpp.targets t ...` | | the Jamfile's default targets; before its first program, once; each is `native`, `emscripten`, `wasip2` or `wasip3`, or the build stops naming it |
-| `webcpp.run` | the program exits with 0 | built once per target it declares; a user's `exception-handling=off` links `tools/throw_exception.cpp`; on emscripten, run by node, linked with `-sNODERAWFS=1`; links `/webcpp//node-test` on every target (Targets, above) |
+| `webcpp.run` | the program exits with 0 | built once per target it declares; a user's `exception-handling=off` links `tools/throw_exception.cpp`; on emscripten, run by node, linked with `-sNODERAWFS=1`, or with NODEFS, which the program mounts itself, under `<webcpp-node-raw-fs>off`; links `/webcpp//node-test` on every target (Targets, above) |
 | `webcpp.run-fail` | the program exits with another status | built and run as `webcpp.run`'s, and links `/webcpp//node-test` likewise |
 | `webcpp.compile` | the sources compile | no program is linked; takes `/webcpp//node-test` for its header |
 | `webcpp.compile-fail` | the sources do not compile | left out of clang-tidy; any error passes it, the wrong one included; takes `/webcpp//node-test` for its header |

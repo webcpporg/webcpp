@@ -271,6 +271,8 @@ could not read and dropped, such as one naming a header that does not exist.
 and signing programs.
 * Added XKCP's Keccak-p[1600], built from source with webcpp::hash's adapter as
 `/third_party//xkcp`.
+* Added `<webcpp-node-raw-fs>off`, for a test of webcpp.run that mounts on emscripten the host's
+directories it reads, where it reads them, as libsodium's own tests read `/test-data`.
 
 [#webcpp-0-1-0-compilers-tested]
 == Compilers tested
