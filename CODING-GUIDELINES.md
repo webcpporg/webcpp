@@ -8385,6 +8385,57 @@ created from one import commit of `reference/source/`.
 Source: `libraries/webrtc/openspec/changes/genesis/design.md` Open Questions
 (proposals).
 
+### hash (hashing and key derivation over Boost.Hash2 and C backends; wrapper; accepted 2026-11-14, not built)
+
+webcpp::hash will be one entry point for hashing and key derivation in a
+C++20 program on every target webcpp has, a wrapper (`"port-of": null`):
+Boost.Hash2's algorithms and `hmac` re-exported by alias; Keccak-256 with the
+original padding over XKCP's permutation and BLAKE3 over its official C
+implementation, both in Hash2's HashAlgorithm form; HKDF (RFC 5869) and PBKDF2
+(RFC 8018) on a backend (`backends::hash2`, `sodium`, `bearssl`, `openssl`);
+Argon2id (RFC 9106, parallelism 1) and scrypt (RFC 7914) from libsodium. Every
+function is synchronous, reports failure as a `boost::system::result`, takes
+its data as `std::span` and allocates nothing in webcpp's own code. The owner
+accepted it on 2026-11-14. Its repository, `webcpporg/hash`, is still to be
+created by the owner; the library's skeleton, with its configuration header and
+its test rule, is the first commit the work branches from. The proposal, with
+the specification, the design and the plan, is in
+`libraries/hash/openspec/changes/genesis/` (proposals).
+
+- **Two constructions of webcpp's own, over an audited primitive each, and no
+  primitive.** HKDF and PBKDF2 over Boost.Hash2's `hmac<H>` on every target,
+  the RFC's text step by step in under 150 lines with every intermediate value
+  wiped; and Keccak-256's sponge (absorbing, the `0x01 ... 0x80` padding and
+  squeezing) over XKCP's Keccak-p[1600], line for line as Boost.Hash2's
+  `detail::keccak_base<0x01, 512, 256>`, which is its oracle, until Boost
+  publishes a `keccak_256`. This departs from chapter 4's rule that webcpp
+  writes no cryptography of its own, as the owner recorded on 2026-11-14.
+  Source: `libraries/hash/openspec/changes/genesis/reference/spec.md` section
+  1.3 (proposals).
+- **The key derivation functions have backends, as webcpp::crypto's
+  algorithms do, and a backend that lacks a function refuses at compile
+  time.** `backends::hash2`, `sodium`, `bearssl` and `openssl` (native,
+  wasip2 and wasip3); natively the fastest linked backend is the default, on
+  WebAssembly the one that gives the smallest binary, decided by a measured
+  table that every pin move regenerates; one setting in `config.hpp` (a
+  profile) changes every default at once.
+  Source: `libraries/hash/openspec/changes/genesis/reference/spec.md` section
+  1.4 (proposals).
+- **One `/third_party//sodium`, and
+  the C libraries of hash (`xkcp`, `blake3`, `sodium`) built file by file by
+  `third_party/Jamfile` with a link-time canary each.** The shared block of
+  that Jamfile (`HASH`, `.hash-c-library`, `hash-checked-out`) is the one every
+  C library of hash uses.
+  Source: `libraries/hash/openspec/changes/genesis/reference/spec.md` section
+  5 (proposals).
+- **Seven increments, each usable alone.** The first is Hash2 by alias,
+  `keccak_256`, `blake3`, HKDF, PBKDF2, Argon2id, scrypt, the profile and the
+  measured table; the next ones widen the backends' surface (libsodium's,
+  XKCP's, OpenSSL's, BearSSL's, Botan's) and add the browser backend over
+  WebCrypto through a parallel asynchronous family.
+  Source: `libraries/hash/openspec/changes/genesis/reference/spec.md` section
+  1.5 (proposals).
+
 ## 18. Proposed, not decided
 
 The proposals not yet decided, each briefly, with the questions they leave

@@ -27,6 +27,9 @@ secp256k1 over C libraries built from source, from R.
 * link:{library-pages}document/{library-page}[document]: a header-only JSON
 document for {cpp}20 that behaves as JavaScript does, exact in decimal, in one
 relocatable binary image, with a JavaScript module, from R.
+* link:{library-pages}hash/{library-page}[hash]: hashing and key derivation for
+{cpp}20 over Boost.Hash2 and C backends: Keccak-256, BLAKE3, HKDF, PBKDF2,
+Argon2id and scrypt, from R.
 * link:{library-pages}idna/{library-page}[idna]: a header-only library of
 internationalized domain names for {cpp}20: Punycode, UTS 46 and IDNA2008
 validity over Unicode 17.0.0 tables, from R.
