@@ -183,6 +183,9 @@ table.tableblock.matrix > tbody > tr > td:first-child { min-width: 9em; }
     display: block; width: auto; overflow-wrap: break-word;
   }
   table.tableblock > thead, table.tableblock > colgroup { display: none; }
+  /* The caption of a table laid out as a block is a block as wide as it: a table caption, an
+     anonymous table of its own, would be as narrow as its longest word. */
+  table.tableblock > caption { display: block; }
   table.tableblock { border-width: 0; }
   table.tableblock > tbody > tr { border: 1px solid #dedede; margin-bottom: .75em; }
   table.tableblock > tbody > tr:last-child { margin-bottom: 0; }
@@ -214,6 +217,7 @@ table.tableblock.matrix > tbody > tr > td:first-child { min-width: 9em; }
 }
 .table-scroll.stacked > table.tableblock > thead,
 .table-scroll.stacked > table.tableblock > colgroup { display: none; }
+.table-scroll.stacked > table.tableblock > caption { display: block; }
 .table-scroll.stacked > table.tableblock { border-width: 0; }
 .table-scroll.stacked > table.tableblock > tbody > tr {
   border: 1px solid #dedede; margin-bottom: .75em;

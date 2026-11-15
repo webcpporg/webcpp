@@ -915,6 +915,17 @@ def test_a_stacked_cell_breaks_a_word_wider_than_its_line(_: None) -> None:
             for declarations in cells.values()), (wanted, cells)
 
 
+def test_a_stacked_table_s_caption_is_as_wide_as_the_table(_: None) -> None:
+    # A table laid out as a block keeps its caption a table caption, an anonymous table of its
+    # own as narrow as its longest word ("Table 1." over four lines at 390px): on a phone, and in
+    # a box the script stacks, the caption is a block as wide as the table.
+    for wanted in ('screen and (max-width: 56.1875em)', None):
+        captions = [declarations for media, selectors, declarations in page_style()
+                    if media == wanted for selector in selectors
+                    if selector.endswith('table.tableblock>caption')]
+        assert captions and all(d.get('display') == 'block' for d in captions), (wanted, captions)
+
+
 def test_detail_macros_stay_out_of_the_reference(_: None) -> None:
     # A detail macro, WEBCPP_<NAME>_DETAIL_*, is the library's own business, as a detail
     # namespace is: the shared settings exclude it, and reference.py fails a reference that
@@ -968,6 +979,7 @@ CASES: list[Callable[[None], None]] = [
     test_a_key_column_keeps_room_for_its_words,
     test_the_table_of_contents_breaks_a_name_after_its_scopes,
     test_a_stacked_cell_breaks_a_word_wider_than_its_line,
+    test_a_stacked_table_s_caption_is_as_wide_as_the_table,
     test_detail_macros_stay_out_of_the_reference,
 ]
 
