@@ -8421,11 +8421,10 @@ the specification, the design and the plan, is in
   profile) changes every default at once.
   Source: `libraries/hash/openspec/changes/genesis/reference/spec.md` section
   1.4 (proposals).
-- **One `/third_party//sodium`, and
-  the C libraries of hash (`xkcp`, `blake3`, `sodium`) built file by file by
-  `third_party/Jamfile` with a link-time canary each.** The shared block of
-  that Jamfile (`HASH`, `.hash-c-library`, `hash-checked-out`) is the one every
-  C library of hash uses.
+- **The C libraries of hash (`xkcp`, `blake3`, `sodium`) are built file by
+  file by `third_party/Jamfile`, with a link-time canary each.** The shared
+  block of that Jamfile (`HASH`, `.hash-c-library`, `hash-checked-out`) is
+  the one every C library of hash uses.
   Source: `libraries/hash/openspec/changes/genesis/reference/spec.md` section
   5 (proposals).
 - **Seven increments, each usable alone.** The first is Hash2 by alias,
