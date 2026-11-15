@@ -237,9 +237,9 @@ def test_no_table_is_a_matrix(scratch: Path) -> None:
                 expect(header.count('| ') < 8, f'{name} ({measured}): a matrix: {header}')
         digests = files['generated/compare-digests.adoc']
         headers = [table.strip().split('\n')[0] for table in digests.split('|===')[1::2]]
-        expect(len(headers) == 2 and all(h.startswith('| Name |') for h in headers), headers)
-        expect('Security' in headers[0] and 'Choose it when' in headers[1], headers)
-        expect(('Fastest natively' in headers[1]) == measured, headers)
+        expect(len(headers) == 2 and all(h.startswith('| Name |') for h in headers), str(headers))
+        expect('Security' in headers[0] and 'Choose it when' in headers[1], str(headers))
+        expect(('Fastest natively' in headers[1]) == measured, str(headers))
 
 
 def test_measured_chapters_are_included_when_present(scratch: Path) -> None:
