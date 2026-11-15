@@ -10,7 +10,8 @@
 # requirements give a program what it needs. A target whose submodule is not
 # checked out stops the build that needs it, naming the command that checks
 # it out; a build that needs none never looks. The C libraries of
-# webcpp::crypto's backends are built here from their own sources, file by file.
+# webcpp::crypto's and webcpp::hash's backends are built here from their own
+# sources, file by file.
 import configure ;
 import errors ;
 import feature ;
@@ -165,13 +166,29 @@ webcpp-ca-certificates.declare ca_certificates/cacert.pem ca_certificates/manife
     ../tools/ca_certificates/generate.py ../tools/ca_certificates/bundle.py ;
 explicit ca_certificates ca_certificates-header ;
 
-# The C libraries of webcpp::crypto's backends: each a static library compiled
-# file by file in the library's own C dialect (no -std), every function and
-# datum in a section of its own, so that a program keeps only what it calls
-# (CODING-GUIDELINES.md chapter 5, "Bringing a C library into webcpp").
-# Upstream's warnings are not ours. webcpp's libs/crypto/src/canary_<name>.c
-# joins each: it defines the symbol the backend's header reads, which names the
-# commit and the configuration.
+# The C libraries of webcpp::crypto and webcpp::hash: each a static library
+# compiled file by file in the library's own C dialect (no -std), every
+# function and datum in a section of its own, so that a program keeps only what
+# it calls (CODING-GUIDELINES.md chapter 5, "Bringing a C library into
+# webcpp"). Upstream's warnings are not ours. Each library's block below adds
+# the check that the library is checked out and the include directory of its
+# canaries' header.
+.c-sections = <link>static <warnings>off <warnings-as-errors>off
+    <toolset>clang:<cflags>"-ffunction-sections -fdata-sections"
+    <toolset>gcc:<cflags>"-ffunction-sections -fdata-sections"
+    <toolset>emscripten:<cflags>"-ffunction-sections -fdata-sections"
+    <toolset>msvc:<cflags>"/Gy /Gw" ;
+
+# What a program that links one of them needs: the linker's removal of unused
+# sections, which wasm-ld, Emscripten and MSVC's release link do by default
+# (link.exe leaves /OPT:REF off under /DEBUG, so it is asked for).
+.gc = <target-os>darwin:<linkflags>-Wl,-dead_strip
+    <target-os>linux:<linkflags>-Wl,--gc-sections
+    <target-os>windows:<linkflags>"/OPT:REF" ;
+
+# The C libraries of webcpp::crypto's backends. webcpp's
+# libs/crypto/src/canary_<name>.c joins each: it defines the symbol the
+# backend's header reads, which names the commit and the configuration.
 path-constant CRYPTO : ../libs/crypto ;
 
 # The canaries and their header are webcpp::crypto's: a checkout without
@@ -187,20 +204,8 @@ rule crypto-checked-out ( properties * )
     }
 }
 
-.c-library = <link>static <warnings>off <warnings-as-errors>off
-    <conditional>@crypto-checked-out
-    <toolset>clang:<cflags>"-ffunction-sections -fdata-sections"
-    <toolset>gcc:<cflags>"-ffunction-sections -fdata-sections"
-    <toolset>emscripten:<cflags>"-ffunction-sections -fdata-sections"
-    <toolset>msvc:<cflags>"/Gy /Gw"
+.c-library = $(.c-sections) <conditional>@crypto-checked-out
     <include>$(CRYPTO)/include ;
-
-# What a program that links one of them needs: the linker's removal of unused
-# sections, which wasm-ld, Emscripten and MSVC's release link do by default
-# (link.exe leaves /OPT:REF off under /DEBUG, so it is asked for).
-.gc = <target-os>darwin:<linkflags>-Wl,-dead_strip
-    <target-os>linux:<linkflags>-Wl,--gc-sections
-    <target-os>windows:<linkflags>"/OPT:REF" ;
 
 # BearSSL (MIT), from webcpp's unmodified mirror webcpporg/bearssl. Every .c
 # of src/, the POWER8 ones too, which off POWER compile to the stubs other
@@ -338,11 +343,7 @@ lib secp256k1
     $(.gc) ;
 explicit secp256k1 ;
 
-# The C libraries of webcpp::hash: each a static library compiled file by file
-# in the library's own C dialect (no -std), every function and datum in a
-# section of its own, so that a program keeps only what it calls
-# (CODING-GUIDELINES.md chapter 5, "Bringing a C library into webcpp").
-# Upstream's warnings are not ours. webcpp's libs/hash/include/webcpp/hash/
+# The C libraries of webcpp::hash. webcpp's libs/hash/include/webcpp/hash/
 # detail/canary.h is the header of the canaries each of them defines.
 path-constant HASH : ../libs/hash ;
 
@@ -359,12 +360,7 @@ rule hash-checked-out ( properties * )
     }
 }
 
-.hash-c-library = <link>static <warnings>off <warnings-as-errors>off
-    <conditional>@hash-checked-out
-    <toolset>clang:<cflags>"-ffunction-sections -fdata-sections"
-    <toolset>gcc:<cflags>"-ffunction-sections -fdata-sections"
-    <toolset>emscripten:<cflags>"-ffunction-sections -fdata-sections"
-    <toolset>msvc:<cflags>"/Gy /Gw"
+.hash-c-library = $(.c-sections) <conditional>@hash-checked-out
     <include>$(HASH)/include ;
 
 # BearSSL, /third_party//bearssl above, is webcpp::crypto's target and carries

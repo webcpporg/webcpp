@@ -8443,7 +8443,9 @@ design and the plan, is in `libraries/hash/openspec/changes/genesis/`
 - **The C libraries of hash (`xkcp`, `blake3`, `sodium`) are built file by
   file by `third_party/Jamfile`, with a link-time canary each.** The shared
   block of that Jamfile (`HASH`, `.hash-c-library`, `hash-checked-out`) is
-  the one every C library of hash uses.
+  the one every C library of hash uses; `.hash-c-library` and crypto's
+  `.c-library` share the C libraries' properties (`.c-sections`) and the
+  link's (`.gc`), each defined once.
   Source: `libraries/hash/openspec/changes/genesis/reference/spec.md` section
   5 (proposals).
 - **Seven increments, each usable alone.** The first, built, is Hash2 by alias,
