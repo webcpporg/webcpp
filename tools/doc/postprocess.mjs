@@ -39,11 +39,16 @@
 // with its names whole, so that the table's first column keeps room for its
 // words.
 //
+// A table of eight columns or more, a matrix, is marked `matrix`, and each
+// hyphenated word of its first column, and of a key-column table's, `key`,
+// which the style keeps whole.
+//
 // A name too long for a phone's line, in inline code, in a heading of the
 // reference (and its entry in the table of contents, after a `::` only), `webcpp::xactor::scheduler::run_one`, or in a bare URL, may break
 // between its parts, which an empty `<span class="wbr">` marks: after a `::`,
 // a `_`, a `/`, or a `.` between letters, before the `(` or the `<` that ends
-// a name, and in code between the words of a name in camel case. So a phone
+// a name, and in code after a `-` inside a word and between the words of a
+// name in camel case. So a phone
 // breaks it there and never between two letters of a word, which the style
 // allows only to a part still wider than the line. From 600px, where such a
 // name has room, only the break after a `::` of a heading stays, as the
@@ -122,9 +127,12 @@ const LONG = 60;
 
 // A break after a `::`, which a heading of the reference keeps at every width;
 // and one between the other parts of a name, which the style keeps only on a
-// phone: from 600px every such name has room on a line.
+// phone: from 600px every such name has room on a line. The break after a `/`
+// of a path is such a part, which a table too wide for its box breaks at as it
+// does after a `::` (docinfo.html).
 const SCOPE = '<span class="wbr"></span>';
 const PART = '<span class="wbr part"></span>';
+const PATH = '<span class="wbr part path"></span>';
 
 // The points a name breaks at, in text that holds no markup and its
 // references, each with what it becomes: after each `::`; after a run of `_`
@@ -134,20 +142,22 @@ const PART = '<span class="wbr part"></span>';
 const BREAKS = [
   [/::/g, (scope) => scope + SCOPE],
   [/(?<=[A-Za-z0-9])_+(?=[A-Za-z0-9])/g, (run) => run + PART],
-  [/(?<=[^\s/])\/+(?=[^\s/])/g, (run) => run + PART],
+  [/(?<=[^\s/])\/+(?=[^\s/])/g, (run) => run + PATH],
   [/(?<=[A-Za-z])\.(?=[A-Za-z])/g, (dot) => dot + PART],
   [/(?<=\w)(?=\(|&lt;)/g, () => PART]
 ];
 
-// Code breaks at these too, and between the words of a name written in camel
-// case, `resolveHistory` and `DefaultTransition`: never prose, whose JavaScript
-// is one word. And the hyphens that open a flag, `-mexec-model=reactor` or
+// Code breaks at these too, after a `-` inside a word, `websocket-client-async`,
+// and between the words of a name written in camel case, `resolveHistory` and
+// `DefaultTransition`: never prose, whose JavaScript is one word and whose
+// hyphens a line breaks after anyway. And the hyphens that open a flag, `-mexec-model=reactor` or
 // `--target`, at the start of a word or after a space, a `=`, a `(`, a `,` or
 // the `;` of a reference such as `&gt;`, stay with the flag's first character
 // in a span the style keeps on one line: a break right after them would end a
 // line with a hyphen alone, which reads as a dash.
 const CODE_BREAKS = [
   ...BREAKS,
+  [/(?<=[A-Za-z0-9])-(?=[A-Za-z0-9])/g, (hyphen) => hyphen + PART],
   [/(?<=[a-z])(?=[A-Z])/g, () => PART],
   [/(?<=^|[\s=(,;])-+[A-Za-z0-9]/g, (flag) => `<span class="lead">${flag}</span>`]
 ];
@@ -231,6 +241,45 @@ function partsOfKeyColumnTables(html) {
         `<${element} class="whole">${breakableCode(text)}</${element}>`)
       : table
   );
+}
+
+// A table of MATRIX columns or more, a matrix, such as a benchmark's or a
+// profile's, read down its columns as much as along its rows: its table is
+// marked `matrix`, which the page's script lets scroll in its box rather than
+// stack (docinfo.html), and each word of its first column's text with a hyphen
+// inside, a key such as `native-single-on-native`, is marked `key`, which the
+// style keeps on one line; and so is each of the first column of a table of the
+// role key-column, `password-reset`.
+const MATRIX = 8;
+const FIRST_CELL = /(<tr>\s*<td\b[^>]*>)([\s\S]*?)(<\/td>)/g;
+const HYPHENATED = /[^\s<>]*[A-Za-z0-9]-[A-Za-z0-9][^\s<>]*/g;
+
+// The html of a cell with each hyphenated word of its text, outside its code,
+// marked a key.
+function keysOf(html) {
+  let code = false;
+  return html
+    .split(/(<[^>]+>)/)
+    .map((part, index) => {
+      if (index % 2 === 1) {
+        code = /^<code\b/.test(part) || (code && !/^<\/code>/.test(part));
+        return part;
+      }
+      return code ? part : part.replace(HYPHENATED, (word) => `<span class="key">${word}</span>`);
+    })
+    .join('');
+}
+
+function matrices(html) {
+  return html.replace(TABLE, (table) => {
+    const matrix = (table.match(/<col\b/g) ?? []).length >= MATRIX;
+    if (!matrix && !/^<table\b[^>]*\sclass="[^"]*\bkey-column\b/.test(table)) {
+      return table;
+    }
+    const marked = matrix ? table.replace(/^(<table\b[^>]*\sclass="[^"]*)"/, '$1 matrix"') : table;
+    return marked.replace(BODY, (body) =>
+      body.replace(FIRST_CELL, (_cell, open, text, close) => open + keysOf(text) + close));
+  });
 }
 
 // A bare URL, which Asciidoctor writes as the text of its link, and which holds
@@ -450,7 +499,9 @@ function curledApostrophes(html) {
 
 class Page extends Postprocessor {
   process(_document, output) {
-    const page = labelledTables(partsOfKeyColumnTables(wordsOfCode(decodeEntities(output))));
+    const page = labelledTables(
+      matrices(partsOfKeyColumnTables(wordsOfCode(decodeEntities(output))))
+    );
     const built = curledApostrophes(
       boxedTables(partsOfURLs(scopesOfContents(partsOfHeadings(page))))
     );

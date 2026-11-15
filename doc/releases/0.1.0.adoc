@@ -78,6 +78,8 @@ None.
 * Changed the pages' tables to keep names whole where they fit, and a table of eight columns or more to scroll rather than stack.
 * Added the role key-column, which keeps a table's first column wide enough for its words.
 * Fixed the table of contents breaking a name of the reference between two of its letters.
+* Fixed names of code in tables breaking at an underscore or a hyphen where a break after their :: or a path's / made the table fit.
+* Fixed a matrix's or a key-column table's first column breaking a hyphenated key, such as a profile's name, into a line per part.
 * Added the changelog rule's refusal of inline anchors, which hid a {cpp} attribute from its line.
 * Fixed links over code hiding the underscores of names under their underline.
 * Changed the references to leave out detail macros, WEBCPP_*_DETAIL_*.

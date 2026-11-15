@@ -465,8 +465,9 @@ def check_rendered(root: Path) -> None:
             # which are no dash, and a reference whose digits go on, U+2014B; and a style and a
             # comment, which are no text, naming a <wbr> and holding a link in code.
             '<p>Declared in <code>&lt;<a href="https://github.com/webcpporg/demo/blob/main/'
-            'include/webcpp/demo/box.hpp#L7">webcpp/<span class="wbr part"></span>demo/<span '
-            'class="wbr part"></span>box.<span class="wbr part"></span>hpp</a>&gt;</code>, <code>'
+            'include/webcpp/demo/box.hpp#L7">webcpp/<span class="wbr part path"></span>demo/<span '
+            'class="wbr part path"></span>box.<span class="wbr part"></span>hpp</a>&gt;</code>, '
+            '<code>'
             '<a href="#webcpp-demo-box">webcpp::<span class="wbr"></span>demo::<span class="wbr">'
             '</span>box</a></code>, <a href="#box"><code>box</code></a>, '
             '<code>xn--bcher</code>, a&#8201;-&#8201;b&#8203; and &#x2014b;.</p>'

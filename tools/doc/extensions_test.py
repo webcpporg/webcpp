@@ -43,6 +43,8 @@ HEADER = '= Sample\n:source-language: cpp\n\n'
 # breaks the line as <wbr> would and is never copied (postprocess.mjs).
 SCOPE = '<span class="wbr"></span>'
 PART = '<span class="wbr part"></span>'
+# The break after a / of a path, a part too, which a table breaks at as it does after a ::.
+PATH = '<span class="wbr part path"></span>'
 
 
 def installed() -> None:
@@ -163,28 +165,31 @@ def test_short_inline_code_stays_whole(_: None) -> None:
     html = body(convert(f'Read `#xactor-invariant-13`, `{long}`, `{angles}`,\n'
                         f'`one {long}` and link:#x[`linked-name`].\n'))
     assert '<code class="whole">#xactor-invariant-13</code>' in html, html
-    assert f'<code>{long}</code>' in html, html
+    broken = parts('webcpp-|xactor-|invariant-|36')
+    assert f'<code>{broken}</code>' in html, html
     assert f'<code class="whole">{angles}</code>' in html, html
-    assert (f'<code class="words"><span class="whole">one</span> <span>{long}</span></code>'
+    assert (f'<code class="words"><span class="whole">one</span> <span>{broken}</span></code>'
             in html), html
     assert '<a href="#x"><code class="whole">linked-name</code></a>' in html, html
 
 
 def test_a_flag_keeps_its_leading_hyphen(_: None) -> None:
-    # A word too long for a phone's line may break at one of its hyphens, but never right after
-    # the hyphens that open a flag, which would end a line with them alone, read as a dash: they
-    # stay with the flag's first character, which the style keeps on one line. A hyphen inside a
-    # word, and a word short enough to stay whole, are left as they were.
+    # A word too long for a phone's line may break after one of its hyphens, a part of its name,
+    # but never right after the hyphens that open a flag, which would end a line with them alone,
+    # read as a dash: they stay with the flag's first character, which the style keeps on one
+    # line. A word short enough to stay whole is left as it was.
     html = body(convert('Link with `<linkflags>-mexec-model=reactor`, compile with '
                         '`-mllvm -wasm-use-legacy-eh=false`, give `--a-flag-wider-than-a-line`, '
                         'but `-short` and `a-name-with-hyphens-past-24` stay as they are.\n'))
-    assert '<code>&lt;linkflags&gt;<span class="lead">-m</span>exec-model=reactor</code>' in html, (
-        html)
-    assert ('<code class="words"><span class="whole">-mllvm</span> '
-            '<span><span class="lead">-w</span>asm-use-legacy-eh=false</span></code>' in html), html
-    assert '<code><span class="lead">--a</span>-flag-wider-than-a-line</code>' in html, html
+    assert parts('<code>&lt;linkflags&gt;<span class="lead">-m</span>exec-|model=reactor</code>') \
+        in html, html
+    assert parts('<code class="words"><span class="whole">-mllvm</span> '
+                 '<span><span class="lead">-w</span>asm-|use-|legacy-|eh=false</span></code>') \
+        in html, html
+    flag = parts('<code><span class="lead">--a</span>-|flag-|wider-|than-|a-|line</code>')
+    assert flag in html, html
     assert '<code class="whole">-short</code>' in html, html
-    assert '<code>a-name-with-hyphens-past-24</code>' in html, html
+    assert parts('<code>a-|name-|with-|hyphens-|past-|24</code>') in html, html
     lead = [(media, declarations) for media, selectors, declarations in page_style()
             for selector in selectors if selector.endswith('.lead')]
     assert lead == [(None, {'white-space': 'nowrap'})], lead
@@ -268,8 +273,9 @@ def test_urls_in_code_stay_as_written_when_escaped(_: None) -> None:
 
 def parts(html: str) -> str:
     """The html with each | written as the break between two parts of a name that only a phone's
-    style keeps, and each <wbr> as the break after a ::, which every style keeps."""
-    return html.replace('<wbr>', SCOPE).replace('|', PART)
+    style keeps, a path's after its /, and each <wbr> as the break after a ::, which every style
+    keeps."""
+    return html.replace('<wbr>', SCOPE).replace('/|', '/' + PATH).replace('|', PART)
 
 
 def test_reference_headings_break_after_scopes(_: None) -> None:
@@ -284,9 +290,9 @@ def test_reference_headings_break_after_scopes(_: None) -> None:
 
 def test_long_names_break_between_their_parts(_: None) -> None:
     # A name of code too long for a phone's line may break after a ::, a _, a / or a . between
-    # letters, before the ( or the < that ends a name, and between the words of a name in camel
-    # case, never between two letters of a word; prose, a listing, an attribute and a word short
-    # enough to stay whole are left as they are.
+    # letters, after a - inside a word, before the ( or the < that ends a name, and between the
+    # words of a name in camel case, never between two letters of a word; prose, a listing, an
+    # attribute and a word short enough to stay whole are left as they are.
     name = 'a_very_long_snake_case_name'
     broken = parts('a_|very_|long_|snake_|case_|name')
     header = 'webcpp/demo/long&lowbar;header&lowbar;name.hpp'
@@ -310,7 +316,7 @@ def test_long_names_break_between_their_parts(_: None) -> None:
     for code in (f'<code>{broken}{PART}(value)</code>',
                  parts(f'<code>webcpp::<wbr>demo::<wbr>{broken}</code>'),
                  parts('<code>std::<wbr>optional|&lt;boost::<wbr>json::<wbr>value&gt;</code>'),
-                 parts('<code>libs/|xstate/|test/|oracle//|update-expected</code>'),
+                 parts('<code>libs/|xstate/|test/|oracle//|update-|expected</code>'),
                  parts('<code>xstate.|done.|state.|coffee.|preparation</code>'),
                  '<code class="whole">short_name</code>',
                  parts('<code class="words"><span>get_|initial_|microsteps|(machine,</span> '
@@ -596,14 +602,16 @@ def test_style_breaks_a_word_only_when_it_must(_: None) -> None:
 def test_style_keeps_part_breaks_to_a_phone(_: None) -> None:
     # From 600px a break between two parts of a name is no box, in a heading, a URL and inline
     # code alike, and below it every break is live; a break after a :: of a heading is live at
-    # every width.
+    # every width. In a table, a break of code is live only where the table's box says so (the
+    # page's script), at every width.
     hidden = [(media, selector) for media, selectors, declarations in page_style()
               if declarations.get('display') == 'none'
               for selector in selectors if 'wbr' in selector]
-    assert sorted(hidden) == sorted([
+    assert sorted(hidden, key=str) == sorted([
         ('screen and (min-width: 37.5em)', 'span.wbr.part'),
         ('screen and (min-width: 37.5em)', '#content :not(pre):not([class^=L])>code span.wbr'),
-    ]), hidden
+        (None, '#content table.tableblock code span.wbr'),
+    ], key=str), hidden
 
 
 def test_breaks_are_never_wbr_and_never_copied(_: None) -> None:
@@ -703,29 +711,77 @@ def test_a_word_longer_than_any_line_breaks_at_every_width(_: None) -> None:
     ], key=str), rules
 
 
-def test_style_breaks_names_in_a_table_between_their_parts(_: None) -> None:
-    # A table too wide for its box with its names whole, which the page's script marks parts,
-    # and a table of the role wrap-names at every width, wrap their inline code and keep its part
-    # breaks, so that a column is as narrow as the longest part of its names: a table of long
-    # names fits its page instead of scrolling. A table that fits keeps its names whole, as it
-    # did before the script, from 600px. A word a phone keeps whole stays whole.
+def test_style_breaks_names_in_a_table_in_steps(_: None) -> None:
+    # In a table, inline code stays on one line between the breaks postprocess.mjs marks, at
+    # every width: never at a _ or a - by itself, as CSS would wrap it. A table that fits keeps
+    # its names whole. One too wide for its box with them whole, which the page's script marks
+    # names, breaks them only after a :: and a path's /, and between two names; one too wide even
+    # so, marked parts, between their other parts too: a column then as narrow as the longest
+    # part of its names. A table of the role wrap-names keeps its breaks after a :: and a / live
+    # at every width. A table laid out as stacked rows and still too wide, marked loose, lets its
+    # code wrap where it must.
     rules = {(media, selector): declarations for media, selectors, declarations in page_style()
              for selector in selectors}
-    wrapping = {'white-space': 'normal', 'overflow-wrap': 'break-word'}
-    for media, scope in (('screen and (max-width: 74.9375em)', 'table.tableblock'),
-                         (None, '.table-scroll.parts>table.tableblock'),
-                         (None, 'table.tableblock.wrap-names')):
-        for selector in (f'{scope} :not(pre):not([class^=L])>code', f'{scope} code.words>span'):
-            assert rules.get((media, selector)) == wrapping, (media, selector)
+    table = '#content table.tableblock'
+    for selector in (f'{table} :not(pre):not([class^=L])>code', f'{table} code.words>span'):
+        assert rules.get((None, selector)) == {'white-space': 'nowrap'}, selector
+    assert rules.get((None, f'{table} :not(pre):not([class^=L])>code.words')) == \
+        {'white-space': 'normal'}, rules
+    assert rules.get((None, f'{table} code span.wbr')) == \
+        {'display': 'none', 'white-space': 'normal'}, rules
     live = {selector for (media, selector), declarations in rules.items()
-            if declarations == {'display': 'inline'} and 'wbr' in selector
-            and media == 'screen and (min-width: 37.5em)' and 'long' not in selector}
-    assert live == {'#content .table-scroll.parts>table.tableblock code span.wbr',
-                    '#content table.tableblock.wrap-names code span.wbr'}, live
+            if declarations == {'display': 'inline'} and 'wbr' in selector and media is None}
+    assert live == {
+        '#content .table-scroll.names>table.tableblock code span.wbr:not(.part)',
+        '#content .table-scroll.names>table.tableblock code span.wbr.path',
+        '#content table.tableblock.wrap-names code span.wbr:not(.part)',
+        '#content table.tableblock.wrap-names code span.wbr.path',
+        '#content .table-scroll.parts>table.tableblock code span.wbr',
+        '#content .table-scroll.loose>table.tableblock code span.wbr',
+    }, live
+    loose = {'white-space': 'normal', 'overflow-wrap': 'break-word'}
+    for selector in ('#content .table-scroll.loose>table.tableblock '
+                     ':not(pre):not([class^=L])>code',
+                     '#content .table-scroll.loose>table.tableblock code.words>span'):
+        assert rules.get((None, selector)) == loose, selector
+    # No rule of a width wraps a table's code as prose any more.
+    wrapping = [(media, selector) for (media, selector), declarations in rules.items()
+                if 'table' in selector and 'code' in selector and 'loose' not in selector
+                and declarations.get('white-space') == 'normal' and 'words' not in selector
+                and 'wbr' not in selector]
+    assert wrapping == [], wrapping
     assert rules.get((None, '#content code.whole')) == {'white-space': 'nowrap'}, rules
     html = body(convert('[.wrap-names,cols="1,1,1",options="header"]\n|===\n| A | B | C\n\n'
                         '| x | y | z\n|===\n'))
     assert '<table class="tableblock frame-all grid-all stretch wrap-names">' in html, html
+
+
+def test_a_matrix_keeps_its_keys_whole(_: None) -> None:
+    # A table of eight columns or more is a matrix, read down its columns as much as along its
+    # rows: postprocess.mjs marks it, the page's script lets it scroll rather than stack, and
+    # each word of its first column with a hyphen inside, a profile such as
+    # native-single-on-native, is a key the style keeps on one line, so that a row is one line or
+    # two rather than one a part. Code, the header and the other columns are left as they are.
+    def source(columns: int) -> str:
+        header = ' '.join(f'| H{index}' for index in range(columns))
+        row = '| native-single-on-native, 15-character keys | `a-code-name-longer-than-24` ' + \
+            ' '.join(f'| x-{index}' for index in range(columns - 2))
+        return (f'[cols="{",".join(["1"] * columns)}",options="header"]\n|===\n{header}\n\n'
+                f'{row}\n|===\n')
+    html = body(convert(source(8) + '\n' + source(7)))
+    matrix, plain = html.split('</table>')[:2]
+    assert '<table class="tableblock frame-all grid-all stretch matrix">' in matrix, matrix
+    assert ('<span class="key">native-single-on-native,</span> '
+            '<span class="key">15-character</span> keys</p>') in matrix, matrix
+    assert parts('<code>a-|code-|name-|longer-|than-|24</code>') in matrix, matrix
+    assert '>x-0</p>' in matrix and '<span class="key">x-' not in matrix, matrix
+    assert 'matrix' not in plain and 'class="key"' not in plain, plain
+    rules = {selector: declarations for media, selectors, declarations in page_style()
+             if media is None for selector in selectors}
+    for selector in ('table.tableblock.matrix span.key', 'table.tableblock.key-column span.key'):
+        assert rules.get(selector) == {'white-space': 'nowrap'}, (selector, rules)
+    assert rules.get('table.tableblock.matrix>tbody>tr>td:first-child') == \
+        {'min-width': '9em'}, rules
 
 
 def test_style_lifts_a_link_s_underline_off_underscores(_: None) -> None:
@@ -746,17 +802,24 @@ def test_a_table_too_wide_stacks_as_on_a_phone(_: None) -> None:
     script = re.search(r'<script>(.*?)</script>', docinfo, flags=re.S)
     assert script, docinfo
     for part in ("querySelectorAll('div.table-scroll')",
-                 'box.scrollWidth > box.clientWidth', "classList.add('stacked')",
-                 "addEventListener('DOMContentLoaded', stack)",
-                 "addEventListener('resize', stack)",
+                 'box.scrollWidth > box.clientWidth', 'box.classList.add(step)',
+                 "addEventListener('DOMContentLoaded', fit)",
+                 "addEventListener('resize', fit)",
                  # The web fonts and images change the widths without a resize.
-                 "addEventListener('load', stack)", 'document.fonts?.ready.then(stack)',
-                 # A table breaks its names between their parts before it stacks, and only
-                 # when it does not fit with them whole.
-                 "classList.remove('parts', 'stacked')", "classList.add('parts')",
-                 # A matrix, of eight columns or more, scrolls in its box rather than stack.
-                 'const MATRIX = 8;', "':scope > table > colgroup > col'",
-                 'columns(box) < MATRIX && wide(box)'):
+                 "addEventListener('load', fit)", 'document.fonts?.ready.then(fit)',
+                 # A table breaks its names after their :: and then between their parts
+                 # before it stacks, and only when it does not fit with them whole; stacked
+                 # and still too wide, its code wraps where it must.
+                 "const STEPS = ['names', 'parts', 'stacked', 'loose'];",
+                 'classList.remove(...STEPS)', "mark(boxes.filter(wide), 'names')",
+                 "mark(named.filter((box) => !keyed(box)), 'parts')",
+                 # A table of the role key-column stacks rather than break its names between
+                 # their parts.
+                 "classList.contains('key-column')",
+                 # A matrix (postprocess.mjs) scrolls in its box rather than stack.
+                 "classList.contains('matrix')",
+                 "mark(parted.filter((box) => !matrix(box)), 'stacked')",
+                 "'loose'"):
         assert part in script.group(1), (part, script.group(1))
     phone = {}
     for media, selectors, declarations in page_style():
@@ -773,8 +836,9 @@ def test_a_table_too_wide_stacks_as_on_a_phone(_: None) -> None:
 def test_a_key_column_keeps_room_for_its_words(_: None) -> None:
     # A table of the role key-column keeps room in its first column, at every width, for the
     # words a reader starts from: crypto's decision table. Its other columns' names, short ones
-    # too, which stay whole elsewhere, break between their parts where it does not fit
-    # otherwise (the page's script marks its box parts) to make that room.
+    # too, which stay whole elsewhere, break after their :: and their path's /, then between
+    # their other parts, where it does not fit otherwise (the page's script marks its box) to
+    # make that room.
     rules = {selector: declarations for media, selectors, declarations in page_style()
              if media is None for selector in selectors}
     assert rules.get('table.tableblock.key-column>tbody>tr>td:first-child') == \
@@ -786,19 +850,18 @@ def test_a_key_column_keeps_room_for_its_words(_: None) -> None:
                         '[#x]\n== X\n'))
     assert '<code class="keep">/third_party//ctaes</code>' in kept, kept
     assert '<a href="#x"><code class="keep">a_b.cpp</code></a>' in kept, kept
-    for selector in ('#content .table-scroll.parts>table.key-column code.whole',
-                     '#content .table-scroll.parts>table.key-column code.words>span.whole'):
-        assert rules.get(selector) == {'white-space': 'normal'}, (selector, rules)
-    source = ('|===\n| A | B | C\n\n| a | `+/third_party//ctaes+` '
+    source = ('|===\n| A | B | C\n\n| a password-reset link | `+/third_party//ctaes+` '
               '| `+x+` and `+aes256<backends::ctaes>+`\n|===\n')
     html = body(convert('[.wrap-names.key-column,cols="1,1,1",options="header"]\n' + source
                         + '\n[cols="1,1,1",options="header"]\n' + source))
     keyed, plain = html.split('</table>')[:2]
     assert 'class="tableblock frame-all grid-all stretch wrap-names key-column"' in keyed, keyed
-    part = '<span class="wbr part"></span>'
-    assert f'<code class="whole">/third_{part}party//{part}ctaes</code>' in keyed, keyed
-    assert f'<code class="whole">aes256{part}&lt;backends::<span class="wbr"></span>ctaes&gt;' \
-        '</code>' in keyed, keyed
+    # A hyphenated word of its first column stays whole, as a matrix's key does.
+    assert '<p class="tableblock">a <span class="key">password-reset</span> link</p>' in keyed, \
+        keyed
+    assert 'class="key"' not in plain, plain
+    assert parts('<code class="whole">/third_|party//|ctaes</code>') in keyed, keyed
+    assert parts('<code class="whole">aes256|&lt;backends::<wbr>ctaes&gt;</code>') in keyed, keyed
     assert '<code class="whole">x</code>' in keyed, keyed
     assert '<code class="whole">/third_party//ctaes</code>' in plain, plain
     assert '<code class="whole">aes256&lt;backends::ctaes&gt;</code>' in plain, plain
@@ -861,7 +924,8 @@ CASES: list[Callable[[None], None]] = [
     test_style_scrolls_a_wide_table_in_its_box,
     test_style_gives_the_content_a_right_gutter_from_the_toc,
     test_a_word_longer_than_any_line_breaks_at_every_width,
-    test_style_breaks_names_in_a_table_between_their_parts,
+    test_style_breaks_names_in_a_table_in_steps,
+    test_a_matrix_keeps_its_keys_whole,
     test_style_lifts_a_link_s_underline_off_underscores,
     test_a_table_too_wide_stacks_as_on_a_phone,
     test_a_key_column_keeps_room_for_its_words,
