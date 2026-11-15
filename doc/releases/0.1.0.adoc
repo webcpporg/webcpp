@@ -286,6 +286,7 @@ names no architecture, the configured compiler is probed for x86-64 or arm64.
 and WEBCPP_HASH_HAS_BEARSSL, when libs/hash is checked out.
 * Changed the check that a program links OpenSSL's archives once to cover a program naming
 webcpp::hash's and webcpp::crypto's OpenSSL, when libs/hash is checked out.
+* Fixed the check that a program links OpenSSL's archives once finding no link line on WASI.
 
 [#webcpp-0-1-0-compilers-tested]
 == Compilers tested

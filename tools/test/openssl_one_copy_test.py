@@ -21,7 +21,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 ARCHIVE = re.compile(r'[^\s"]*/lib(ssl|crypto)\.a')
-LINK = re.compile(r'-o "?[^\s"]*/openssl_one_copy(_no_exceptions)?"?(\s|$)')
+# A program's name, with .wasm on WASI.
+LINK = re.compile(r'-o "?[^\s"]*/openssl_one_copy(_no_exceptions)?(\.wasm)?"?(\s|$)')
 
 
 def check_link_line(line: str) -> list[str]:
@@ -46,6 +47,8 @@ def self_test() -> None:
     split = '-o "x/openssl_one_copy" /a/config-1/libssl.a /b/config-2/libcrypto.a'
     assert 'different directories' in ' '.join(check_link_line(split))
     assert check_link_line('-o "x/openssl_one_copy"') != []
+    assert LINK.search('-o "x/openssl_one_copy.wasm" y') and LINK.search('-o x/openssl_one_copy z')
+    assert not LINK.search('-o "x/openssl_one_copy_test.o"')
 
 
 def programs() -> list[str]:
