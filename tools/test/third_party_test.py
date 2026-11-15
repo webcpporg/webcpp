@@ -656,7 +656,6 @@ CASES = [
     test_xkcp_is_built_file_by_file,
     test_xkcp_not_checked_out_is_refused,
     test_hash_not_checked_out_is_refused,
-
     test_sodium_is_pinned,
     test_sodium_is_built_file_by_file,
     test_sodium_defines_on_each_webassembly_target,
