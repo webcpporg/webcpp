@@ -24,7 +24,9 @@ not configured fails the database, naming the target: its programs would otherwi
 without a word. Every line that compiles a .cpp file of the source tree becomes an entry of
 <out>, once per distinct command: every native command, and, from the dry run of each other
 target, the commands of the sources that no earlier target compiles, which are analysed as the
-first target that compiles them does, with its own --target.
+first target that compiles them does, with its own --target. A native own lane that builds for
+every target in one command (libs/hash's measure) gives the native run WebAssembly commands
+too: those of a source the run also compiles natively are left out, as a later target's are.
 
 clang-tidy reads a WebAssembly command only with the --target and the sysroot it names, and the
 lint gives any other command the host's --target, as to a native one. A command of wasip2 or
@@ -652,19 +654,30 @@ def imported_source(root: str, source: str) -> bool:
     return Path(root, source).resolve() in imported
 
 
+def webassembly(compiler: str) -> bool:
+    """Whether compiler builds for WebAssembly: wasi-sdk's clang++ or Emscripten's em++."""
+    return wasi_sdk(compiler) or emscripten(compiler)
+
+
 def read(root: str, target: str, lines: list[str], entries: list[dict[str, object]],
          seen: set[tuple[str, ...]], earlier: set[str],
          wasi_clang: str | None, request: list[str]) -> tuple[Units, set[str]]:
     """Adds to entries each command of lines, compiled for target, that compiles a .cpp file of
     the source tree that is not in earlier, a source an earlier target compiles, and that is not
-    in seen, as the lint analyses it (analysed); a WebAssembly command of a compiler other than
+    in seen, as the lint analyses it (analysed), leaving out, natively, the WebAssembly commands
+    of a source the same run also compiles natively; a WebAssembly command of a compiler other than
     wasi-sdk's clang++ or, on emscripten, Emscripten's em++ fails. Returns the commands of the
     headers-alone translation units, by library and by unit, and the sources of the tree that
     commands compile."""
     units: Units = {}
     sources: set[str] = set()
     selected: list[list[str]] = []
-    for words in compiles(lines):
+    commands = compiles(lines)
+    # A native own lane may build its programs for every target in one command: a source it also
+    # compiles natively is analysed natively, never with its WebAssembly commands as well.
+    native = ({source_path(root, words[-1]) for words in commands
+               if not webassembly(words[0])} if target == 'native' else set())
+    for words in commands:
         source = words[-1]
         unit = ALONE.match(source)
         if unit:
@@ -676,6 +689,8 @@ def read(root: str, target: str, lines: list[str], entries: list[dict[str, objec
             continue
         words = [*words[:-1], source]
         sources.add(source)
+        if source in native and webassembly(words[0]):
+            continue
         key = tuple(without_output(words))
         if source in earlier or key in seen:
             continue

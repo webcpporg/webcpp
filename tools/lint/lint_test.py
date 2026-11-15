@@ -1055,6 +1055,25 @@ def test_a_compiled_boost_library_s_sources_are_not_analysed(root):
     expect_clean(lint(root))
 
 
+def test_a_native_lane_s_webassembly_commands_are_left_to_its_native_one(root):
+    # An own lane that names no target runs natively, and may build its programs for every
+    # target in one command (libs/hash's measure lane does): its dry run then compiles one
+    # source natively and with wasi-sdk's clang++. The source is analysed natively, as the first
+    # target that compiles it, and the WebAssembly command is left out, so that no file of the
+    # database is compiled by both kinds of compiler.
+    prepare(root)
+    source = 'libs/demo/test/pass.cpp'
+    native = f'"clang++" -std=c++20 -c -o "bin/native/pass.o" "{source}"'
+    wasm = (f'"{wasi_sdk_tool("clang++")}" --target=wasm32-wasip2 -std=c++20 -c '
+            f'-o "bin/wasip2/pass.o" "{source}"')
+    for lines in ([native, wasm], [wasm, native]):
+        entries: list[dict[str, object]] = []
+        compile_commands.read(str(root), 'native', lines, entries, set(), set(),
+                              wasi_sdk_tool('clang++'), [])
+        compilers = [entry['arguments'][0] for entry in entries]  # type: ignore[index]
+        assert compilers == ['clang++'], (lines, entries)
+
+
 def test_clang_tidy_uses_shipped_cobalt_sources_on_a_clean_tree(root):
     harness.copy_integration_libraries(root, 'config', 'asio', 'cobalt')
     prepare(root)
@@ -2696,6 +2715,7 @@ CASES = [
     test_clang_tidy_reads_a_program_of_javascript_exceptions,
     test_a_dependency_s_warnings_are_not_ours,
     test_a_compiled_boost_library_s_sources_are_not_analysed,
+    test_a_native_lane_s_webassembly_commands_are_left_to_its_native_one,
     test_clang_tidy_uses_shipped_cobalt_sources_on_a_clean_tree,
     test_clang_tidy_refuses_a_throw_on_each_target_without_exceptions,
     test_a_native_header_that_needs_no_exceptions_has_its_twin,
