@@ -128,8 +128,6 @@ target through `/webcpp/third_party//wycheproof`.
 `/third_party//secp256k1`, its tables chosen by `webcpp-secp256k1-tables`.
 * Added bitcoin/bips to `third_party/`, whose BIP340 vectors a test reads on every
 target through `/third_party//bips`.
-* Added libsecp256k1's `contrib/lax_der_parsing.c` to `/third_party//secp256k1`,
-for webcpp::crypto's lax DER decoding of ECDSA signatures.
 * Changed `/third_party//bips` to also serve BIP341's
 `bip-0341/wallet-test-vectors.json`, whose cases run again when it changes.
 * Changed the lint to never read third-party code under `third_party/libs/`.

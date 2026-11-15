@@ -61,10 +61,10 @@ SECP256K1 = 'third_party/libs/secp256k1'
 # libsecp256k1 v0.8.0, the commit it is pinned at.
 SECP256K1_COMMIT = '6e2c8bc4ecdc6e71dbe7a368f360d8d453ce435d'
 
-# The C files /third_party//secp256k1 compiles, as libsecp256k1's CMake builds the library, its
-# contrib/lax_der_parsing.c, and webcpp::crypto's canary.
+# The C files /third_party//secp256k1 compiles, as libsecp256k1's CMake builds the library, and
+# webcpp::crypto's canary.
 SECP256K1_FILES = ['secp256k1.c', 'precomputed_ecmult.c', 'precomputed_ecmult_gen.c',
-                   'lax_der_parsing.c', 'canary_secp256k1.c']
+                   'canary_secp256k1.c']
 
 # Its seven modules, every one on.
 SECP256K1_MODULES = [f'-DENABLE_MODULE_{name}=1' for name in
