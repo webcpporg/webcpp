@@ -10,8 +10,9 @@ that print, and Python runs .py files, for a port of another language. A tree th
 passes, colour off whatever the shell asks; each fault is named and fails: a difference, a twin
 that exits non-zero or hangs, an own output equal to the program's, a program without twin and
 without line, a malformed line, a line or a twin or an output of no program, a twin and a line
-for one program, a program without its .expected; --update rewrites a divergent twin's own output
-and refuses to make it the program's; a program is found at any depth, and at the top; --list
+for one program, a program with a twin and without its .expected, while one without twin needs
+none; --update rewrites a divergent twin's own output and refuses to make it the program's; a
+program is found at any depth, and at the top; --list
 runs nothing and accounts for every program; a missing directory, a tree without program, a
 command not on PATH and a usage error exit 2. Run with the names of some cases to run only
 those."""
@@ -183,16 +184,24 @@ def test_an_output_of_no_twin_fails(root: Path) -> None:
 
 
 def test_missing_expected_is_a_fault(root: Path) -> None:
-    # A program without its .expected, with a twin or without one, is named; the others run.
+    # A program with a twin and without its .expected is named; the others run.
     tree(root)
     (root / 'example/xstate/agrees.expected').unlink()
-    (root / 'example/actors/alone.expected').unlink()
     write(root / 'twins/xstate/differs.mjs', "console.log('changed');\n")
     result = runner(root)
-    for name in ('xstate/agrees', 'actors/alone'):
-        missing = root / f'example/{name}.expected'
-        expect(result, 1, f"twins: {name}: the program's output {missing} does not exist")
+    missing = root / 'example/xstate/agrees.expected'
+    expect(result, 1, f"twins: xstate/agrees: the program's output {missing} does not exist")
     assert 'xstate/differs: differs' in result.stderr, result.stderr
+
+
+def test_a_program_without_twin_needs_no_expected(root: Path) -> None:
+    # A program linked and never run prints nothing to compare: without twin, it has no output.
+    tree(root)
+    (root / 'example/actors/alone.expected').unlink()
+    expect(runner(root), 0, '')
+    result = runner(root, '--list', command=())
+    expect(result, 0, '')
+    assert 'without-twin actors/alone\n' in result.stdout, result.stdout
 
 
 def test_nested_paths_are_programs(root: Path) -> None:
@@ -292,6 +301,7 @@ CASES: list[Callable[[Path], None]] = [
     test_a_twin_of_no_example_fails,
     test_an_output_of_no_twin_fails,
     test_missing_expected_is_a_fault,
+    test_a_program_without_twin_needs_no_expected,
     test_nested_paths_are_programs,
     test_another_suffix_and_language,
     test_list_counts_every_program,

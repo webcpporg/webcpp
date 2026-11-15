@@ -988,7 +988,9 @@ its first user, and the model:
   what the C++ example prints), or diverges, with the original's output
   recorded as its own `.expected` and the difference in the appendix
   (chapter 11), or is listed as without a twin, with the reason, as a line
-  `<path>: <reason>` of the twin directory's `without-twin.txt`.
+  `<path>: <reason>` of the twin directory's `without-twin.txt`. A program
+  with a twin has its `.expected`; one without may have none, as a program
+  `webcpp.link` links and never runs prints nothing to compare.
 - **Nothing expected is written by hand.** Only `update-expected` writes an
   expected result, and it refuses to write a twin's output for a twin that
   agrees, since that output must be the C++ example's. Nor is a generated
