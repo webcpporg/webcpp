@@ -1246,6 +1246,17 @@ site's own decisions follow in the next sections.
   Browsers do not all run memory64, pthreads need cross-origin isolation in a
   page, and Emscripten's shared libraries are experimental.
   Source: `AGENTS.md` (webcpp).
+- **On emscripten a program links at the level of optimization it compiles
+  at: `-O3` in a release build, `-O0` in a debug one.** b2 5.5.3's emscripten
+  toolset gives `<optimization>` to the compile alone, and `em++` given no
+  level links at `-O0`: a release program was linked without optimization,
+  Binaryen's wasm-opt never ran on it, and Asyncify instrumented it
+  unoptimized (asio's deepest suspension wrote 2,900 bytes, against 388
+  linked with `-O3`). The Jamroot gives the link its compile's level, before
+  a program's own `<linkflags>`, whose `-O<n>` still wins. A release link
+  also turns Emscripten's `ASSERTIONS` off and drops the runtime JavaScript
+  the program never calls (`AGENTS.md` chapter 4).
+  Source: `AGENTS.md` (webcpp); `Jamroot` (webcpp).
 - **wasip2 and wasip3 are b2's `clang` registered against wasi-sdk
   (`clang-wasip2`, `clang-wasip3`), linked statically, and the Jamroot adds
   `<target-os>wasi` only after the toolsets have loaded.** wasm32-wasip2 and

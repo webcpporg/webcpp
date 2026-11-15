@@ -18,6 +18,7 @@ import numbers ;
 import os ;
 import package ;
 import path ;
+import toolset ;
 import type ;
 
 # The rules the libraries' test and example Jamfiles declare their programs
@@ -51,6 +52,25 @@ if ! wasi in [ feature.values <target-os> ]
 }
 type.set-generated-target-suffix EXE : <target-os>wasi : wasm ;
 # end::wasi-os[]
+
+# b2 5.5.3's emscripten toolset compiles at the level <optimization> names,
+# as gcc.jam maps it (-O0, -O3, -Os, -O1, -Og), and maps <optimization> to
+# no option of its link, which em++ then runs at its default, -O0: a
+# release program, compiled with -O3, was linked without optimization, so
+# that Binaryen's wasm-opt never ran on the whole module and Asyncify
+# instrumented it unoptimized, saving whole frames at each suspension.
+# These flags give the link its compile's level, on every program b2 links
+# with em++, whatever project declares it; off names em++'s default, so
+# that a debug build links as before. They are the toolset's own options,
+# which come before <linkflags>, so a program that links at another level
+# with <linkflags>-O<n> still gets it.
+# tag::emscripten-link-optimization[]
+toolset.flags emscripten.link OPTIONS <optimization>off : -O0 : unchecked ;
+toolset.flags emscripten.link OPTIONS <optimization>speed : -O3 : unchecked ;
+toolset.flags emscripten.link OPTIONS <optimization>space : -Os : unchecked ;
+toolset.flags emscripten.link OPTIONS <optimization>minimal : -O1 : unchecked ;
+toolset.flags emscripten.link OPTIONS <optimization>debug : -Og : unchecked ;
+# end::emscripten-link-optimization[]
 
 # /boost is the `using boost` of user-config.jam, else the Boost tree that
 # BOOST_ROOT names, else Boost on the compiler's default include path (b2's
