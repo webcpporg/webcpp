@@ -102,6 +102,7 @@ Not built yet:
     `tools/test/component_jam_test.py`, `tools/generated/generated_test.py`,
     `tools/test/emscripten_test.py`, `tools/test/crypto_jamfiles_test.py`,
     `tools/test/crypto_jamfiles_format_test.py`,
+    `tools/test/hash_jamfiles_test.py`, `tools/test/hash_jamfiles_format_test.py`,
     `tools/test/external_test.py`,
     `tools/test/doc_test.py`,
     `tools/test/harness_test.py`, `tools/test/third_party_test.py`,
@@ -581,15 +582,16 @@ aliases, concepts, variables, data members and macros.
   silently.
 - A user's Jamfile of a library whose own tests cannot express it (b2's raw
   `exe`, a refusal on one target) is a fixture of the tools' test, not a
-  library's test: `tools/test/fixtures/crypto_jamfiles/<case>/` holds the
+  library's test: `tools/test/fixtures/<library>_jamfiles/<case>/` holds the
   case's `Jamfile`, its sources and `<case>.outcome`, and
-  `tools/test/crypto_jamfiles_test.py` builds each case on a scratch
+  `tools/test/<library>_jamfiles_test.py` builds each case on a scratch
   superproject, with b2 as a user runs it, once per target, in a build
-  directory the cases of a target share. The outcome file's lines starting
+  directory the cases of a target share, through `tools/test/user_jamfiles.py`,
+  which every such test shares. The outcome file's lines starting
   with `#` are comments; a block `[all]`, `[native]`, `[native-linux]`,
-  `[native-darwin]`, `[native-windows]`, `[wasip2]`, `[wasip3]` or
-  `[emscripten]` applies by the target and the system (`[all]` and each block
-  that matches apply). `targets: <target> ...` (native only without it) names
+  `[native-darwin]`, `[native-windows]`, `[native-arm64]`, `[native-x86_64]`,
+  `[wasip2]`, `[wasip3]` or `[emscripten]` applies by the target, the system
+  and the machine's architecture (`[all]` and each block that matches apply). `targets: <target> ...` (native only without it) names
   the targets the case is built for; `build: succeeds` or `build: fails` is
   b2's exit status; after `build: fails` every other line must be a whole line
   of b2's output (trailing spaces aside), in any order; a line of one

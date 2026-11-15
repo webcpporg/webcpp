@@ -7,109 +7,94 @@
 
 """Builds every fixture of tools/test/fixtures/hash_jamfiles, a Jamfile as a user of webcpp::hash
 writes it (b2's raw exe), with b2 as a user runs it, and checks its outcome file: the build's
-status, the lines a failure prints, and a program's output (CODING-GUIDELINES.md chapter 8). The
-cases are each line of the library's spec 5.1, one program with every C library, and each stop of
-the build: the canaries at link time on every target, and the messages raised on Emscripten.
+status, the lines a failure prints, and a program's output (CODING-GUIDELINES.md chapter 8),
+through user_jamfiles.py. The cases are each line of the library's spec 5.1, one program with
+every C library, and each stop of the build: the canaries at link time on every target, and the
+messages raised on Emscripten.
 
-The outcome files, their format and the build of a case are crypto_jamfiles_test.py's, read
-through it: one scratch superproject per target, with libs/config, libs/hash, libs/crypto (whose
-canary /third_party//bearssl compiles) and the fixtures in it; every case of a target shares one
-build directory, so each C library is compiled once per target. Run with the names of some cases
-to run only those, and with --target <name> to run one target."""
+Each message of libs/hash/test/messages/<name>/ (a compile-diagnostic, natively and on WASI) has
+the fixture <name>, its Emscripten case: before building anything, the test checks that the
+fixture's app.cpp is the message's source without its expected-error directive, and that its
+outcome's one contains: line is the directive's text, unless the message is in NO_FIXTURE.
+
+The scratch superproject holds libs/config, libs/hash and libs/crypto (whose canary
+/third_party//bearssl compiles). Run with the names of some cases to run only those, and with
+--target <name> to run one target."""
 
 from __future__ import annotations
 
-import shutil
+import re
 import sys
-import time
 from pathlib import Path
 
-import crypto_jamfiles_test as jamfiles
 import harness
+import user_jamfiles
 
 CASES = harness.FIXTURES / 'hash_jamfiles'
+MESSAGES = harness.ROOT / 'libs/hash/test/messages'
 
-# Cases whose outcome needs code that is not merged yet, as crypto_jamfiles_test.py's NOT_YET:
-# a run without names leaves them out (and says so), a run that names one builds it.
+# Cases whose outcome needs code that is not merged yet, as crypto_jamfiles_test.py's NOT_YET.
 NOT_YET: dict[str, str] = {}
 
+# The messages of libs/hash/test/messages without an Emscripten fixture, each with its reason.
+NO_FIXTURE = {
+    'ripemd128_on_openssl': 'it names /webcpp/hash//openssl, which Emscripten refuses before '
+                            'the message (the fixture openssl_on_emscripten)',
+}
 
-def case_directories() -> list[Path]:
-    """Every directory of CASES, each with its one outcome file named after it and a Jamfile,
-    and every outcome file read for every target, else a jamfiles.OutcomeError."""
-    cases = sorted(p for p in CASES.iterdir() if p.is_dir())
+DIRECTIVE = re.compile(r'^// expected-error@\S+ \{\{(.*)\}\}$', re.MULTILINE)
+# The Jamfile's first line after the licence names the message a fixture builds.
+CLAIM = re.compile(r'^# test/messages/(\S+) of webcpp::hash', re.MULTILINE)
+
+
+def program_of(source: str) -> str:
+    """A message's source as a user's program: without its expected-error directive, the
+    clang-format guards around it and the note on clang's -verify, which only the
+    compile-diagnostic rule reads, and with no run of blank lines left behind."""
+    text = re.sub(r'^// expected-error@.*\n', '', source, flags=re.MULTILINE)
+    text = text.replace('// clang-format off\n// clang-format on\n', '')
+    text = re.sub(r"^// clang's -verify reads.*\n(?://.*\n)*", '', text, flags=re.MULTILINE)
+    return re.sub(r'\n\n\n+', '\n\n', text)
+
+
+def message_faults(cases: list[Path]) -> list[str]:
+    """The faults between libs/hash/test/messages and the fixtures, found without b2: a message
+    with no fixture and no entry in NO_FIXTURE, a fixture whose source or text is not its
+    message's, and a fixture that claims a message there is no directory of."""
+    faults: list[str] = []
+    by_name = {case.name: case for case in cases}
+    messages = sorted(p for p in MESSAGES.iterdir() if p.is_dir())
+    for message in messages:
+        name = message.name
+        case = by_name.get(name)
+        if name in NO_FIXTURE:
+            if case is not None:
+                faults.append(f'{name}: a fixture of a message in NO_FIXTURE')
+            continue
+        if case is None:
+            faults.append(f'test/messages/{name} has no fixture {name} (an Emscripten case), '
+                          'nor an entry in NO_FIXTURE')
+            continue
+        source = (message / f'{name}.cpp').read_text()
+        texts = DIRECTIVE.findall(source)
+        if (case / 'app.cpp').read_text() != program_of(source):
+            faults.append(f'{name}: app.cpp is not test/messages/{name}/{name}.cpp without its '
+                          'directive')
+        expected = user_jamfiles.outcome(case / f'{name}.outcome', 'emscripten')
+        if expected.targets != ['emscripten'] or expected.contains != texts:
+            faults.append(f'{name}: the outcome is not the text {texts!r} on emscripten alone')
+    names = {m.name for m in messages}
     for case in cases:
-        found = sorted(p.name for p in case.glob('*.outcome'))
-        if found != [case.name + '.outcome']:
-            raise jamfiles.OutcomeError(f'{case.name}: the outcome files are {found}; '
-                                        f'the one is {case.name}.outcome')
-        if not (case / 'Jamfile').is_file():
-            raise jamfiles.OutcomeError(f'{case.name}: no Jamfile')
-        for target in jamfiles.TOOLSETS:
-            jamfiles.outcome(case / f'{case.name}.outcome', target)
-    return cases
-
-
-def selected(cases: list[Path], names: list[str], target: str) -> list[Path]:
-    """The cases to build for target: the named ones, else every one that is not in NOT_YET,
-    each that its outcome file's targets line names target for."""
-    return [case for case in cases
-            if (case.name in names if names else case.name not in NOT_YET)
-            and target in jamfiles.outcome(case / f'{case.name}.outcome', target).targets]
+        claimed = CLAIM.search((case / 'Jamfile').read_text())
+        if claimed and (claimed.group(1) != case.name or case.name not in names):
+            faults.append(f'{case.name}: its Jamfile names test/messages/{claimed.group(1)}, '
+                          'which is not its own message directory')
+    return faults
 
 
 def main(argv: list[str]) -> int:
-    targets = list(jamfiles.TOOLSETS)
-    if '--target' in argv:
-        position = argv.index('--target')
-        if position + 1 >= len(argv) or argv[position + 1] not in jamfiles.TOOLSETS:
-            print(f'hash_jamfiles: --target takes one of {targets}', file=sys.stderr)
-            return 2
-        targets = [argv[position + 1]]
-        argv = argv[:position] + argv[position + 2:]
-    names = [a for a in argv if not a.startswith('--')]
-    if len(names) != len(argv):
-        print(f'hash_jamfiles: no option {[a for a in argv if a.startswith("--")]}; '
-              'the one is --target <name>', file=sys.stderr)
-        return 2
-    try:
-        cases = case_directories()
-    except jamfiles.OutcomeError as error:
-        print(f'hash_jamfiles: {error}', file=sys.stderr)
-        return 2
-    missing = [n for n in names if n not in {c.name for c in cases}]
-    if missing:
-        print(f'hash_jamfiles: no case named {missing}', file=sys.stderr)
-        return 2
-    if not names:
-        for case, reason in NOT_YET.items():
-            print(f'left out until {reason}: {case}')
-    faults: list[str] = []
-    built = 0
-    for target in targets:
-        chosen = selected(cases, names, target)
-        if not chosen:
-            continue
-        built += len(chosen)
-        started = time.monotonic()
-        root = harness.scratch_superproject()
-        try:
-            harness.copy_integration_libraries(root, 'config', 'hash', 'crypto')
-            shutil.copytree(CASES, root / 'user', ignore=harness.built)
-            if target == 'emscripten':
-                harness.link_emsdk(root)
-            elif target.startswith('wasi'):
-                harness.link_wasi_tools(root)
-            faults += jamfiles.run_target(root, target, chosen)
-        finally:
-            shutil.rmtree(root)
-        print(f'{target}: {len(chosen)} cases in {time.monotonic() - started:.0f} s')
-    if not built:
-        faults.append(f'no case was built for {targets}; nothing was tested')
-    for fault in faults:
-        print(f'hash_jamfiles: {fault}', file=sys.stderr)
-    print('hash_jamfiles_test: ' + ('failed' if faults else 'ok'))
-    return 1 if faults else 0
+    return user_jamfiles.main('hash_jamfiles', CASES, ('config', 'hash', 'crypto'), NOT_YET, argv,
+                              message_faults)
 
 
 if __name__ == '__main__':

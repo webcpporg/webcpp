@@ -4,5 +4,5 @@
 # accompanying file LICENSE_1_0.txt or copy at
 # https://www.boost.org/LICENSE_1_0.txt)
 
-# Spec 5.1's line for OpenSSL, built for Emscripten (spec 5.6).
-exe kdf : kdf.cpp /webcpp/hash//hash /webcpp/hash//openssl ;
+# Spec 5.1's line for OpenSSL, built for Emscripten (spec 5.6): kdf's program.
+exe kdf : ../kdf/kdf.cpp /webcpp/hash//hash /webcpp/hash//openssl ;

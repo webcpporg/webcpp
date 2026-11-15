@@ -5,6 +5,6 @@
 # https://www.boost.org/LICENSE_1_0.txt)
 
 # Every C library of webcpp::hash in one program, on Emscripten, where webcpp
-# builds no OpenSSL.
-exe app : app.cpp /webcpp/hash//hash /third_party//xkcp /third_party//blake3
-  /third_party//sodium /third_party//bearssl ;
+# builds no OpenSSL: every_library's program.
+exe app : ../every_library/app.cpp /webcpp/hash//hash /third_party//xkcp
+  /third_party//blake3 /third_party//sodium /third_party//bearssl ;
