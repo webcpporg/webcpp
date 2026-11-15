@@ -718,12 +718,12 @@ obj blake3_sse41 : libs/blake3/c/blake3_sse41.c
     <toolset>gcc:<cflags>-msse4.1 ;
 obj blake3_avx2 : libs/blake3/c/blake3_avx2.c
   : $(.hash-c-library) <conditional>@blake3-x86 <toolset>clang:<cflags>-mavx2
-    <toolset>gcc:<cflags>-mavx2 <toolset>msvc:<cflags>/arch:AVX2 ;
+    <toolset>gcc:<cflags>-mavx2 <toolset>msvc:<cflags>"/arch:AVX2" ;
 obj blake3_avx512 : libs/blake3/c/blake3_avx512.c
   : $(.hash-c-library) <conditional>@blake3-x86
     <toolset>clang:<cflags>"-mavx512f -mavx512vl"
     <toolset>gcc:<cflags>"-mavx512f -mavx512vl"
-    <toolset>msvc:<cflags>/arch:AVX512 ;
+    <toolset>msvc:<cflags>"/arch:AVX512" ;
 explicit blake3_sse2 blake3_sse41 blake3_avx2 blake3_avx512 ;
 
 # What each instruction set adds: on WebAssembly, and on a native target that
