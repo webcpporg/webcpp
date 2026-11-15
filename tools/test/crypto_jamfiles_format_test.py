@@ -140,6 +140,8 @@ def test_same_as_keeps_copies_identical():
         outcome.write_text('[all]\nsame-as: a/app.cpp\nbuild: succeeds\n')
         assert jamfiles.same_as_faults(cases / 'b', cases), 'one name is a fault'
     assert parse('[all]\nsame-as: a/app.cpp app.cpp\nbuild: succeeds\n').succeeds
+
+
 def test_a_native_block_applies_by_architecture():
     text = ('[all]\nbuild: fails\n[native-arm64]\ncontains: arm\n'
             '[native-x86_64]\ncontains: x86\n')
