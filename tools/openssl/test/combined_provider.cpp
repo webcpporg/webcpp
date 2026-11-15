@@ -6,7 +6,7 @@
 
 #include <webcpp/asio/ssl.hpp>
 #include <webcpp/beast/core.hpp>
-#include <webcpp/trystero/native/backend.hpp>
+#include <webcpp/trystero/platform/backend.hpp>
 
 #include <openssl/crypto.h>
 #include <boost/asio/io_context.hpp>
@@ -27,7 +27,7 @@ int main() {
     // Trystero's relays verify against the system's authorities through the same provider, and
     // its WebRTC is libdatachannel's, through webcpp::webrtc; its backend throws nothing, and
     // holds an error in place of a TLS context OpenSSL could not make.
-    webcpp::trystero::native::backend backend(context.get_executor());
+    webcpp::trystero::platform::backend backend(context.get_executor());
     const auto relays = backend.tls_context();
     const auto peer = backend.make_peer_connection({}, std::pmr::get_default_resource());
     const auto channel = peer ? peer->create_data_channel("combined-provider") : nullptr;

@@ -25,10 +25,10 @@ explicit cobalt_ssl_state ;
 alias cobalt_ssl_cancel : ../../../libs/cobalt/test/tls//cobalt_ssl_cancel-program ;
 explicit cobalt_ssl_cancel ;
 
-# Trystero's native backend needs worker threads, libdatachannel's; it works
-# with exceptions and without them, as the program does, which links the
-# handler Boost calls in place of a throw when it is built without them.
+# Trystero's platform backend needs worker threads natively, libdatachannel's;
+# it works with exceptions and without them, as the program does, which links
+# the handler Boost calls in place of a throw when it is built without them.
 exe combined_provider : combined_provider.cpp /webcpp/asio//asio /webcpp/asio//openssl
-    /webcpp/beast//beast /webcpp/trystero//native
+    /webcpp/beast//beast /webcpp/trystero//platform
     : <threading>multi <exception-handling>off:<source>/webcpp//throw_exception ;
 explicit combined_provider ;
