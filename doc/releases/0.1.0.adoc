@@ -298,6 +298,8 @@ its capability table's programs on the four targets in one command.
 registers the WebAssembly toolsets beside Clang 18: webcpp::hash's measure.
 * Fixed the lint's clang-tidy refusing such a lane, whose sources it now analyses
 natively.
+* Fixed the lint's clang-tidy reporting the backend tags that webcpp::crypto and
+webcpp::hash both name, in a program of both libraries.
 * Added tools/hash/doc_tables.py, which generates webcpp::hash's comparison tables,
 backend lists and llms.txt from its capability table and its measurements, and checks them
 when its page is built.

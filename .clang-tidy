@@ -26,6 +26,12 @@
 # members out never triggers GCC's -Wmissing-field-initializers in a user's
 # own -Wextra build; this check would ask for those initializers to be
 # removed again.
+#
+# bugprone-forward-declaration-namespace is off: libraries name their backend
+# tags alike on purpose (webcpp::crypto::backends::openssl and
+# webcpp::hash::backends::openssl, each a tag declared and never defined), so
+# a program of both libraries that names neither tag is reported in both
+# headers, though neither declaration is in a wrong namespace.
 ---
 Checks: >
   -*,
@@ -50,7 +56,8 @@ Checks: >
   -readability-uppercase-literal-suffix,
   -performance-enum-size,
   -misc-header-include-cycle,
-  -readability-redundant-member-init
+  -readability-redundant-member-init,
+  -bugprone-forward-declaration-namespace
 
 WarningsAsErrors: '*'
 HeaderFilterRegex: '(^|/)(include/webcpp|libs/[^/]+/(test|example|js))/'
