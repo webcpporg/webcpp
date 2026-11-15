@@ -294,6 +294,8 @@ webcpp::hash's and webcpp::crypto's OpenSSL, when libs/hash is checked out.
 -sALLOW_MEMORY_GROWTH=1, for the memory Argon2id and scrypt allocate.
 * Added tools/hash/measure.py and webcpp::hash's own lane measure, which builds and measures
 its capability table's programs on the four targets in one command.
+* Added own lanes that build for every target in one command, whose CI job installs and
+registers the WebAssembly toolsets beside Clang 18: webcpp::hash's measure.
 
 [#webcpp-0-1-0-compilers-tested]
 == Compilers tested

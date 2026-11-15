@@ -29,8 +29,8 @@ capability table alone: detail/overrides.hpp (--overrides), doc/backends.adoc (-
 and test/measure/cells.jam (the programs). `--measured FILE` takes the measurements from FILE,
 in the shape of doc/measurements.json, instead of making them.
 
---check is the measure lane's (test/measure/Jamfile): it re-measures every program b2 built (the
-lists the lane writes, one per target and optimization), each run once, and fails, naming
+--check is the measure lane's (test/measure/Jamfile): it re-measures every program for size b2
+built (the lists the lane writes, one per target), each run once, and fails, naming
 `python3 tools/hash/measure.py --write`, when a program of a cell is missing on a target (the
 lane built nothing), when a result differs from the committed one or from the independent value
 Python computes, when the order by size of any row differs from the committed one, when a
@@ -39,12 +39,16 @@ digest does not match (a hand edit of the data). With `--measured`, it compares 
 measurements instead, throughput included. It also runs bench/'s correctness program, which the
 lists name, on every target (ruling R31): it must exit 0.
 
-The orders never flip on noise. A backend moves before the one ahead of it only when it is
-smaller (by size: any byte), or (by throughput) when its median is more than 10 percent below
-the other's AND its slowest run is faster than the other's fastest run; otherwise the committed
-order stands, and on a first measurement the capability table's order of backends. A WebAssembly
-target orders by its own throughput where every backend of the row ran within the bound, else by
-the native order.
+The orders follow spec 4.2 and nothing else (ruling R33). By size, the smallest program first.
+By throughput, the lowest median (of the invocations' medians) first; a committed order changes
+only where a backend's median is more than 10 percent below the median of the one ahead of it;
+on a first measurement the medians alone order it, an exact tie keeping the capability table's
+order of backends. A WebAssembly target orders by its own throughput where every backend of the
+row ran within the bound, else by the native order. The native orders are those of the native
+toolchain that measured them (native_toolchain in the data): a lane whose native toolchain is
+another builds and checks every native program and result, and says in one line that it does not
+compare the native orders (ruling R34); the WebAssembly orders, whose toolchains are pinned, are
+always compared.
 """
 
 from __future__ import annotations
@@ -59,6 +63,7 @@ import json
 import os
 import platform
 import re
+import shlex
 import shutil
 import statistics
 import subprocess
@@ -80,15 +85,18 @@ MEASURED_HMACS = ('hmac_sha2_256', 'hmac_sha2_512')
 HASH_JAMFILE = '/webcpp/hash//hash'
 # A WebAssembly program's throughput counts when one invocation ends within this many seconds.
 BOUND = 120
-INVOCATIONS = 3
-# A backend moves before another by throughput only past this fraction of the other's median.
+# bench/'s correctness program derives 1,000,000 iterations per variant: its own bound.
+BENCH_BOUND = 900
+# The invocations of each program for throughput, the committed table's method.
+INVOCATIONS = 5
+# Spec 4.2: a committed order by throughput changes only when a median moves past this fraction.
 MARGIN = 0.10
 
 LAUNCHERS = {
     'native': [],
     'wasip2': [str(ROOT / 'tools/boost/asio-wasip2/run.sh')],
     'wasip3': [str(ROOT / 'tools/boost/asio-wasip3/run.sh')],
-    'emscripten': ['node'],
+    'emscripten': ['node'],  # replaced by the toolset's node, which the lane's list names
 }
 
 LICENCE_SLASHES = """// Copyright (c) 2026 WebCpp.org
@@ -106,12 +114,14 @@ RULES = {
                   'computation to warm up, then five timed runs of the workload, each repeated '
                   '`repetitions` times; per invocation the median of its five runs, per record '
                   'the median of its invocations\' medians, with the fastest and slowest run',
-    'order': 'by size, a backend moves before the one ahead of it only when its program is '
-             'smaller; by throughput, only when its median is more than 10 percent below the '
-             'other\'s and its slowest run is faster than the other\'s fastest; otherwise the '
-             'committed order stands (on a first measurement, the capability table\'s order of '
-             'backends). A WebAssembly target orders by its own throughput where every backend '
-             'of the row ran within the bound, else by the native order.',
+    'order': 'spec 4.2: by size, the smallest program first; by throughput, the lowest median '
+             'of the invocations\' medians first, a committed order changing only where a '
+             'median is more than 10 percent below the median of the backend ahead of it; on a '
+             'first measurement, the medians alone (an exact tie keeps the capability table\'s '
+             'order of backends). A WebAssembly target orders by its own throughput where every '
+             'backend of the row ran within the bound, else by the native order. The native '
+             'orders hold for the native toolchain that measured them (native_toolchain); the '
+             'lane compares them only on that toolchain (ruling R34).',
     'loaded': 'the larger of the two 1-minute load averages exceeds the core count',
 }
 
@@ -124,6 +134,9 @@ LAYOUT = {
     'toolchains, runtimes, strip, pins, builds': 'the compiler per target, wasmtime and node, '
               'the strip of the native sizes, each backend\'s library and pin (from '
               'doc/capabilities.json), and the two builds',
+    'native_toolchain': 'what the native orders were measured with: the compiler, the host\'s '
+              'operating system and processor, and the strip; the lane compares the native '
+              'size orders only where its own is the same (ruling R34)',
     'workloads': 'per function, what one computation does (spec 4.2)',
     'records[]': 'one per cell and target: operation (the function of doc/capabilities.json), '
                  'hmac (or null), backend, target, size_bytes, result (the hexadecimal output, '
@@ -136,7 +149,7 @@ LAYOUT = {
     'orders[]': 'per operation, hmac and target: by_size and by_throughput, the backends that '
                 'have it there in order, and throughput_from, the target whose throughput '
                 'ordered it; detail/ranking.hpp is generated from the rows of the key '
-                'derivations',
+                'derivations, one per operation (hkdf_extract and hkdf_expand their own)',
     'rules': 'how sizes, throughput and orders are made',
 }
 
@@ -201,10 +214,10 @@ class Table:
         return cells
 
     def kdf_rows(self) -> list[tuple[dict, dict]]:
-        """The (algorithm, function) whose rows ranking.hpp holds: the function of each
-        overridable algorithm whose tag is the algorithm's own."""
-        return [(a, f) for a, f in self.functions
-                if a['overridable'] and a['tag'] and f.get('tag') == a['tag']]
+        """The (algorithm, function) whose rows ranking.hpp holds: every function of an
+        overridable algorithm that has a tag, each operation its own row (hkdf_extract and
+        hkdf_expand beside hkdf), which the default of that operation reads."""
+        return [(a, f) for a, f in self.functions if a['overridable'] and f.get('tag')]
 
     def chapter_of(self, function: str) -> str:
         return next(a['chapter'] for a, f in self.functions if f['name'] == function)
@@ -374,13 +387,23 @@ class Program:
     path: Path
 
 
-def programs_of(table: Table, lists: list[Path]) -> tuple[list[Program], list[tuple[str, Path]]]:
+def programs_of(table: Table, lists: list[Path], required: tuple[str, ...]
+                ) -> tuple[list[Program], list[tuple[str, Path]]]:
     """The programs the lane's lists name, and bench/'s (target, path); fails naming each cell
-    whose program is missing on a target."""
+    whose program of an optimization of required is missing on a target. A list
+    measure-launcher-emscripten.txt names the command that runs a program on Emscripten, the
+    node of b2's emscripten toolset."""
     cells = {c.id: c for c in table.cells()}
     found: dict[tuple[str, str, str], Program] = {}
     bench: list[tuple[str, Path]] = []
     for path in lists:
+        if path.name == 'measure-launcher-emscripten.txt':
+            words = path.read_text(encoding='utf-8').split(None, 1)
+            if len(words) != 2 or words[0] != 'launcher':
+                raise Failure(f'{relative(path)} names no launcher: b2\'s emscripten toolset '
+                              'was configured without node')
+            LAUNCHERS['emscripten'] = shlex.split(words[1])
+            continue
         match = re.fullmatch(r'measure-programs-([a-z0-9]+)-([a-z]+)\.txt', path.name)
         if not match or match[1] not in TARGETS or match[2] not in OPTIMIZATIONS + ('bench',):
             raise Usage(f'{path}: not a list of the measure lane, '
@@ -405,7 +428,7 @@ def programs_of(table: Table, lists: list[Path]) -> tuple[list[Program], list[tu
             found[(name, target, optimization)] = Program(cells[name], target, optimization,
                                                           program)
     missing = [f'{optimization}-{cell.id} on {target}' for cell in cells.values()
-               for target in cell.targets for optimization in OPTIMIZATIONS
+               for target in cell.targets for optimization in required
                if (cell.id, target, optimization) not in found]
     if missing:
         raise Failure('the measure lane built nothing for ' + ', '.join(missing)
@@ -463,8 +486,10 @@ def parse_output(program: Program, text: str) -> dict[str, Any]:
 
 
 def run_once(program: Program) -> dict[str, Any]:
-    done = run_program(program.target, program.path, [], None)
-    assert done is not None
+    done = run_program(program.target, program.path, [], BOUND)
+    if done is None:
+        raise Failure(f'{program.optimization}-{program.cell.id} on {program.target} did not '
+                      f'end within {BOUND} seconds')
     if done.returncode != 0:
         raise Failure(f'{program.optimization}-{program.cell.id} on {program.target}: exit '
                       f'{done.returncode}\n{done.stdout}{done.stderr}')
@@ -483,11 +508,31 @@ def run_timed(program: Program) -> dict[str, Any] | None:
 
 
 def run_bench(target: str, path: Path) -> None:
-    done = run_program(target, path, [], None)
-    assert done is not None
+    done = run_program(target, path, [], BENCH_BOUND)
+    if done is None:
+        raise Failure(f'bench/pbkdf2_sha512 (pbkdf2_sha512_key) on {target} did not end within '
+                      f'{BENCH_BOUND} seconds')
     if done.returncode != 0:
         raise Failure(f'bench/pbkdf2_sha512 (pbkdf2_sha512_key) on {target}: exit '
                       f'{done.returncode}\n{done.stdout}{done.stderr}')
+
+
+def native_toolchain(bench: list[tuple[str, Path]], strip: str) -> dict[str, str]:
+    """What measures natively: the compiler, as bench/'s native program states it, the host's
+    operating system and processor, and the strip, by its resolved path."""
+    compiler = 'unknown'
+    for target, path in bench:
+        if target != 'native':
+            continue
+        done = run_program(target, path, ['hash2', '--runs', '1'], BENCH_BOUND)
+        if done is not None and done.returncode == 0 and done.stdout.strip():
+            try:
+                compiler = str(json.loads(done.stdout.strip().splitlines()[-1])['compiler'])
+            except (json.JSONDecodeError, KeyError):
+                pass
+    found = shutil.which(strip)
+    return {'compiler': compiler, 'os': platform.system(), 'processor': platform.machine(),
+            'strip': str(Path(found).resolve()) if found else strip}
 
 
 def parallel(function: Callable[[Any], Any], items: list[Any], jobs: int) -> list[Any]:
@@ -516,7 +561,8 @@ def measure(table: Table, programs: list[Program], bench: list[tuple[str, Path]]
     toolchains: dict[str, str] = {}
     records = []
     for p in space:
-        results = {once[(p.cell.id, p.target, o)]['result'] for o in OPTIMIZATIONS}
+        results = {once[(p.cell.id, p.target, o)]['result'] for o in OPTIMIZATIONS
+                   if (p.cell.id, p.target, o) in once}
         if len(results) != 1:
             raise Failure(f'{p.cell.id} on {p.target}: its programs for size and for throughput '
                           f'print different results, {sorted(results)}')
@@ -547,8 +593,10 @@ def measure(table: Table, programs: list[Program], bench: list[tuple[str, Path]]
         'toolchains': {t: toolchains.get(t, 'unknown') for t in TARGETS},
         'runtimes': {'wasip2': tool_version(['wasmtime', '--version']),
                      'wasip3': tool_version(['wasmtime', '--version']),
-                     'emscripten': 'node ' + tool_version(['node', '--version'])},
+                     'emscripten': 'node ' + tool_version([LAUNCHERS['emscripten'][0],
+                                                           '--version'])},
         'strip': strip,
+        'native_toolchain': native_toolchain(bench, strip),
         'records': records,
     }
 
@@ -569,18 +617,20 @@ def summary(runs: list[dict[str, Any]]) -> dict[str, Any]:
 # The orders.
 
 
-def ordered(values: dict[str, tuple[float, float, float]], previous: list[str] | None,
-            base: list[str], margin: float) -> list[str]:
-    """The backends of values in order, from the previous order (then base for the others), a
-    backend moving before the one ahead of it only when it beats it: its median below the
-    other's by more than margin, and its slowest below the other's fastest."""
-    start = [b for b in previous or [] if b in values]
-    order = start + [b for b in base if b in values and b not in start]
+def ordered(values: dict[str, float], previous: list[str] | None, base: list[str],
+            margin: float) -> list[str]:
+    """The backends of values (each a median, or a size) in order, the lowest first (spec 4.2).
+    Without a previous order, the values alone order them, an exact tie keeping base's order.
+    With one, the previous order stands but where a backend's value is more than margin below
+    the value of the one ahead of it: it moves ahead, until no such pair is left."""
+    if not previous:
+        return sorted((b for b in base if b in values), key=lambda b: values[b])
+    start = [b for b in previous if b in values]
+    order = start + sorted((b for b in base if b in values and b not in start),
+                           key=lambda b: values[b])
 
     def beats(b: str, a: str) -> bool:
-        median_b, _, slowest_b = values[b]
-        median_a, fastest_a, _ = values[a]
-        return median_b * (1 + margin) < median_a and slowest_b < fastest_a
+        return values[b] * (1 + margin) < values[a]
 
     moved = True
     while moved:
@@ -610,8 +660,7 @@ def orders_of(table: Table, records: list[dict], previous: list[dict] | None) ->
                 if not cells:
                     continue
                 old = before.get((function, hmac, target), {})
-                sizes = {b: (float(r['size_bytes']), float(r['size_bytes']),
-                             float(r['size_bytes'])) for b, r in cells.items()}
+                sizes = {b: float(r['size_bytes']) for b, r in cells.items()}
                 by_size = ordered(sizes, old.get('by_size'), base, 0.0)
                 source = target
                 speeds = {b: r['throughput'] for b, r in cells.items()}
@@ -620,8 +669,7 @@ def orders_of(table: Table, records: list[dict], previous: list[dict] | None) ->
                     native = per_target.get('native', {})
                     speeds = {b: native[b]['throughput'] for b in cells if b in native}
                 if speeds and all(s is not None for s in speeds.values()):
-                    values = {b: (s['median_ns'], s['min_ns'], s['max_ns'])
-                              for b, s in speeds.items()}
+                    values = {b: float(s['median_ns']) for b, s in speeds.items()}
                     by_throughput = ordered(values, old.get('by_throughput'), base, MARGIN)
                     by_throughput += [b for b in by_size if b not in by_throughput]
                 else:
@@ -671,6 +719,7 @@ def data_file(table: Table, measured: dict, previous: dict | None) -> dict:
         'toolchains': measured['toolchains'],
         'runtimes': measured['runtimes'],
         'strip': measured['strip'],
+        'native_toolchain': measured.get('native_toolchain', {}),
         'pins': {b['name']: b['library'] for b in table.backends},
         'builds': {'size': 'variant=release optimization=space',
                    'throughput': 'variant=release optimization=speed'},
@@ -755,14 +804,14 @@ def render_ranking(table: Table, data: dict) -> str:
                   '    /** The fastest first. */',
                   using('by_throughput', backend_list(table, [], 4)),
                   '};', '']
-        for algorithm, function in table.kdf_rows():
+        for _, function in table.kdf_rows():
             name = function['name']
             hmacs = [h for h in MEASURED_HMACS if (name, h, target) in orders]
             if not hmacs and (name, None, target) in orders:
                 hmacs = [None]
             for i, hmac in enumerate(hmacs):
                 order = orders[(name, hmac, target)]
-                spec_tag = algorithm['tag']
+                spec_tag = function['tag']
                 if i == 0:
                     what = (f'over {hmac}, and over every hmac the table does not measure'
                             if hmac else 'which takes no hmac')
@@ -771,7 +820,7 @@ def render_ranking(table: Table, data: dict) -> str:
                     what = f'over {hmac}'
                     head = ['template <>', f'struct ranking<{spec_tag}, {hmac}> {{']
                 lines += ['/**',
-                          f' {algorithm["name"]} on {target}, {what}: by size '
+                          f' {name} on {target}, {what}: by size '
                           f'{", ".join(order["by_size"])}; by throughput '
                           f'{", ".join(order["by_throughput"])} (measured on '
                           f'{order["throughput_from"]}).',
@@ -958,36 +1007,30 @@ def fmt_speed(table: Table, operation: str, t: dict) -> str:
     if table.chapter_of(operation) in ('digests', 'macs', 'non-cryptographic'):
         def rate(ns: float) -> str:
             return f'{1e9 / ns:.0f}'
-        return (f'{rate(t["median_ns"])} MiB/s ({rate(t["max_ns"])} to '
-                f'{rate(t["min_ns"])})')
+        return f'{rate(t["median_ns"])} MiB/s ({rate(t["max_ns"])} to {rate(t["min_ns"])})'
     return (f'{fmt_time(t["median_ns"])} ({fmt_time(t["min_ns"])} to '
             f'{fmt_time(t["max_ns"])})')
 
 
 def defaults_of(table: Table, data: dict) -> list[tuple]:
     """The default the owner's rule gives (spec 4.1's auto: natively the fastest, on
-    WebAssembly the smallest), per target and key derivation, every backend linked."""
+    WebAssembly the smallest), per target and key derivation operation, every backend linked:
+    the first of the operation's own order that has it."""
     sizes = {(r['operation'], r['hmac'], r['backend'], r['target']): r['size_bytes']
              for r in data['records']}
     orders = {(o['operation'], o['hmac'], o['target']): o for o in data['orders']}
     out = []
-    for algorithm, row in table.kdf_rows():
-        for function in algorithm['functions']:
-            name = function['name']
-            for hmac in [None, *MEASURED_HMACS]:
-                for target in TARGETS:
-                    order = orders.get((row['name'], hmac, target))
-                    if order is None:
-                        continue
-                    having = [b for b in function['backends']
-                              if (name, hmac, b, target) in sizes]
-                    if not having:
-                        continue
-                    chosen_from = order['by_size'] if target in WASM else order['by_throughput']
-                    chosen = next((b for b in chosen_from if b in having), having[0])
-                    smallest = min(having, key=lambda b: sizes[(name, hmac, b, target)])
-                    out.append((name, hmac, target, chosen, sizes[(name, hmac, chosen, target)],
-                                smallest, sizes[(name, hmac, smallest, target)]))
+    for _, function in table.kdf_rows():
+        name = function['name']
+        for hmac in [None, *MEASURED_HMACS]:
+            for target in TARGETS:
+                order = orders.get((name, hmac, target))
+                if order is None:
+                    continue
+                chosen = (order['by_size'] if target in WASM else order['by_throughput'])[0]
+                smallest = order['by_size'][0]
+                out.append((name, hmac, target, chosen, sizes[(name, hmac, chosen, target)],
+                            smallest, sizes[(name, hmac, smallest, target)]))
     return out
 
 
@@ -1009,6 +1052,11 @@ def render_measurements(table: Table, data: dict) -> str:
               f'{data["runtimes"]["emscripten"]} (Emscripten).',
               'Compilers: ' + '; '.join(f'{t}: {c}' for t, c in data['toolchains'].items())
               + '.', '']
+    native = data.get('native_toolchain') or {}
+    if native:
+        lines += [f'The native rows hold for {native["compiler"]} on {native["os"]} '
+                  f'{native["processor"]}, stripped with {Path(native["strip"]).name}; another',
+                  'native toolchain gives other native sizes and times.', '']
     if data['loaded']:
         load = data['load_average_before_after']
         lines += ['WARNING: the machine was shared and loaded while this was measured (many '
@@ -1032,8 +1080,8 @@ def render_measurements(table: Table, data: dict) -> str:
         lines += [f'| {targets[t]["size_bytes"]}' if t in targets else '| -' for t in TARGETS]
     lines += ['|===', '', '=== Throughput', '',
               'A hash or MAC in MiB per second over 1 MiB, a key derivation in time per '
-              'derivation; the median, then',
-              'the slowest and fastest runs. Per function, the workload:', '']
+              'derivation: the median, then',
+              'the range of its runs, the lower figure first. Per function, the workload:', '']
     lines += [f'* {f}: {w}.' for f, w in data['workloads'].items()]
     lines += ['', '[cols="3,2,1,3,3,3,3",options="header"]', '|===',
               '| Function | Hmac | Backend | native | wasip2 | wasip3 | emscripten']
@@ -1048,8 +1096,8 @@ def render_measurements(table: Table, data: dict) -> str:
             else:
                 lines.append(f'| {fmt_speed(table, operation, r["throughput"])}')
     lines += ['|===', '', '=== The orders of the key derivations', '',
-              'The rows `detail/ranking.hpp` holds; HKDF-Extract and HKDF-Expand follow HKDF\'s '
-              'order (spec 4.1).', '',
+              'The rows `detail/ranking.hpp` holds, one per operation: the default of '
+              '`hkdf_extract`, `hkdf_expand` and `hkdf` each reads its own (spec 4.1).', '',
               '[cols="2,2,1,3,3,1",options="header"]', '|===',
               '| Function | Hmac | Target | By size | By throughput | Throughput of']
     kdf_names = {f['name'] for _, f in table.kdf_rows()}
@@ -1116,9 +1164,15 @@ def write_text(path: Path, text: str) -> None:
 
 
 def b2_build(library: Library, build_dir: Path, jobs: int) -> list[Path]:
-    """Builds every program with b2 and returns the lists of programs it wrote."""
+    """Builds every program with b2 and returns the lists of programs this build wrote, which
+    the Jamfile's manifest names (-sWEBCPP_HASH_MEASURE_MANIFEST)."""
     config = ROOT / '.local/user-config.jam'
-    command = ['b2', f'-j{jobs}', f'--build-dir={build_dir}']
+    build_dir.mkdir(parents=True, exist_ok=True)
+    manifest = build_dir / 'measure-manifest.txt'
+    if manifest.exists():
+        manifest.unlink()
+    command = ['b2', f'-j{jobs}', f'--build-dir={build_dir}',
+               f'-sWEBCPP_HASH_MEASURE_MANIFEST={manifest}']
     if config.is_file():
         command.append(f'--user-config={config}')
     command.append(f'{relative(library.path)}/test/measure//measure-programs')
@@ -1128,11 +1182,11 @@ def b2_build(library: Library, build_dir: Path, jobs: int) -> list[Path]:
     done = subprocess.run(command, cwd=ROOT, env=environ, check=False)
     if done.returncode != 0:
         raise Failure(f'b2 exited with {done.returncode}')
-    lists = sorted(build_dir.rglob('measure-programs-*.txt'), key=lambda p: p.stat().st_mtime)
-    newest: dict[str, Path] = {}
-    for path in lists:
-        newest[path.name] = path
-    return list(newest.values())
+    if not manifest.is_file():
+        raise Failure(f'b2 wrote no {manifest}: test/measure/Jamfile\'s measure-programs names it')
+    return [path if path.is_absolute() else ROOT / path
+            for path in (Path(line) for line in manifest.read_text(encoding='utf-8').split('\n')
+                         if line.strip())]
 
 
 def mode_write(library: Library, args: argparse.Namespace) -> None:
@@ -1142,7 +1196,7 @@ def mode_write(library: Library, args: argparse.Namespace) -> None:
         measured = read_json(Path(args.measured))
     else:
         lists = b2_build(library, Path(args.build_dir).resolve(), args.jobs)
-        programs, bench = programs_of(table, lists)
+        programs, bench = programs_of(table, lists, OPTIMIZATIONS)
         measured = measure(table, programs, bench, args.invocations, args.jobs, args.strip)
     check_coverage(table, measured['records'], 'the measurements')
     check_results(table, measured['records'], None)
@@ -1188,6 +1242,14 @@ def check_results(table: Table, records: list[dict], committed: dict | None) -> 
                           f'{expected}')
 
 
+def describe(toolchain: dict[str, str]) -> str:
+    """A native toolchain, as a message names it."""
+    if not toolchain:
+        return 'an unrecorded toolchain'
+    return (f'{toolchain.get("compiler")} on {toolchain.get("os")} {toolchain.get("processor")} '
+            f'(strip {toolchain.get("strip")})')
+
+
 def mode_check(library: Library, args: argparse.Namespace) -> None:
     table = library.table
     committed = library.committed()
@@ -1208,7 +1270,7 @@ def mode_check(library: Library, args: argparse.Namespace) -> None:
     if args.measured:
         measured = read_json(Path(args.measured))
     else:
-        programs, bench = programs_of(table, [Path(p) for p in args.programs])
+        programs, bench = programs_of(table, [Path(p) for p in args.programs], ('space',))
         measured = measure(table, programs, bench, 0, args.jobs, args.strip)
     check_coverage(table, measured['records'], 'the new measurements')
     check_results(table, measured['records'], committed)
@@ -1221,8 +1283,17 @@ def mode_check(library: Library, args: argparse.Namespace) -> None:
                 'throughput']
     again = orders_of(table, measured['records'], committed['orders'])
     before = {(o['operation'], o['hmac'], o['target']): o for o in committed['orders']}
+    ours = measured.get('native_toolchain') or {}
+    theirs = committed.get('native_toolchain') or {}
+    native = ours == theirs
+    if not native:
+        print('measure: the native orders were measured with '
+              f'{describe(theirs)} and are not compared with {describe(ours)} (ruling R34); '
+              'every native program and result is checked', flush=True)
     changes = []
     for o in again:
+        if o['target'] == 'native' and not native:
+            continue
         old = before.get((o['operation'], o['hmac'], o['target']))
         for key, what in (('by_size', 'by size'), ('by_throughput', 'by throughput')):
             if old is None or old[key] != o[key]:

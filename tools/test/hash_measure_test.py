@@ -11,17 +11,22 @@ it. `--write --measured` renders doc/measurements.json, doc/measurements.adoc,
 detail/ranking.hpp, detail/overrides.hpp, doc/backends.adoc and test/measure/cells.jam, the same
 bytes each time; `--check` passes on what it wrote, and fails naming
 `python3 tools/hash/measure.py --write` when the size order of a row changes, when a throughput
-median moves past the noise rule, when a generated file or the data was edited by hand, and when
-a program of a cell is missing on a target (a lane that built nothing); a throughput median that
-moves by under 10 percent changes nothing. Every order of ranking.hpp names every backend with a
-tag, so that the per-operation default (ruling R23) always finds one; the portable order is
-hash2, sodium, bearssl (ruling R3). `--capabilities` renders the capability table (ruling R13),
-and `--overrides`, run on the real library, gives detail/overrides.hpp byte for byte. Run with the
-names of some cases to run only those."""
+median moves more than 10 percent past the one ahead of it (spec 4.2's rule alone, ruling R33: a
+first measurement orders by the medians, and the runs' spread plays no part), when a generated
+file or the data was edited by hand, and when a program of a cell is missing on a target (a lane
+that built nothing); a median that moves by under 10 percent changes nothing. Each key
+derivation operation has its own ranking (hkdf_extract and hkdf_expand beside hkdf); every order
+names every backend with a tag, so that the per-operation default (ruling R23) always finds
+one; the portable order is hash2, sodium, bearssl (ruling R3). Native orders measured with
+another native toolchain are not compared, said in one line, while WebAssembly's are (ruling
+R34). `--capabilities` renders the capability table (ruling R13); `--overrides`, run on the real
+library, gives detail/overrides.hpp byte for byte; and `--check` passes on the real library's
+committed data, without a build. Run with the names of some cases to run only those."""
 
 from __future__ import annotations
 
 import copy
+import functools
 import json
 import runpy
 import shutil
@@ -123,10 +128,18 @@ def throughput(median: float, spread: float = 0.02) -> dict[str, Any]:
             'min_ns': min(runs), 'max_ns': max(runs)}
 
 
+@functools.cache
 def result_of(operation: str, hmac: str | None) -> str:
-    """The value Python computes for the operation, as measure.py checks it, else one made up."""
-    python_value = runpy.run_path(str(MEASURE))['python_value']
+    """The value Python computes for the operation, as measure.py checks it, else one made up;
+    measure.py is loaded once, and each value computed once."""
+    python_value = measure_module()['python_value']
     return python_value(operation, hmac) or f'{operation}-{hmac}'.encode().hex()
+
+
+@functools.cache
+def measure_module() -> dict[str, Any]:
+    """measure.py's names, loaded once."""
+    return runpy.run_path(str(MEASURE))
 
 
 def measured(table: dict[str, Any]) -> dict[str, Any]:
@@ -299,23 +312,90 @@ def test_throughput_moving_under_ten_percent_keeps_the_order(scratch: Path) -> N
           'pbkdf2 over hmac_sha2_256 on native', 'by throughput', WRITE)
 
 
-def test_overlapping_spreads_never_flip_an_order(scratch: Path) -> None:
+def test_the_spread_plays_no_part_in_an_order(scratch: Path) -> None:
+    # Ruling R33: spec 4.2's rule alone. A first measurement orders by the medians, however
+    # close (OpenSSL 5 percent faster leads); a committed order changes when a median is more
+    # than 10 percent below the one ahead of it, however wide the runs' spread.
     data = measured(capabilities())
     for record in data['records']:
         if record['operation'] == 'pbkdf2' and record['target'] == 'native':
             record['throughput'] = throughput(1000.0 if record['backend'] == 'openssl'
-                                              else 1200.0)
+                                              else 1050.0)
     directory = library(scratch)
     written(directory, data, scratch)
+    table = json.loads((directory / 'doc/measurements.json').read_text())
+    order = next(o for o in table['orders'] if (o['operation'], o['hmac'], o['target'])
+                 == ('pbkdf2', 'hmac_sha2_256', 'native'))
+    if order['by_throughput'] != ['openssl', 'hash2']:
+        raise AssertionError(f'the medians do not order a first measurement: {order}')
 
     def noisy(record: dict) -> None:
         if record['backend'] == 'hash2':
             record['throughput'] = throughput(800.0, spread=0.5)
 
-    # 20 percent faster by the median, but its slowest run is slower than OpenSSL's fastest.
     again = changed(data, row('pbkdf2', 'hmac_sha2_256', 'native'), noisy)
-    passes(run('--library', str(directory), '--check', '--measured',
-               str(write_measured(scratch, again))))
+    fails(run('--library', str(directory), '--check', '--measured',
+              str(write_measured(scratch, again))),
+          'pbkdf2 over hmac_sha2_256 on native', 'by throughput', WRITE)
+
+
+def test_each_operation_has_its_own_ranking(scratch: Path) -> None:
+    # hkdf_extract's default reads its own row (spec 4.1's smallest per operation): libsodium's
+    # extract program is the smaller on emscripten while whole HKDF's order puts hash2 first.
+    data = measured(capabilities())
+
+    def sodium_smaller(record: dict) -> None:
+        if record['backend'] == 'sodium':
+            record['size_bytes'] = 100
+
+    data = changed(data, lambda r: (r['operation'], r['target']) == ('hkdf_extract',
+                                                                      'emscripten'),
+                   sodium_smaller)
+    directory = library(scratch)
+    written(directory, data, scratch)
+    ranking = ' '.join((directory / 'include/webcpp/hash/detail/ranking.hpp').read_text()
+                       .split())
+    emscripten = ranking.split('#elif defined(WEBCPP_TARGET_EMSCRIPTEN)')[1].split('#else')[0]
+    for text in ('struct ranking<kdfs::hkdf_extract, Hmac> { /** The smallest program first. */ '
+                 'using by_size = backend_list<backends::sodium, backends::hash2',
+                 'struct ranking<kdfs::hkdf_expand, hmac_sha2_512> {',
+                 'struct ranking<kdfs::hkdf, Hmac> { /** The smallest program first. */ '
+                 'using by_size = backend_list<backends::hash2'):
+        if text not in emscripten:
+            raise AssertionError(f'{text!r} is not in ranking.hpp on emscripten:\n{emscripten}')
+
+
+def test_another_native_toolchain_compares_no_native_order(scratch: Path) -> None:
+    # Ruling R34: the native orders hold for the toolchain that measured them. Measured with
+    # another, a native order that differs is said in one line and not compared; a WebAssembly
+    # order still is.
+    data = measured(capabilities())
+    data['native_toolchain'] = {'compiler': 'A 1', 'os': 'Darwin', 'processor': 'arm64',
+                                'strip': '/usr/bin/strip'}
+    directory = library(scratch)
+    written(directory, data, scratch)
+
+    def smaller(record: dict) -> None:
+        if record['backend'] == 'openssl':
+            record['size_bytes'] = 1
+
+    other = changed(data, row('hkdf', 'hmac_sha2_256', 'native'), smaller)
+    other['native_toolchain'] = {'compiler': 'B 2', 'os': 'Linux', 'processor': 'x86_64',
+                                 'strip': '/usr/bin/strip'}
+    done = run('--library', str(directory), '--check', '--measured',
+               str(write_measured(scratch, other)))
+    passes(done)
+    if 'measured with A 1 on Darwin arm64' not in done.stdout or 'B 2 on Linux' not in done.stdout:
+        raise AssertionError(f'no line says the native orders are not compared:\n{done.stdout}')
+    fails(run('--library', str(directory), '--check', '--measured',
+              str(write_measured(scratch, changed(other, row('hkdf', 'hmac_sha2_256', 'wasip2'),
+                                                  smaller)))),
+          'hkdf over hmac_sha2_256 on wasip2', 'by size', WRITE)
+    same = copy.deepcopy(other)
+    same['native_toolchain'] = data['native_toolchain']
+    fails(run('--library', str(directory), '--check', '--measured',
+              str(write_measured(scratch, same))),
+          'hkdf over hmac_sha2_256 on native', 'by size', WRITE)
 
 
 def test_a_hand_edit_fails(scratch: Path) -> None:
@@ -351,7 +431,7 @@ def test_a_missing_program_fails(scratch: Path) -> None:
             names = [f'{optimization}-{r["operation"]}_{r["backend"]}'
                      + (f'_{r["hmac"]}' if r['hmac'] else '')
                      for r in data['records'] if r['target'] == target]
-            if (target, optimization) == ('wasip2', 'speed'):
+            if (target, optimization) == ('wasip2', 'space'):
                 names = [n for n in names if 'hkdf_sodium_hmac_sha2_512' not in n]
             suffix = '.wasm' if target in ('wasip2', 'wasip3') else (
                 '.js' if target == 'emscripten' else '')
@@ -359,7 +439,7 @@ def test_a_missing_program_fails(scratch: Path) -> None:
             path.write_text(''.join(f'{lists}/{name}{suffix}\n' for name in names))
             programs.append(str(path))
     fails(run('--library', str(directory), '--check', '--programs', *programs),
-          'speed-hkdf_sodium_hmac_sha2_512 on wasip2', 'built nothing')
+          'space-hkdf_sodium_hmac_sha2_512 on wasip2', 'built nothing')
     # A target whose list is missing altogether.
     fails(run('--library', str(directory), '--check', '--programs', *programs[2:]),
           'native', 'built nothing')
@@ -410,6 +490,13 @@ def test_capabilities_renders_the_table(scratch: Path) -> None:
         raise AssertionError('--capabilities renders differently twice')
 
 
+def test_the_real_library_s_generated_files_are_its_data_s(_: Path) -> None:
+    # Review Focus 9 without the lane: every generated file of libs/hash is what its committed
+    # data and capability table render, and the data's digest holds (no b2, no program).
+    passes(run('--library', str(LIBRARY), '--check', '--measured',
+               str(LIBRARY / 'doc/measurements.json')))
+
+
 def test_overrides_regenerate_the_committed_file(scratch: Path) -> None:
     directory = scratch / 'hash'
     (directory / 'include/webcpp/hash/detail').mkdir(parents=True)
@@ -436,11 +523,14 @@ CASES = [
     test_check_passes_on_its_own_write,
     test_check_fails_when_a_size_order_changes,
     test_throughput_moving_under_ten_percent_keeps_the_order,
-    test_overlapping_spreads_never_flip_an_order,
+    test_the_spread_plays_no_part_in_an_order,
+    test_each_operation_has_its_own_ranking,
+    test_another_native_toolchain_compares_no_native_order,
     test_a_hand_edit_fails,
     test_a_missing_program_fails,
     test_every_order_names_every_backend,
     test_capabilities_renders_the_table,
+    test_the_real_library_s_generated_files_are_its_data_s,
     test_overrides_regenerate_the_committed_file,
     test_usage_errors_exit_2,
 ]
