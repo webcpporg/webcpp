@@ -1,0 +1,10 @@
+# Copyright (c) 2026 WebCpp.org
+#
+# Distributed under the Boost Software License, Version 1.0. (See
+# accompanying file LICENSE_1_0.txt or copy at
+# https://www.boost.org/LICENSE_1_0.txt)
+
+# test/messages/override_cannot_serve of webcpp::hash, built for Emscripten
+# by a user's Jamfile.
+exe app : app.cpp /webcpp/hash//hash /third_party//sodium
+  : <define>WEBCPP_HASH_DEFAULT_BACKEND_HKDF_SODIUM ;
