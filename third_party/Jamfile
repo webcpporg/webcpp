@@ -163,10 +163,10 @@ explicit ca_certificates ca_certificates-header ;
 # The C libraries of webcpp::crypto's backends: each a static library compiled
 # file by file in the library's own C dialect (no -std), every function and
 # datum in a section of its own, so that a program keeps only what it calls
-# (CODING-GUIDELINES.md chapter 5, "Bringing a C library into webcpp"). Upstream's
-# warnings are not ours. webcpp's libs/crypto/src/canary_<name>.c joins each:
-# it defines the symbol the backend's header reads, which names the commit
-# and the configuration.
+# (CODING-GUIDELINES.md chapter 5, "Bringing a C library into webcpp").
+# Upstream's warnings are not ours. webcpp's libs/crypto/src/canary_<name>.c
+# joins each: it defines the symbol the backend's header reads, which names the
+# commit and the configuration.
 path-constant CRYPTO : ../libs/crypto ;
 
 # The canaries and their header are webcpp::crypto's: a checkout without
@@ -288,19 +288,30 @@ rule secp256k1-checked-out ( properties * )
 }
 
 .secp256k1-small = <define>ECMULT_WINDOW_SIZE=2 <define>COMB_BLOCKS=2 <define>COMB_TEETH=5 ;
-lib secp256k1
-  : libs/secp256k1/src/secp256k1.c libs/secp256k1/src/precomputed_ecmult.c
-    libs/secp256k1/src/precomputed_ecmult_gen.c $(CRYPTO)/src/canary_secp256k1.c
-  : $(.c-library) <conditional>@secp256k1-checked-out
-    <include>libs/secp256k1/include <include>libs/secp256k1/src
-    <define>ENABLE_MODULE_ECDH=1 <define>ENABLE_MODULE_RECOVERY=1
+
+# The defines that make libsecp256k1 what webcpp builds: the library and its own
+# tests (libs/crypto/test/c_suites), whose tests.c includes secp256k1.c and so
+# compiles the library again, use the same ones, the tables included.
+.secp256k1-config = <define>ENABLE_MODULE_ECDH=1 <define>ENABLE_MODULE_RECOVERY=1
     <define>ENABLE_MODULE_EXTRAKEYS=1 <define>ENABLE_MODULE_SCHNORRSIG=1
     <define>ENABLE_MODULE_MUSIG=1 <define>ENABLE_MODULE_ELLSWIFT=1
     <define>ENABLE_MODULE_SILENTPAYMENTS=1 <toolset>msvc:<define>SECP256K1_STATIC
     # Quoted, as b2 5.5 warns of an unquoted ":" before a variable; the product
     # still gives one conditional property per define.
     "<webcpp-secp256k1-tables>small:$(.secp256k1-small)"
-    "<toolset>emscripten,<webcpp-secp256k1-tables>auto:$(.secp256k1-small)"
+    "<toolset>emscripten,<webcpp-secp256k1-tables>auto:$(.secp256k1-small)" ;
+
+# What a program that compiles libsecp256k1's own tests adds: the configuration
+# of the build and the headers they include, the internal ones too.
+alias secp256k1-test-config : : : : $(.secp256k1-config)
+    <include>libs/secp256k1/include <include>libs/secp256k1/src ;
+explicit secp256k1-test-config ;
+
+lib secp256k1
+  : libs/secp256k1/src/secp256k1.c libs/secp256k1/src/precomputed_ecmult.c
+    libs/secp256k1/src/precomputed_ecmult_gen.c $(CRYPTO)/src/canary_secp256k1.c
+  : $(.c-library) <conditional>@secp256k1-checked-out
+    <include>libs/secp256k1/include <include>libs/secp256k1/src $(.secp256k1-config)
   : : <include>libs/secp256k1/include <define>WEBCPP_CRYPTO_HAS_SECP256K1=1
     <toolset>msvc:<define>SECP256K1_STATIC
     <webcpp-secp256k1-tables>small:<define>WEBCPP_CRYPTO_SECP256K1_SMALL_TABLES=1
