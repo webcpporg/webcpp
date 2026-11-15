@@ -36,8 +36,7 @@ SYSTEM = {'Linux': 'linux', 'Darwin': 'darwin', 'Windows': 'windows'}[platform.s
 # integrator empties it when the code it waits for is merged, and then rewrites the lines of those
 # cases' outcome files as b2's whole output lines (a line: directive, if need be).
 NOT_YET = {
-    'has_openssl_on_emscripten': 'the refusal in config.hpp (Task 6)',
-    'default_openssl_on_emscripten': 'the refusal in config.hpp (Task 6)',
+    'encrypt_and_sign': 'the BearSSL backend (backends/bearssl.hpp)',
 }
 
 BLOCKS = {'all', 'native', 'native-linux', 'native-darwin', 'native-windows', 'wasip2', 'wasip3',

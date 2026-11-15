@@ -3,3 +3,4 @@ targets: native wasip2 wasip3
 build: succeeds
 run: app
 HAS_OPENSSL=1
+tag 530f8afbc74536b9a963b4f1c4cb738b

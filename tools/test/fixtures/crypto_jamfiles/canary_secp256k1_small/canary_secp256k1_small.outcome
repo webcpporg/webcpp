@@ -8,18 +8,18 @@
 targets: native wasip2 wasip3 emscripten
 build: fails
 [native-darwin]
-Undefined symbols for architecture
-_webcpp_crypto_secp256k1_6e2c8bc_w2c2x5__add_third_party_secp256k1_to_your_link
+contains: Undefined symbols for architecture
+contains: _webcpp_crypto_secp256k1_6e2c8bc_w2c2x5__add_third_party_secp256k1_to_your_link
 [native-linux]
-webcpp_crypto_secp256k1_6e2c8bc_w2c2x5__add_third_party_secp256k1_to_your_link
-undefined reference to `webcpp_crypto_secp256k1_6e2c8bc_w2c2x5__add_third_party_secp256k1_to_your_link'
+contains: webcpp_crypto_secp256k1_6e2c8bc_w2c2x5__add_third_party_secp256k1_to_your_link
+contains: undefined reference to `webcpp_crypto_secp256k1_6e2c8bc_w2c2x5__add_third_party_secp256k1_to_your_link'
 [wasip2]
-wasm-ld: error:
-undefined symbol: webcpp_crypto_secp256k1_6e2c8bc_w2c2x5__add_third_party_secp256k1_to_your_link
+contains: wasm-ld: error:
+contains: undefined symbol: webcpp_crypto_secp256k1_6e2c8bc_w2c2x5__add_third_party_secp256k1_to_your_link
 [wasip3]
-wasm-ld: error:
-undefined symbol: webcpp_crypto_secp256k1_6e2c8bc_w2c2x5__add_third_party_secp256k1_to_your_link
+contains: wasm-ld: error:
+contains: undefined symbol: webcpp_crypto_secp256k1_6e2c8bc_w2c2x5__add_third_party_secp256k1_to_your_link
 [emscripten]
-wasm-ld: error:
-undefined symbol: webcpp_crypto_secp256k1_6e2c8bc_w2c2x5__add_third_party_secp256k1_to_your_link
-em++: error:
+contains: wasm-ld: error:
+contains: undefined symbol: webcpp_crypto_secp256k1_6e2c8bc_w2c2x5__add_third_party_secp256k1_to_your_link
+contains: em++: error:
