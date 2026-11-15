@@ -591,9 +591,10 @@ aliases, concepts, variables, data members and macros.
   with `#` are comments; a block `[all]`, `[native]`, `[native-linux]`,
   `[native-darwin]`, `[native-windows]`, `[native-arm64]`, `[native-x86_64]`,
   `[wasip2]`, `[wasip3]` or `[emscripten]` applies by the target, the system
-  and the machine's architecture (`[all]` and each block that matches apply). `targets: <target> ...` (native only without it) names
-  the targets the case is built for; `build: succeeds` or `build: fails` is
-  b2's exit status; after `build: fails` every other line must be a whole line
+  and the machine's architecture (`[all]` and each block that matches apply).
+  `targets: <target> ...` (native only without it) names the targets the case
+  is built for; `build: succeeds` or `build: fails` is b2's exit status; after
+  `build: fails` every other line must be a whole line
   of b2's output (trailing spaces aside), in any order; a line of one
   lowercase word and a colon is reserved for these directives, and
   `line: <text>` states a literal output line, empty for a blank one, also for
