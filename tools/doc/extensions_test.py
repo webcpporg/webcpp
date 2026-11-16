@@ -212,6 +212,26 @@ def test_wide_table_labels_its_cells(_: None) -> None:
     assert 'data-label' not in tables[1], tables[1]
 
 
+def test_a_header_column_scopes_its_header_cells(_: None) -> None:
+    # A table whose first column is a header column (cols="1h,...") has header cells in its body
+    # too, so each header cell says what it heads, as WCAG's technique H63 asks: the head's its
+    # column, the body's its row. A table without a header column is left as it was.
+    html = body(convert('[cols="1h,2,2",options="header"]\n|===\n| Name | `a` | `b`\n\n'
+                        '| Header\n| `<a.hpp>`\n| `<b.hpp>`\n\n'
+                        '| Errors\n| none\n| its values\n|===\n\n'
+                        '[cols="1,1,2",options="header"]\n|===\n| Status | Value | What\n\n'
+                        '| `active`\n| 1\n| Its mailbox.\n|===\n'))
+    tables = re.findall(r'<table\b.*?</table>', html, flags=re.S)
+    assert len(tables) == 2, html
+    head = ''.join(re.findall(r'<thead>.*?</thead>', tables[0], flags=re.S))
+    rows = ''.join(re.findall(r'<tbody>.*?</tbody>', tables[0], flags=re.S))
+    assert re.findall(r'<th\b[^>]*>', head) and all(
+        ' scope="col"' in cell for cell in re.findall(r'<th\b[^>]*>', head)), head
+    assert len(re.findall(r'<th\b[^>]*>', rows)) == 2 and all(
+        ' scope="row"' in cell for cell in re.findall(r'<th\b[^>]*>', rows)), rows
+    assert 'scope=' not in tables[1], tables[1]
+
+
 def test_dashes_stay_as_written_when_escaped(_: None) -> None:
     # Asciidoctor writes -- as an em dash, in inline code as in prose, which the check of the
     # rendered page refuses; \-- keeps the two hyphens, and so does a passthrough.
@@ -900,6 +920,7 @@ CASES: list[Callable[[None], None]] = [
     test_short_inline_code_stays_whole,
     test_a_flag_keeps_its_leading_hyphen,
     test_wide_table_labels_its_cells,
+    test_a_header_column_scopes_its_header_cells,
     test_dashes_stay_as_written_when_escaped,
     test_code_keeps_its_characters_when_escaped,
     test_urls_in_code_stay_as_written_when_escaped,

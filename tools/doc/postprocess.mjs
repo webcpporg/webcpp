@@ -31,6 +31,9 @@
 // stacks the table's rows; a table of two columns, a name and what it is,
 // reads stacked without them.
 //
+// A table with a header column gives its header cells their scope: the head's
+// `col`, the body's `row`.
+//
 // A word of inline code too long for any line from 600px, more than 60
 // characters, is marked `long`, and the style keeps its breaks at every width.
 //
@@ -359,6 +362,24 @@ function labelledTables(html) {
   });
 }
 
+// A table with a header column (cols="1h,...") has header cells in its body as in its head; each
+// says what it heads, as WCAG's technique H63 asks and html-validate's wcag/h63 checks: the head's
+// its column, the body's its row. A table without one keeps its cells as they are.
+const HEAD = /<thead>[\s\S]*?<\/thead>/;
+const TH = /<th\b/g;
+
+function scopedHeaders(html) {
+  return html.replace(TABLE, (table) => {
+    const body = table.match(BODY);
+    if (body === null || !/<th\b/.test(body[0])) {
+      return table;
+    }
+    return table
+      .replace(HEAD, (head) => head.replace(TH, '<th scope="col"'))
+      .replace(BODY, (rows) => rows.replace(TH, '<th scope="row"'));
+  });
+}
+
 // The tag that opens or closes a table.
 const TABLE_TAG = /<table\b[^>]*>|<\/table>/g;
 
@@ -499,8 +520,8 @@ function curledApostrophes(html) {
 
 class Page extends Postprocessor {
   process(_document, output) {
-    const page = labelledTables(
-      matrices(partsOfKeyColumnTables(wordsOfCode(decodeEntities(output))))
+    const page = scopedHeaders(
+      labelledTables(matrices(partsOfKeyColumnTables(wordsOfCode(decodeEntities(output)))))
     );
     const built = curledApostrophes(
       boxedTables(partsOfURLs(scopesOfContents(partsOfHeadings(page))))
