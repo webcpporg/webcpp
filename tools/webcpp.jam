@@ -599,11 +599,14 @@ actions write-variants
 # The sizes of the variants of each program webcpp.variants declared in this
 # Jamfile under the names variants: the explicit <name>.sizes.md, a Markdown
 # table the build also prints, and which the CI keeps from an own lane's job
-# (.github/workflows/library.yml, the artifact sizes-<lane>).
+# (.github/workflows/library.yml, the artifact sizes-<lane>). Published sizes
+# are those of release builds alone: the table requires <variant>release,
+# which its manifests and their programs inherit, whatever variant the
+# command asks for, and variants.py refuses a table of any other variant.
 rule size-table ( name : variants + )
 {
     make $(name).sizes.md : $(variants).variants.json : @webcpp%write-size-table
-      : <webcpp-targets>emscripten <conditional>@webcpp%filter ;
+      : <variant>release <webcpp-targets>emscripten <conditional>@webcpp%filter ;
     local found = [ where ] ;
     $(found[1]).mark-target-as-explicit $(name).sizes.md ;
 }
@@ -623,11 +626,12 @@ rule write-size-table ( targets * : sources * : properties * )
         }
     }
     MANIFESTS on $(targets) = $(manifests) ;
+    VARIANT on $(targets) = [ feature.get-values <variant> : $(properties) ] ;
 }
 
 actions write-size-table bind MANIFESTS
 {
-    "$(PYTHON)" "$(SCRIPT)" table --out "$(<)" "$(MANIFESTS)"
+    "$(PYTHON)" "$(SCRIPT)" table --variant "$(VARIANT)" --out "$(<)" "$(MANIFESTS)"
 }
 
 # A test that passes when sources compile, which builds no program.

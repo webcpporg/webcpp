@@ -8,8 +8,9 @@
 """Checks tools/variants/variants.py: a manifest names each variant's script relative to itself and
 the size of its .wasm, in sorted keys and four spaces; an artifact without its script or its .wasm
 is refused before anything is written; a table lists each program with its sizes and their ratio,
-in the file and on the standard output; and a manifest that is not one is refused, naming it. Run
-with the names of some cases to run only those."""
+in the file and on the standard output; a manifest that is not one is refused, naming it; and a
+table is written only from release builds: given another variant, or none, it is refused before
+anything is written. Run with the names of some cases to run only those."""
 
 from __future__ import annotations
 
@@ -76,7 +77,7 @@ def test_table_lists_each_program_with_its_ratio(root: Path) -> None:
     manifest = root / 'page.variants.json'
     variants('manifest', '--out', manifest, '--jspi', jspi, '--asyncify', asyncify)
     out = root / 'sizes.md'
-    result = variants('table', '--out', out, manifest)
+    result = variants('table', '--variant', 'release', '--out', out, manifest)
     assert result.returncode == 0, result.stderr
     table = ('| program | jspi | asyncify | asyncify / jspi |\n'
              '| --- | ---: | ---: | ---: |\n'
@@ -87,8 +88,26 @@ def test_table_lists_each_program_with_its_ratio(root: Path) -> None:
 def test_table_refuses_a_manifest_that_is_not_one(root: Path) -> None:
     bad = root / 'bad.variants.json'
     bad.write_text('{"jspi": {}}\n')
-    result = variants('table', '--out', root / 'sizes.md', bad)
+    result = variants('table', '--variant', 'release', '--out', root / 'sizes.md', bad)
     assert result.returncode == 1 and f'{bad}: ' in result.stderr, result.stderr
+
+
+def test_table_refuses_a_build_that_is_not_release(root: Path) -> None:
+    # Published sizes are those of release builds: webcpp.size-table requires <variant>release
+    # and gives the table's variant, which variants.py refuses to be any other.
+    jspi, asyncify = scripts(root)
+    manifest = root / 'page.variants.json'
+    variants('manifest', '--out', manifest, '--jspi', jspi, '--asyncify', asyncify)
+    out = root / 'sizes.md'
+    for variant in ('debug', 'profile'):
+        result = variants('table', '--variant', variant, '--out', out, manifest)
+        assert result.returncode == 1, (variant, result.returncode, result.stderr)
+        assert (f'variants.py: a size table is built only from release builds, not '
+                f'variant={variant}') in result.stderr, result.stderr
+        assert not out.exists(), variant
+    result = variants('table', '--out', out, manifest)
+    assert result.returncode == 2 and '--variant' in result.stderr, result.stderr
+    assert not out.exists()
 
 
 CASES: list[Callable[[Path], None]] = [
@@ -97,6 +116,7 @@ CASES: list[Callable[[Path], None]] = [
     test_manifest_refuses_an_artifact_without_its_script,
     test_table_lists_each_program_with_its_ratio,
     test_table_refuses_a_manifest_that_is_not_one,
+    test_table_refuses_a_build_that_is_not_release,
 ]
 
 

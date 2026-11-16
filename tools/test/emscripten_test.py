@@ -555,6 +555,20 @@ def test_the_size_table_lists_every_variant(root):
     assert len(tables) == 1 and tables[0].read_text().startswith('| program | jspi |'), tables
 
 
+def test_the_size_table_is_built_from_release_builds_alone(root):
+    # Published sizes are those of release builds: webcpp.size-table requires <variant>release,
+    # so a build that asks for debug still writes its table, and the manifest and programs it
+    # reads, at variant=release, under b2's release directory.
+    result = harness.run_b2(root, '-a', *EMSCRIPTEN, 'variant=debug',
+                            'libs/browser_demo/test/variants//shell.sizes.md')
+    harness.expect(result, True, '| shell |')
+    tables = built(root, 'shell.sizes.md')
+    manifests = built(root, 'shell.variants.json')
+    assert len(tables) == 1 and 'release' in tables[0].parts, tables
+    assert manifests and all('release' in m.parts and 'debug' not in m.parts
+                             for m in manifests), manifests
+
+
 def test_variants_are_not_built_natively(root):
     harness.without_emscripten(root)
     result = harness.run_b2(root, '-a', 'libs/browser_demo/test/variants//shell.sizes.md')
@@ -714,6 +728,7 @@ CASES = [prepared(case) for case in (
     test_variants_can_be_driven_without_relinking_dependencies,
     test_variants_asked_for_with_javascript_exceptions_are_refused,
     test_the_size_table_lists_every_variant,
+    test_the_size_table_is_built_from_release_builds_alone,
     test_variants_are_not_built_natively,
     test_drive_runs_its_program_on_each_target,
     test_a_hanging_drive_is_stopped_within_its_bound,
