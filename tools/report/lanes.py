@@ -340,6 +340,10 @@ def read_lane(name: str, path: Path) -> Lane:
     # example, its <name>.output, in <location>/<toolset>/...
     toolsets: set[str] = set()
     owners: dict[str, list[Build]] = {}
+    # A test's own directory, <location>/<target>.test/<toolset>/..., holds nothing of another
+    # test: an action b2 records under a file there that no target needs is the test's, as MSVC's
+    # link, which writes the program and its .pdb at once and is recorded under the .pdb.
+    own_directories: dict[str, list[Build]] = {}
     for target, built_in in graph:
         location, _, file = target.partition('//')
         if target in tests:
@@ -360,6 +364,8 @@ def read_lane(name: str, path: Path) -> Lane:
         owner.builds.append(build)
         for owned in closure(graph, target, built_in):
             owners.setdefault(owned, []).append(build)
+        if target in tests:
+            own_directories.setdefault(built_in, []).append(build)
 
     # A lane that built nothing has no directory, only the toolset its command line names.
     from_directory = bool(toolsets)
@@ -400,7 +406,8 @@ def read_lane(name: str, path: Path) -> Lane:
         command = textwrap.dedent(text_of(element, 'command')).strip('\n')
         action = Action(text_of(element, 'name'), status, slashed(text_of(element, 'path')),
                         command, text_of(element, 'output'))
-        builds = owners.get(action.path, [])
+        builds = (owners.get(action.path)
+                  or own_directories.get(posixpath.dirname(action.path), []))
         for build in builds:
             build.actions.append(action)
         if not builds and action.status != 0:
