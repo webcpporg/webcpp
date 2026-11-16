@@ -1023,6 +1023,28 @@ def test_a_dependency_s_warnings_are_not_ours(root):
     assert 'fake_dependency.hpp:' not in result.stdout, result.stdout[-6000:]
 
 
+def test_clang_tidy_reads_boost_unordered_on_every_host(root):
+    # Boost.Unordered's open-addressing containers include <arm_neon.h> on arm64, an intrinsics
+    # header of the host compiler's that wasi-sdk's clang-tidy, which reads a native command, does
+    # not ship: a library header that uses one analyses clean on every host, arm64 macOS included.
+    prepare(root)
+    write(root, 'libs/demo/include/webcpp/demo/seen.hpp',
+          '// Copyright (c) 2026 WebCpp.org\n//\n'
+          '// Distributed under the Boost Software License, Version 1.0. (See\n'
+          '// accompanying file LICENSE_1_0.txt or copy at\n'
+          '// https://www.boost.org/LICENSE_1_0.txt)\n\n'
+          '#ifndef WEBCPP_DEMO_SEEN_HPP\n#define WEBCPP_DEMO_SEEN_HPP\n\n'
+          '#include <boost/unordered/unordered_flat_set.hpp>\n\n'
+          'namespace webcpp::demo {\n\n'
+          '/**\n Whether `value` was seen before, recording it.\n\n'
+          ' @param seen The values seen so far.\n @param value The value.\n'
+          ' @return Whether it was there already.\n*/\n'
+          'inline bool seen_before(boost::unordered_flat_set<int>& seen, int value) {\n'
+          '    return !seen.insert(value).second;\n}\n\n'
+          '}  // namespace webcpp::demo\n\n#endif  // WEBCPP_DEMO_SEEN_HPP\n')
+    expect_clean(lint(root))
+
+
 def test_a_compiled_boost_library_s_sources_are_not_analysed(root):
     # Boost.URL's sources, which /webcpp//boost_url compiles from Boost's tree outside the tree
     # the lint reads (.local/boost-source, or a CI runner's prefix), are Boost's: the database
@@ -2885,6 +2907,7 @@ CASES = [
     test_clang_tidy_reads_what_only_one_target_builds,
     test_clang_tidy_reads_a_program_of_javascript_exceptions,
     test_a_dependency_s_warnings_are_not_ours,
+    test_clang_tidy_reads_boost_unordered_on_every_host,
     test_a_compiled_boost_library_s_sources_are_not_analysed,
     test_a_native_lane_s_webassembly_commands_are_left_to_its_native_one,
     test_clang_tidy_uses_shipped_cobalt_sources_on_a_clean_tree,

@@ -82,3 +82,6 @@
 [submodule "libs/hash"]
 	path = libs/hash
 	url = ../hash.git
+[submodule "libs/webrtc"]
+	path = libs/webrtc
+	url = ../webrtc.git

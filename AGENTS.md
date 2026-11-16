@@ -85,7 +85,8 @@ for web developers and for AI developers (`CODING-GUIDELINES.md` chapter 16).
 | document | a JSON document that behaves as JavaScript does (key order, `JSON.stringify`'s bytes, the array methods), exact in decimal, in one relocatable image; webcpp's own; its parser is Boost.JSON's | native, wasip2, wasip3, emscripten; its oracle lane | a submodule at `libs/document`; its core never throws (`CODING-GUIDELINES.md` chapter 6) |
 | idna | internationalized domain names: Punycode, UTS 46's ToASCII and ToUnicode, conformant to IdnaTestV2, and IDNA2008's validity, over Unicode 17.0.0 tables generated into its headers; webcpp's own | native, wasip2, wasip3, emscripten; its own lane `tables` | a submodule at `libs/idna`; its errors are values, and its span forms allocate nothing |
 | lexical | the string formats JSON Schema names (date-time, email, hostname, ipv4/ipv6, uri, iri, uri-template, json-pointer, uuid, regex), each a validator that allocates nothing and a Boost.URL grammar rule; regex is an ECMA-262 syntax validator of its own, checked against V8; depends on idna and Boost.URL; webcpp's own | native, wasip2, wasip3, emscripten; its own lanes `generated` and `oracle` | a submodule at `libs/formats` |
-| trystero | a port of Trystero 0.26.0, serverless WebRTC rooms | native, emscripten; its own lanes `oracle` and `interop` | a submodule at `libs/trystero`; born with the allocation rule through `std::pmr` |
+| trystero | a port of Trystero 0.26.0, serverless WebRTC rooms; its one platform backend's WebRTC, on both targets, is webrtc's, and its Asio is named `webcpp::asio` | native, emscripten (both suspension variants); its own lanes `oracle`, `relayed` (its examples over a local relay, natively), `interop`, `asyncify` and `provider-integration` | a submodule at `libs/trystero`; born with the allocation rule through `std::pmr`; works with exceptions on and off on both targets |
+| webrtc | WebRTC peer connections and data channels with the W3C's names in Asio's model, natively over libdatachannel's C API and in the browser over the page's own objects, with exceptions on and off; webcpp's own | native, emscripten; its own lanes `browser`, `interop` and `asyncify` | a submodule at `libs/webrtc`; increments 1 and 2 of 3 (`CODING-GUIDELINES.md` chapter 15) |
 
 ### The layout
 
@@ -105,7 +106,7 @@ webcpp/
   pyrightconfig.json  Pyright's settings for every Python file
   libs/<name>/        a library: a repository of its own, a submodule here (asio, beast, cobalt,
                       config, crypto, xactor, xstate, pratt, wasi, trystero, document, idna,
-                      lexical)
+                      lexical, webrtc)
   third_party/        third-party code the libraries and their tests use, not webcpp's: each
                       a submodule under third_party/libs/, pinned at a commit and keeping its
                       own licence (openssl, libdatachannel, bearssl, secp256k1, bitcoin for
@@ -273,7 +274,8 @@ Jamroot is its build configuration, and `libs/<name>` is its repository.
   nested dependencies with the consumer's compiler and runtime settings.
   Every consumer of `/webcpp/third_party//libdatachannel` requires
   `threading=multi`: a single-thread request is refused, since libdatachannel
-  runs worker threads of its own. Native Trystero also requires exceptions;
+  runs worker threads of its own. Native Trystero reaches it through
+  webrtc, which calls its C API, and works with exceptions on and off;
 - for native or WASIp2/P3 guest TLS: Python 3, Perl, Make (nmake on Windows),
   the selected compiler and `third_party/libs/openssl`, initialized with
   `git submodule update --init third_party/libs/openssl`. B2 builds the pinned
@@ -528,13 +530,14 @@ single page, from the library's Doc Comments. `webcpp.reference <name> ;` in
   that holds the types of a function's parameters, and the host's standard
   library and Emscripten's give one function two (trystero's reference read
   as a native and an emscripten translation unit had 555 sections for 461).
-  Such a library also gives the target of its native backend, if it has
-  one, which brings that backend's dependencies, and the defines its
-  browser build has, which a requirement conditioned on the emscripten
-  toolset does not give a reference built natively: `webcpp.reference
-  trystero : <library>/webcpp/trystero//native
-  <library>/webcpp//emscripten-reference <define>BOOST_ASIO_DISABLE_THREADS
-  ;`. Read so, trystero's reference is the same on Linux and on macOS, byte
+  Such a library also gives the target of its backend, if it has one,
+  which brings that backend's dependencies, and the defines that parse
+  needs, which a requirement conditioned on the emscripten toolset does not
+  give a reference built natively; trystero's gives its platform backend's,
+  whose Asio and Beast are webcpp::asio and webcpp::beast, their browser
+  implementations for that target, so that no define of Boost.Asio's is
+  needed: `webcpp.reference trystero : <library>/webcpp/trystero//platform
+  <threading>multi <library>/webcpp//emscripten-reference ;`. Read so, trystero's reference is the same on Linux and on macOS, byte
   for byte. The emsdk is `-sWEBCPP_EMSDK=<dir>`, read from b2's command line
   alone, else `.local/emsdk`, never the environment's `EMSDK`, which
   `emsdk_env.sh` exports and b2 would read as `-sEMSDK`; its
@@ -1694,7 +1697,10 @@ jobs:
     none.
   - An own lane whose driver meets a browser, one of `CHROME_LANES` in
     `tools/ci/matrix.py` (trystero's `interop`, natively and on emscripten,
-    document's `js`, and asio's `browser`),
+    webrtc's `interop`, whose page meets Chrome on emscripten while its native
+    run is two native peers, though `CHROME_LANES` names a lane on every
+    target, document's `js`, webrtc's `browser`, and the browser lanes of
+    asio, beast and cobalt),
     has its entry's `chrome`, and its job runs the `chrome` action, which
     gives it `CHROME`, a pinned Chrome rather than the image's, which moves
     with the image, so that a red interop lane is never a browser nobody

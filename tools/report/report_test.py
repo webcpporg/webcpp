@@ -697,6 +697,26 @@ def test_a_failure_outside_every_test_fails_the_lane(root: Path) -> None:
     check_pages(out)
 
 
+def test_an_action_in_a_tests_own_directory_is_the_tests(root: Path) -> None:
+    # MSVC's link writes a program and its .pdb in one action, which b2 records under the .pdb:
+    # no target the test needs, but a file of the test's own directory, <name>.test/<toolset>/...,
+    # which holds nothing of another test. Here fails_to_link's link is recorded so.
+    text = sample('native-failures').read_text(encoding='utf-8')
+    moved = text.replace('cxxstd-20-iso/fails_to_link]]>', 'cxxstd-20-iso/fails_to_link.pdb]]>')
+    assert moved.count('fails_to_link.pdb]]>') == 1, 'the link action, alone, moved'
+    (root / 'pdb.xml').write_text(moved, encoding='utf-8')
+    out = root / 'report'
+    result = report(out, ('native', root / 'pdb.xml'))
+    assert result.returncode == 1, outcome(result)
+    assert 'native: planted/fails_to_link: link' in result.stderr, outcome(result)
+    assert 'outside every test' not in result.stderr, outcome(result)
+    planted = matrix(out / 'planted.html')
+    assert planted.verdict('fails_to_link', 'native') == 'link'
+    output = linked(out / 'planted.html', planted.cells[('fails_to_link', 'native')].href)
+    assert 'missing()' in output.text, output.text
+    check_pages(out)
+
+
 def test_output_cdata_cannot_hold_is_shown(root: Path) -> None:
     # The test prints ]]>, which ends b2's CDATA early, markup, and a byte that is not UTF-8.
     data = sample('native-odd-output').read_bytes()
@@ -985,6 +1005,7 @@ CASES = [
     test_a_lane_is_what_its_name_says,
     test_an_own_lane_is_named_after_its_target_and_library,
     test_a_failure_outside_every_test_fails_the_lane,
+    test_an_action_in_a_tests_own_directory_is_the_tests,
     test_output_cdata_cannot_hold_is_shown,
     test_served_test_passes_and_fails_as_a_run,
     test_emscripten_lane_and_its_link_and_driven_tests,

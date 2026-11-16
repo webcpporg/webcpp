@@ -186,7 +186,8 @@ CHROME_LANES = {('asio', 'browser'), ('asio', 'browser-workers'),
                 ('cobalt', 'browser-workers'), ('cobalt', 'browser-runtime-probes'),
                 ('cobalt', 'browser-pages'), ('cobalt', 'browser-worker-pages'),
                 ('cobalt', 'browser-network-counterparts'),
-                ('document', 'js'), ('trystero', 'interop')}
+                ('document', 'js'), ('trystero', 'interop'),
+                ('webrtc', 'browser'), ('webrtc', 'interop')}
 
 # The own lanes that name no target yet build for every target in one command, (library, lane):
 # hash's measure, whose Jamfile names wasip2's, wasip3's and emscripten's toolsets in its
@@ -540,6 +541,12 @@ OWN_LANE_OPTIONS = {
         ('exception-handling=on,off', 'webcpp-beast-unsupported=error,ignore'),
     ('beast', 'browser-node', 'emscripten'):
         ('exception-handling=on,off', 'webcpp-beast-unsupported=error,ignore'),
+    # webrtc's interop lane builds its programs as the request asks, with
+    # exceptions on and off; its page sets nothing the unsupported policy
+    # decides, so one policy is enough. Its browser lane builds each program
+    # with exceptions on and off itself.
+    ('webrtc', 'interop', 'native'): ('exception-handling=on,off',),
+    ('webrtc', 'interop', 'emscripten'): ('exception-handling=on,off',),
 }
 
 

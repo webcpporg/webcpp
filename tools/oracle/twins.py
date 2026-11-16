@@ -14,7 +14,10 @@ A program is every file <examples>/<path>.cpp, at any depth, named by <path>
 (xstate/actions_order, or a name alone at the top). It has a twin,
 <twins>/<path><suffix>, which does on the original what the program does on
 the port, or a line `<path>: <reason>` in <twins>/without-twin.txt, which says
-why the original has none. A twin runs as the words after `--` followed by
+why it has none. A program with a twin has its output beside it,
+<examples>/<path>.expected; one without may have none, as a program that is
+linked and never run prints nothing to compare (webcpp.link, whose .expected
+the page's check refuses). A twin runs as the words after `--` followed by
 its path (node --conditions=development, for a JavaScript original), in a
 process group of its own that is killed when it outlives --timeout, colour
 off whatever the shell asks for. What it prints on the standard output, every
@@ -118,7 +121,7 @@ def exemptions(path: Path) -> tuple[dict[str, str], list[str]]:
 
 def survey(arguments: Arguments) -> tuple[Tree, list[str]]:
     """The tree, and every fault that needs no twin to run: the bookkeeping of the programs, the
-    twins, the outputs and the exemptions, and each program's .expected."""
+    twins, the outputs and the exemptions, and the .expected of each program with a twin."""
     exemption_file = arguments.twins / EXEMPTIONS
     exempt, faults = exemptions(exemption_file)
     tree = Tree(programs=files(arguments.examples, PROGRAM),
@@ -135,7 +138,7 @@ def survey(arguments: Arguments) -> tuple[Tree, list[str]]:
         faults.append(f'{name}: {EXEMPTIONS} names no example')
     for name in sorted(tree.outputs - tree.twins):
         faults.append(f'{name}: an output of no twin')
-    for name in sorted(tree.programs):
+    for name in sorted(tree.programs & tree.twins):
         expected = arguments.examples / f'{name}{OUTPUT}'
         if not expected.is_file():
             faults.append(f"{name}: the program's output {expected} does not exist")
