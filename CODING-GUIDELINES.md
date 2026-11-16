@@ -6491,11 +6491,17 @@ Asio's first library-main CI and the final joint candidate remain separate gates
 - **Asyncify's stack is 8192 bytes unless a program raises it with the
   propagated feature `asyncify-stack-size` (powers of two up to 1048576, a
   smaller value stopping the compile), and `asyncify_stack` reads the bytes
-  each unwind wrote from Asyncify's own data, in debug, release and release
-  linked with `-O3`.** A suspension that does not fit traps with
-  `RuntimeError: unreachable`; 8192 is twice the smallest power of two every
-  build passed with (deepest 3,540 bytes, Cobalt's 1,088), and Emscripten's
-  default of 4096 left 556 bytes.
+  each unwind wrote from Asyncify's own data, in debug and release.** A
+  suspension that does not fit traps with `RuntimeError: unreachable`. 8192
+  was twice the smallest power of two every build passed with when b2 linked
+  a release build without optimization (deepest 3,540 bytes, Cobalt's
+  1,088); since release links at `-O3` (#18) debug is the deepest build
+  (1,168 bytes, 388 in release; Cobalt's 1,036 and 384, measured on
+  2026-11-15). The owner decided on 2026-11-15 that 8192 stays: programs
+  ship release builds, where the deepest suspension of the libraries built
+  on asio wrote 564 bytes (trystero's room test), and debug, for
+  development and the tests, 2,344, within the half `asyncify_stack` asks;
+  8192 is also the floor those libraries are tested against.
   Source: `genesis/design.md`, D5 (proposals); `AGENTS.md` (asio).
 - **Artifacts are named Boost's way (`app-60-d-jspi.js`,
   `webcpp-suspend-asyncify/app-60-d-asyncify.js`), `webcpp.variants` builds a
@@ -6507,10 +6513,13 @@ Asio's first library-main CI and the final joint candidate remain separate gates
   `response.url`, so that a redirect does not misdirect it.
   Source: `genesis/design.md`, D10, and `genesis/reference/STATUS.md`, task 12
   (proposals).
-- **Published binary sizes are release builds linked with `-O3` explicitly,
-  and `webcpp.size-table` records every guide example in both variants.** b2's
-  emscripten toolset does not pass the optimization level to the link; in
-  release Asyncify's program is about 1.9 times JSPI's (2.9 in debug). The
+- **Published binary sizes are release builds, which the superproject links
+  at `-O3` as it compiles them, and `webcpp.size-table` records every guide
+  example in both variants.** b2 1.92's emscripten toolset passes no
+  optimization level to the link, which the Jamroot's region
+  `emscripten-link-optimization` adds (#18); in release Asyncify's program
+  is about twice JSPI's (asio's timers, 988,047 bytes against 489,216 of
+  `.wasm`), and 2.9 times in debug. The
   optimized JSPI link exports `emscripten_stack_get_current` and
   `_emscripten_stack_restore`, since Emscripten reads `EM_JS_DEPS` after
   native linking.
