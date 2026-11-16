@@ -7457,10 +7457,14 @@ GCC 15.2's default-argument `await_suspend` regression (GCC PR121643) prevents
 unmodified native Cobalt `race` applications from compiling. The GCC 15 CI lane
 therefore provisions GCC 15.3 from a pinned official image and validates an
 independent compile/run coroutine probe, including after cache restoration.
-It does not change the native core or omit those tests. GCC 14's separate known
-coroutine-allocation false positive (boostorg/cobalt#7) is scoped to the affected
-test functions; the two immutable original application probes retain the warning
-as nonfatal for GCC 14 alone. Consumers inherit no warning-suppression flags.
+The lane does not change the native core or omit those tests.
+A local build probes the GCC 15 its user-config.jam configures the same way: the
+Jamroot's `gcc-probe` compiles and runs that probe once per compiler and run of b2,
+and a compiler that fails it stops the build with a message naming PR121643 and
+GCC 15.3, before a lane would end in internal compiler errors. GCC 14's separate
+known coroutine-allocation false positive (boostorg/cobalt#7) is scoped to the
+affected test functions; the two immutable original application probes retain the
+warning as nonfatal for GCC 14 alone. Consumers inherit no warning-suppression flags.
 
 The 2026-11-07 report covers 12 original applications in 432 cells, keeping
 counterparts, unavailable facilities and upstream defects separate. Shared Release

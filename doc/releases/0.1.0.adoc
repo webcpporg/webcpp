@@ -77,6 +77,7 @@ None.
 * Added tests of a missing /third_party// name, of the BIPs' pin and of Emscripten without a crypto backend.
 * Fixed BearSSL's entropy defines on a Windows target built by Clang or GCC.
 * Added the lint rule nodiscard results, which a library asks for in its meta/lint.json.
+* Added a probe of a configured GCC 15, which stops a build on GCC 15.2 (GCC PR121643) and names GCC 15.3.
 * Changed the pages' tables to stack as on a phone when they do not fit, and long names in them to break between their parts.
 * Changed the pages' tables to keep names whole where they fit, and a table of eight columns or more to scroll rather than stack.
 * Added the role key-column, which keeps a table's first column wide enough for its words.

@@ -10,6 +10,7 @@
 # install, and lists the targets and the lanes the libraries declare
 # (declared-targets, declared-lanes).
 import boost ;
+import common ;
 import errors ;
 import feature ;
 import modules ;
@@ -18,6 +19,7 @@ import numbers ;
 import os ;
 import package ;
 import path ;
+import property-set ;
 import toolset ;
 import type ;
 
@@ -250,6 +252,68 @@ rule boost-check ( properties * )
     }
 }
 
+# GCC 15.2 crashes on an await_suspend that has a default argument, as
+# unmodified Cobalt race code has (GCC PR121643, fixed in GCC 15.3). The CI
+# installs GCC 15.3 and probes it (tools/ci/actions/gcc); a GCC 15 that a
+# user-config.jam configures is probed here, once per compiler and run of b2:
+# it compiles and runs the CI's probe, and a compiler that crashes on it, or
+# builds a program that fails, stops the build before anything compiles, as
+# a lane otherwise ends in internal compiler errors. Another GCC, or a build
+# on Windows, is not probed. Not a check-target-builds: its answer, cached by
+# properties, would outlive the compiler it measured.
+rule gcc-probe ( properties * )
+{
+    if <toolset>gcc in $(properties) && ! <webcpp-boost-check>off in $(properties)
+        && [ os.name ] != NT
+    {
+        local settings = [ toolset.set-target-variables-aux gcc
+            : [ property-set.create $(properties) ] ] ;
+        local command ;
+        while $(settings)
+        {
+            if $(settings[1]) = CONFIG_COMMAND
+            {
+                command += $(settings[2]) ;
+            }
+            settings = $(settings[3-]) ;
+        }
+        local compiler = $(command:J=" ") ;
+        command = [ common.make-command-string $(command) ] ;
+        if $(command) && ! $(.gcc-probed.$(command))
+        {
+            .gcc-probed.$(command) = true ;
+            local version = [ SHELL "$(command) -dumpfullversion -dumpversion"
+                : strip-eol ] ;
+            if [ MATCH "^(15)\\." : $(version) ]
+            {
+                local probe = [ path.native [ path.join
+                    [ path.root [ path.make $(WEBCPP_ROOT) ] [ path.pwd ] ]
+                    tools/ci/actions/gcc/coroutine_probe.cpp ] ] ;
+                # The flags of install.py; the program goes to a directory
+                # of its own, removed as the shell exits.
+                local script =
+                    "directory=`mktemp -d` && trap 'rm -rf \"$directory\"' EXIT &&"
+                    "$(command) -std=c++20 -O0 -Wall -Wextra -Werror \"$(probe)\""
+                    "-o \"$directory/probe\" 2>&1 && \"$directory/probe\" 2>&1" ;
+                local result = [ SHELL $(script:J=" ") : exit-status ] ;
+                if $(result[2]) != 0
+                {
+                    local config = [ modules.binding user-config ] ;
+                    config ?= user-config.jam ;
+                    errors.user-error "GCC $(version) ($(compiler)) fails"
+                        "tools/ci/actions/gcc/coroutine_probe.cpp, which every GCC 15"
+                        "must compile and run: GCC PR121643, the await_suspend"
+                        "default-argument regression of GCC 15.2, crashes it on"
+                        "Cobalt's race. Configure GCC 15.3 or newer in $(config)"
+                        "in its place, `using gcc : 15 : /path/to/g++-15 ;`."
+                        "The probe printed:"
+                        : $(result[1]) ;
+                }
+            }
+        }
+    }
+}
+
 project /webcpp
   : requirements
       <cxxstd>20
@@ -308,6 +372,8 @@ project /webcpp
       <toolset>clang-wasip3,<exception-handling>on:<cxxflags>"-fwasm-exceptions -mllvm -wasm-use-legacy-eh=false"
       <toolset>clang-wasip3,<exception-handling>on:<linkflags>"-fwasm-exceptions -lunwind"
       # end::wasi-exceptions[]
+      # The compiler first: a broken one would fail Boost's check too.
+      <conditional>@gcc-probe
       <conditional>@boost-check
   : default-build <variant>debug
   : build-dir bin
