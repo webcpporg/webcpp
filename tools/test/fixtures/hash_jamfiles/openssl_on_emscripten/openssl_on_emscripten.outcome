@@ -1,0 +1,12 @@
+# Copyright (c) 2026 WebCpp.org
+#
+# Distributed under the Boost Software License, Version 1.0. (See
+# accompanying file LICENSE_1_0.txt or copy at
+# https://www.boost.org/LICENSE_1_0.txt)
+
+# The compiler's line of the #error starts with the forced header's path on the
+# machine, so the message is a contains: line.
+[all]
+targets: emscripten
+build: fails
+contains: webcpp::hash: OpenSSL is not built for Emscripten. In the program's Jamfile, remove /webcpp/hash//openssl: hkdf and pbkdf2 then run on backends::hash2.

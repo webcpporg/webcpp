@@ -109,10 +109,10 @@ webcpp/
   third_party/        third-party code the libraries and their tests use, not webcpp's: each
                       a submodule under third_party/libs/, pinned at a commit and keeping its
                       own licence (openssl, libdatachannel, bearssl, secp256k1, bitcoin for
-                      ctaes, and the test data wycheproof, bips, JSON-Schema-Test-Suite and
-                      nativejson-benchmark), and the Jamfile that declares it as
-                      /webcpp/third_party//<target> and /third_party//<target> (guidelines
-                      chapter 10)
+                      ctaes, xkcp, libsodium, blake3, and the test data wycheproof, bips,
+                      JSON-Schema-Test-Suite and nativejson-benchmark), and the Jamfile that
+                      declares it as /webcpp/third_party//<target> and
+                      /third_party//<target> (guidelines chapter 10)
   doc/                the index page (index.adoc, Jamfile)
     releases/         each version's release notes, which the index page shows
   site/               the site, a repository of its own, webcpporg/webcpporg.github.io, a
@@ -910,7 +910,14 @@ testing.launcher on emscripten", chapter 6). Every program that node runs
 (`webcpp.run`, `webcpp.run-fail`, `webcpp.example`) links
 `-sNODERAWFS=1`, so that it reads the host's files and its standard input:
 without it, node gives it an empty file system of Emscripten's own, and a
-test reads its input file as empty. No other program gets it.
+test reads its input file as empty. No other program gets it. A program of
+`webcpp.run`, `webcpp.run-fail` or `webcpp.example` that reads a fixed path,
+as a C library's own tests read theirs (libsodium's `/test-data`), asks for
+`<webcpp-node-raw-fs>off`: it links Emscripten's NODEFS (`-lnodefs.js`) in
+place of `-sNODERAWFS=1`, under which nothing can be mounted, and mounts the
+host's directories itself where it reads them (`FS.mount`); it then reads no
+standard input of the host's, so an example with a `<stem>.input` does not
+ask for it.
 
 **A program on emscripten links at its compile's level of optimization**
 (the Jamroot's region `emscripten-link-optimization`): `-O0` for
@@ -1057,7 +1064,7 @@ webcpp.source-only <directory> + ;   (reference source trees)
 | Rule | Passes when | Notes |
 | --- | --- | --- |
 | `webcpp.targets t ...` | | the Jamfile's default targets; before its first program, once; each is `native`, `emscripten`, `wasip2` or `wasip3`, or the build stops naming it |
-| `webcpp.run` | the program exits with 0 | built once per target it declares; a user's `exception-handling=off` links `tools/throw_exception.cpp`; on emscripten, run by node, linked with `-sNODERAWFS=1`; links `/webcpp//node-test` on every target (Targets, above) |
+| `webcpp.run` | the program exits with 0 | built once per target it declares; a user's `exception-handling=off` links `tools/throw_exception.cpp`; on emscripten, run by node, linked with `-sNODERAWFS=1`, or with NODEFS, which the program mounts itself, under `<webcpp-node-raw-fs>off`; links `/webcpp//node-test` on every target (Targets, above) |
 | `webcpp.run-fail` | the program exits with another status | built and run as `webcpp.run`'s, and links `/webcpp//node-test` likewise |
 | `webcpp.compile` | the sources compile | no program is linked; takes `/webcpp//node-test` for its header |
 | `webcpp.compile-fail` | the sources do not compile | left out of clang-tidy; any error passes it, the wrong one included; takes `/webcpp//node-test` for its header |
@@ -1065,7 +1072,7 @@ webcpp.source-only <directory> + ;   (reference source trees)
 | `webcpp.compile-diagnostic` | the sources stop with every error they state in clang's `-verify` comments, `// expected-error@<file>:* {{<message>}}` for a header they include or `// expected-error@+1 {{<message>}}` for the next line | compiled with `-Xclang -verify -Xclang -verify-ignore-unexpected=error,note`, so an error not stated and a note are ignored, the cascade that follows a header's `#error` among them; then `tools/compile_diagnostic/check.py` runs the compile again with clang's diagnostic log and fails on any error located in a comment (a `//` one or a `/* */` one over several lines) after an `expected-<kind>` of that comment, which is `-verify`'s own report on a directive it could not read and so dropped (a header it names that cannot be located, a `{{...}}` whose `}}` is not on its line), and on a compile that reports no error at all: each directive clang reads, every one outside a branch the preprocessor skips, must be read whole, the header it names found and included, and its error raised in that header; built on b2's `clang` toolset only (native clang, `clang-wasip2`, `clang-wasip3`) and skipped elsewhere, since `-verify` is clang's: a refusal would turn every gcc and msvc lane red for a declaration that holds; left out of clang-tidy; takes `/webcpp//node-test` for its header |
 | `webcpp.boost-test` | every case of the Boost.Test suite passes | native only, whatever the Jamfile declares; the header-only framework, `tools/boost_test_runner.cpp`, is one object of the suite's, always compiled with exceptions |
 | `webcpp.source-only` | | declares child source directories whose original Jamfiles are not WebCPP projects; use in `build.jam` before discovery; it changes neither explicit compilation nor lint |
-| `webcpp.example` | the program exits with 0, and its standard output, carriage returns removed, equals `<stem>.expected` beside it | its standard input is `<stem>.input` beside it, else empty, never the terminal, on every target (wasmtime passes it through, and node under `-sNODERAWFS=1`); run through `testing.launcher` for WASI, and on emscripten with the node on `PATH`, not the one b2's toolset registered, which b2 gives only to its own testing rules, by `tools/example/run_example.py`, which names a failing exit status (or the signal) before the diff; always run again, and `<stem>.input` is a source of the run; links `/webcpp//node-test` on every target (Targets, above) |
+| `webcpp.example` | the program exits with 0, and its standard output, carriage returns removed, equals `<stem>.expected` beside it | its standard input is `<stem>.input` beside it, else empty, never the terminal, on every target (wasmtime passes it through, and node under `-sNODERAWFS=1`, which `<webcpp-node-raw-fs>off` replaces with NODEFS); run through `testing.launcher` for WASI, and on emscripten with the node on `PATH`, not the one b2's toolset registered, which b2 gives only to its own testing rules, by `tools/example/run_example.py`, which names a failing exit status (or the signal) before the diff; always run again, and `<stem>.input` is a source of the run; links `/webcpp//node-test` on every target (Targets, above) |
 | `webcpp.link` | the program links | never run: a program for a browser, which node refuses to run (`-sENVIRONMENT=web`), or one that needs the network; b2's `link` test, which `--dump-tests` lists and the report shows as a link test; never linked with `-sNODERAWFS=1`. The explicit target `<name>-program` is the same program, an `exe` of the same sources and requirements, `<name>-program.js` on emscripten, for a target that needs its files, such as a page that loads it. An example Jamfile's is shown on the page by its code, and has no `.expected` (chapter 3) |
 | `webcpp.headers-alone` | each public header compiles alone | one test per header, `alone-<path>` with `/` as `-` (`alone-xactor-scheduler`), against `/webcpp/<library>//<library>` and the requirements given, for the targets given or the Jamfile's; `only` restricts a call to the public headers its globs match, relative to `<include-root>/webcpp/` (`wasi/http/response.hpp`), a glob that matches none stopping the build; a library may call it several times, and a header two calls take stops the build, naming it |
 | `webcpp.data` | | requirements, or usage requirements, that give a program of `webcpp.run` or `webcpp.run-fail` the absolute directories, each read at the same path on every target: on wasip2 and wasip3 wasmtime preopens it (`wasmtime --dir="<directory>" <program>`); natively and on emscripten (`-sNODERAWFS=1`) the program reads the host's files already. A relative directory stops the build, as does one whose path holds `"`, `$` or a backquote, which the shell would read inside `--dir="..."`, naming the character |

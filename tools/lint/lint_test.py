@@ -1055,6 +1055,56 @@ def test_a_compiled_boost_library_s_sources_are_not_analysed(root):
     expect_clean(lint(root))
 
 
+def test_a_native_lane_s_webassembly_commands_are_left_to_its_native_one(root):
+    # An own lane that names no target runs natively, and may build its programs for every
+    # target in one command (libs/hash's measure lane does): its dry run then compiles one
+    # source natively, with wasi-sdk's clang++ and with em++. The source is analysed natively,
+    # as the first target that compiles it, and its WebAssembly commands are left out, so that
+    # no file of the database is compiled by both kinds of compiler; in either order, and in the
+    # twins without exceptions too. A source that such a run compiles for WebAssembly alone is
+    # analysed as its compiler's target: an em++ command as emscripten's, by wasi-sdk's clang++
+    # with em++'s target, never as a host command.
+    prepare(root)
+    harness.link_emsdk(root)
+    wasi = wasi_sdk_tool('clang++')
+    emxx = str(root / '.local/emsdk/upstream/emscripten/em++')
+    source = 'libs/demo/test/pass.cpp'
+    alone = 'libs/demo/test/fails.cpp'
+
+    def line(compiler: str, where: str, file: str, *words: str) -> str:
+        return (f'"{compiler}" {" ".join(words)} -std=c++20 -c -o "bin/{where}/x.o" "{file}"')
+
+    native = line('clang++', 'native', source)
+    wasm = line(wasi, 'wasip2', source, '--target=wasm32-wasip2')
+    em = line(emxx, 'emscripten', source)
+    for lines in ([native, wasm, em], [em, wasm, native]):
+        entries: list[dict[str, object]] = []
+        compile_commands.read(str(root), 'native', lines, entries, set(), set(), wasi, [])
+        compilers = [entry['arguments'][0] for entry in entries]  # type: ignore[index]
+        assert compilers == ['clang++'], (lines, entries)
+    entries = []
+    compile_commands.read(str(root), 'native', [native, line(emxx, 'emscripten', alone)],
+                          entries, set(), set(), wasi, [])
+    by_file = {Path(str(entry['file'])).name: entry['arguments'] for entry in entries}
+    command = by_file['fails.cpp']
+    assert compile_commands.wasi_sdk(command[0]), command  # type: ignore[index]
+    assert 'wasm32-unknown-emscripten' in command, command  # type: ignore[operator]
+    # The twins without exceptions, from the same kind of dry run.
+    twin_lines = [line(emxx, 'emscripten', source, '-fno-exceptions'),
+                  line(wasi, 'wasip2', source, '--target=wasm32-wasip2', '-fno-exceptions'),
+                  line('clang++', 'native', source, '-fno-exceptions')]
+    dry_run = compile_commands.dry_run
+    compile_commands.dry_run = lambda _root, _request: twin_lines  # type: ignore[assignment]
+    try:
+        entries = []
+        compile_commands.twins(str(root), 'native', {}, {}, [], {source: 'native'}, entries,
+                               set(), wasi, compile_commands.Twinned())
+    finally:
+        compile_commands.dry_run = dry_run  # type: ignore[assignment]
+    compilers = [entry['arguments'][0] for entry in entries]  # type: ignore[index]
+    assert compilers == ['clang++'], entries
+
+
 def test_clang_tidy_uses_shipped_cobalt_sources_on_a_clean_tree(root):
     harness.copy_integration_libraries(root, 'config', 'asio', 'cobalt')
     prepare(root)
@@ -2359,6 +2409,14 @@ CANARY = (CPP + '\n#ifndef WEBCPP_CRYPTO_DETAIL_CANARY_H\n#define WEBCPP_CRYPTO_
           '#define WEBCPP_CRYPTO_BEARSSL_COMMIT {bearssl}\n#endif\n'
           '#define WEBCPP_CRYPTO_CTAES_COMMIT {ctaes}\n#endif\n')
 CANARY_HEADER = 'libs/crypto/include/webcpp/crypto/detail/canary.h'
+HASH_CANARY = (CPP + '\n#ifndef WEBCPP_HASH_DETAIL_CANARY_H\n#define WEBCPP_HASH_DETAIL_CANARY_H\n'
+               '#ifdef WEBCPP_HASH_XKCP_CANARY_COMMIT\n'
+               '#define WEBCPP_HASH_XKCP_COMMIT WEBCPP_HASH_XKCP_CANARY_COMMIT\n#else\n'
+               '#define WEBCPP_HASH_XKCP_COMMIT {xkcp}\n#endif\n'
+               '#define WEBCPP_HASH_SODIUM_COMMIT {sodium}\n'
+               '#define WEBCPP_HASH_BLAKE3_COMMIT {blake3}\n'
+               '#define WEBCPP_HASH_BEARSSL_COMMIT {bearssl}\n#endif\n')
+HASH_CANARY_HEADER = 'libs/hash/include/webcpp/hash/detail/canary.h'
 
 
 def record_submodule(root: Path, name: str, commit_id: str) -> None:
@@ -2378,6 +2436,8 @@ def commit_recorded(root: Path, message: str) -> None:
     """Commits the header and the gitlinks recorded, without commit's git add -A, which would
     drop a gitlink whose directory is not there."""
     git(root, 'add', CANARY_HEADER)
+    if (root / HASH_CANARY_HEADER).exists():
+        git(root, 'add', '-f', HASH_CANARY_HEADER)
     git(root, 'commit', '-q', '-m', message)
 
 
@@ -2414,6 +2474,27 @@ def test_canary_pins(root):
     expect_alone(lint(root), 'canary pins', [
         f'{CANARY_HEADER}: a pin is not of the form #define WEBCPP_CRYPTO_<NAME>_COMMIT <7 hex>: '
         '#define WEBCPP_CRYPTO_CTAES_COMMIT 123456'])
+    # hash's detail/canary.h is read beside crypto's: sodium's submodule is libsodium, xkcp's,
+    # blake3's and bearssl's are their own names; a wrong pin fails at the header, naming both.
+    write(root, CANARY_HEADER, CANARY.format(bearssl='1234567', ctaes='1234567'))
+    xkcp = 'aaaaaaa' + '0' * 33
+    libsodium = 'bbbbbbb' + '0' * 33
+    blake3 = 'ccccccc' + '0' * 33
+    record_submodule(root, 'xkcp', xkcp)
+    record_submodule(root, 'libsodium', libsodium)
+    record_submodule(root, 'blake3', blake3)
+    write(root, HASH_CANARY_HEADER,
+          HASH_CANARY.format(xkcp='aaaaaaa', sodium='bbbbbbb', blake3='ccccccc',
+                             bearssl='1234567'))
+    commit_recorded(root, 'Hash canaries at the recorded commits')
+    expect_clean(lint(root))
+    write(root, HASH_CANARY_HEADER,
+          HASH_CANARY.format(xkcp='aaaaaaa', sodium='bbbbbba', blake3='ccccccc',
+                             bearssl='1234567'))
+    commit_recorded(root, 'A wrong hash pin')
+    expect_alone(lint(root), 'canary pins', [
+        f'{HASH_CANARY_HEADER}: sodium is pinned at bbbbbba and '
+        'third_party/libs/libsodium is at bbbbbbb'])
 
 
 def test_pyright(root):
@@ -2696,6 +2777,7 @@ CASES = [
     test_clang_tidy_reads_a_program_of_javascript_exceptions,
     test_a_dependency_s_warnings_are_not_ours,
     test_a_compiled_boost_library_s_sources_are_not_analysed,
+    test_a_native_lane_s_webassembly_commands_are_left_to_its_native_one,
     test_clang_tidy_uses_shipped_cobalt_sources_on_a_clean_tree,
     test_clang_tidy_refuses_a_throw_on_each_target_without_exceptions,
     test_a_native_header_that_needs_no_exceptions_has_its_twin,

@@ -159,7 +159,32 @@ feature.compose <webcpp-suspend>asyncify : <exception-handling-method>js ;
 # input file, or an example its standard input, as empty, and pass or fail
 # for the wrong reason. A program of webcpp.link, which a browser runs, never
 # gets it, nor does one a driver runs (webcpp.drive).
-.node-raw-fs = <toolset>emscripten:<linkflags>-sNODERAWFS=1 ;
+.node-raw-fs = <conditional>@webcpp%node-file-system ;
+
+# <webcpp-node-raw-fs>off: a program of webcpp.run, webcpp.run-fail or
+# webcpp.example that mounts, on emscripten, the host's directories it reads
+# where it reads them (FS.mount of Emscripten's NODEFS), as a C library's own
+# tests read a fixed path such as /test-data. Under -sNODERAWFS=1 every path
+# is the host's and nothing can be mounted, so such a program links NODEFS in
+# its place; it then reads no standard input of the host's, so an example
+# with a <stem>.input does not ask for it. Incidental: the program's build
+# directory stays the same.
+feature.feature webcpp-node-raw-fs : off : optional incidental ;
+
+# The file system node gives a program of webcpp.run, webcpp.run-fail and
+# webcpp.example on emscripten: the host's (-sNODERAWFS=1), or NODEFS, which
+# the program mounts itself, when it asks for <webcpp-node-raw-fs>off.
+rule node-file-system ( properties * )
+{
+    if [ webcpp-target.target-of $(properties) ] = emscripten
+    {
+        if <webcpp-node-raw-fs>off in $(properties)
+        {
+            return <linkflags>-lnodefs.js ;
+        }
+        return <linkflags>-sNODERAWFS=1 ;
+    }
+}
 
 # What every test and example links (Jamroot's node-test): no library's
 # Jamfile can leave it out, and one that links -sJSPI or -sASYNCIFY gets it

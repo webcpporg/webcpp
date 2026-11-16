@@ -27,6 +27,9 @@ secp256k1 over C libraries built from source, from R.
 * link:{library-pages}document/{library-page}[document]: a header-only JSON
 document for {cpp}20 that behaves as JavaScript does, exact in decimal, in one
 relocatable binary image, with a JavaScript module, from R.
+* link:{library-pages}hash/{library-page}[hash]: hashing and key derivation for
+{cpp}20 over Boost.Hash2 and C backends: Keccak-256, BLAKE3, HKDF, PBKDF2,
+Argon2id and scrypt, from R.
 * link:{library-pages}idna/{library-page}[idna]: a header-only library of
 internationalized domain names for {cpp}20: Punycode, UTS 46 and IDNA2008
 validity over Unicode 17.0.0 tables, from R.
@@ -84,6 +87,10 @@ None.
 * Fixed links over code hiding the underscores of names under their underline.
 * Fixed the header cells of a table with a header column lacking their scope, which the site's HTML check refuses.
 * Changed the references to leave out detail macros, WEBCPP_*_DETAIL_*.
+* Fixed a stacked table's cell letting a word wider than its line, such as a commit, run past its frame.
+* Fixed a stacked table's caption shrinking to its longest word.
+* Added the user's Jamfiles of webcpp::hash, tested as fixtures of a test of the tools.
+* Changed the lint's canary-pins rule to read webcpp::hash's detail/canary.h beside webcpp::crypto's.
 * Fixed the WASIp2 test launcher interrupting large finite workloads after 60 seconds.
 * Fixed Chrome provisioning and browser/TLS profile coverage in Asio CI lanes.
 * Added source-built OpenSSL and Cobalt SSL targets for WASIp2.
@@ -266,6 +273,39 @@ could not read and dropped, such as one naming a header that does not exist.
 * Added ctaes, Bitcoin Core's constant-time AES at v31.1, built from source as
 /third_party//ctaes, and the fixtures of the user's Jamfiles of webcpp::crypto's block cipher
 and signing programs.
+* Added XKCP's Keccak-p[1600], built from source with webcpp::hash's adapter as
+`/third_party//xkcp`.
+* Added libsodium 1.0.22, built from source as /third_party//sodium with the defines
+its own configure finds on each target, and /third_party//sodium-test-config for a
+program that compiles against its private headers.
+* Added `<webcpp-node-raw-fs>off`, for a program of webcpp.run, webcpp.run-fail or webcpp.example
+that mounts on emscripten the host's directories it reads, where it reads them, as libsodium's own
+tests read `/test-data`.
+* Added BLAKE3's C implementation 1.8.7, built from source as /third_party//blake3,
+portable on WebAssembly and dispatched to its intrinsics files natively, its vectors as
+/third_party//blake3_vectors.
+* Added the feature webcpp-blake3-testing, which builds /third_party//blake3 with
+BLAKE3_TESTING for BLAKE3's own test program.
+* Added a probe of the configured compiler for x86-64 or arm64, on a native toolset whose
+build request names no architecture, which picks BLAKE3's intrinsics files.
+* Changed /third_party//bearssl to carry webcpp::hash's canary beside webcpp::crypto's,
+and WEBCPP_HASH_HAS_BEARSSL, when libs/hash is checked out.
+* Changed the check that a program links OpenSSL's archives once to cover a program naming
+webcpp::hash's and webcpp::crypto's OpenSSL, when libs/hash is checked out.
+* Fixed the check that a program links OpenSSL's archives once finding no link line on WASI.
+* Changed /third_party//sodium to link its programs on Emscripten with
+-sALLOW_MEMORY_GROWTH=1, for the memory Argon2id and scrypt allocate.
+* Added tools/hash/measure.py and webcpp::hash's own lane measure, which builds and measures
+its capability table's programs on the four targets in one command.
+* Added own lanes that build for every target in one command, whose CI job installs and
+registers the WebAssembly toolsets beside Clang 18: webcpp::hash's measure.
+* Fixed the lint's clang-tidy refusing such a lane, whose sources it now analyses
+natively.
+* Added tools/hash/doc_tables.py, which generates webcpp::hash's comparison tables,
+backend lists and llms.txt from its capability table and its measurements, and checks them
+when its page is built.
+* Changed tools/hash/doc_tables.py to give each chapter two comparison tables, each under the
+eight columns from which a table scrolls.
 
 [#webcpp-0-1-0-compilers-tested]
 == Compilers tested

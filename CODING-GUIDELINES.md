@@ -102,6 +102,7 @@ Not built yet:
     `tools/test/component_jam_test.py`, `tools/generated/generated_test.py`,
     `tools/test/emscripten_test.py`, `tools/test/crypto_jamfiles_test.py`,
     `tools/test/crypto_jamfiles_format_test.py`,
+    `tools/test/hash_jamfiles_test.py`, `tools/test/hash_jamfiles_format_test.py`,
     `tools/test/external_test.py`,
     `tools/test/doc_test.py`,
     `tools/test/harness_test.py`, `tools/test/third_party_test.py`,
@@ -343,7 +344,12 @@ exactly its authors' and the program carries only what it calls.
 2. `third_party/Jamfile` builds it from its own sources, file by file, as a
    static library, in the library's own C dialect, on every target and with
    every file: a file that does not apply to a target still compiles, to the
-   stubs other files call. A single unity source is not used.
+   stubs other files call. A single unity source is not used. Three exceptions,
+   each recorded in its row of chapter 10: BLAKE3's intrinsics files compile on
+   their instruction sets alone, each flagged for its own set; XKCP is built
+   from the one file of Keccak-p[1600] the library calls (and the high-level
+   files increment 3 of webcpp::hash lists), not from every file of its
+   package; libsodium is built without its `.S` files.
 3. Every file is compiled with `-ffunction-sections -fdata-sections` (`/Gy
    /Gw` on MSVC); upstream's warnings are not webcpp's (`<warnings>off`); each
    define the library cannot work out for itself on a target sits beside the
@@ -581,17 +587,19 @@ aliases, concepts, variables, data members and macros.
   silently.
 - A user's Jamfile of a library whose own tests cannot express it (b2's raw
   `exe`, a refusal on one target) is a fixture of the tools' test, not a
-  library's test: `tools/test/fixtures/crypto_jamfiles/<case>/` holds the
+  library's test: `tools/test/fixtures/<library>_jamfiles/<case>/` holds the
   case's `Jamfile`, its sources and `<case>.outcome`, and
-  `tools/test/crypto_jamfiles_test.py` builds each case on a scratch
+  `tools/test/<library>_jamfiles_test.py` builds each case on a scratch
   superproject, with b2 as a user runs it, once per target, in a build
-  directory the cases of a target share. The outcome file's lines starting
+  directory the cases of a target share, through `tools/test/user_jamfiles.py`,
+  which every such test shares. The outcome file's lines starting
   with `#` are comments; a block `[all]`, `[native]`, `[native-linux]`,
-  `[native-darwin]`, `[native-windows]`, `[wasip2]`, `[wasip3]` or
-  `[emscripten]` applies by the target and the system (`[all]` and each block
-  that matches apply). `targets: <target> ...` (native only without it) names
-  the targets the case is built for; `build: succeeds` or `build: fails` is
-  b2's exit status; after `build: fails` every other line must be a whole line
+  `[native-darwin]`, `[native-windows]`, `[native-arm64]`, `[native-x86_64]`,
+  `[wasip2]`, `[wasip3]` or `[emscripten]` applies by the target, the system
+  and the machine's architecture (`[all]` and each block that matches apply).
+  `targets: <target> ...` (native only without it) names the targets the case
+  is built for; `build: succeeds` or `build: fails` is b2's exit status; after
+  `build: fails` every other line must be a whole line
   of b2's output (trailing spaces aside), in any order; a line of one
   lowercase word and a colon is reserved for these directives, and
   `line: <text>` states a literal output line, empty for a blank one, also for
@@ -650,7 +658,7 @@ with `lint: failed: <rule>` for each rule that failed.
 | bare throw | a `throw` expression in a library's public header (`libs/*/include/**`), outside comments and literals, at its line: inside `#ifndef WEBCPP_<NAME>_NO_EXCEPTIONS` too, in a template that nothing instantiates, which clang-tidy's analysis without exceptions does not see, and as a rethrow, `throw;`; `boost::throw_exception` is the one way to raise, `std::rethrow_exception` the one way to rethrow (above) |
 | changelog form | a library's changelog or a version's release notes out of `AGENTS.md` chapter 5's form: a section or a region missing or out of order, a line that starts with no verb of the list, a cross-reference, an inline anchor such as `[[nodiscard]]` outside a passthrough, more than ten lines for a library and a version, text outside a bullet |
 | canary pins | a `WEBCPP_CRYPTO_<NAME>_COMMIT` of crypto's `detail/canary.h` that is not the first seven digits of the commit the superproject records for its submodule (`ctaes`: `bitcoin`) |
-| nodiscard results | a function of a library's `include/` that returns `boost::system::result` without `[[nodiscard]]`, at its line, when the library asks for the rule in its `meta/lint.json` (`"nodiscard-results"` and its reason; crypto does): `boost::system::result` carries no `[[nodiscard]]` of its own; and a malformed file or an unknown key |
+| nodiscard results | a function of a library's `include/` that returns `boost::system::result` without `[[nodiscard]]`, at its line, when the library asks for the rule in its `meta/lint.json` (`"nodiscard-results"` and its reason; crypto and hash do): `boost::system::result` carries no `[[nodiscard]]` of its own; and a malformed file or an unknown key |
 
 A source b2 expects not to compile (`webcpp.compile-fail`), and one that
 must stop with the error it states (`webcpp.compile-diagnostic`), are left
@@ -947,8 +955,10 @@ update --init third_party/libs/<name>`; a build that needs none never looks.
 
 | Target | What it is | Licence |
 | --- | --- | --- |
-| `bearssl` | BearSSL from webcpp's unmodified mirror `webcpporg/bearssl` at `7bea48e`; a static library built file by file by `third_party/Jamfile` with webcpp::crypto's canary, on every target; `WEBCPP_CRYPTO_HAS_BEARSSL=1` | MIT |
+| `bearssl` | BearSSL from webcpp's unmodified mirror `webcpporg/bearssl` at `7bea48e`; a static library built file by file by `third_party/Jamfile` with webcpp::crypto's and webcpp::hash's canaries (hash's when `libs/hash` is checked out), on every target; `WEBCPP_CRYPTO_HAS_BEARSSL=1`, and `WEBCPP_HASH_HAS_BEARSSL=1` with hash's canary | MIT |
 | `bips` | `bitcoin/bips` at `927b6de9`, shallow, test data: crypto's tests read BIP340's `bip-0340/test-vectors.csv` and BIP341's `bip-0341/wallet-test-vectors.json` at run time under the directory its define `WEBCPP_TEST_BIPS` gives, on every target (wasmtime is given it, `webcpp.data`), and run again when it changes | BSD-2-Clause, as BIP340's header states |
+| `blake3` | BLAKE3 1.8.7 at `f3149ec`; `third_party/Jamfile` compiles `c/blake3.c`, `blake3_dispatch.c` and `blake3_portable.c` on every target, the intrinsics files on their instruction sets alone (an exception to chapter 5 rule 2), with webcpp::hash's canary; `WEBCPP_HASH_HAS_BLAKE3=1` | CC0-1.0, Apache-2.0, or Apache-2.0 with LLVM exception |
+| `blake3_vectors` | BLAKE3's official vectors, `test_vectors/test_vectors.json` of the submodule `third_party/libs/blake3` at `f3149ec`, test data: hash's tests read it at run time under the directory its define `WEBCPP_TEST_BLAKE3_VECTORS` gives, on every target (wasmtime is given it, `webcpp.data`), and run again when it changes | CC0-1.0, Apache-2.0, or Apache-2.0 with LLVM exception |
 | `ca_certificates` | Dated Mozilla/curl CA data snapshot under `third_party/ca_certificates`, verified against its manifest and embedded by a build-generated header; updated explicitly by `tools/ca_certificates/update.py` | MPL-2.0 |
 | `ctaes` | `src/crypto/ctaes` of `bitcoin/bitcoin` v31.1 at `9be056a` (commit `9be056a8a72b624dae9623b2f7bded92c2a21c91`), the submodule `third_party/libs/bitcoin`, shallow; `third_party/Jamfile` compiles its `ctaes.c` alone, with webcpp::crypto's canary, on every target (`WEBCPP_CRYPTO_HAS_CTAES=1`); the tree's `src/secp256k1/` subtree is never on an include path and no glob over `third_party/libs` reaches it | MIT |
 | `json-schema-test-suite` | the JSON Schema Test Suite at `5b0ee16` (2026-09-21), test data: a test that names it reads the suite at run time from the directory its define `WEBCPP_TEST_JSON_SCHEMA_TEST_SUITE` gives, on every target (wasmtime is given it, `webcpp.data`), and runs again when a file of the suite changes | MIT |
@@ -956,7 +966,9 @@ update --init third_party/libs/<name>`; a build that needs none never looks.
 | `nativejson-benchmark` | Milo Yip's nativejson-benchmark at `478d572` (2022-10-28), test data: document's benchmarks (`libs/document/bench`) read its `data/canada.json`, `data/citm_catalog.json` and `data/twitter.json` at run time under the directory its define `WEBCPP_TEST_NATIVEJSON_BENCHMARK` gives, on every target (wasmtime is given it, `webcpp.data`), and run again when one of them changes; its own submodules are never checked out | MIT |
 | `openssl` | OpenSSL 3.5.9 at `45e844fa2a14ec92d146bd8f5778ac130b6625fb`; static libssl/libcrypto and matching generated headers, built by upstream Configure/Make through B2 for native Clang/GCC/MSVC, WASIp2 single and WASIp3 single/cooperative | Apache-2.0 |
 | `secp256k1` | libsecp256k1 v0.8.0 at `6e2c8bc`; a static library built file by file by `third_party/Jamfile` (`src/secp256k1.c` and its two precomputed tables, every module on) with webcpp::crypto's canary, on every target; its tables by `webcpp-secp256k1-tables` (`auto`: small on Emscripten, large elsewhere); `WEBCPP_CRYPTO_HAS_SECP256K1=1` | MIT |
+| `sodium` | libsodium 1.0.22 at `77e1ce5`, the submodule `third_party/libs/libsodium`; a static library built file by file by `third_party/Jamfile` (every `.c` of `src/libsodium/`, no assembly, the defines libsodium's configure finds on each target, upstream's `builds/msvc/version.h` copied into the build directory) with webcpp::hash's canary, on every target; `WEBCPP_HASH_HAS_SODIUM=1`; `sodium-test-config` gives a program its private headers and test defines; shared with webcpp::crypto | ISC |
 | `wycheproof` | C2SP's Wycheproof at `12fd3aaf` (2026-10-06), shallow, test data: crypto's tests read its `testvectors_v1/` at run time under the directory its define `WEBCPP_TEST_WYCHEPROOF` gives, on every target (wasmtime is given it, `webcpp.data`), and run again when one of its files changes | Apache-2.0 |
+| `xkcp` | XKCP (the Keccak team's code package) at `d20c8fc` (2026-11-10, no release tags); `third_party/Jamfile` compiles its `KeccakP-1600-opt64.c` alone (Keccak-p[1600], the generic64 profile) with webcpp::hash's adapter, `config.h` and canary, on every target; `WEBCPP_HASH_HAS_XKCP=1` | CC0; `brg_endian.h` under Brian Gladman's terms |
 
 OpenSSL builds from a checkout or a source distribution. Before Configure, its
 builder stages the distributable tree and checks a digest of paths, Git file
@@ -8384,6 +8396,65 @@ created from one import commit of `reference/source/`.
 
 Source: `libraries/webrtc/openspec/changes/genesis/design.md` Open Questions
 (proposals).
+
+### hash (hashing and key derivation over Boost.Hash2 and C backends; wrapper; accepted 2026-11-14, increment 1 built, not merged)
+
+webcpp::hash is one entry point for hashing and key derivation in a C++20
+program on every target webcpp has, a wrapper (`"port-of": null`). Increment 1
+is built on the library's branch (`libs/hash`, to become `webcpporg/hash`):
+Boost.Hash2's algorithms and `hmac` re-exported by alias (`algorithms.hpp`,
+`hmac.hpp`); Keccak-256 with the original padding over XKCP's permutation
+(`keccak.hpp`) and BLAKE3 over its official C implementation (`blake3.hpp`),
+both in Hash2's HashAlgorithm form; HKDF (RFC 5869, `hkdf.hpp`) and PBKDF2
+(RFC 8018, `pbkdf2.hpp`) on the backends `hash2`, `sodium`, `bearssl` and
+`openssl` (`backends/`); Argon2id (RFC 9106, parallelism 1, `argon2.hpp`) and
+scrypt (RFC 7914, `scrypt.hpp`) from libsodium; the profile and the default
+backend (`config.hpp`), the capability table (`doc/capabilities.json`), and
+the measured table (`doc/measurements*.json`, regenerated by the `measure`
+lane). The C libraries are built by `third_party/Jamfile` (`xkcp`, `blake3`,
+`sodium`, `bearssl`, each with a canary), their own suites by the `c-suites`
+lane (`test/c_suites`), the examples are in `example/` and the documentation
+in `doc/`. Every function is synchronous, reports failure as a
+`boost::system::result`, takes its data as `std::span` and allocates nothing in
+webcpp's own code. Its repository, `webcpporg/hash`, is still to be created by
+the owner (gates G1, G2 and G4); the proposal, with the specification, the
+design and the plan, is in `libraries/hash/openspec/changes/genesis/`
+(proposals).
+
+- **Two constructions of webcpp's own, over an audited primitive each, and no
+  primitive.** HKDF and PBKDF2 over Boost.Hash2's `hmac<H>` on every target,
+  the RFC's text step by step in under 150 lines with every intermediate value
+  wiped; and Keccak-256's sponge (absorbing, the `0x01 ... 0x80` padding and
+  squeezing) over XKCP's Keccak-p[1600], line for line as Boost.Hash2's
+  `detail::keccak_base<0x01, 512, 256>`, which is its oracle, until Boost
+  publishes a `keccak_256`. This departs from chapter 4's rule that webcpp
+  writes no cryptography of its own, as the owner recorded on 2026-11-14.
+  Source: `libraries/hash/openspec/changes/genesis/reference/spec.md` section
+  1.3 (proposals).
+- **The key derivation functions have backends, as webcpp::crypto's
+  algorithms do, and a backend that lacks a function refuses at compile
+  time.** `backends::hash2`, `sodium`, `bearssl` and `openssl` (native,
+  wasip2 and wasip3); natively the fastest linked backend is the default, on
+  WebAssembly the one that gives the smallest binary, decided by a measured
+  table that every pin move regenerates; one setting in `config.hpp` (a
+  profile) changes every default at once.
+  Source: `libraries/hash/openspec/changes/genesis/reference/spec.md` section
+  1.4 (proposals).
+- **The C libraries of hash (`xkcp`, `blake3`, `sodium`) are built file by
+  file by `third_party/Jamfile`, with a link-time canary each.** The shared
+  block of that Jamfile (`HASH`, `.hash-c-library`, `hash-checked-out`) is
+  the one every C library of hash uses; `.hash-c-library` and crypto's
+  `.c-library` share the C libraries' properties (`.c-sections`) and the
+  link's (`.gc`), each defined once.
+  Source: `libraries/hash/openspec/changes/genesis/reference/spec.md` section
+  5 (proposals).
+- **Seven increments, each usable alone.** The first, built, is Hash2 by alias,
+  `keccak_256`, `blake3`, HKDF, PBKDF2, Argon2id, scrypt, the profile and the
+  measured table; the next ones widen the backends' surface (libsodium's,
+  XKCP's, OpenSSL's, BearSSL's, Botan's) and add the browser backend over
+  WebCrypto through a parallel asynchronous family.
+  Source: `libraries/hash/openspec/changes/genesis/reference/spec.md` section
+  1.5 (proposals).
 
 ## 18. Proposed, not decided
 

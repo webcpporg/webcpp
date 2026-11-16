@@ -805,43 +805,49 @@ else
 fi
 
 # 19. Each canary's commit is its submodule's (CODING-GUIDELINES.md chapter 5, rule 11):
-#     every `#define WEBCPP_CRYPTO_<NAME>_COMMIT <hex>` of crypto's detail/canary.h names
-#     the first seven digits of the commit the superproject records for
+#     every `#define WEBCPP_<LIBRARY>_<NAME>_COMMIT <hex>` of crypto's and of hash's
+#     detail/canary.h names the first seven digits of the commit the superproject records for
 #     third_party/libs/<submodule>, read from git, so that no checkout is needed. The
-#     submodule is the canary's name, except ctaes, which Bitcoin Core's submodule holds.
+#     submodule is the canary's name, except ctaes, which Bitcoin Core's submodule holds, and
+#     sodium, which libsodium's does.
 rule 'canary pins'
-canary_header='libs/crypto/include/webcpp/crypto/detail/canary.h'
-pins="$(grep -hoE '^#define WEBCPP_CRYPTO_[A-Z0-9]+_COMMIT [0-9a-f]{7}$' \
-    "${canary_header}" 2>/dev/null || true)"
 pin_faults=''
-# A line that starts like a pin and is not of the exact form is a fault too, never skipped; a
-# test's override (the macro defined as another WEBCPP_CRYPTO_ macro) is no pin.
-pin_form='#define WEBCPP_CRYPTO_<NAME>_COMMIT <7 hex>'
-while IFS= read -r line; do
-    if ! printf '%s\n' "${pins}" | grep -qxF -- "${line}"; then
-        pin_faults="${pin_faults}${canary_header}: a pin is not of the form ${pin_form}: "
-        pin_faults="${pin_faults}${line}
+for library in crypto hash; do
+    upper="$(printf '%s' "${library}" | tr 'a-z' 'A-Z')"
+    canary_header="libs/${library}/include/webcpp/${library}/detail/canary.h"
+    pins="$(grep -hoE "^#define WEBCPP_${upper}_[A-Z0-9]+_COMMIT [0-9a-f]{7}\$" \
+        "${canary_header}" 2>/dev/null || true)"
+    # A line that starts like a pin and is not of the exact form is a fault too, never skipped; a
+    # test's override (the macro defined as another WEBCPP_<LIBRARY>_ macro) is no pin.
+    pin_form="#define WEBCPP_${upper}_<NAME>_COMMIT <7 hex>"
+    while IFS= read -r line; do
+        if ! printf '%s\n' "${pins}" | grep -qxF -- "${line}"; then
+            pin_faults="${pin_faults}${canary_header}: a pin is not of the form ${pin_form}: "
+            pin_faults="${pin_faults}${line}
 "
-    fi
-done < <(grep -E '^#define WEBCPP_CRYPTO_[A-Z0-9]+_COMMIT ' "${canary_header}" 2>/dev/null \
-    | grep -vE ' WEBCPP_CRYPTO_[A-Z0-9_]+$' || true)
-while read -r _ macro hex; do
-    [ -n "${macro}" ] || continue
-    name="$(printf '%s' "${macro}" | sed -E 's/^WEBCPP_CRYPTO_(.*)_COMMIT$/\1/' | tr 'A-Z' 'a-z')"
-    case "${name}" in
-        ctaes) submodule='bitcoin' ;;
-        *) submodule="${name}" ;;
-    esac
-    head="$(git rev-parse --short=7 "HEAD:third_party/libs/${submodule}" 2>/dev/null \
-        || printf 'missing')"
-    if [ "${head}" != "${hex}" ]; then
-        pin_faults="${pin_faults}${canary_header}: ${name} is pinned at ${hex} and "
-        pin_faults="${pin_faults}third_party/libs/${submodule} is at ${head}
+        fi
+    done < <(grep -E "^#define WEBCPP_${upper}_[A-Z0-9]+_COMMIT " "${canary_header}" 2>/dev/null \
+        | grep -vE " WEBCPP_${upper}_[A-Z0-9_]+\$" || true)
+    while read -r _ macro hex; do
+        [ -n "${macro}" ] || continue
+        name="$(printf '%s' "${macro}" | sed -E "s/^WEBCPP_${upper}_(.*)_COMMIT\$/\1/" \
+            | tr 'A-Z' 'a-z')"
+        case "${name}" in
+            ctaes) submodule='bitcoin' ;;
+            sodium) submodule='libsodium' ;;
+            *) submodule="${name}" ;;
+        esac
+        head="$(git rev-parse --short=7 "HEAD:third_party/libs/${submodule}" 2>/dev/null \
+            || printf 'missing')"
+        if [ "${head}" != "${hex}" ]; then
+            pin_faults="${pin_faults}${canary_header}: ${name} is pinned at ${hex} and "
+            pin_faults="${pin_faults}third_party/libs/${submodule} is at ${head}
 "
-    fi
-done <<EOF_PINS
+        fi
+    done <<EOF_PINS
 ${pins}
 EOF_PINS
+done
 if [ -n "${pin_faults}" ]; then
     printf '%s' "${pin_faults}"
     fail "a canary's commit is not its submodule's"

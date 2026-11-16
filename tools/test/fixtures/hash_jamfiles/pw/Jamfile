@@ -1,0 +1,8 @@
+# Copyright (c) 2026 WebCpp.org
+#
+# Distributed under the Boost Software License, Version 1.0. (See
+# accompanying file LICENSE_1_0.txt or copy at
+# https://www.boost.org/LICENSE_1_0.txt)
+
+# Spec 5.1: argon2id, scrypt and backends::sodium.
+exe pw : pw.cpp /webcpp/hash//hash /third_party//sodium ;

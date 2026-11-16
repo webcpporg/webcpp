@@ -8,13 +8,14 @@
 """Checks emscripten as a target of the build, on the fixture library browser_demo: its tests and
 examples run under node, which b2's emscripten toolset runs itself, and a testing.launcher is
 refused there; a program that node runs reads the host's files and standard input (-sNODERAWFS=1),
-and no other program gets the flag; every program is wasm32, whatever address model is asked for; a
-program links at the level of optimization it compiles at, -O3 in a release build, which b2's
-toolset leaves to em++'s default, -O0, and before its own linkflags; a failure reaches the report;
-a program of webcpp.link is linked and never run, and fails on a symbol nothing defines; a test of
-webcpp.drive runs its program through a script of node's on each of its targets, in an own lane, a
-driver or a program that hangs fails it within its bound and leaves no process behind, and one that
-no own lane names is refused; and a native build needs no Emscripten.
+and no other program gets the flag, but one that asks for <webcpp-node-raw-fs>off, which links
+Emscripten's NODEFS and mounts the host's directories itself; every program is wasm32, whatever
+address model is asked for; a program links at the level of optimization it compiles at, -O3 in a
+release build, which b2's toolset leaves to em++'s default, -O0, and before its own linkflags; a
+failure reaches the report; a program of webcpp.link is linked and never run, and fails on a symbol
+nothing defines; a test of webcpp.drive runs its program through a script of node's on each of its
+targets, in an own lane, a driver or a program that hangs fails it within its bound and leaves no
+process behind, and one that no own lane names is refused; and a native build needs no Emscripten.
 The suspension variant, jspi by default and asyncify on request, builds with the exceptions each
 needs, asyncify in a directory of its own, and natively adds nothing. Every program node runs links
 the test support (/webcpp//node-test), whose fixture library node_test_demo pins each case's exact
@@ -178,6 +179,62 @@ def test_input_file_is_read_from_the_host(root):
     assert '-sNODERAWFS=1' in link_line(root, result, 'reads')
     assert '-sNODERAWFS=1' not in link_line(root, result, 'page')
     assert '-sENVIRONMENT=web' in link_line(root, result, 'page')
+
+
+# A program that mounts a directory of the host where it reads it, as libsodium's tests read their
+# expected results at /test-data: the fixture's test directory, by its absolute path.
+MOUNTS_JAMFILE = """
+path-constant MOUNTED : . ;
+webcpp.run mounts : mounts_test.cpp
+  : <webcpp-node-raw-fs>off <define>"\\"WEBCPP_TEST_MOUNTED=\\\\\\"$(MOUNTED)\\\\\\"\\""
+  : emscripten ;
+"""
+
+MOUNTS_SOURCE = r'''// Copyright (c) 2026 WebCpp.org
+//
+// Distributed under the Boost Software License, Version 1.0. (See
+// accompanying file LICENSE_1_0.txt or copy at
+// https://www.boost.org/LICENSE_1_0.txt)
+
+// Mounts the host's directory WEBCPP_TEST_MOUNTED at /data, then reads input.txt there.
+
+#include <emscripten.h>
+
+#include <fstream>
+#include <iostream>
+#include <string>
+
+int main() {
+    EM_ASM(
+        {
+            FS.mkdir('/data');
+            FS.mount(NODEFS, {root : UTF8ToString($0)}, '/data');
+        },
+        WEBCPP_TEST_MOUNTED);
+    std::ifstream file("/data/input.txt");
+    std::string line;
+    std::getline(file, line);
+    std::cout << "read " << line << "\n";
+    return line == "hello" ? 0 : 1;
+}
+'''
+
+
+def test_a_program_mounts_the_host_s_directories_itself(root):
+    # <webcpp-node-raw-fs>off: no -sNODERAWFS=1, under which a path is the host's and nothing can
+    # be mounted, but Emscripten's NODEFS, so that the program mounts a directory of the host
+    # where it reads it.
+    test = root / 'libs/browser_demo/test'
+    (test / 'Jamfile').write_text((test / 'Jamfile').read_text() + MOUNTS_JAMFILE)
+    (test / 'mounts_test.cpp').write_text(MOUNTS_SOURCE)
+    result = harness.run_b2(root, '-a', '-d+2', *EMSCRIPTEN, 'libs/browser_demo/test//mounts')
+    harness.expect(result, True)
+    assert passed(result) == {'mounts'}, (passed(result), result.stdout[-4000:])
+    line = link_line(root, result, 'mounts')
+    assert '-sNODERAWFS=1' not in line, line
+    assert '-lnodefs.js' in line, line
+    output = built(root, 'mounts.output')
+    assert len(output) == 1 and output[0].read_text().startswith('read hello\n'), output
 
 
 def test_programs_are_wasm32(root):
@@ -640,6 +697,7 @@ CASES = [prepared(case) for case in (
     test_size_table_ignores_linked_source_dependencies,
     test_a_launcher_is_refused_on_emscripten,
     test_input_file_is_read_from_the_host,
+    test_a_program_mounts_the_host_s_directories_itself,
     test_programs_are_wasm32,
     test_a_link_is_optimized_as_its_compile,
     test_suspend_variants_build_apart,

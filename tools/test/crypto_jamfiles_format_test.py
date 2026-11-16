@@ -5,8 +5,9 @@
 # accompanying file LICENSE_1_0.txt or copy at
 # https://www.boost.org/LICENSE_1_0.txt)
 
-"""Checks crypto_jamfiles_test.py's own rules, without building anything: what an outcome file
-may say, what a run that builds nothing is, and how a failure's lines are matched (whole lines).
+"""Checks the rules of user_jamfiles.py, which crypto_jamfiles_test.py and hash_jamfiles_test.py
+share, without building anything: what an outcome file may say, what a run that builds nothing
+is, and how a failure's lines are matched (whole lines).
 """
 
 from __future__ import annotations
@@ -16,8 +17,9 @@ import sys
 import tempfile
 from pathlib import Path
 
-import crypto_jamfiles_test as jamfiles
+import crypto_jamfiles_test
 import harness
+import user_jamfiles as jamfiles
 
 TEST = Path(__file__).resolve().parent / 'crypto_jamfiles_test.py'
 
@@ -140,8 +142,27 @@ def test_same_as_keeps_copies_identical():
     assert parse('[all]\nsame-as: a/app.cpp app.cpp\nbuild: succeeds\n').succeeds
 
 
+def test_a_native_block_applies_by_architecture():
+    text = ('[all]\nbuild: fails\n[native-arm64]\ncontains: arm\n'
+            '[native-x86_64]\ncontains: x86\n')
+    expected = {'arm64': ['arm'], 'x86_64': ['x86']}.get(jamfiles.ARCHITECTURE, [])
+    assert parse(text).contains == expected, (jamfiles.ARCHITECTURE, parse(text))
+    assert parse('[all]\ntargets: wasip2\nbuild: fails\nx\n[native-arm64]\ncontains: arm\n',
+                 'wasip2').contains == []
+
+
+def test_a_library_not_checked_out_is_named():
+    result = subprocess.run(
+        [sys.executable, '-c', 'import sys, user_jamfiles; sys.exit(user_jamfiles.main('
+         '"t", user_jamfiles.harness.FIXTURES, ("no_such_library",), {}, []))'],
+        capture_output=True, text=True, check=False, cwd=TEST.parent)
+    assert result.returncode == 2, result
+    assert ('libs/no_such_library is not checked out' in result.stderr
+            and 'git submodule update --init libs/no_such_library' in result.stderr), result
+
+
 def test_every_case_directory_is_read():
-    cases = jamfiles.case_directories()
+    cases = jamfiles.case_directories(crypto_jamfiles_test.CASES)
     assert {c.name for c in cases} >= {'hello', 'broken'}, cases
 
 
