@@ -12,7 +12,8 @@ request, which links the handler on any target and reaches every program but one
 output, its standard input its .input file or nothing; every public header compiles alone, each call
 of webcpp.headers-alone taking the headers its globs match, with requirements and targets of its
 own, and a header two calls take or a glob that matches none refused; a compile-diagnostic test
-passes only on the error it states, and is skipped on a toolset that is not clang;
+passes only on the error it states, fails on a directive clang's -verify drops (a header it names
+that cannot be located), and is skipped on a toolset that is not clang;
 `b2 declared-targets` lists what each library declares; a lane of a library's own is listed once per
 target it runs on, which must be one its Jamfile declares, with its kind, whether it runs the
 original's language; what it names leaves the ordinary lanes, a build of it for another target stops
@@ -21,7 +22,11 @@ library are recorded by kind, a link-only program and a driven test among them; 
 is built and run natively only, its framework always with exceptions; Boost.JSON's definitions link
 on every target; every program sees C++20 and exceptions, on every target; and a test reads the
 directory webcpp.data gives it, which must be absolute and hold no character the shell would read,
-at the same path on every target, wasmtime being given it on WASI. Each case builds a scratch
+at the same path on every target, wasmtime being given it on WASI; and webcpp.same-program passes
+when its sources built with a library and without it give byte-identical programs, the same name in
+two directories, linked with the same flags, the linker's removal of unused sections included, with
+exceptions on or off, and fails naming both files and their sizes when the library's code is
+called. Each case builds a scratch
 superproject with the fixture library demo. Run with the names of some cases to run only those."""
 
 from __future__ import annotations
@@ -239,6 +244,81 @@ def test_compile_diagnostic_passes_only_on_its_diagnostic(root):
     harness.expect(result, True)
     assert not passed(result), result.stdout[-4000:]
     assert 'stated' not in result.stdout, result.stdout[-4000:]
+
+
+def test_compile_diagnostic_fails_on_a_directive_clang_drops(root):
+    # A directive that clang's -verify cannot read is dropped, with an error of its own that the
+    # rule's tolerance of a header's cascade of errors would hide: one that names a header that
+    # does not exist, alone, beside a directive that holds, or on a later line of a /* */
+    # comment, and one whose text runs past its line. Each such test proves nothing, and fails,
+    # naming the directive; so does one whose compile reports no error at all. The cascade of
+    # errors that follows a header's #error is still tolerated, and so are a directive in a
+    # branch the preprocessor skips, which clang never reads, an expected note, and a // in a
+    # string before a directive on the same line.
+    guard = '#error "the guard says no"\nint after_the_guard() { return undeclared; }\n'
+    stated = ('// expected-error@guard.hpp:* {{the guard says no}}\n'
+              '#include "guard.hpp"\n'
+              'int main() { return undeclared; }\n')
+    holds = {
+        'stated': stated,
+        # Never read: clang skips the branch, so it names nothing.
+        'skipped': '#if 0\n// expected-error@renamed/guard.hpp:* {{never}}\n#endif\n' + stated,
+        'noted': ('template <typename T> void needs_int(T) requires(sizeof(T) == 4) {}\n'
+                  '// expected-note@-1 {{because}}\n'
+                  'void call() {\n'
+                  '    // expected-error@+1 {{no matching function}}\n'
+                  '    needs_int(1.0);\n'
+                  '}\n'),
+        # The error is on the line of its directive, after a string that holds //, before the
+        # comment.
+        'url': ('const char* url = "http://example.org"; int value = undeclared;'
+                ' // expected-error {{undeclared}}\n'),
+    }
+    dropped = {
+        'missing': (stated.replace('@guard.hpp', '@renamed/guard.hpp'),
+                    "file 'renamed/guard.hpp' could not be located", 'missing.cpp:1:'),
+        'missing_beside': ('// expected-error@renamed/guard.hpp:* {{the guard says no}}\n'
+                           + stated, "file 'renamed/guard.hpp' could not be located",
+                           'missing_beside.cpp:1:'),
+        'missing_in_block': ('/* The guard, stated twice:\n'
+                             '   expected-error@renamed/guard.hpp:* {{the guard says no}} */\n'
+                             + stated, "file 'renamed/guard.hpp' could not be located",
+                             'missing_in_block.cpp:2:'),
+        'unfinished': (stated.replace('{{the guard says no}}', '{{the guard\n// says no}}'),
+                       "cannot find end ('}}')", 'unfinished.cpp:1:'),
+        'no_error': ('// expected-no-diagnostics\nint main() { return 0; }\n',
+                     'reported no error', 'no_error'),
+    }
+    sources = {f'{name}.cpp': text for name, text in holds.items()}
+    sources.update({f'{name}.cpp': text for name, (text, _, _) in dropped.items()})
+    harness.add_library(
+        root, 'dropped',
+        'import webcpp ;\n'
+        '\n'
+        'webcpp.targets native wasip2 ;\n'
+        '\n'
+        + ''.join(f'webcpp.compile-diagnostic {name} : {name}.cpp ;\n'
+                  for name in [*holds, *dropped]),
+        dict(sources, **{'guard.hpp': guard}))
+    result = harness.run_b2(root, *(f'libs/dropped/test//{name}' for name in holds))
+    harness.expect(result, True)
+    assert passed(result) == set(holds), (passed(result), result.stdout[-4000:])
+    for name, (_, said, where) in dropped.items():
+        result = harness.run_b2(root, f'libs/dropped/test//{name}')
+        harness.expect(result, False, said, where)
+        assert not passed(result), (name, result.stdout[-4000:])
+    result = harness.run_b2(root, *WASIP2, 'libs/dropped/test//missing')
+    harness.expect(result, False, "file 'renamed/guard.hpp' could not be located")
+    assert not passed(result), result.stdout[-4000:]
+    # The check is a source of the test: a change of it runs the check again. (clang writes no
+    # object for a translation unit with errors, -verify or not, so each build compiles the
+    # test's source again too.)
+    kept = ('libs/dropped/test//stated',)
+    harness.expect(harness.run_b2(root, *kept), True)
+    harness.replace(root / 'tools/compile_diagnostic/check.py',
+                    "if __name__ == '__main__':\n",
+                    "if __name__ == '__main__':\n    sys.exit('the check changed')\n")
+    harness.expect(harness.run_b2(root, *kept), False, 'the check changed')
 
 
 def test_filter_maps_each_toolset_to_its_target(root):
@@ -1110,6 +1190,202 @@ def test_link_fail_checks_linking_and_keeps_success_controls(root):
     harness.expect(harness.run_b2(root, 'libs/linkage/test'), False)
 
 
+# The fixture library of webcpp.same-program: a static library whose one function a program may
+# call, whose usage requirement defines SAME_HAS_UNUSED, as a C library's defines
+# WEBCPP_<LIB>_HAS_<NAME>, so that a program's own source differs between the pair unless it
+# ignores the define.
+SAME_JAMFILE = ('import webcpp ;\n'
+                '\n'
+                'webcpp.targets native wasip2 wasip3 emscripten ;\n'
+                '\n'
+                'lib unused : unused.cpp : <link>static : : <define>SAME_HAS_UNUSED ;\n'
+                'webcpp.same-program hello_unused : hello.cpp : unused ;\n')
+
+SAME_LIBRARY = 'int unused_answer() { return 42; }\n'
+
+SAME_SOURCES = {
+    'unused.cpp': SAME_LIBRARY,
+    # Names the library and calls nothing of it.
+    'hello.cpp': ('#include <cstdio>\n'
+                  'int main() { std::puts("hello"); return 0; }\n'),
+}
+
+# The same program calling the library's function, when the library is there.
+SAME_CALLS = ('#include <cstdio>\n'
+              '#ifdef SAME_HAS_UNUSED\n'
+              'int unused_answer();\n'
+              '#endif\n'
+              'int main() {\n'
+              '#ifdef SAME_HAS_UNUSED\n'
+              '    std::printf("%d\\n", unused_answer());\n'
+              '#endif\n'
+              '    return 0;\n'
+              '}\n')
+
+
+def add_same_program(root, jamfile=SAME_JAMFILE, sources=None):
+    """Adds the library same, whose test Jamfile declares webcpp.same-program hello_unused."""
+    harness.add_library(root, 'same', jamfile, sources or SAME_SOURCES)
+
+
+def test_a_library_named_and_not_called_adds_nothing(root):
+    harness.link_wasi_tools(root)
+    add_same_program(root)
+    for request in ((), WASIP2, WASIP3):
+        result = harness.run_b2(root, '-a', *request, 'libs/same/test')
+        harness.expect(result, True)
+        assert passed(result) == {'hello_unused'}, (request, passed(result), result.stdout[-4000:])
+    # b2 lists it with the tests and the report records it (tools/report reads the --out-xml).
+    harness.expect(harness.run_b2(root, '-d0', '--dump-tests', 'libs/same/test'), True,
+                   'hello_unused')
+    xml = root / 'same.xml'
+    harness.expect(harness.run_b2(root, '-a', f'--out-xml={xml}', 'libs/same/test'), True)
+    assert 'hello_unused' in xml.read_text(), xml.read_text()[-2000:]
+
+
+def test_a_library_called_differs(root):
+    add_same_program(root, sources=dict(SAME_SOURCES, **{'hello.cpp': SAME_CALLS}))
+    result = harness.run_b2(root, '-a', 'libs/same/test')
+    harness.expect(result, False, 'same_program: differ: ', 'bytes) and ', 'bytes)')
+    # Both files are named, in directories of their own, with their sizes.
+    differ = re.search(r'differ: (\S+) \((\d+) bytes\) and (\S+) \((\d+) bytes\)', result.stdout)
+    assert differ, result.stdout[-4000:]
+    with_file, with_size, without_file, without_size = differ.groups()
+    assert with_file != without_file, differ.group(0)
+    assert (root / with_file).read_bytes() != (root / without_file).read_bytes(), differ.group(0)
+    assert (int(with_size), int(without_size)) == ((root / with_file).stat().st_size,
+                                                  (root / without_file).stat().st_size)
+    assert with_file.rsplit('/', 1)[-1] == without_file.rsplit('/', 1)[-1] == 'hello_unused', (
+        differ.group(0))
+    assert passed(result) == set(), result.stdout[-4000:]
+    # The library's code gone from the program, the pair is the same again.
+    (root / 'libs/same/test/hello.cpp').write_text(SAME_SOURCES['hello.cpp'])
+    harness.expect(harness.run_b2(root, '-a', 'libs/same/test'), True)
+
+
+def linked_as(result, name, suffix=''):
+    """The directories of the files b2's link lines of result write as name, in order."""
+    found = (re.search(rf'-o "?(\S*)/{re.escape(name + suffix)}"? ', line) for line in
+             result.stdout.splitlines() if ' -o ' in line)
+    return [match.group(1) for match in found if match]
+
+
+def test_the_pair_shares_one_name(root):
+    harness.link_wasi_tools(root)
+    add_same_program(root)
+    for request, suffix in (((), ''), (WASIP2, '.wasm')):
+        result = harness.run_b2(root, '-d+2', '-a', *request, 'libs/same/test')
+        harness.expect(result, True)
+        directories = linked_as(result, 'hello_unused', suffix)
+        assert len(directories) == 2 and len(set(directories)) == 2, (
+            request, directories, result.stdout[-4000:])
+        assert sorted(part for d in directories for part in d.split('/')
+                      if part.startswith('hello_unused_')) == [
+            'hello_unused_with', 'hello_unused_without'], directories
+
+
+def test_the_pair_shares_one_name_on_emscripten(root):
+    harness.link_emsdk(root)
+    add_same_program(root)
+    result = harness.run_b2(root, '-d+2', '-a', *EMSCRIPTEN, 'libs/same/test')
+    harness.expect(result, True)
+    assert passed(result) == {'hello_unused'}, (passed(result), result.stdout[-4000:])
+    for suffix in ('js', 'wasm'):
+        found = sorted((root / 'bin').rglob(f'hello_unused.{suffix}'))
+        assert len(found) == 2 and found[0].parent != found[1].parent, (suffix, found)
+        assert found[0].read_bytes() == found[1].read_bytes(), found
+    # A program that calls the library differs, and the report names the .wasm too.
+    (root / 'libs/same/test/hello.cpp').write_text(SAME_CALLS)
+    result = harness.run_b2(root, '-a', *EMSCRIPTEN, 'libs/same/test')
+    harness.expect(result, False, 'same_program: differ: ')
+    assert '.wasm (' in result.stdout, result.stdout[-4000:]
+
+
+# A program that throws through Boost's handler: built without exceptions it links only with
+# tools/throw_exception.cpp, which every program rule gives it, the pair's two programs included.
+SAME_THROWS = ('#include <boost/throw_exception.hpp>\n'
+               '#include <stdexcept>\n'
+               'int main(int argc, char**) {\n'
+               '    if (argc > 5) boost::throw_exception(std::runtime_error("planted"));\n'
+               '    return 0;\n'
+               '}\n')
+
+
+def test_a_pair_built_without_exceptions_links_the_handler_and_compares_equal(root):
+    harness.link_wasi_tools(root)
+    add_same_program(root, sources=dict(SAME_SOURCES, **{'hello.cpp': SAME_THROWS}))
+    for request in ((), WASIP2):
+        result = harness.run_b2(root, '-a', '-j3', *request, 'exception-handling=off',
+                                'libs/same/test')
+        harness.expect(result, True)
+        assert passed(result) == {'hello_unused'}, (request, passed(result), result.stdout[-4000:])
+
+
+def test_a_shared_library_is_compared_as_a_static_one(root):
+    # The library's own request is the default, shared: the pair still links it as an archive, or
+    # the program with it would differ by its load command alone.
+    add_same_program(root, SAME_JAMFILE.replace('unused.cpp : <link>static : :',
+                                                'unused.cpp : : :'))
+    harness.expect(harness.run_b2(root, '-a', '-j3', 'libs/same/test'), True)
+    assert list((root / 'bin').glob('**/release/**/link-static/libunused.a')), sorted(
+        path.name for path in (root / 'bin').rglob('libunused*'))
+
+
+# A library that carries the usage requirement a C library's third_party recipe gives it, the
+# linker's removal of unused sections: the pair must link with the same flags, so that it is the
+# library, and not the flag, that differs. The program holds a function nothing calls, in its own
+# section, which that removal takes out of a program that links with the flag.
+SAME_GC_JAMFILE = ('import webcpp ;\n'
+                   '\n'
+                   'webcpp.targets native wasip2 wasip3 emscripten ;\n'
+                   '\n'
+                   'lib unused : unused.cpp : <link>static : :\n'
+                   '  <target-os>darwin:<linkflags>-Wl,-dead_strip\n'
+                   '  <target-os>linux:<linkflags>-Wl,--gc-sections\n'
+                   '  <target-os>windows:<linkflags>/OPT:REF ;\n'
+                   'webcpp.same-program hello_unused : hello.cpp : unused\n'
+                   '  : : <cxxflags>-ffunction-sections <cxxflags>-fdata-sections ;\n')
+
+SAME_DEAD = ('#include <cstdio>\n'
+             'int dead_weight() { return 7; }\n'
+             'int main() { std::puts("hello"); return 0; }\n')
+
+
+def test_a_library_with_gc_flags_still_compares_equal(root):
+    harness.link_wasi_tools(root)
+    add_same_program(root, SAME_GC_JAMFILE, dict(SAME_SOURCES, **{'hello.cpp': SAME_DEAD}))
+    for request in ((), WASIP2):
+        result = harness.run_b2(root, '-a', *request, 'libs/same/test')
+        harness.expect(result, True)
+        assert passed(result) == {'hello_unused'}, (request, passed(result), result.stdout[-4000:])
+
+
+def test_the_pair_is_found_by_its_directory_on_every_path_separator(root):
+    # The compare rule tells the two programs apart by the directory of their side, which b2
+    # spells with the platform's separator: a backslash on Windows, where the pair was compared
+    # with nothing until the rule read both separators. b2 here runs on POSIX, so the rule is fed
+    # the targets' names as each platform spells them (a Jam token's backslash is doubled).
+    sources = {
+        'posix with': '<pbin/same/test/hello_unused_with/msvc/release>hello_unused.exe',
+        'posix without': '<pbin/same/test/hello_unused_without/msvc/release>hello_unused.exe',
+        'nt with': r'<pbin\\same\\test\\hello_unused_with\\msvc\\release>hello_unused.exe',
+        'nt without': r'<pbin\\same\\test\\hello_unused_without\\msvc\\release>hello_unused.exe',
+        'neither': r'<pbin\\same\\test\\hello_unused_other\\msvc\\release>hello_unused.exe',
+        'a prefix only': '<pbin/same/test/xhello_unused_with/msvc/release>hello_unused.exe',
+    }
+    jamfile = 'import modules ;\nimport webcpp ;\n\n'
+    for label, source in sources.items():
+        jamfile += (f'ECHO "side {label}:" '
+                    f'[ modules.call-in webcpp-same-program : side hello_unused : {source} ] ;\n')
+    harness.add_library(root, 'probe', jamfile, {})
+    result = harness.run_b2(root, 'libs/probe/test')
+    harness.expect(result, True)
+    found = {line.split(':', 1)[0].removeprefix('side '): line.split(':', 1)[1].strip()
+             for line in result.stdout.splitlines() if line.startswith('side ')}
+    assert found == {'posix with': 'with', 'posix without': 'without', 'nt with': 'with',
+                     'nt without': 'without', 'neither': '', 'a prefix only': ''}, found
+
+
 CASES = [
     test_link_fail_checks_linking_and_keeps_success_controls,
     test_source_only_corpus_is_not_loaded_as_a_build,
@@ -1119,6 +1395,7 @@ CASES = [
     test_compile_builds_only_where_declared,
     test_a_compile_finds_the_test_support,
     test_compile_diagnostic_passes_only_on_its_diagnostic,
+    test_compile_diagnostic_fails_on_a_directive_clang_drops,
     test_filter_maps_each_toolset_to_its_target,
     test_undeclared_jamfile_is_native_only,
     test_emscripten_builds_only_what_declares_it,
@@ -1148,6 +1425,14 @@ CASES = [
     test_without_its_data_a_wasi_test_reads_nothing,
     test_data_must_be_absolute,
     test_data_the_shell_would_read_is_refused,
+    test_a_library_named_and_not_called_adds_nothing,
+    test_a_library_called_differs,
+    test_the_pair_shares_one_name,
+    test_the_pair_shares_one_name_on_emscripten,
+    test_a_library_with_gc_flags_still_compares_equal,
+    test_the_pair_is_found_by_its_directory_on_every_path_separator,
+    test_a_pair_built_without_exceptions_links_the_handler_and_compares_equal,
+    test_a_shared_library_is_compared_as_a_static_one,
 ]
 
 

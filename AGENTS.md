@@ -77,6 +77,7 @@ for web developers and for AI developers (`CODING-GUIDELINES.md` chapter 16).
 | beast | HTTP and WebSocket applications using native/WASIp3 sockets, browser WebSocket/fetch, WASI host HTTP or supplied streams | native, emscripten, wasip2, wasip3, by backend | a submodule at `libs/beast`; all 53 upstream applications remain in its compatibility matrix |
 | cobalt | Boost.Cobalt coroutine applications with shipped Wasm adaptations and optional corrected SSL | native, emscripten, wasip2, wasip3, by capability | a submodule at `libs/cobalt`; see its feature and application matrices for variants |
 | config | webcpp's configuration, which every library includes first: the target, exceptions and webcpp's version, as Boost.Config is Boost's; webcpp's own | native, wasip2, wasip3, emscripten | a submodule at `libs/config` |
+| crypto | AES-GCM, the AES block cipher, random_device, a constant-time equal and secp256k1 over C libraries built from source (BearSSL, OpenSSL, libsecp256k1, ctaes), webcpp's own | native, wasip2, wasip3, emscripten (OpenSSL not on emscripten); its own lane c-suites | a submodule at libs/crypto |
 | xactor | a deterministic actor system, webcpp's own | native, wasip2, wasip3 (`xactor_asio` native only) | a submodule at `libs/xactor`; the model for every port |
 | xstate | a port of XState 5.33.2's state machines and actors; depends on xactor and Boost.JSON | native, wasip2, wasip3; its oracle lane | a submodule at `libs/xstate`; the first user of the shared oracle (`CODING-GUIDELINES.md` chapter 12) |
 | pratt | a Pratt parser engine, generic through concepts, with a calculator built on it, webcpp's own | native, emscripten, wasip2, wasip3 | a submodule at `libs/pratt`; born with the allocation rule (`CODING-GUIDELINES.md` chapter 4) |
@@ -104,12 +105,15 @@ webcpp/
   .clang-tidy         clang-tidy's checks, every repository's
   pyrightconfig.json  Pyright's settings for every Python file
   libs/<name>/        a library: a repository of its own, a submodule here (asio, beast, cobalt,
-                      config, xactor, xstate, pratt, wasi, trystero, document, idna, lexical,
-                      webrtc)
+                      config, crypto, xactor, xstate, pratt, wasi, trystero, document, idna,
+                      lexical, webrtc)
   third_party/        third-party code the libraries and their tests use, not webcpp's: each
                       a submodule under third_party/libs/, pinned at a commit and keeping its
-                      own licence, and the Jamfile that declares it as
-                      /webcpp/third_party//<target> (guidelines chapter 10)
+                      own licence (openssl, libdatachannel, bearssl, secp256k1, bitcoin for
+                      ctaes, xkcp, libsodium, blake3, and the test data wycheproof, bips,
+                      JSON-Schema-Test-Suite and nativejson-benchmark), and the Jamfile that
+                      declares it as /webcpp/third_party//<target> and
+                      /third_party//<target> (guidelines chapter 10)
   doc/                the index page (index.adoc, Jamfile)
     releases/         each version's release notes, which the index page shows
   site/               the site, a repository of its own, webcpporg/webcpporg.github.io, a
@@ -163,7 +167,7 @@ webcpp/
                       and emsdk.jam (the lines that register the WASI and emscripten
                       toolsets), container/Dockerfile (the image of the container lanes),
                       and actions/{boost,wasi-sdk,wasmtime,wit-bindgen,wasi-wit,emsdk,
-                      secp256k1,chrome,container,mrdocs,node}/
+                      chrome,container,mrdocs,node}/
                       (chapter 4)
     site/             site.jam, the rules of b2 site and b2 site-serve, catalogue.py (the
                       site's libraries.json), redirect.py (the old address's two pages) and
@@ -199,6 +203,7 @@ libs/<name>/
   meta/include-boundaries.json
                              the include boundaries the lint checks, when it has any
                              (guidelines chapter 9)
+  meta/lint.json             the lint's rules the library asks for, when it asks for any
   README.md
   AGENTS.md                  only what is specific to this library
   LICENSE_1_0.txt
@@ -226,7 +231,11 @@ Jamroot is its build configuration, and `libs/<name>` is its repository.
 - the GCC 15 CI lane uses pinned GCC 15.3, since the Ubuntu runner's GCC 15.2
   has coroutine default-argument regression PR121643. Its action extracts the
   official Linux-X64 image's relocatable toolchain, verifies a compile/run probe
-  after installation and cache restoration, and selects its matching runtime;
+  after installation and cache restoration, and selects its matching runtime.
+  Locally, the Jamroot compiles and runs the same probe,
+  `tools/ci/actions/gcc/coroutine_probe.cpp`, with the GCC 15 a user-config.jam
+  configures, once per compiler and run of b2, and a GCC 15.2 stops the build
+  before it compiles anything, naming PR121643 and asking for GCC 15.3 or newer;
 - Python 3.9 or newer;
 - for WebAssembly: wasi-sdk 34 and wasmtime 50.0.1;
 - for WebAssembly components, such as wasi's: wit-bindgen 0.62.0, which
@@ -246,18 +255,22 @@ Jamroot is its build configuration, and `libs/<name>` is its repository.
   toolsets compile;
 - for emscripten: Emscripten 6.0.11, from emsdk, and Node, which runs its
   programs; the tests of the build need it too;
-- for trystero: libsecp256k1 0.8.0, static, with `schnorrsig` and
-  `extrakeys`, built natively and, for browser programs, with Emscripten.
-  Only this dependency remains externally provisioned. B2 reads
-  `-sSECP256K1_ROOT=<dir>` and `-sSECP256K1_EMSCRIPTEN_ROOT=<dir>` from its
-  command line, never the environment; otherwise it searches
-  `.local/secp256k1-native` and `.local/secp256k1-emscripten`, then the native
-  system include paths outside Windows. A missing dependency leaves trystero
-  out with a diagnostic, or fails when `webcpp-require-external=on`, as in CI;
+- for trystero: nothing installed, with the pinned submodules initialised:
+  libsecp256k1 0.8.0 is `/third_party//secp256k1`, built by `b2` from the
+  pinned `third_party/libs/secp256k1` (small tables on
+  emscripten, large natively; `<webcpp-secp256k1-tables>` asks otherwise). No
+  library of `libs/` needs an externally provisioned dependency today, though
+  `webcpp.external` and `webcpp-require-external=on` stay for a later one;
+- for crypto: nothing installed, with the pinned submodules initialised:
+  `git submodule update --init third_party/libs/bearssl
+  third_party/libs/secp256k1 third_party/libs/bitcoin third_party/libs/wycheproof
+  third_party/libs/bips`, and `third_party/libs/openssl` for its OpenSSL
+  backend (below); b2 builds every backend from its sources;
 - for native Trystero: CMake and Make (nmake on Windows), and the pinned
   `third_party/libs/libdatachannel` checkout with its required nested sources.
-  Initialize it with `git submodule update --init --recursive
-  third_party/libs/libdatachannel`. B2 builds static libdatachannel and its
+  Initialize it, and the libsecp256k1 every room links, with `git submodule
+  update --init --recursive third_party/libs/libdatachannel
+  third_party/libs/secp256k1`. B2 builds static libdatachannel and its
   nested dependencies with the consumer's compiler and runtime settings.
   Every consumer of `/webcpp/third_party//libdatachannel` requires
   `threading=multi`: a single-thread request is refused, since libdatachannel
@@ -403,12 +416,9 @@ verified, rather than assuming a newer Boost release fixes the issue.
 needs: `.local/user-config.jam`, `.local/wasi-sdk/`, `.local/mrdocs/`,
 `.local/wit-bindgen/` and `.local/wasi-wit/p2` and `p3`, `.local/emsdk` (an
 install of emsdk, or a link to one) with Emscripten's cache in
-`.local/emscripten-cache`, and trystero's external libsecp256k1 installs in
-`.local/secp256k1-native` and `.local/secp256k1-emscripten`. The CI action
-uses those same paths. B2 finds them without `-s`; another prefix is named
-with `-sSECP256K1_ROOT=<dir>` or `-sSECP256K1_EMSCRIPTEN_ROOT=<dir>` on its
-command line. Source-built OpenSSL and libdatachannel instead live under the
-B2 build directory, separated by the effective compiler configuration.
+`.local/emscripten-cache`. Source-built libsecp256k1, OpenSSL and
+libdatachannel live under the B2 build directory, separated by the effective
+compiler configuration.
 A tool the build looks up itself is
 taken from the path its `-s` option gives, else from `.local/`, else from
 `PATH`: MrDocs (`-sMRDOCS`), wit-bindgen and the WIT (above); wasi-sdk is
@@ -817,7 +827,7 @@ every build, so that no count drifts from the tree:
 - from the programs b2 records as it loads the library's test and example
   Jamfiles: `{n-examples}` and `{n-examples-<target>}`, `{n-tests}` and
   `{n-tests-<target>}` (each header compiled alone is one test, and so is
-  each served component, each linked program and each driven test),
+  each served component, each linked program, each driven test and each same-program pair),
   `{n-served}` and `{n-served-<target>}`, the served components alone,
   `{n-linked}` and `{n-linked-<target>}`, the programs `webcpp.link` links
   and never runs, `{n-driven}` and `{n-driven-<target>}`, the tests
@@ -907,7 +917,14 @@ testing.launcher on emscripten", chapter 6). Every program that node runs
 (`webcpp.run`, `webcpp.run-fail`, `webcpp.example`) links
 `-sNODERAWFS=1`, so that it reads the host's files and its standard input:
 without it, node gives it an empty file system of Emscripten's own, and a
-test reads its input file as empty. No other program gets it.
+test reads its input file as empty. No other program gets it. A program of
+`webcpp.run`, `webcpp.run-fail` or `webcpp.example` that reads a fixed path,
+as a C library's own tests read theirs (libsodium's `/test-data`), asks for
+`<webcpp-node-raw-fs>off`: it links Emscripten's NODEFS (`-lnodefs.js`) in
+place of `-sNODERAWFS=1`, under which nothing can be mounted, and mounts the
+host's directories itself where it reads them (`FS.mount`); it then reads no
+standard input of the host's, so an example with a `<stem>.input` does not
+ask for it.
 
 **A program on emscripten links at its compile's level of optimization**
 (the Jamroot's region `emscripten-link-optimization`): `-O0` for
@@ -1054,15 +1071,15 @@ webcpp.source-only <directory> + ;   (reference source trees)
 | Rule | Passes when | Notes |
 | --- | --- | --- |
 | `webcpp.targets t ...` | | the Jamfile's default targets; before its first program, once; each is `native`, `emscripten`, `wasip2` or `wasip3`, or the build stops naming it |
-| `webcpp.run` | the program exits with 0 | built once per target it declares; a user's `exception-handling=off` links `tools/throw_exception.cpp`; on emscripten, run by node, linked with `-sNODERAWFS=1`; links `/webcpp//node-test` on every target (Targets, above) |
+| `webcpp.run` | the program exits with 0 | built once per target it declares; a user's `exception-handling=off` links `tools/throw_exception.cpp`; on emscripten, run by node, linked with `-sNODERAWFS=1`, or with NODEFS, which the program mounts itself, under `<webcpp-node-raw-fs>off`; links `/webcpp//node-test` on every target (Targets, above) |
 | `webcpp.run-fail` | the program exits with another status | built and run as `webcpp.run`'s, and links `/webcpp//node-test` likewise |
 | `webcpp.compile` | the sources compile | no program is linked; takes `/webcpp//node-test` for its header |
 | `webcpp.compile-fail` | the sources do not compile | left out of clang-tidy; any error passes it, the wrong one included; takes `/webcpp//node-test` for its header |
 | `webcpp.link-fail` | the compiled sources fail to link | use a matching successful control to distinguish the intended incompatibility from unrelated failures; the sources remain in clang-tidy |
-| `webcpp.compile-diagnostic` | the sources stop with every error they state in clang's `-verify` comments, `// expected-error@<file>:* {{<message>}}` for a header they include or `// expected-error@+1 {{<message>}}` for the next line | compiled with `-Xclang -verify -Xclang -verify-ignore-unexpected=error,note`, so an error not stated and a note are ignored; built on b2's `clang` toolset only (native clang, `clang-wasip2`, `clang-wasip3`) and skipped elsewhere, since `-verify` is clang's: a refusal would turn every gcc and msvc lane red for a declaration that holds; left out of clang-tidy; takes `/webcpp//node-test` for its header |
+| `webcpp.compile-diagnostic` | the sources stop with every error they state in clang's `-verify` comments, `// expected-error@<file>:* {{<message>}}` for a header they include or `// expected-error@+1 {{<message>}}` for the next line | compiled with `-Xclang -verify -Xclang -verify-ignore-unexpected=error,note`, so an error not stated and a note are ignored, the cascade that follows a header's `#error` among them; then `tools/compile_diagnostic/check.py` runs the compile again with clang's diagnostic log and fails on any error located in a comment (a `//` one or a `/* */` one over several lines) after an `expected-<kind>` of that comment, which is `-verify`'s own report on a directive it could not read and so dropped (a header it names that cannot be located, a `{{...}}` whose `}}` is not on its line), and on a compile that reports no error at all: each directive clang reads, every one outside a branch the preprocessor skips, must be read whole, the header it names found and included, and its error raised in that header; built on b2's `clang` toolset only (native clang, `clang-wasip2`, `clang-wasip3`) and skipped elsewhere, since `-verify` is clang's: a refusal would turn every gcc and msvc lane red for a declaration that holds; left out of clang-tidy; takes `/webcpp//node-test` for its header |
 | `webcpp.boost-test` | every case of the Boost.Test suite passes | native only, whatever the Jamfile declares; the header-only framework, `tools/boost_test_runner.cpp`, is one object of the suite's, always compiled with exceptions |
 | `webcpp.source-only` | | declares child source directories whose original Jamfiles are not WebCPP projects; use in `build.jam` before discovery; it changes neither explicit compilation nor lint |
-| `webcpp.example` | the program exits with 0, and its standard output, carriage returns removed, equals `<stem>.expected` beside it | its standard input is `<stem>.input` beside it, else empty, never the terminal, on every target (wasmtime passes it through, and node under `-sNODERAWFS=1`); run through `testing.launcher` for WASI, and on emscripten with the node on `PATH`, not the one b2's toolset registered, which b2 gives only to its own testing rules, by `tools/example/run_example.py`, which names a failing exit status (or the signal) before the diff; always run again, and `<stem>.input` is a source of the run; links `/webcpp//node-test` on every target (Targets, above) |
+| `webcpp.example` | the program exits with 0, and its standard output, carriage returns removed, equals `<stem>.expected` beside it | its standard input is `<stem>.input` beside it, else empty, never the terminal, on every target (wasmtime passes it through, and node under `-sNODERAWFS=1`, which `<webcpp-node-raw-fs>off` replaces with NODEFS); run through `testing.launcher` for WASI, and on emscripten with the node on `PATH`, not the one b2's toolset registered, which b2 gives only to its own testing rules, by `tools/example/run_example.py`, which names a failing exit status (or the signal) before the diff; always run again, and `<stem>.input` is a source of the run; links `/webcpp//node-test` on every target (Targets, above) |
 | `webcpp.link` | the program links | never run: a program for a browser, which node refuses to run (`-sENVIRONMENT=web`), or one that needs the network; b2's `link` test, which `--dump-tests` lists and the report shows as a link test; never linked with `-sNODERAWFS=1`. The explicit target `<name>-program` is the same program, an `exe` of the same sources and requirements, `<name>-program.js` on emscripten, for a target that needs its files, such as a page that loads it. An example Jamfile's is shown on the page by its code, and has no `.expected` (chapter 3) |
 | `webcpp.headers-alone` | each public header compiles alone | one test per header, `alone-<path>` with `/` as `-` (`alone-xactor-scheduler`), against `/webcpp/<library>//<library>` and the requirements given, for the targets given or the Jamfile's; `only` restricts a call to the public headers its globs match, relative to `<include-root>/webcpp/` (`wasi/http/response.hpp`), a glob that matches none stopping the build; a library may call it several times, and a header two calls take stops the build, naming it |
 | `webcpp.data` | | requirements, or usage requirements, that give a program of `webcpp.run` or `webcpp.run-fail` the absolute directories, each read at the same path on every target: on wasip2 and wasip3 wasmtime preopens it (`wasmtime --dir="<directory>" <program>`); natively and on emscripten (`-sNODERAWFS=1`) the program reads the host's files already. A relative directory stops the build, as does one whose path holds `"`, `$` or a backquote, which the shell would read inside `--dir="..."`, naming the character |
@@ -1230,6 +1247,19 @@ webcpp.generated <name> : <script> : <argument> * : <output> + ;
 | --- | --- | --- |
 | `webcpp.generated` | every output that `<script>` writes equals its committed `<output>`, byte for byte | the explicit target `generated-<name>`: `tools/generated/generated.py` runs the Python script `<script>` in the Jamfile's directory as `<script> <argument>... <path>...`, each path where it writes one output, in the order given, under the Jamfile's build directory, and compares each with its committed file (`tools/oracle/compare.py --files`), naming every one that differs, with the command that writes it again, `b2 libs/<name>/test//update-generated`, every one that is missing and every one the generator did not write; it writes nothing into the tree, passing or failing. The first declaration of a Jamfile also declares the explicit target `update-generated`, which runs each of its generators the same way, in a build directory apart from the check's, so that one request may build both, and, once all have succeeded, copies their outputs beside the committed files and renames each over its own: a generator or a copy that fails leaves every committed file as it was, and a rename that fails is named with the files it replaced and those it left. Paths are relative to the Jamfile; a script that is not a `.py` file or does not exist, a name declared twice, and an output named twice, by one generator or by two of the Jamfile, stop the build. An own lane names the check, `webcpp.lane <lane> : generated-<name> ;`, which runs natively, as an oracle's does, and is of the kind `programs`, since a generator runs Python, not the original's language; the ordinary lanes never build it, since a generator may need the network. Neither target compiles anything, so they need no Boost: they leave out the Jamroot's check of Boost, and the libraries their project's requirements name, whose targets would run it |
 
+**A library named and not called** (`tools/same_program/same_program.jam`). A
+library that a program names and never calls adds no byte to it
+(`CODING-GUIDELINES.md` chapter 5, rule 11). A test Jamfile declares the
+proof:
+
+```
+webcpp.same-program <name> : <sources> + : <library> : <targets> * : <requirements> * ;
+```
+
+| Rule | Passes when | Notes |
+| --- | --- | --- |
+| `webcpp.same-program` | `<sources>` built with `<library>` and without it, as two programs of b2 under the one output name `<name>`, give byte-identical files (on emscripten the `.js` and the `.wasm` beside it) | a test of type `SAME_PROGRAM`, listed by `--dump-tests` and recorded by `--out-xml`; `<requirements>` are properties given to both programs (`<library>/webcpp/crypto//crypto`), `<targets>` as for any program. The pair is built in two directories of its own (`<name>_with`, `<name>_without`), release, without debug information, with `/Brepro` on MSVC, with the library linked as an archive whatever its own request (`<link>static`), with the handler of a build without exceptions as every program has it, and with the same link flags, the linker's removal of unused sections (`-Wl,--gc-sections`, `-Wl,-dead_strip`, `/OPT:REF`) included, so that a C library's usage requirement is not what differs: only `<library>` does. It fails naming both files with their sizes. Nothing runs b2 inside b2 |
+
 The rules of the doc Jamfiles are in chapter 3: `webcpp.doc <library> :
 <page>.adoc ;`, `webcpp.reference <library> : <requirements> * :
 <also-checked> * ;` (chapter 2) and, for the superproject's index,
@@ -1390,6 +1420,14 @@ oracle's targets is of the kind `programs`, so a lane names them directly.
   webcpp.lane that names its targets`), or when its lanes leave out a target
   it is built for, so the CI's plan fails before any job runs rather than
   leave it untested.
+
+  crypto's lane `c-suites` runs the C libraries' own test programs
+  (BearSSL's, ctaes's and libsecp256k1's) on webcpp's build of them, on
+  native, wasip2, wasip3 and emscripten, ids `<target>.crypto.c-suites`:
+
+  ```
+  b2 -a --dump-tests --out-xml=wasip2.crypto.c-suites.xml toolset=clang-wasip2 testing.launcher=tools/boost/asio-wasip2/run.sh libs/crypto/test/c_suites//c-suites
+  ```
 
   A lane on emscripten is declared like any other, and runs as the
   emscripten lane runs, `toolset=emscripten` with no launcher, never natively
@@ -1573,6 +1611,10 @@ jobs:
   embed-manifest-via=linker --abbreviate-paths`; b2 abbreviates each word of
   a toolset directory, and `msvc-14.3` and `msvc-14.5` are their own
   abbreviations, which `tools/ci/matrix_test.py` checks with b2's own rule.
+  On both, crypto's message cases, `libs/crypto/test/msvc`, prove that each
+  wrong build stops (`webcpp.compile-fail` at compile time,
+  `webcpp.link-fail` at link time); their exact text is checked on clang,
+  GNU ld and wasm-ld only (`CODING-GUIDELINES.md` chapter 19).
   Both Windows jobs run `python tools/drive/drive_test.py` before compiling,
   including real Job Object nesting, timeout, orphaned descendants and owner
   termination. The Linux tools shards continue to check POSIX process groups.
@@ -1608,19 +1650,19 @@ jobs:
   while the other configurations continue. Then it runs b2 by its path, `docker run --rm --network
   none`, as the runner's user, with the superproject and b2's prefix, where
   the Boost action installs Boost's headers too, mounted at their own paths,
-  and the variables of the external libraries passed on; the XML is the
-  lane's, as outside a container. A lane run so needs Linux x86-64 and
-  docker; the external libraries it runs against are built before, on the
-  runner, with the same compilers.
+  and the variables of the external libraries, when a library has any, passed
+  on; the XML is the lane's, as outside a container. A lane run so needs Linux
+  x86-64 and docker.
 
-  **External libraries.** `EXTERNAL_DEPENDENCIES` in `tools/ci/matrix.py`
-  currently names only trystero's `secp256k1`. A lane that needs it has
-  `external` in its entry, including own lanes. Its job runs that action after
-  toolchain setup, with `emscripten: true` when applicable and the lane's
-  compiler settings. B2 receives `webcpp-require-external=on` and explicit
-  `-sSECP256K1_ROOT` / `-sSECP256K1_EMSCRIPTEN_ROOT` arguments from the action's
-  outputs (`EXTERNAL_VARIABLES`); docs use the same setup when required.
-  OpenSSL and libdatachannel have no provisioning actions: their pinned source
+  **External libraries.** `EXTERNAL_DEPENDENCIES` in `tools/ci/matrix.py` is
+  empty and `EXTERNAL_VARIABLES` is `()`: webcpp builds every library it needs
+  (libsecp256k1 as `/third_party//secp256k1`), so `matrix.py external` prints
+  `false`. The machinery stays for a later library: a lane that needs one has
+  `external` in its entry, including own lanes, its job would run the action of
+  its name, `tools/ci/actions/<name>`, after toolchain setup, and B2 would
+  receive `webcpp-require-external=on` and a `-s<VARIABLE>=<dir>` argument for
+  each of `EXTERNAL_VARIABLES` the action exported.
+  libsecp256k1, OpenSSL and libdatachannel have no provisioning actions: their pinned source
   targets build in the consumer's B2 variant, including inside container lanes.
   A container lane passes no variable of the environment into its container.
 - **own lanes,** one job per entry, named and placed as the entry says
@@ -1674,7 +1716,7 @@ jobs:
   alone (`/webcpp//emscripten-reference`, chapter 2); and, when the plan's
   `external` is `true`, the
   external libraries, built with Clang 18, whose headers the reference of
-  the library, or of a library it uses, parses.
+  the library, or of a library it uses, parses (none today).
 - **lint:** `tools/lint/lint.sh` in eight shards (`--shard 1/8` to `8/8`),
   with wasi-sdk's clang-format and clang-tidy, Node, Clang 18 as b2's default
   toolset and the wasip2 and wasip3 toolsets after it (`matrix.py register
@@ -1683,8 +1725,8 @@ jobs:
   is `true`, the emscripten toolset after them and emsdk, without its system
   libraries (`libraries: 'false'`), whose `em++` the emscripten dry run
   names and whose cache holds the sysroot an emscripten command is analysed
-  with; when the plan's `lint-external` is `true`, the external libraries,
-  built with Clang 18, libsecp256k1 for emscripten too when `has-emscripten` is;
+  with; when the plan's `lint-external` is `true` (none today), the external
+  libraries, built with Clang 18;
   and the full history
   (`fetch-depth: 0`) of the superproject and of the library, since the
   banned-word rule reads every commit.
@@ -1800,17 +1842,8 @@ wrapper each quoted as one word of Jam.
   local node = /path/to/node ;
   using emscripten : : $(emsdk)/upstream/emscripten/em++ : <nodejs>$(node) ;
   ```
-- `secp256k1` builds libsecp256k1 0.8.0 from GitHub's archive of commit
-  `6e2c8bc`, checked against its SHA-256, with CMake, static, with `schnorrsig`
-  and `extrakeys` and the small tables trystero's page specifies. It installs
-  in `.local/secp256k1-native`, using the lane's C compiler, and, when requested,
-  builds with Emscripten's `emcmake` into `.local/secp256k1-emscripten` after
-  emsdk setup. It exports `SECP256K1_ROOT` and `SECP256K1_EMSCRIPTEN_ROOT`.
-  The cache key includes its version, runner, compiler identity, action files
-  and the emsdk version for a browser build. Windows uses CMake's Debug
-  configuration for the CI's debug runtime and the static library name
-  `libsecp256k1.lib`; trystero defines `SECP256K1_STATIC` there.
-  OpenSSL and libdatachannel instead build from source through B2. The latter's
+- There is no action for libsecp256k1, OpenSSL or libdatachannel: B2 builds
+  them from source (libsecp256k1 as `/third_party//secp256k1`). The last one's
   static datachannel, juice, usrsctp and srtp2 archives stay separate; it never
   bundles another OpenSSL archive into them. Its CMake recipe uses the exact
   OpenSSL headers and archive bytes selected by the B2 dependency.
@@ -1904,8 +1937,8 @@ they leave out, and their refusals: a runner no build of wit-bindgen or
 emsdk is pinned for, a crate that holds no WIT, an emsdk at another commit,
 a release without its `node_modules`, an archive emsdk would download
 unpinned, and an emcc that is not 6.0.11; the emsdk action's node wrapper,
-`EM_CACHE`, warmed cache and system libraries; libsecp256k1's pinned archive,
-compiler settings, install prefixes, exports, cache key and Windows runtime;
+`EM_CACHE`, warmed cache and system libraries; that no libsecp256k1 action
+remains;
 the chrome action's shell and its `--no-sandbox` wrapper; and the container
 image, pulled by an immutable digest without a build fallback.
 `tools/ci/environment_test.py` checks recipe identity, archive restoration and
@@ -1961,7 +1994,9 @@ superproject's new `main`. `main` is the only branch.
   a fixed bug names the symptom, with its issue or pull request when there
   is one, `https://github.com/webcpporg/<library>/issues/<n>[#<n>]`. A line
   holds no cross-reference, `<<...>>`: the index page shows it too, where the
-  library's anchors are not.
+  library's anchors are not. Nor does it hold an inline anchor, `[[...]]`,
+  which shows no text: a C++ attribute is passthrough code,
+  `` `+[[nodiscard]]+` ``.
 - **At most ten lines per library and version,** the most important first;
   a version's documentation work is one line. A library's change that no
   user sees (a test, its CI, a refactoring) gets none.

@@ -25,7 +25,8 @@ continue it; a comment line is dropped, and a nested list (**, -, ., 1., a., ter
 (+, ----, [source] and the like) or a directive (include::, ifdef::) inside a region fails. It
 starts with one of VERBS, or with "*Breaking change:* " and then one of VERBS, whose first
 letter may be lower case, holds the prefix nowhere else, holds at most WORDS words, and holds no
-cross-reference, <<...>>, xref: or link:#, since the index page shows it too. A library's
+cross-reference, <<...>>, xref: or link:#, since the index page shows it too, and no inline
+anchor, [[...]] or anchor:, which shows no text (a C++ attribute is `+[[nodiscard]]+`). A library's
 version holds at most MOST of them; the sections of release notes have no such limit. Outside
 its regions, a library's changelog holds no bullet, and no text after its first section.
 
@@ -78,6 +79,9 @@ COMMENT = re.compile(r'//(?!//)')
 # A cross-reference as Asciidoctor finds one, in a code span too, once its passthroughs are out.
 CROSS_REFERENCE = re.compile(r'<<[\w#/.:{].*?>>|\bxref:[\w#/.:{][^\s\[]*\[|\blink:#[^\s\[]*\[')
 PASSTHROUGH = re.compile(r'\+[^+]*\+')
+# An inline anchor as Asciidoctor finds one, in a code span too, once its passthroughs are out:
+# [[id]] or [[id,text]], whose id may hold colons, as a C++ attribute does, and anchor:id[].
+INLINE_ANCHOR = re.compile(r'\[\[[^\W\d][\w:.-]*(?:,[^\]]*)?\]\]|\banchor:[^\W\d][\w:.-]*\[')
 
 Finding = tuple[int, str]
 
@@ -162,6 +166,17 @@ def cross_references(bullet: Bullet) -> list[Finding]:
                           'page shows it too')]
 
 
+def anchors(bullet: Bullet) -> list[Finding]:
+    """An inline anchor the line holds: Asciidoctor renders it as an empty element, so that its
+    text, a C++ attribute such as [[nodiscard]], is missing from the line, and the index page,
+    showing the line too, holds its id twice."""
+    if INLINE_ANCHOR.search(PASSTHROUGH.sub('', bullet.text)) is None:
+        return []
+    return [(bullet.line, 'a line holds no anchor, [[...]] or anchor:, which shows no text and '
+                          'whose id the index page repeats: a C++ attribute is code, '
+                          '`+[[nodiscard]]+`')]
+
+
 def line_findings(bullet: Bullet) -> list[Finding]:
     """What breaks a line's form."""
     findings: list[Finding] = []
@@ -180,7 +195,7 @@ def line_findings(bullet: Bullet) -> list[Finding]:
     if words > WORDS:
         findings.append((bullet.line, f'a line holds at most {WORDS} words, and this one holds '
                                       f'{words}: {bullet.text}'))
-    return findings + cross_references(bullet)
+    return findings + cross_references(bullet) + anchors(bullet)
 
 
 def section_starts(lines: list[str], index: int) -> bool:
@@ -337,7 +352,7 @@ def parse_notes(text: str, version: str) -> tuple[Notes, list[Finding]]:
             if match is None:
                 findings.append((item.line, f'not a line of {slug}: {item.text}'))
             else:
-                findings.extend(cross_references(item))
+                findings.extend(cross_references(item) + anchors(item))
                 entries.append((match.group('name'), match.group('what')))
         return entries
 

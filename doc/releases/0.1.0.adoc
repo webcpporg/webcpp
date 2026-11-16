@@ -22,9 +22,14 @@ and optional corrected SSL integration, from R.
 * link:{library-pages}config/{library-page}[config]: webcpp's configuration,
 which every library includes first: the target, exceptions and the version,
 from R.
+* link:{library-pages}crypto/{library-page}[crypto]: AES-GCM, AES, random_device, equal and
+secp256k1 over C libraries built from source, from R.
 * link:{library-pages}document/{library-page}[document]: a header-only JSON
 document for {cpp}20 that behaves as JavaScript does, exact in decimal, in one
 relocatable binary image, with a JavaScript module, from R.
+* link:{library-pages}hash/{library-page}[hash]: hashing and key derivation for
+{cpp}20 over Boost.Hash2 and C backends: Keccak-256, BLAKE3, HKDF, PBKDF2,
+Argon2id and scrypt, from R.
 * link:{library-pages}idna/{library-page}[idna]: a header-only library of
 internationalized domain names for {cpp}20: Punycode, UTS 46 and IDNA2008
 validity over Unicode 17.0.0 tables, from R.
@@ -69,6 +74,27 @@ None.
 * Fixed driven-test execution and descendant cleanup on Windows.
 * Fixed driven-test executable reuse for Windows and WASI builds.
 * Improved lint preparation by separating OpenSSL headers from archive builds and upstream tests.
+* Added the user's Jamfiles of webcpp::crypto, tested as fixtures of a test of the tools.
+* Added same-as: to crypto's user Jamfiles test, which keeps copied programs identical.
+* Added not-contains: to crypto's user Jamfiles test, which shows the canary is a library's only link error.
+* Added tests of a missing /third_party// name, of the BIPs' pin and of Emscripten without a crypto backend.
+* Fixed BearSSL's entropy defines on a Windows target built by Clang or GCC.
+* Added the lint rule nodiscard results, which a library asks for in its meta/lint.json.
+* Added a probe of a configured GCC 15, which stops a build on GCC 15.2 (GCC PR121643) and names GCC 15.3.
+* Changed the pages' tables to stack as on a phone when they do not fit, and long names in them to break between their parts.
+* Changed the pages' tables to keep names whole where they fit, and a table of eight columns or more to scroll rather than stack.
+* Added the role key-column, which keeps a table's first column wide enough for its words.
+* Fixed the table of contents breaking a name of the reference between two of its letters.
+* Fixed names of code in tables breaking at an underscore or a hyphen where a break after their :: or a path's / made the table fit.
+* Fixed a matrix's or a key-column table's first column breaking a hyphenated key, such as a profile's name, into a line per part.
+* Added the changelog rule's refusal of inline anchors, which hid a {cpp} attribute from its line.
+* Fixed links over code hiding the underscores of names under their underline.
+* Fixed the header cells of a table with a header column lacking their scope, which the site's HTML check refuses.
+* Changed the references to leave out detail macros, WEBCPP_*_DETAIL_*.
+* Fixed a stacked table's cell letting a word wider than its line, such as a commit, run past its frame.
+* Fixed a stacked table's caption shrinking to its longest word.
+* Added the user's Jamfiles of webcpp::hash, tested as fixtures of a test of the tools.
+* Changed the lint's canary-pins rule to read webcpp::hash's detail/canary.h beside webcpp::crypto's.
 * Fixed the WASIp2 test launcher interrupting large finite workloads after 60 seconds.
 * Fixed Chrome provisioning and browser/TLS profile coverage in Asio CI lanes.
 * Added source-built OpenSSL and Cobalt SSL targets for WASIp2.
@@ -91,6 +117,7 @@ None.
 * Changed release checks to accept the tested compiler subset.
 * Added agent skills with validated metadata for common contributor workflows.
 * Changed the libdatachannel target's single-thread refusal to name libdatachannel's threads.
+* Added BearSSL, built from source as `/third_party//bearssl`.
 * *Breaking change:* changed wasip2 programs to build with exceptions, as
 wasip3 does; whether a program uses them is its developer's choice.
 * Added emscripten as a tested target (Emscripten 6.0.11 under Node):
@@ -124,6 +151,14 @@ announce and package a release.
 * Added `third_party/`, third-party code pinned as submodules: first the
 JSON Schema Test Suite, which a test reads on every target through
 `/webcpp/third_party//json-schema-test-suite`.
+* Added Wycheproof's test vectors to `third_party/`, which a test reads on every
+target through `/webcpp/third_party//wycheproof`.
+* Added libsecp256k1 v0.8.0 to `third_party/`, built from source as
+`/third_party//secp256k1`, its tables chosen by `webcpp-secp256k1-tables`.
+* Added bitcoin/bips to `third_party/`, whose BIP340 vectors a test reads on every
+target through `/third_party//bips`.
+* Changed `/third_party//bips` to also serve BIP341's
+`bip-0341/wallet-test-vectors.json`, whose cases run again when it changes.
 * Changed the lint to never read third-party code under `third_party/libs/`.
 * Added `webcpp.generated`, which checks a library's generated files against
 their Python generator, and `update-generated`, their only writer.
@@ -191,8 +226,11 @@ members (`inherit-base-members: never`).
 from Ubuntu's archive snapshot, with no network but the loopback.
 * Added a pinned chrome-headless-shell to the CI, for the own lanes whose
 driver meets a browser.
-* Added the CI actions `secp256k1`, `libdatachannel` and `openssl`, which
-build trystero's external libraries, pinned, with each lane's compilers.
+* Added the CI actions `libdatachannel` and `openssl`, which build trystero's
+external libraries, pinned, with each lane's compilers.
+* Changed trystero to link webcpp's own libsecp256k1, `/third_party//secp256k1`;
+the CI action `secp256k1` is gone and `EXTERNAL_DEPENDENCIES` of
+`tools/ci/matrix.py` is empty, so that no lane or job needs an external library.
 * Changed the Node package installer to run `npm ci` with `DO_NOT_TRACK=1`,
 so that no install script reports an install.
 * Changed CI to run the lint and the tests of the tools in eight shards each,
@@ -227,6 +265,52 @@ exceptions, such as an `asyncify` variant's.
 Emscripten's notice that the runtime is kept alive.
 * Changed the lint rule `bare-throw` to leave alone the JavaScript of an
 `EM_JS` function or an `EM_ASM` block.
+* Added the project id /third_party, the form a user's Jamfile writes for third-party
+code.
+* Added the lint rule canary pins, which checks crypto's canaries against their submodules.
+* Added webcpp.same-program, which proves a library named and not called adds no byte.
+* Fixed webcpp.same-program comparing nothing on Windows, whose paths b2 spells with backslashes.
+* Fixed the report counting outside every test a failed MSVC link that b2 records under the .pdb.
+* Added the lint rule entropy sources, which refuses a weaker source in a header that
+reads entropy.
+* Fixed webcpp.compile-diagnostic passing on a directive clang's -verify
+could not read and dropped, such as one naming a header that does not exist.
+* Added ctaes, Bitcoin Core's constant-time AES at v31.1, built from source as
+/third_party//ctaes, and the fixtures of the user's Jamfiles of webcpp::crypto's block cipher
+and signing programs.
+* Added XKCP's Keccak-p[1600], built from source with webcpp::hash's adapter as
+`/third_party//xkcp`.
+* Added libsodium 1.0.22, built from source as /third_party//sodium with the defines
+its own configure finds on each target, and /third_party//sodium-test-config for a
+program that compiles against its private headers.
+* Added `<webcpp-node-raw-fs>off`, for a program of webcpp.run, webcpp.run-fail or webcpp.example
+that mounts on emscripten the host's directories it reads, where it reads them, as libsodium's own
+tests read `/test-data`.
+* Added BLAKE3's C implementation 1.8.7, built from source as /third_party//blake3,
+portable on WebAssembly and dispatched to its intrinsics files natively, its vectors as
+/third_party//blake3_vectors.
+* Added the feature webcpp-blake3-testing, which builds /third_party//blake3 with
+BLAKE3_TESTING for BLAKE3's own test program.
+* Added a probe of the configured compiler for x86-64 or arm64, on a native toolset whose
+build request names no architecture, which picks BLAKE3's intrinsics files.
+* Changed /third_party//bearssl to carry webcpp::hash's canary beside webcpp::crypto's,
+and WEBCPP_HASH_HAS_BEARSSL, when libs/hash is checked out.
+* Changed the check that a program links OpenSSL's archives once to cover a program naming
+webcpp::hash's and webcpp::crypto's OpenSSL, when libs/hash is checked out.
+* Fixed the check that a program links OpenSSL's archives once finding no link line on WASI.
+* Changed /third_party//sodium to link its programs on Emscripten with
+-sALLOW_MEMORY_GROWTH=1, for the memory Argon2id and scrypt allocate.
+* Added tools/hash/measure.py and webcpp::hash's own lane measure, which builds and measures
+its capability table's programs on the four targets in one command.
+* Added own lanes that build for every target in one command, whose CI job installs and
+registers the WebAssembly toolsets beside Clang 18: webcpp::hash's measure.
+* Fixed the lint's clang-tidy refusing such a lane, whose sources it now analyses
+natively.
+* Added tools/hash/doc_tables.py, which generates webcpp::hash's comparison tables,
+backend lists and llms.txt from its capability table and its measurements, and checks them
+when its page is built.
+* Changed tools/hash/doc_tables.py to give each chapter two comparison tables, each under the
+eight columns from which a table scrolls.
 
 [#webcpp-0-1-0-compilers-tested]
 == Compilers tested

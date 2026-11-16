@@ -9,11 +9,17 @@
 # licence, declared here as /webcpp/third_party//<target>, whose usage
 # requirements give a program what it needs. A target whose submodule is not
 # checked out stops the build that needs it, naming the command that checks
-# it out; a build that needs none never looks.
+# it out; a build that needs none never looks. The C libraries of
+# webcpp::crypto's and webcpp::hash's backends are built here from their own
+# sources, file by file.
+import configure ;
 import errors ;
+import feature ;
 import path ;
+import project ;
 import regex ;
 import webcpp ;
+import webcpp-target ;
 
 project /webcpp/third_party ;
 
@@ -79,6 +85,57 @@ alias nativejson-benchmark : : <conditional>@nativejson-checked-out : :
 
 explicit nativejson-benchmark ;
 
+# Wycheproof (Apache-2.0), C2SP/wycheproof: test data, never compiled. A test
+# that names wycheproof reads it from the directory WEBCPP_TEST_WYCHEPROOF
+# names, with forward slashes, the directory given to wasmtime on WASI
+# (webcpp.data), and runs again when one of its files changes.
+path-constant WYCHEPROOF : libs/wycheproof ;
+.wycheproof = [ regex.replace $(WYCHEPROOF) "\\\\" "/" ] ;
+.wycheproof-files = [ glob libs/wycheproof/testvectors_v1/*.json ] ;
+
+rule wycheproof-checked-out ( properties * )
+{
+    if ! [ path.exists [ path.native $(WYCHEPROOF)/testvectors_v1/aes_gcm_test.json ] ]
+    {
+        errors.user-error "third_party/libs/wycheproof is not checked out: it holds no"
+            "testvectors_v1/aes_gcm_test.json. Check it out with `git submodule update"
+            "--init third_party/libs/wycheproof`." ;
+    }
+}
+
+alias wycheproof : : <conditional>@wycheproof-checked-out : :
+    <define>"\"WEBCPP_TEST_WYCHEPROOF=\\\"$(.wycheproof)\\\"\""
+    [ webcpp.data $(WYCHEPROOF) ]
+    <dependency>$(.wycheproof-files) ;
+explicit wycheproof ;
+
+# bitcoin/bips (BSD-2-Clause, as BIP340's header states), shallow: test data,
+# never compiled. A test that names bips reads BIP340's
+# bip-0340/test-vectors.csv and BIP341's bip-0341/wallet-test-vectors.json
+# from the directory WEBCPP_TEST_BIPS names, with forward slashes, the
+# directory given to wasmtime on WASI (webcpp.data), and runs again when one
+# of the two files changes.
+path-constant BIPS : libs/bips ;
+.bips = [ regex.replace $(BIPS) "\\\\" "/" ] ;
+.bips-files = [ glob libs/bips/bip-0340/test-vectors.csv
+    libs/bips/bip-0341/wallet-test-vectors.json ] ;
+
+rule bips-checked-out ( properties * )
+{
+    if ! [ path.exists [ path.native $(BIPS)/bip-0340/test-vectors.csv ] ]
+    {
+        errors.user-error "third_party/libs/bips is not checked out: it holds no"
+            "bip-0340/test-vectors.csv. Check it out with `git submodule update --init"
+            "third_party/libs/bips`." ;
+    }
+}
+
+alias bips : : <conditional>@bips-checked-out : :
+    <define>"\"WEBCPP_TEST_BIPS=\\\"$(.bips)\\\"\""
+    [ webcpp.data $(BIPS) ]
+    <dependency>$(.bips-files) ;
+explicit bips ;
+
 # OpenSSL uses its upstream Configure/Make source manifest. The bridge emits
 # static archives and matching generated headers in B2's variant directory.
 import webcpp-openssl ;
@@ -108,3 +165,638 @@ import webcpp-ca-certificates ;
 webcpp-ca-certificates.declare ca_certificates/cacert.pem ca_certificates/manifest.json
     ../tools/ca_certificates/generate.py ../tools/ca_certificates/bundle.py ;
 explicit ca_certificates ca_certificates-header ;
+
+# The C libraries of webcpp::crypto and webcpp::hash: each a static library
+# compiled file by file in the library's own C dialect (no -std), every
+# function and datum in a section of its own, so that a program keeps only what
+# it calls (CODING-GUIDELINES.md chapter 5, "Bringing a C library into
+# webcpp"). Upstream's warnings are not ours. Each library's block below adds
+# the check that the library is checked out and the include directory of its
+# canaries' header.
+.c-sections = <link>static <warnings>off <warnings-as-errors>off
+    <toolset>clang:<cflags>"-ffunction-sections -fdata-sections"
+    <toolset>gcc:<cflags>"-ffunction-sections -fdata-sections"
+    <toolset>emscripten:<cflags>"-ffunction-sections -fdata-sections"
+    <toolset>msvc:<cflags>"/Gy /Gw" ;
+
+# What a program that links one of them needs: the linker's removal of unused
+# sections, which wasm-ld, Emscripten and MSVC's release link do by default
+# (link.exe leaves /OPT:REF off under /DEBUG, so it is asked for).
+.gc = <target-os>darwin:<linkflags>-Wl,-dead_strip
+    <target-os>linux:<linkflags>-Wl,--gc-sections
+    <target-os>windows:<linkflags>"/OPT:REF" ;
+
+# The C libraries of webcpp::crypto's backends. webcpp's
+# libs/crypto/src/canary_<name>.c joins each: it defines the symbol the
+# backend's header reads, which names the commit and the configuration.
+path-constant CRYPTO : ../libs/crypto ;
+
+# The canaries and their header are webcpp::crypto's: a checkout without
+# libs/crypto stops the build of a C library of crypto's, naming the command,
+# and leaves the other targets of this Jamfile as they are.
+rule crypto-checked-out ( properties * )
+{
+    if ! [ path.exists [ path.native $(CRYPTO)/src/canary_bearssl.c ] ]
+    {
+        errors.user-error "libs/crypto is not checked out: it holds no"
+            "src/canary_bearssl.c, which the C libraries of webcpp::crypto's backends"
+            "are built with. Check it out with `git submodule update --init libs/crypto`." ;
+    }
+}
+
+.c-library = $(.c-sections) <conditional>@crypto-checked-out
+    <include>$(CRYPTO)/include ;
+
+# BearSSL (MIT), from webcpp's unmodified mirror webcpporg/bearssl. Every .c
+# of src/, the POWER8 ones too, which off POWER compile to the stubs other
+# files call. One source of entropy, getentropy, with RDRAND and /dev/urandom
+# off (libs/crypto's random_device reads the same source): wasi-libc and
+# Emscripten declare getentropy only under _DEFAULT_SOURCE, and macOS only in
+# <sys/random.h>, which src/rand/sysrng.c does not include. On Windows
+# BearSSL's only seeder is CryptGenRandom, not the system's BCryptGenRandom,
+# so every seeder is off there and BearSSL has none.
+path-constant BEARSSL : libs/bearssl ;
+
+rule bearssl-checked-out ( properties * )
+{
+    if ! [ path.exists [ path.native $(BEARSSL)/inc/bearssl.h ] ]
+    {
+        errors.user-error "third_party/libs/bearssl is not checked out: it holds no"
+            "inc/bearssl.h. Check it out with `git submodule update --init"
+            "third_party/libs/bearssl`." ;
+    }
+}
+
+# The seeder's defines, keyed on one condition for both sides of it: a Windows
+# target, MSVC's or MinGW's, has no getentropy, and BearSSL's CryptGenRandom
+# seeder is off there too; every other target has getentropy.
+rule bearssl-seeder ( properties * )
+{
+    if <target-os>windows in $(properties)
+    {
+        return <define>BR_USE_GETENTROPY=0 <define>BR_USE_WIN32_RAND=0 ;
+    }
+    else
+    {
+        return <define>BR_USE_GETENTROPY=1 <define>_DEFAULT_SOURCE ;
+    }
+}
+
+# The defines that make BearSSL what webcpp builds: the library's files and
+# its own test program (libs/crypto/test/c_suites) compile with the same ones.
+.bearssl-config = <define>BR_RDRAND=0 <define>BR_USE_URANDOM=0
+    <conditional>@bearssl-seeder
+    <target-os>darwin:<cflags>"-include sys/random.h" ;
+
+# What a program that compiles BearSSL's own tests against the library adds:
+# the configuration of the build and the internal headers they include.
+alias bearssl-test-config : : : : $(.bearssl-config) <include>libs/bearssl/src ;
+explicit bearssl-test-config ;
+
+# webcpp::hash's canary joins crypto's when libs/hash is checked out
+# (bearssl-hash-canary, after the C libraries of webcpp::hash below).
+lib bearssl
+  : [ glob libs/bearssl/src/*.c libs/bearssl/src/*/*.c ] $(CRYPTO)/src/canary_bearssl.c
+  : $(.c-library) <conditional>@bearssl-checked-out
+    <include>libs/bearssl/inc <include>libs/bearssl/src $(.bearssl-config)
+    <conditional>@bearssl-hash-canary
+  : : <include>libs/bearssl/inc <define>WEBCPP_CRYPTO_HAS_BEARSSL=1 $(.gc)
+    <conditional>@bearssl-hash-usage ;
+explicit bearssl ;
+
+# ctaes (MIT), Pieter Wuille's constant-time AES as Bitcoin Core v31.1 ships it
+# in src/crypto/ctaes (the owner's "ctaes do Bitcoin Core", spec section 3.4):
+# the submodule libs/bitcoin is Bitcoin Core's tree at the tag, shallow, and
+# its one file of the library is compiled. Only src/crypto/ctaes is on an
+# include path: the tree's own libsecp256k1 (src/secp256k1) is never reached.
+path-constant BITCOIN : libs/bitcoin ;
+
+rule bitcoin-checked-out ( properties * )
+{
+    if ! [ path.exists [ path.native $(BITCOIN)/src/crypto/ctaes/ctaes.h ] ]
+    {
+        errors.user-error "third_party/libs/bitcoin is not checked out: it holds no"
+            "src/crypto/ctaes/ctaes.h. Check it out with `git submodule update --init"
+            "--depth 1 third_party/libs/bitcoin`." ;
+    }
+}
+
+lib ctaes : libs/bitcoin/src/crypto/ctaes/ctaes.c $(CRYPTO)/src/canary_ctaes.c
+  : $(.c-library) <conditional>@bitcoin-checked-out
+    <include>libs/bitcoin/src/crypto/ctaes
+  : : <include>libs/bitcoin/src/crypto/ctaes <define>WEBCPP_CRYPTO_HAS_CTAES=1 $(.gc) ;
+explicit ctaes ;
+
+# The precomputed tables of libsecp256k1 (spec section 3.5): auto (the
+# default) is small on Emscripten, the web's target, and large natively and on
+# WASI, the servers' (a ruling, spec section 10); small is window 2 and comb
+# 2x5, about 1 MB smaller and a third slower to verify; large is the library's
+# default, window 15 and comb 11x6. Propagated, so that a program's request
+# reaches the library.
+feature.feature webcpp-secp256k1-tables : auto small large : propagated ;
+
+# libsecp256k1 v0.8.0 (MIT) as its CMake builds it: src/secp256k1.c and the two
+# precomputed tables, with every module, recovery included. A program that uses
+# MSVC's static library needs SECP256K1_STATIC, or the header declares every
+# function imported from a DLL.
+path-constant SECP256K1 : libs/secp256k1 ;
+
+rule secp256k1-checked-out ( properties * )
+{
+    if ! [ path.exists [ path.native $(SECP256K1)/include/secp256k1.h ] ]
+    {
+        errors.user-error "third_party/libs/secp256k1 is not checked out: it holds no"
+            "include/secp256k1.h. Check it out with `git submodule update --init"
+            "third_party/libs/secp256k1`." ;
+    }
+}
+
+.secp256k1-small = <define>ECMULT_WINDOW_SIZE=2 <define>COMB_BLOCKS=2 <define>COMB_TEETH=5 ;
+
+# The defines that make libsecp256k1 what webcpp builds: the library and its own
+# tests (libs/crypto/test/c_suites), whose tests.c includes secp256k1.c and so
+# compiles the library again, use the same ones, the tables included.
+.secp256k1-config = <define>ENABLE_MODULE_ECDH=1 <define>ENABLE_MODULE_RECOVERY=1
+    <define>ENABLE_MODULE_EXTRAKEYS=1 <define>ENABLE_MODULE_SCHNORRSIG=1
+    <define>ENABLE_MODULE_MUSIG=1 <define>ENABLE_MODULE_ELLSWIFT=1
+    <define>ENABLE_MODULE_SILENTPAYMENTS=1 <toolset>msvc:<define>SECP256K1_STATIC
+    # Quoted, as b2 5.5 warns of an unquoted ":" before a variable; the product
+    # still gives one conditional property per define.
+    "<webcpp-secp256k1-tables>small:$(.secp256k1-small)"
+    "<toolset>emscripten,<webcpp-secp256k1-tables>auto:$(.secp256k1-small)" ;
+
+# What a program that compiles libsecp256k1's own tests adds: the configuration
+# of the build and the headers they include, the internal ones too.
+alias secp256k1-test-config : : : : $(.secp256k1-config)
+    <include>libs/secp256k1/include <include>libs/secp256k1/src ;
+explicit secp256k1-test-config ;
+
+lib secp256k1
+  : libs/secp256k1/src/secp256k1.c libs/secp256k1/src/precomputed_ecmult.c
+    libs/secp256k1/src/precomputed_ecmult_gen.c $(CRYPTO)/src/canary_secp256k1.c
+  : $(.c-library) <conditional>@secp256k1-checked-out
+    <include>libs/secp256k1/include <include>libs/secp256k1/src $(.secp256k1-config)
+  : : <include>libs/secp256k1/include <define>WEBCPP_CRYPTO_HAS_SECP256K1=1
+    <toolset>msvc:<define>SECP256K1_STATIC
+    <webcpp-secp256k1-tables>small:<define>WEBCPP_CRYPTO_SECP256K1_SMALL_TABLES=1
+    <toolset>emscripten,<webcpp-secp256k1-tables>auto:<define>WEBCPP_CRYPTO_SECP256K1_SMALL_TABLES=1
+    $(.gc) ;
+explicit secp256k1 ;
+
+# The C libraries of webcpp::hash. webcpp's libs/hash/include/webcpp/hash/
+# detail/canary.h is the header of the canaries each of them defines.
+path-constant HASH : ../libs/hash ;
+
+# The canaries' header is webcpp::hash's: a checkout without libs/hash stops
+# the build of a C library of hash's, naming the command, and leaves the other
+# targets of this Jamfile as they are.
+rule hash-checked-out ( properties * )
+{
+    if ! [ path.exists [ path.native $(HASH)/build.jam ] ]
+    {
+        errors.user-error "libs/hash is not checked out: it holds no build.jam,"
+            "which the C libraries of webcpp::hash are built with. Check it out"
+            "with `git submodule update --init libs/hash`." ;
+    }
+}
+
+.hash-c-library = $(.c-sections) <conditional>@hash-checked-out
+    <include>$(HASH)/include ;
+
+# BearSSL, /third_party//bearssl above, is webcpp::crypto's target and carries
+# webcpp::hash's canary too: an object of its own, compiled with BearSSL's
+# defines, which the library's sources gain only when libs/hash holds it, so
+# that a checkout without libs/hash builds crypto's BearSSL as before. The
+# check runs at build time; WEBCPP_HASH_HAS_BEARSSL then joins the usage
+# requirements.
+obj bearssl_hash_canary : $(HASH)/src/canary_bearssl.c
+  : $(.hash-c-library) $(.bearssl-config) ;
+explicit bearssl_hash_canary ;
+
+rule bearssl-hash-canary ( properties * )
+{
+    if [ path.exists [ path.native $(HASH)/src/canary_bearssl.c ] ]
+    {
+        return <source>bearssl_hash_canary ;
+    }
+}
+
+rule bearssl-hash-usage ( properties * )
+{
+    if [ path.exists [ path.native $(HASH)/src/canary_bearssl.c ] ]
+    {
+        return <define>WEBCPP_HASH_HAS_BEARSSL=1 ;
+    }
+}
+
+# XKCP (CC0; brg_endian.h under Brian Gladman's terms), the Keccak team's code
+# package at d20c8fc (2026-11-10; XKCP has no release tags): its Keccak-p[1600]
+# alone, in the plain-64bits implementation with all rounds unrolled
+# ("generic64"), on every target: wasm32 has 64-bit integers, MSVC compiles it
+# with _rotl64, and XKCP's faster profiles are GNU assembly. Its config.h, which
+# XKCP's build generates, is webcpp's libs/hash/src/xkcp/config.h. A program
+# reaches it through webcpp::hash's adapter (libs/hash/src/xkcp_adapter.c), so
+# no include directory of XKCP's is a usage requirement.
+path-constant XKCP : libs/xkcp ;
+
+rule xkcp-checked-out ( properties * )
+{
+    if ! [ path.exists [ path.native
+        $(XKCP)/lib/low/KeccakP-1600/plain-64bits/KeccakP-1600-opt64.c ] ]
+    {
+        errors.user-error "third_party/libs/xkcp is not checked out: it holds no"
+            "lib/low/KeccakP-1600/plain-64bits/KeccakP-1600-opt64.c. Check it out"
+            "with `git submodule update --init third_party/libs/xkcp`." ;
+    }
+}
+
+lib xkcp
+  : libs/xkcp/lib/low/KeccakP-1600/plain-64bits/KeccakP-1600-opt64.c
+    $(HASH)/src/xkcp_adapter.c $(HASH)/src/canary_xkcp.c
+  : $(.hash-c-library) <conditional>@xkcp-checked-out <include>$(HASH)/src/xkcp
+    <include>libs/xkcp/lib/common <include>libs/xkcp/lib/low/common
+    <include>libs/xkcp/lib/low/KeccakP-1600/common
+    <include>libs/xkcp/lib/low/KeccakP-1600/plain-64bits
+    <include>libs/xkcp/lib/low/KeccakP-1600/plain-64bits/SnP
+  : : <define>WEBCPP_HASH_HAS_XKCP=1 $(.gc) ;
+explicit xkcp ;
+
+# libsodium 1.0.22 (ISC), jedisct1/libsodium at 77e1ce5: every .c of
+# src/libsodium/, one object per file, with the defines libsodium's own
+# configure finds on each target (sodium-target-defines), without its
+# assembly: HAVE_AMD64_ASM and HAVE_AVX_ASM stay off, as configure's
+# --disable-asm leaves them, so that the seven .S files are not needed and
+# the C code is used (design D11); the C files of the assembly's paths
+# compile to nothing. Shared by webcpp::hash and, later, webcpp::crypto: one
+# copy per program. On Emscripten a program that links it links with
+# -sALLOW_MEMORY_GROWTH=1: Argon2id and scrypt allocate the memory their costs
+# name (64 MiB for crypto_pwhash's interactive costs), past Emscripten's
+# fixed 16 MiB, as libsodium's own tests link.
+path-constant SODIUM : libs/libsodium ;
+
+rule sodium-checked-out ( properties * )
+{
+    local core = $(SODIUM)/src/libsodium/include/sodium/core.h ;
+    if ! [ path.exists [ path.native $(core) ] ]
+    {
+        errors.user-error "third_party/libs/libsodium is not checked out. Check it"
+            "out with `git submodule update --init third_party/libs/libsodium`." ;
+    }
+}
+
+# version.h is written by libsodium's configure, from version.h.in; upstream
+# ships it generated, as builds/msvc/version.h. b2 copies that file, unchanged,
+# into the build directory, as sodium-version/sodium/version.h: its directory
+# sodium-version gives sodium.h its "sodium/version.h", and sodium-version/
+# sodium gives sodium/version.c its "version.h". The submodule is never
+# written. The copy's place is fixed (<location>), so that both directories
+# are known here; it is the same file for every build.
+.sodium-version = [ project.current ] ;
+.sodium-version = [ path.root [ $(.sodium-version).build-dir ] [ path.pwd ] ] ;
+.sodium-version = $(.sodium-version)/sodium-version ;
+make sodium/version.h : libs/libsodium/builds/msvc/version.h : common.copy
+  : <conditional>@sodium-checked-out <location>$(.sodium-version) ;
+explicit sodium/version.h ;
+
+# libsodium's configuration on each target, as libsodium's own configure finds
+# it at the pin, run once per target in a scratch copy (never the submodule):
+#
+#     ./configure --disable-shared --enable-static --disable-asm
+#
+# natively, and, as dist-build/wasm32-wasi.sh and dist-build/emscripten.sh run
+# it at the pin, with --without-pthreads --disable-ssp and, on WASI,
+# CC=<wasi-sdk 34>/bin/clang CFLAGS=--target=wasm32-wasip2 (or wasip3)
+# --host=wasm32-wasi, on Emscripten under emconfigure. Each group below is the
+# DEFS of `./config.status --config` and the generated Makefile that libsodium's
+# C files read, on the targets whose configure found it. A define that no C
+# file of src/libsodium/ reads is recorded here and left out: the package's
+# strings (PACKAGE*, VERSION, LT_OBJDIR), the headers' (HAVE_STDIO_H,
+# HAVE_STDLIB_H, HAVE_STRING_H, HAVE_STRINGS_H, HAVE_INTTYPES_H, HAVE_STDINT_H,
+# HAVE_SYS_STAT_H, HAVE_SYS_TYPES_H, HAVE_UNISTD_H, HAVE_WCHAR_H, HAVE_DLFCN_H,
+# STDC_HEADERS, HAVE_COMMONCRYPTO_COMMONRANDOM_H), HAVE_ARC4RANDOM_BUF,
+# HAVE_PTHREAD_PRIO_INHERIT, the system's extension macros (_GNU_SOURCE,
+# _DARWIN_C_SOURCE, _ALL_SOURCE, __EXTENSIONS__ and the rest of
+# AC_USE_SYSTEM_EXTENSIONS, which these toolchains' defaults already give),
+# and HAVE_CET_H, which only the .S files read. DEV_MODE is off everywhere.
+# Four that only libsodium's tests read (HAVE_ARC4RANDOM, HAVE_CATCHABLE_ABRT,
+# HAVE_CATCHABLE_SEGV, HAVE_CLOCK_GETTIME) are sodium-test-config's.
+
+# Every target's: webcpp's three, which the canary reads (CONFIGURED,
+# SODIUM_STATIC, NATIVE_LITTLE_ENDIAN), and those configure finds on every
+# run.
+.sodium-common = <define>CONFIGURED=1 <define>SODIUM_STATIC=1
+    <define>NATIVE_LITTLE_ENDIAN=1 <define>HAVE_ALLOCA=1 <define>HAVE_ALLOCA_H=1
+    <define>HAVE_ATOMIC_OPS=1 <define>HAVE_C11_MEMORY_FENCES=1
+    <define>HAVE_C_VARARRAYS=1 <define>HAVE_GCC_MEMORY_FENCES=1
+    <define>HAVE_INLINE_ASM=1 <define>HAVE_NANOSLEEP=1
+    <define>HAVE_POSIX_MEMALIGN=1 <define>HAVE_SYS_PARAM_H=1
+    <define>HAVE_SYS_RANDOM_H=1 ;
+
+# wasip2 and wasip3 (wasi-sdk 34, wasm32-wasi; the two runs agree): no mmap,
+# no threads, getentropy.
+.sodium-wasi = <define>HAVE_GETENTROPY=1 <define>HAVE_THREADS_H=1 ;
+
+# Emscripten 6.0.11: no getentropy (randombytes calls JavaScript's), no TI
+# mode.
+.sodium-emscripten = <define>HAVE_EXPLICIT_BZERO=1 <define>HAVE_GETPID=1
+    <define>HAVE_SYS_MMAN_H=1 <define>HAVE_THREADS_H=1 ;
+
+# Native, on macOS and Linux alike (macOS 27 arm64 with Apple Clang 21, and
+# x86-64 by a run with CC="cc -arch x86_64" --host=x86_64-apple-darwin;
+# Ubuntu 24.04 x86-64 with GCC 14 and Clang 18; Ubuntu 24.04 arm64 with GCC
+# 14 and Clang 18). TLS, the thread-local storage class, is _Thread_local:
+# autoconf 2.72 runs configure's checks under -std=gnu23 wherever the
+# compiler has it, where its check takes thread_local, a keyword only from
+# C23; Clang 18, which has no gnu23, gives _Thread_local, the keyword of
+# every dialect from C11, which webcpp's build (no -std) compiles in.
+.sodium-posix = <define>HAVE_GETENTROPY=1 <define>HAVE_GETPID=1
+    <define>HAVE_MADVISE=1 <define>HAVE_MLOCK=1 <define>HAVE_MMAP=1
+    <define>HAVE_MPROTECT=1 <define>HAVE_PTHREAD=1 <define>HAVE_RAISE=1
+    <define>HAVE_SYSCONF=1 <define>HAVE_SYS_MMAN_H=1 <define>HAVE_TI_MODE=1
+    <define>HAVE_WEAK_SYMBOLS=1 <define>TLS=_Thread_local ;
+
+# macOS: memset_s.
+.sodium-darwin = <define>HAVE_MEMSET_S=1 ;
+
+# Linux: glibc's getrandom, getauxval and explicit_bzero, on x86-64 and arm64
+# alike.
+.sodium-linux = <define>HAVE_EXPLICIT_BZERO=1 <define>HAVE_GETAUXVAL=1
+    <define>HAVE_GETRANDOM=1 <define>HAVE_SYS_AUXV_H=1
+    <define>HAVE_THREADS_H=1 ;
+
+# The architecture's, natively: x86-64's intrinsics' headers and RDRAND,
+# whose C files enable each instruction set by a target attribute of their
+# own, so that no file needs a flag (configure's CFLAGS_SSE2 and the rest are
+# empty on every run); arm64's crypto extensions, the same.
+.sodium-x86_64 = <define>HAVE_MMINTRIN_H=1 <define>HAVE_EMMINTRIN_H=1
+    <define>HAVE_PMMINTRIN_H=1 <define>HAVE_TMMINTRIN_H=1
+    <define>HAVE_SMMINTRIN_H=1 <define>HAVE_AVXINTRIN_H=1
+    <define>HAVE_AVX2INTRIN_H=1 <define>HAVE_AVX512FINTRIN_H=1
+    <define>HAVE_WMMINTRIN_H=1 <define>HAVE_RDRAND=1 ;
+.sodium-arm64 = <define>HAVE_ARMCRYPTO=1 ;
+
+# MSVC has no configure: builds/msvc/vs2022/libsodium/libsodium.props at the
+# pin defines inline=__inline, NATIVE_LITTLE_ENDIAN, SODIUM_STATIC (a static
+# library) and _CRT_SECURE_NO_WARNINGS (left out: the CRT's headers read it,
+# no C file of libsodium's), and libsodium's private/common.h defines the
+# intrinsics' HAVE_* itself under _MSC_VER. CONFIGURED is webcpp's, as on
+# every target; common.h does not require it under MSVC. inline=__inline is
+# for C alone, a <cflags> (MSVC's C++ compile never reads <cflags>): the C++
+# translation units of a program that uses sodium-test-config, among them,
+# include the standard library's headers, which refuse a macro named after a
+# keyword.
+.sodium-msvc = <define>CONFIGURED=1 <define>SODIUM_STATIC=1
+    <define>NATIVE_LITTLE_ENDIAN=1 <cflags>/Dinline=__inline ;
+
+# The defines only libsodium's tests read, by the same configure runs. The
+# x86-64 macOS run, cross-compiled, could not run the checks of the catchable
+# signals, which every native run that could finds.
+.sodium-test-common = <define>HAVE_CLOCK_GETTIME=1 ;
+.sodium-test-arc4random = <define>HAVE_ARC4RANDOM=1 ;
+.sodium-test-catchable = <define>HAVE_CATCHABLE_ABRT=1
+    <define>HAVE_CATCHABLE_SEGV=1 ;
+
+# The architecture a native build is for, x86_64 or arm64, as configure's
+# runs name them: <architecture> with <address-model>, else the machine b2
+# runs on (b2's OSPLAT, X86_64 or ARM64, which names its model). A build that
+# gives one of <architecture> and <address-model> without the other, or any
+# other pair, is returned as <architecture>-<address-model>, which
+# sodium-target-defines refuses: no model is guessed.
+local rule sodium-architecture ( properties * )
+{
+    local architecture = [ feature.get-values <architecture> : $(properties) ] ;
+    local model = [ feature.get-values <address-model> : $(properties) ] ;
+    if ! $(architecture) && ! $(model)
+    {
+        switch [ modules.peek : OSPLAT ]
+        {
+            case X86_64 : return x86_64 ;
+            case ARM64 : return arm64 ;
+        }
+        return [ modules.peek : OSPLAT ] ;
+    }
+    switch $(architecture:E=unknown)-$(model:E=unknown)
+    {
+        case x86-64 : return x86_64 ;
+        case arm-64 : return arm64 ;
+    }
+    return $(architecture:E=unknown)-$(model:E=unknown) ;
+}
+
+# The defines of a build: the groups above by its target, its system, its
+# toolset and its architecture. A native build none of the configure runs
+# covers (another system, or another architecture) stops, naming it, rather
+# than build libsodium with a guessed configuration.
+rule sodium-target-defines ( properties * )
+{
+    local target = [ webcpp-target.target-of $(properties) ] ;
+    local toolset = [ feature.get-values <toolset> : $(properties) ] ;
+    local system = [ feature.get-values <target-os> : $(properties) ] ;
+    switch $(target)
+    {
+        case wasip2 : return $(.sodium-common) $(.sodium-wasi) ;
+        case wasip3 : return $(.sodium-common) $(.sodium-wasi) ;
+        case emscripten : return $(.sodium-common) $(.sodium-emscripten) ;
+    }
+    if $(toolset) = msvc
+    {
+        return $(.sodium-msvc) ;
+    }
+    local architecture = [ sodium-architecture $(properties) ] ;
+    local defines = $(.sodium-common) $(.sodium-posix)
+        $(.sodium-$(architecture)) ;
+    switch $(system)-$(architecture)
+    {
+        case darwin-x86_64 : return $(defines) $(.sodium-darwin) ;
+        case darwin-arm64 : return $(defines) $(.sodium-darwin) ;
+        case linux-x86_64 : return $(defines) $(.sodium-linux) ;
+        case linux-arm64 : return $(defines) $(.sodium-linux) ;
+    }
+    errors.user-error "/third_party//sodium: libsodium's configuration is"
+        "derived for macOS and Linux on x86-64 and arm64, WASI, Emscripten and"
+        "MSVC; this build is for $(system:E=no system) on $(architecture)" ;
+}
+
+# What libsodium's own tests add on each target: the four defines only they
+# read, as configure found them (HAVE_ARC4RANDOM natively and on WASI, the
+# catchable signals natively, not on MSVC, whose build defines none of them).
+rule sodium-test-defines ( properties * )
+{
+    local target = [ webcpp-target.target-of $(properties) ] ;
+    if [ feature.get-values <toolset> : $(properties) ] = msvc
+    {
+        return ;
+    }
+    switch $(target)
+    {
+        case native : return $(.sodium-test-common) $(.sodium-test-arc4random)
+            $(.sodium-test-catchable) ;
+        case emscripten : return $(.sodium-test-common) ;
+    }
+    return $(.sodium-test-common) $(.sodium-test-arc4random) ;
+}
+
+lib sodium
+  : [ glob-tree-ex libs/libsodium/src/libsodium : *.c ]
+    $(HASH)/src/canary_sodium.c
+  : $(.hash-c-library) <conditional>@sodium-checked-out
+    <conditional>@sodium-target-defines
+    <implicit-dependency>sodium/version.h <dependency>sodium/version.h
+    <include>libs/libsodium/src/libsodium/include
+    <include>libs/libsodium/src/libsodium/include/sodium
+    <include>$(.sodium-version) <include>$(.sodium-version)/sodium
+  : : <include>libs/libsodium/src/libsodium/include <include>$(.sodium-version)
+    <implicit-dependency>sodium/version.h <define>SODIUM_STATIC=1
+    <define>WEBCPP_HASH_HAS_SODIUM=1 $(.gc)
+    <toolset>emscripten:<linkflags>-sALLOW_MEMORY_GROWTH=1 ;
+explicit sodium ;
+
+# What a program that compiles against libsodium's private headers adds, as
+# libsodium's own tests and webcpp::hash's RFC 9106 test do: the library's
+# include directories, the directory of include/sodium/private, argon2's, the
+# copied version.h's, and the library's defines, with those only the tests
+# read.
+alias sodium-test-config : : <conditional>@sodium-checked-out : :
+    <include>libs/libsodium/src/libsodium/include
+    <include>libs/libsodium/src/libsodium/include/sodium
+    <include>libs/libsodium/src/libsodium/crypto_pwhash/argon2
+    <include>$(.sodium-version) <include>$(.sodium-version)/sodium
+    <implicit-dependency>sodium/version.h <conditional>@sodium-target-defines <conditional>@sodium-test-defines ;
+explicit sodium-test-config ;
+
+# BLAKE3's C implementation (CC0-1.0, or Apache-2.0, or Apache-2.0 with LLVM
+# exception), c/ of BLAKE3-team/BLAKE3. blake3.c, blake3_dispatch.c and
+# blake3_portable.c on every target; the intrinsics files only on the targets
+# of their instruction sets, each with its flag, as BLAKE3's own CMake builds
+# them where it has no assembler: they include x86 or Arm headers that no
+# WebAssembly sysroot has (a recorded exception to CODING-GUIDELINES.md
+# chapter 5 rule 2). BLAKE3's dispatcher chooses at run time. On WebAssembly
+# the four BLAKE3_NO_* leave the portable code alone. Never BLAKE3_USE_TBB.
+path-constant BLAKE3 : libs/blake3 ;
+
+rule blake3-checked-out ( properties * )
+{
+    if ! [ path.exists [ path.native $(BLAKE3)/c/blake3.h ] ]
+    {
+        errors.user-error "third_party/libs/blake3 is not checked out. Check it out with"
+            "`git submodule update --init third_party/libs/blake3`." ;
+    }
+}
+
+# The instruction set a build of BLAKE3 is for: wasm on WebAssembly; natively
+# x86-64, arm64 or other. A request that names both <architecture> and
+# <address-model> is taken as it names them. Else the configured compiler is
+# asked, as tools/openssl/build.py asks it for OpenSSL's target: b2 sets
+# neither feature on a native toolset unless the request does, and the
+# compiler then builds for whatever it defaults to (MSVC for the host's
+# PROCESSOR_ARCHITECTURE, whatever b2 itself was built for). Each probe,
+# probes/blake3_<name>.c, compiles only when the macros that blake3.hpp and
+# src/canary_blake3.c read say x86-64 (__x86_64__, _M_X64) or arm64
+# (__aarch64__, _M_ARM64), so that the build, the canary and the header
+# cannot disagree.
+obj blake3_probe_x86_64 : probes/blake3_x86_64.c : <warnings>off ;
+obj blake3_probe_arm64 : probes/blake3_arm64.c : <warnings>off ;
+explicit blake3_probe_x86_64 blake3_probe_arm64 ;
+
+rule blake3-architecture ( properties * )
+{
+    if [ webcpp-target.target-of $(properties) ] != native
+    {
+        return wasm ;
+    }
+    local architecture = [ feature.get-values <architecture> : $(properties) ] ;
+    local address-model = [ feature.get-values <address-model> : $(properties) ] ;
+    if $(architecture) && $(address-model)
+    {
+        switch $(architecture)-$(address-model)
+        {
+            case x86-64 : return x86-64 ;
+            case arm-64 : return arm64 ;
+            case * : return other ;
+        }
+    }
+    if [ configure.builds /webcpp/third_party//blake3_probe_x86_64 : $(properties)
+        : "BLAKE3's compiler targets x86-64" ]
+    {
+        return x86-64 ;
+    }
+    if [ configure.builds /webcpp/third_party//blake3_probe_arm64 : $(properties)
+        : "BLAKE3's compiler targets arm64" ]
+    {
+        return arm64 ;
+    }
+    return other ;
+}
+
+# Each intrinsics file is an object of its own, so that its flag reaches it
+# alone; on a target without its instruction set the object is empty of
+# sources (b2's <build>no), which the third_party test checks.
+rule blake3-x86 ( properties * )
+{
+    if [ blake3-architecture $(properties) ] = x86-64
+    {
+        return ;
+    }
+    return <build>no ;
+}
+
+obj blake3_sse2 : libs/blake3/c/blake3_sse2.c
+  : $(.hash-c-library) <conditional>@blake3-x86 <toolset>clang:<cflags>-msse2
+    <toolset>gcc:<cflags>-msse2 ;
+obj blake3_sse41 : libs/blake3/c/blake3_sse41.c
+  : $(.hash-c-library) <conditional>@blake3-x86 <toolset>clang:<cflags>-msse4.1
+    <toolset>gcc:<cflags>-msse4.1 ;
+obj blake3_avx2 : libs/blake3/c/blake3_avx2.c
+  : $(.hash-c-library) <conditional>@blake3-x86 <toolset>clang:<cflags>-mavx2
+    <toolset>gcc:<cflags>-mavx2 <toolset>msvc:<cflags>"/arch:AVX2" ;
+obj blake3_avx512 : libs/blake3/c/blake3_avx512.c
+  : $(.hash-c-library) <conditional>@blake3-x86
+    <toolset>clang:<cflags>"-mavx512f -mavx512vl"
+    <toolset>gcc:<cflags>"-mavx512f -mavx512vl"
+    <toolset>msvc:<cflags>"/arch:AVX512" ;
+explicit blake3_sse2 blake3_sse41 blake3_avx2 blake3_avx512 ;
+
+# What each instruction set adds: on WebAssembly, and on a native target that
+# is neither x86-64 nor arm64, the four BLAKE3_NO_*, the portable code alone;
+# on x86-64 the four intrinsics objects; on arm64 the NEON file, which
+# BLAKE3_USE_NEON=1 makes blake3_dispatch.c call.
+rule blake3-profile ( properties * )
+{
+    switch [ blake3-architecture $(properties) ]
+    {
+        case x86-64 :
+            return <source>blake3_sse2 <source>blake3_sse41 <source>blake3_avx2
+                <source>blake3_avx512 ;
+        case arm64 :
+            return <source>libs/blake3/c/blake3_neon.c <define>BLAKE3_USE_NEON=1 ;
+        case * :
+            return <define>BLAKE3_NO_SSE2 <define>BLAKE3_NO_SSE41
+                <define>BLAKE3_NO_AVX2 <define>BLAKE3_NO_AVX512 ;
+    }
+}
+
+# BLAKE3's own test program (libs/hash/test/c_suites, the lane c-suites) needs
+# blake3_dispatch.c compiled with BLAKE3_TESTING, which makes the dispatcher's
+# choice of instruction sets a global it sets, so that one run checks each.
+# Propagated, so that the program's request reaches the library; off, the
+# default, everywhere else.
+feature.feature webcpp-blake3-testing : off on : propagated ;
+
+lib blake3
+  : libs/blake3/c/blake3.c libs/blake3/c/blake3_dispatch.c
+    libs/blake3/c/blake3_portable.c $(HASH)/src/canary_blake3.c
+  : $(.hash-c-library) <conditional>@blake3-checked-out <include>libs/blake3/c
+    <conditional>@blake3-profile <webcpp-blake3-testing>on:<define>BLAKE3_TESTING
+  : : <include>libs/blake3/c <define>WEBCPP_HASH_HAS_BLAKE3=1 $(.gc) ;
+explicit blake3 ;
+
+# BLAKE3's official vectors, test_vectors/test_vectors.json at the pin, read at
+# run time from the directory WEBCPP_TEST_BLAKE3_VECTORS gives, on every target.
+# Quoted as wycheproof's define is, with forward slashes, so that a path with a
+# space or a backslash survives.
+.blake3-vectors = [ regex.replace $(BLAKE3)/test_vectors "\\\\" "/" ] ;
+alias blake3_vectors : : <conditional>@blake3-checked-out : :
+    <define>"\"WEBCPP_TEST_BLAKE3_VECTORS=\\\"$(.blake3-vectors)\\\"\""
+    [ webcpp.data $(BLAKE3)/test_vectors ]
+    <dependency>libs/blake3/test_vectors/test_vectors.json ;
+explicit blake3_vectors ;

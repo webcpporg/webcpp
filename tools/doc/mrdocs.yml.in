@@ -32,12 +32,15 @@ implementation-defined:
 # Every macro of the library, WEBCPP_<NAME>_*, or every WEBCPP_* for config,
 # which holds the collection's, is extracted, so that an undocumented one is
 # reported; the include guards, WEBCPP_<NAME>_<HEADER>_HPP and config's
-# WEBCPP_<HEADER>_HPP, are not macros of its interface.
+# WEBCPP_<HEADER>_HPP, are not macros of its interface, and neither is a
+# detail macro, WEBCPP_<NAME>_DETAIL_*, the library's own business as a detail
+# namespace is: the reference shows none (reference.py checks it).
 extract-all-macros: true
 include-macros:
   - '@MACROS@*'
 exclude-macros:
   - 'WEBCPP_*_HPP'
+  - 'WEBCPP_*_DETAIL_*'
 
 # What MrDocs writes: one AsciiDoc file without a document title, which the
 # library's page includes with leveloffset=+1, and whose links to the source

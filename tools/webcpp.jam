@@ -55,6 +55,13 @@
 #     webcpp.reference library : requirements * : also-checked * ;
 #     webcpp.index page ;
 #
+# the rule of a library named and not called, tools/same_program's, which
+# builds sources with the library and without it, and passes when the two
+# programs are byte-identical:
+#
+#     webcpp.same-program name : sources + : library : targets *
+#       : requirements * ;
+#
 # and the rules of the oracle, tools/oracle/oracle.jam's, with which a
 # library's test/oracle/Jamfile runs its original over its twins and cases:
 #
@@ -152,7 +159,32 @@ feature.compose <webcpp-suspend>asyncify : <exception-handling-method>js ;
 # input file, or an example its standard input, as empty, and pass or fail
 # for the wrong reason. A program of webcpp.link, which a browser runs, never
 # gets it, nor does one a driver runs (webcpp.drive).
-.node-raw-fs = <toolset>emscripten:<linkflags>-sNODERAWFS=1 ;
+.node-raw-fs = <conditional>@webcpp%node-file-system ;
+
+# <webcpp-node-raw-fs>off: a program of webcpp.run, webcpp.run-fail or
+# webcpp.example that mounts, on emscripten, the host's directories it reads
+# where it reads them (FS.mount of Emscripten's NODEFS), as a C library's own
+# tests read a fixed path such as /test-data. Under -sNODERAWFS=1 every path
+# is the host's and nothing can be mounted, so such a program links NODEFS in
+# its place; it then reads no standard input of the host's, so an example
+# with a <stem>.input does not ask for it. Incidental: the program's build
+# directory stays the same.
+feature.feature webcpp-node-raw-fs : off : optional incidental ;
+
+# The file system node gives a program of webcpp.run, webcpp.run-fail and
+# webcpp.example on emscripten: the host's (-sNODERAWFS=1), or NODEFS, which
+# the program mounts itself, when it asks for <webcpp-node-raw-fs>off.
+rule node-file-system ( properties * )
+{
+    if [ webcpp-target.target-of $(properties) ] = emscripten
+    {
+        if <webcpp-node-raw-fs>off in $(properties)
+        {
+            return <linkflags>-lnodefs.js ;
+        }
+        return <linkflags>-sNODERAWFS=1 ;
+    }
+}
 
 # What every test and example links (Jamroot's node-test): no library's
 # Jamfile can leave it out, and one that links -sJSPI or -sASYNCIFY gets it
@@ -220,6 +252,18 @@ import webcpp-drive ;
 modules.load webcpp-generated : generated.jam
   : [ path.native [ path.join $(.tools) generated ] ] ;
 import webcpp-generated ;
+
+# The test type of compile-diagnostic, loaded as the module
+# webcpp-compile-diagnostic, as the documentation's are.
+modules.load webcpp-compile-diagnostic : compile_diagnostic.jam
+  : [ path.native [ path.join $(.tools) compile_diagnostic ] ] ;
+import webcpp-compile-diagnostic ;
+
+# The rule of a library named and not called, loaded as the module
+# webcpp-same-program, as the documentation's are.
+modules.load webcpp-same-program : same_program.jam
+  : [ path.native [ path.join $(.tools) same_program ] ] ;
+import webcpp-same-program ;
 
 .nl = "\n" ;
 
@@ -313,7 +357,7 @@ rule targets ( targets + )
 # <target> is recorded for declared, and each program as "<kind> <name>
 # <target>..." for programs: kind is the rule that declares it, run,
 # run-fail, compile, compile-fail, compile-diagnostic, boost-test, example,
-# headers-alone, serve, link or drive.
+# headers-alone, serve, link, drive or same-program.
 local rule program ( kind : names + : targets * )
 {
     local jamfile = [ jamfile ] ;
@@ -604,22 +648,30 @@ rule compile-fail ( name : sources + : requirements * : targets * )
 # clang's -verify comments: `// expected-error@<file>:* {{<message>}}` for
 # an error of a header they include, `// expected-error@+1 {{<message>}}` for
 # one of the next line. clang's -verify makes the compile succeed only when
-# every stated error appears; an error that is not stated, and a note, are
-# ignored (-verify-ignore-unexpected=error,note), so that a header's
-# #error may be followed by what the rest of the header then fails on. A
-# compile-fail test passes on any error, the wrong one included; this one
-# only on the one it states. -verify is clang's: on a toolset other than
+# every stated error appears, in the file it names; an error that is not
+# stated, and a note, are ignored (-verify-ignore-unexpected=error,note), so
+# that a header's #error may be followed by what the rest of the header then
+# fails on. Among those ignored errors are the ones -verify reports on a
+# directive it cannot read, which it then drops: a header it names that
+# cannot be located, a text whose `}}` is not on its line. The test's check,
+# tools/compile_diagnostic's, runs the compile again with clang's diagnostic
+# log and fails on any error located in a comment, a // or a /* */ one over
+# several lines, after an expected-<kind> of that comment, and on a compile
+# that reports no error at all. So each directive clang reads, every one
+# outside a branch the preprocessor skips, must be read whole, its header
+# found and included, and its error raised there. A compile-fail test
+# passes on any error, the wrong one included; this one only on the one it
+# states. -verify is clang's: on a toolset other than
 # b2's clang (native clang, clang-wasip2, clang-wasip3), the test is
 # skipped, as a program is for a target it does not declare, rather than
 # refused, which would turn red every lane of gcc or msvc for a declaration
 # that holds; the report shows it there as not built.
 rule compile-diagnostic ( name : sources + : requirements * : targets * )
 {
-    testing.compile $(sources)
+    webcpp-compile-diagnostic.compile-diagnostic $(name) : $(sources)
       : $(requirements) <cxxflags>"-Xclang -verify -Xclang -verify-ignore-unexpected=error,note"
         <conditional>@webcpp%clang-only [ program compile-diagnostic : $(name) : $(targets) ]
-        $(.node-test)
-      : $(name) ;
+        $(.node-test) ;
 }
 
 # The conditional requirement of compile-diagnostic: <build>no on a toolset
@@ -1371,4 +1423,15 @@ rule left-out ( owner )
 rule generated ( name : script : arguments * : outputs + )
 {
     webcpp-generated.generated [ where ] : $(name) : $(script) : $(arguments) : $(outputs) ;
+}
+
+# A test that builds sources with library and without it, under one output
+# name, in two directories of their own, and passes when the two files are
+# byte-identical: a library named and not called adds no byte
+# (CODING-GUIDELINES.md chapter 5, rule 11).
+rule same-program ( name : sources + : library : targets * : requirements * )
+{
+    local only = [ program same-program : $(name) : $(targets) ] ;
+    webcpp-same-program.same-program [ where ] : $(name) : $(sources) : $(library) : $(only)
+      : $(requirements) $(.handler) ;
 }

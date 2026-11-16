@@ -24,9 +24,9 @@
 #               library's targets by hand, and a target without a lane fails the plan. It also
 #               runs b2 declared-lanes and writes the matrix of own lanes, those a library
 #               declares with webcpp.lane, such as its oracle's, and says whether a library
-#               needs libraries that webcpp does not build yet (external), trystero's
-#               libsecp256k1, installed by its action. B2 builds OpenSSL and
-#               libdatachannel from pinned sources with one provider per program.
+#               needs libraries that webcpp does not build yet (external), which none does
+#               today: B2 builds OpenSSL, libdatachannel and libsecp256k1 from pinned sources
+#               with one provider per program.
 #   lanes       one job per lane, which runs the lane command, b2 -a --dump-tests
 #               --out-xml=<lane>.xml for one toolset, and uploads the XML. With --out-xml, b2
 #               exits 0 even when a test fails: the report gives the verdict. A wasip2 or
@@ -247,15 +247,6 @@ jobs:
         if: matrix.node
         uses: ./tools/ci/actions/node
 
-      # libsecp256k1 remains external. OpenSSL and libdatachannel are source-built
-      # by B2 with the consuming target's toolchain and threading properties.
-      - &secp256k1
-        if: matrix.external
-        uses: ./tools/ci/actions/secp256k1
-        with:
-          cc: ${{ matrix.cc }}
-          emscripten: ${{ matrix.emsdk }}
-
       # Only a container lane obtains the separately prepared immutable image.
       # No ordinary lane builds images or waits for an image-building job.
       - if: matrix.container
@@ -314,7 +305,6 @@ jobs:
       - *wasi-wit
       - *emsdk
       - *node
-      - *secp256k1
 
       # The pinned chrome-headless-shell, as CHROME, for a lane whose driver meets a browser
       # (its entry's chrome), as trystero's interop does.
@@ -446,14 +436,6 @@ jobs:
         with:
           libraries: 'false'
 
-      # The libraries the library, or one it uses, needs and webcpp does not build yet (the
-      # plan's external), whose headers its reference parses with the native backend's: with Clang 18,
-      # the compiler that parses them.
-      - if: needs.plan.outputs.external == 'true'
-        uses: ./tools/ci/actions/secp256k1
-        with:
-          cc: clang-18
-
       # clang++ reads the headers for tools/doc/doc_comments.py; the Boost check compiles with
       # the same Clang. The index links each library's page where the site serves it.
       # A page whose library needs external libraries requires them, as a lane does, and is
@@ -470,11 +452,6 @@ jobs:
           fi
           if [ "$EXTERNAL" = true ]; then
             request=(webcpp-require-external=on "${request[@]}")
-            for variable in SECP256K1_ROOT SECP256K1_EMSCRIPTEN_ROOT; do
-              if [ -n "${!variable-}" ]; then
-                request=("-s$variable=${!variable}" "${request[@]}")
-              fi
-            done
           fi
           env -u CPATH -u CPLUS_INCLUDE_PATH -u C_INCLUDE_PATH \
             b2 --user-config=.local/user-config.jam -a -sCLANG=/usr/bin/clang++-18 \
@@ -559,16 +536,6 @@ jobs:
         uses: ./tools/ci/actions/emsdk
         with:
           libraries: 'false'
-
-      # The libraries a library needs and webcpp does not build yet, when any does (the plan's
-      # lint-external), which the dry runs name and clang-tidy reads, built with Clang 18; and
-      # libsecp256k1's emscripten build too when a library declares emscripten, for the commands
-      # of that target.
-      - if: needs.plan.outputs.lint-external == 'true'
-        uses: ./tools/ci/actions/secp256k1
-        with:
-          cc: clang-18
-          emscripten: ${{ needs.plan.outputs.has-emscripten }}
 
       # The compilation database is what b2 compiles with its default toolset, the first that
       # user-config.jam registers, Clang 18, and, for what only a WASI target or emscripten

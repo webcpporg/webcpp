@@ -28,7 +28,8 @@
 # or class, that a comment of a Jam file keeps to 80 columns, that a library header raises
 # through boost::throw_exception, never with a bare throw, that no code span of a Doc Comment
 # holds __X__ unescaped, which MrDocs shows as a bold X, and that a library's changelog and a
-# version's release notes keep their form.
+# version's release notes keep their form, and that each canary of webcpp::crypto is pinned at
+# its submodule's commit.
 #
 # clang-tidy reads the compilation database of tools/lint/compile_commands.py: what b2 compiles
 # for the libraries' tests and examples and for their own lanes, a served component among them,
@@ -624,6 +625,41 @@ else
     printf ' the entropy\n'
 fi
 
+# 8a. A header that reads entropy names no weaker source: no rand, random, the *rand48 family,
+#    the standard engines (mt19937, minstd_rand, ranlux, knuth_b, default_random_engine), time,
+#    clock or RDRAND (the _rdrandNN_step intrinsics, the compiler builtins, or
+#    the instruction in inline asm), even with lint-world:, in any header whose path ends
+#    entropy.hpp or random_device.hpp (DESIGN, 2026-10-11 "entropy, safest and readable").
+rule 'entropy sources'
+files_matching '^(libs|tools/test/fixtures)/[^/]+/include/.*(entropy|random_device)\.hpp$' \
+    > "${work_directory}/entropy_headers"
+# The calls, with no space before the parenthesis so that prose such as "constant time (see x)"
+# is spared; the engines and RDRAND by name wherever they appear.
+weak_calls='s?rand|random|rand_r|[edjlmns]rand48|seed48|lcong48|time|clock'
+weak_rdrand='_*rdrand(16|32|64)?_step|__builtin_ia32_rdrand(16|32|64)_step'
+weak_engines='mt19937|minstd_rand|default_random_engine|ranlux|knuth_b'
+weak='(^|[^_[:alnum:]])(((('"${weak_calls}|${weak_rdrand}"')\()|'"${weak_engines}"'|(rdrand([^_[:alnum:]]|$))))'
+weak_found=''
+entropy_failed=0
+while IFS= read -r -d '' entropy_header; do
+    entropy_status=0
+    entropy_hits="$(grep -nHE -e "${weak}" "${entropy_header}")" || entropy_status=$?
+    if [ "${entropy_status}" -gt 1 ]; then
+        entropy_failed=1  # grep's own error (2) is a failure of the rule, never "no match"
+    elif [ "${entropy_status}" -eq 0 ]; then
+        weak_found+="${entropy_hits}"$'\n'
+    fi
+done < "${work_directory}/entropy_headers"
+if [ "${entropy_failed}" -ne 0 ]; then
+    fail "grep failed to read a header that reads entropy"
+elif [ -n "${weak_found}" ]; then
+    printf '%s' "${weak_found}" \
+        | sed 's/$/: a header that reads entropy names a weaker source/'
+    fail "a header that reads entropy names a weaker source"
+else
+    printf 'no header that reads entropy names a weaker source\n'
+fi
+
 # 9. A library's test and example Jamfiles declare their programs with tools/webcpp.jam's rules,
 #    which build each only for the targets it declares and add what every program needs; b2's
 #    own run, run-fail, compile, compile-fail, exe and unit-test do neither (tools/lint/rules.py).
@@ -777,6 +813,70 @@ if python3 tools/lint/rules.py changelog < "${work_directory}/files"; then
     printf 'every changelog keeps its form\n'
 else
     fail 'a changelog breaks its form (AGENTS.md chapter 5)'
+fi
+
+# 19. Each canary's commit is its submodule's (CODING-GUIDELINES.md chapter 5, rule 11):
+#     every `#define WEBCPP_<LIBRARY>_<NAME>_COMMIT <hex>` of crypto's and of hash's
+#     detail/canary.h names the first seven digits of the commit the superproject records for
+#     third_party/libs/<submodule>, read from git, so that no checkout is needed. The
+#     submodule is the canary's name, except ctaes, which Bitcoin Core's submodule holds, and
+#     sodium, which libsodium's does.
+rule 'canary pins'
+pin_faults=''
+for library in crypto hash; do
+    upper="$(printf '%s' "${library}" | tr 'a-z' 'A-Z')"
+    canary_header="libs/${library}/include/webcpp/${library}/detail/canary.h"
+    pins="$(grep -hoE "^#define WEBCPP_${upper}_[A-Z0-9]+_COMMIT [0-9a-f]{7}\$" \
+        "${canary_header}" 2>/dev/null || true)"
+    # A line that starts like a pin and is not of the exact form is a fault too, never skipped; a
+    # test's override (the macro defined as another WEBCPP_<LIBRARY>_ macro) is no pin.
+    pin_form="#define WEBCPP_${upper}_<NAME>_COMMIT <7 hex>"
+    while IFS= read -r line; do
+        if ! printf '%s\n' "${pins}" | grep -qxF -- "${line}"; then
+            pin_faults="${pin_faults}${canary_header}: a pin is not of the form ${pin_form}: "
+            pin_faults="${pin_faults}${line}
+"
+        fi
+    done < <(grep -E "^#define WEBCPP_${upper}_[A-Z0-9]+_COMMIT " "${canary_header}" 2>/dev/null \
+        | grep -vE " WEBCPP_${upper}_[A-Z0-9_]+\$" || true)
+    while read -r _ macro hex; do
+        [ -n "${macro}" ] || continue
+        name="$(printf '%s' "${macro}" | sed -E "s/^WEBCPP_${upper}_(.*)_COMMIT\$/\1/" \
+            | tr 'A-Z' 'a-z')"
+        case "${name}" in
+            ctaes) submodule='bitcoin' ;;
+            sodium) submodule='libsodium' ;;
+            *) submodule="${name}" ;;
+        esac
+        head="$(git rev-parse --short=7 "HEAD:third_party/libs/${submodule}" 2>/dev/null \
+            || printf 'missing')"
+        if [ "${head}" != "${hex}" ]; then
+            pin_faults="${pin_faults}${canary_header}: ${name} is pinned at ${hex} and "
+            pin_faults="${pin_faults}third_party/libs/${submodule} is at ${head}
+"
+        fi
+    done <<EOF_PINS
+${pins}
+EOF_PINS
+done
+if [ -n "${pin_faults}" ]; then
+    printf '%s' "${pin_faults}"
+    fail "a canary's commit is not its submodule's"
+else
+    printf "every canary's commit is its submodule's\n"
+fi
+
+# 20. A library that asks for it in its meta/lint.json, "nodiscard-results" and the reason,
+#     declares every function of its headers that returns boost::system::result [[nodiscard]]:
+#     boost::system::result carries no [[nodiscard]] of its own, so a dropped result, a
+#     verification's or an open's, compiles silently otherwise (tools/lint/rules.py). The rule
+#     reads the declarations of namespaces and classes, an alias's result and a trailing return
+#     type too, and not a function's body, where T name(arguments); is a variable.
+rule 'nodiscard results'
+if python3 tools/lint/rules.py nodiscard-results < "${work_directory}/files"; then
+    printf 'every library that asks for it declares its results [[nodiscard]]\n'
+else
+    fail 'a function returns boost::system::result without [[nodiscard]]'
 fi
 
 printf '\n'

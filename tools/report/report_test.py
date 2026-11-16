@@ -15,7 +15,8 @@ every test, output that b2's XML cannot hold, and a served component's test that
 whose transcript differs, a run failure, and a library's own lane on a target, named after the
 target and the library, which its column and its failures show and which it must hold true; an
 emscripten lane, its link-only program a link test, and a driven test whose driver fails, a run
-failure. One case uses lanes.py and pages.py alone; one checks that no sample names the machine's
+failure. One case uses lanes.py and pages.py alone, and one reads a link that MSVC's lane records
+under the program's .pdb; one checks that no sample names the machine's
 temporary directory, and one that none holds what Emscripten says of its cache; a last one records
 every sample afresh, untrimmed, and checks that the report reads it as it reads the committed one.
 Every page written is checked to be self-contained, to link only to the report's own pages, to the
@@ -844,6 +845,83 @@ def test_lanes_and_pages_work_alone(root: Path) -> None:
     check_pages(root / 'pages')
 
 
+# What b2 writes on Windows for a test of webcpp.link-fail whose link fails as expected, trimmed to
+# what lanes.py reads: MSVC's link builds the program and its .pdb, and b2 records the failed link
+# under the .pdb, a target the test does not list as needed. A program of the build's tools, which
+# no test owns, fails its link too, outside every test. No sample can be recorded on macOS.
+MSVC_LINK_FAIL = r"""<?xml version="1.0" encoding="utf-8"?>
+<build format="1.0" version="5.5.3">
+  <directory><![CDATA[W:\webcpp]]></directory>
+  <command><![CDATA["b2" "toolset=msvc-14.3" "libs/demo/test"]]></command>
+  <test type="LINK_FAIL" name="demo/absent">
+    <target><![CDATA[libs/demo/test//absent.test]]></target>
+  </test>
+  <targets>
+    <target>
+      <name><![CDATA[libs/demo/test//absent.obj]]></name>
+      <path><![CDATA[W:\build\bin\libs\demo\test\absent.test\msvc-14.3\dbg]]></path>
+    </target>
+    <target>
+      <name><![CDATA[libs/demo/test//absent.exe]]></name>
+      <dependencies><dependency><![CDATA[libs/demo/test//absent.obj]]></dependency></dependencies>
+      <path><![CDATA[W:\build\bin\libs\demo\test\absent.test\msvc-14.3\dbg]]></path>
+    </target>
+    <target>
+      <name><![CDATA[libs/demo/test//absent.pdb]]></name>
+      <dependencies><dependency><![CDATA[libs/demo/test//absent.obj]]></dependency></dependencies>
+      <path><![CDATA[W:\build\bin\libs\demo\test\absent.test\msvc-14.3\dbg]]></path>
+    </target>
+    <target>
+      <name><![CDATA[libs/demo/test//absent.test]]></name>
+      <dependencies><dependency><![CDATA[libs/demo/test//absent.exe]]></dependency></dependencies>
+      <path><![CDATA[W:\build\bin\libs\demo\test\absent.test\msvc-14.3\dbg]]></path>
+    </target>
+  </targets>
+  <action status="0">
+    <name><![CDATA[msvc%msvc.compile.c++]]></name>
+    <path><![CDATA[W:\build\bin\libs\demo\test\absent.test\msvc-14.3\dbg\absent.obj]]></path>
+    <command><![CDATA[cl]]></command>
+    <output><![CDATA[]]></output>
+  </action>
+  <action status="1">
+    <name><![CDATA[msvc%msvc.link]]></name>
+    <path><![CDATA[W:\build\bin\libs\demo\test\absent.test\msvc-14.3\dbg\absent.pdb]]></path>
+    <command><![CDATA[link]]></command>
+    <output><![CDATA[absent.obj : error LNK2019: unresolved external symbol planted]]></output>
+  </action>
+  <action status="0">
+    <name><![CDATA[testing%testing.expect-failure]]></name>
+    <path><![CDATA[W:\build\bin\libs\demo\test\absent.test\msvc-14.3\dbg\absent.test]]></path>
+    <command><![CDATA[]]></command>
+    <output><![CDATA[]]></output>
+  </action>
+  <action status="1">
+    <name><![CDATA[msvc%msvc.link]]></name>
+    <path><![CDATA[W:\build\bin\tools\msvc-14.3\dbg\helper.pdb]]></path>
+    <command><![CDATA[link]]></command>
+    <output><![CDATA[helper.obj : error LNK2019: unresolved external symbol planted]]></output>
+  </action>
+</build>
+"""
+
+
+def test_a_failed_link_msvc_records_under_its_pdb_is_the_programs(root: Path) -> None:
+    # The link of a link-fail test is its program's, though b2 names it by the .pdb beside the
+    # .exe: the test passes and nothing of it is outside every test. A .pdb whose program no test
+    # owns stays outside.
+    path = root / 'msvc-link-fail.xml'
+    path.write_text(MSVC_LINK_FAIL)
+    lane = lanes.read_lane('native', path)
+    assert lane.toolset == 'msvc-14.3', lane.toolset
+    assert {row_id: row.verdict() for row_id, row in lane.rows.items()} == {
+        'demo/absent': 'pass'}, lane.rows
+    build = lane.rows['demo/absent'].builds[0]
+    assert [action.path.rsplit('/', 1)[-1] for action in build.actions] == [
+        'absent.obj', 'absent.pdb', 'absent.test'], build.actions
+    assert [action.path for action in lane.outside] == [
+        'W:/build/bin/tools/msvc-14.3/dbg/helper.pdb'], lane.outside
+
+
 def tables(out: Path) -> dict[str, list[list[list[tuple[str, frozenset[str], str | None]]]]]:
     """The tables of the pages directly in out, by page, a lane's header by its lane: the
     toolset under it is the machine's (clang-darwin-21 here, clang-linux-22 on a Linux runner)."""
@@ -932,6 +1010,7 @@ CASES = [
     test_served_test_passes_and_fails_as_a_run,
     test_emscripten_lane_and_its_link_and_driven_tests,
     test_lanes_and_pages_work_alone,
+    test_a_failed_link_msvc_records_under_its_pdb_is_the_programs,
     test_samples_name_no_temporary_directory,
     test_samples_hold_nothing_of_emscriptens_cache,
     test_samples_read_as_b2_writes_them_today,

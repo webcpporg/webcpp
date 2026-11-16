@@ -1,0 +1,14 @@
+# Copyright (c) 2026 WebCpp.org
+#
+# Distributed under the Boost Software License, Version 1.0. (See
+# accompanying file LICENSE_1_0.txt or copy at
+# https://www.boost.org/LICENSE_1_0.txt)
+
+[all]
+targets: native wasip2 wasip3
+same-as: web/app.cpp app.cpp
+build: succeeds
+run: app
+# tag::output[]
+aes256_gcm ok backend=bearssl
+# end::output[]

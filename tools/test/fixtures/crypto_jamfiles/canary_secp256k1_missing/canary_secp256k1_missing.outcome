@@ -1,0 +1,27 @@
+# Copyright (c) 2026 WebCpp.org
+#
+# Distributed under the Boost Software License, Version 1.0. (See
+# accompanying file LICENSE_1_0.txt or copy at
+# https://www.boost.org/LICENSE_1_0.txt)
+
+[all]
+targets: native wasip2 wasip3 emscripten
+build: fails
+# tag::messages[]
+[native-darwin]
+contains: Undefined symbols for architecture
+contains: _webcpp_crypto_secp256k1_6e2c8bc_w15c11x6__add_third_party_secp256k1_to_your_link
+[native-linux]
+contains: webcpp_crypto_secp256k1_6e2c8bc_w15c11x6__add_third_party_secp256k1_to_your_link
+contains: undefined reference to `webcpp_crypto_secp256k1_6e2c8bc_w15c11x6__add_third_party_secp256k1_to_your_link'
+[wasip2]
+contains: wasm-ld: error:
+contains: undefined symbol: webcpp_crypto_secp256k1_6e2c8bc_w15c11x6__add_third_party_secp256k1_to_your_link
+[wasip3]
+contains: wasm-ld: error:
+contains: undefined symbol: webcpp_crypto_secp256k1_6e2c8bc_w15c11x6__add_third_party_secp256k1_to_your_link
+[emscripten]
+contains: wasm-ld: error:
+contains: undefined symbol: webcpp_crypto_secp256k1_6e2c8bc_w15c11x6__add_third_party_secp256k1_to_your_link
+contains: em++: error:
+# end::messages[]

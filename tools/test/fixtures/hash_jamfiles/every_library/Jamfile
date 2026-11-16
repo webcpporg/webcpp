@@ -1,0 +1,9 @@
+# Copyright (c) 2026 WebCpp.org
+#
+# Distributed under the Boost Software License, Version 1.0. (See
+# accompanying file LICENSE_1_0.txt or copy at
+# https://www.boost.org/LICENSE_1_0.txt)
+
+# Every C library of webcpp::hash, and OpenSSL, in one program.
+exe app : app.cpp /webcpp/hash//hash /third_party//xkcp /third_party//blake3
+  /third_party//sodium /third_party//bearssl /webcpp/hash//openssl ;

@@ -1077,6 +1077,56 @@ def test_a_compiled_boost_library_s_sources_are_not_analysed(root):
     expect_clean(lint(root))
 
 
+def test_a_native_lane_s_webassembly_commands_are_left_to_its_native_one(root):
+    # An own lane that names no target runs natively, and may build its programs for every
+    # target in one command (libs/hash's measure lane does): its dry run then compiles one
+    # source natively, with wasi-sdk's clang++ and with em++. The source is analysed natively,
+    # as the first target that compiles it, and its WebAssembly commands are left out, so that
+    # no file of the database is compiled by both kinds of compiler; in either order, and in the
+    # twins without exceptions too. A source that such a run compiles for WebAssembly alone is
+    # analysed as its compiler's target: an em++ command as emscripten's, by wasi-sdk's clang++
+    # with em++'s target, never as a host command.
+    prepare(root)
+    harness.link_emsdk(root)
+    wasi = wasi_sdk_tool('clang++')
+    emxx = str(root / '.local/emsdk/upstream/emscripten/em++')
+    source = 'libs/demo/test/pass.cpp'
+    alone = 'libs/demo/test/fails.cpp'
+
+    def line(compiler: str, where: str, file: str, *words: str) -> str:
+        return (f'"{compiler}" {" ".join(words)} -std=c++20 -c -o "bin/{where}/x.o" "{file}"')
+
+    native = line('clang++', 'native', source)
+    wasm = line(wasi, 'wasip2', source, '--target=wasm32-wasip2')
+    em = line(emxx, 'emscripten', source)
+    for lines in ([native, wasm, em], [em, wasm, native]):
+        entries: list[dict[str, object]] = []
+        compile_commands.read(str(root), 'native', lines, entries, set(), set(), wasi, [])
+        compilers = [entry['arguments'][0] for entry in entries]  # type: ignore[index]
+        assert compilers == ['clang++'], (lines, entries)
+    entries = []
+    compile_commands.read(str(root), 'native', [native, line(emxx, 'emscripten', alone)],
+                          entries, set(), set(), wasi, [])
+    by_file = {Path(str(entry['file'])).name: entry['arguments'] for entry in entries}
+    command = by_file['fails.cpp']
+    assert compile_commands.wasi_sdk(command[0]), command  # type: ignore[index]
+    assert 'wasm32-unknown-emscripten' in command, command  # type: ignore[operator]
+    # The twins without exceptions, from the same kind of dry run.
+    twin_lines = [line(emxx, 'emscripten', source, '-fno-exceptions'),
+                  line(wasi, 'wasip2', source, '--target=wasm32-wasip2', '-fno-exceptions'),
+                  line('clang++', 'native', source, '-fno-exceptions')]
+    dry_run = compile_commands.dry_run
+    compile_commands.dry_run = lambda _root, _request: twin_lines  # type: ignore[assignment]
+    try:
+        entries = []
+        compile_commands.twins(str(root), 'native', {}, {}, [], {source: 'native'}, entries,
+                               set(), wasi, compile_commands.Twinned())
+    finally:
+        compile_commands.dry_run = dry_run  # type: ignore[assignment]
+    compilers = [entry['arguments'][0] for entry in entries]  # type: ignore[index]
+    assert compilers == ['clang++'], entries
+
+
 def test_clang_tidy_uses_shipped_cobalt_sources_on_a_clean_tree(root):
     harness.copy_integration_libraries(root, 'config', 'asio', 'cobalt')
     prepare(root)
@@ -1738,6 +1788,70 @@ def test_world_rule(root):
                'libs/demo/test/pass.cpp'))
 
 
+def test_entropy_sources(root):
+    prepare(root)
+    header = 'libs/demo/include/webcpp/demo/entropy.hpp'
+    other = 'libs/demo/include/webcpp/demo/other.hpp'
+    # A header that reads entropy names no weaker source, even with lint-world:, which spares it
+    # from the rule above but not from this one. getentropy is the source, not a weaker one.
+    weaker = ['rand()', 'srand(1)', 'time(nullptr)', 'clock()', '_rdrand64_step(&v)',
+              '__builtin_ia32_rdrand32_step(&v)', 'random()', 'rand_r(&seed)', 'drand48()',
+              'nrand48(x)', 'srand48(1)', 'seed48(p)', 'lcong48(p)', 'std::mt19937 engine',
+              'std::mt19937_64 engine', 'std::minstd_rand0 engine', 'std::minstd_rand engine',
+              'std::default_random_engine engine', 'std::ranlux24 engine', 'std::knuth_b engine',
+              '"rdrand %0"']
+    lines = ''.join(f'// Calls {name}. lint-world: a test\n' for name in weaker)
+
+    def licensed(guard: str, body: str) -> str:
+        return ('// Copyright (c) 2026 WebCpp.org\n'
+                '//\n'
+                '// Distributed under the Boost Software License, Version 1.0. (See\n'
+                '// accompanying file LICENSE_1_0.txt or copy at\n'
+                '// https://www.boost.org/LICENSE_1_0.txt)\n'
+                '\n'
+                f'#ifndef WEBCPP_DEMO_{guard}_HPP\n'
+                f'#define WEBCPP_DEMO_{guard}_HPP\n'
+                '\n'
+                f'{body}'
+                '\n'
+                f'#endif  // WEBCPP_DEMO_{guard}_HPP\n')
+
+    source = ('// Calls getentropy(p, 16). lint-world: a test\n'
+              '// Names random_device. lint-world: a test\n'
+              '// The constant time (see the guide) of a comparison.\n')
+    write(root, header, licensed('ENTROPY', lines + source))
+    # Outside the rule's scope, the same names are left alone.
+    write(root, other, licensed('OTHER', '// Calls rand(). lint-world: a test\n'))
+    expect_alone(lint(root), 'entropy sources',
+                 [at(root, header, name) for name in weaker]
+                 + [': a header that reads entropy names a weaker source'],
+                 spared=(at(root, header, 'getentropy'), at(root, header, 'Names random_device'),
+                         at(root, header, 'constant time'), other))
+
+
+def test_entropy_sources_unreadable_header(root):
+    prepare(root)
+    header = 'libs/demo/include/webcpp/demo/entropy.hpp'
+    write(root, header, '// Copyright (c) 2026 WebCpp.org\n')
+    (root / header).chmod(0)
+    try:
+        try:
+            (root / header).read_bytes()
+        except PermissionError:
+            pass
+        else:
+            # root reads whatever its mode: the case cannot make grep fail there.
+            print('test_entropy_sources_unreadable_header: skipped, the header is readable '
+                  '(running as root)')
+            return
+        result = lint(root)
+    finally:
+        (root / header).chmod(0o644)
+    # grep's own error (exit 2) fails the rule loudly; it is never read as "no match".
+    assert 'grep failed to read a header that reads entropy' in result.stdout, result.stdout[-3000:]
+    assert 'entropy sources' in FAILED.findall(result.stdout), result.stdout[-3000:]
+
+
 def test_bare_throw(root):
     prepare(root)
     # A library header raises through boost::throw_exception alone. A throw in a template that
@@ -2072,6 +2186,195 @@ def test_include_boundaries_missing_key(root):
     expect_alone(lint(root), 'include boundaries', [f"{config}:1: a boundary is missing 'why'"])
 
 
+NODISCARD_HEADER = 'libs/demo/include/webcpp/demo/results.hpp'
+
+
+def plant_results(root) -> None:
+    """Writes NODISCARD_HEADER: functions returning boost::system::result, by its name, an alias
+    of it or a trailing return type, with and without [[nodiscard]]; members declared in their
+    class and defined out of it; and results that are no function's: locals written with
+    parentheses in the bodies of functions and of members, a lambda's, a commented-out one and a
+    variable's type; a friend declaration, which takes no attribute, and the hidden friend
+    defined in the class, which does."""
+    write(root, NODISCARD_HEADER, CPP + '\n'
+          '#ifndef WEBCPP_DEMO_RESULTS_HPP\n'
+          '#define WEBCPP_DEMO_RESULTS_HPP\n'
+          '\n'
+          '#include <boost/system/result.hpp>\n'
+          '\n'
+          '#include <utility>\n'
+          '\n'
+          'namespace webcpp::demo {\n'
+          '\n'
+          '[[nodiscard]] inline boost::system::result<int> kept_free() noexcept {\n'
+          '    return 1;\n'
+          '}\n'
+          '\n'
+          'inline boost::system::result<int> dropped_free() noexcept {\n'
+          '    return 1;\n'
+          '}\n'
+          '\n'
+          'template <class T>\n'
+          'boost::system::result<std::pair<T, int>> dropped_template() {\n'
+          '    return std::pair<T, int>{};\n'
+          '}\n'
+          '\n'
+          'template <class T>\n'
+          '[[nodiscard]] boost::system::result<T> kept_template() {\n'
+          '    return T{};\n'
+          '}\n'
+          '\n'
+          'inline boost::system::result<std::pair<int, std::pair<int, int>>> dropped_nested() {\n'
+          '    return std::pair<int, std::pair<int, int>>{};\n'
+          '}\n'
+          '\n'
+          '[[nodiscard]] inline boost::system::result<std::pair<int, std::pair<int, int>>> '
+          'kept_nested() {\n'
+          '    return std::pair<int, std::pair<int, int>>{};\n'
+          '}\n'
+          '\n'
+          'using outcome = boost::system::result<int>;\n'
+          '\n'
+          'template <class T>\n'
+          'using outcome_of = boost::system::result<T>;\n'
+          '\n'
+          'inline outcome dropped_alias() {\n'
+          '    return 1;\n'
+          '}\n'
+          '\n'
+          '[[nodiscard]] inline outcome kept_alias() {\n'
+          '    return 1;\n'
+          '}\n'
+          '\n'
+          'template <class T>\n'
+          'outcome_of<T> dropped_alias_template() {\n'
+          '    return T{};\n'
+          '}\n'
+          '\n'
+          'inline auto dropped_trailing() -> boost::system::result<int> {\n'
+          '    return 1;\n'
+          '}\n'
+          '\n'
+          '[[nodiscard]] inline auto kept_trailing() noexcept -> boost::system::result<int> {\n'
+          '    return 1;\n'
+          '}\n'
+          '\n'
+          'inline auto const lambda_value = []() -> boost::system::result<int> { return 1; };\n'
+          '\n'
+          'inline int local_with_parentheses() {\n'
+          '    boost::system::result<int> local_outcome(kept_free());\n'
+          '    outcome const local_alias(kept_alias());\n'
+          '    return local_outcome.has_value() && local_alias.has_value() ? *local_outcome : 0;\n'
+          '}\n'
+          '\n'
+          'class holder;\n'
+          '\n'
+          '[[nodiscard]] boost::system::result<int> befriended(holder const& granting);\n'
+          '\n'
+          'class holder {\n'
+          'public:\n'
+          '    friend boost::system::result<int> befriended(holder const& granting);\n'
+          '\n'
+          '    friend boost::system::result<int> dropped_friend(holder const& /*granting*/) '
+          '{ return 1; }\n'
+          '\n'
+          '    [[nodiscard]] static boost::system::result<void> kept_member() { return {}; }\n'
+          '\n'
+          '    [[nodiscard]] static boost::system::result<int> kept_declared();\n'
+          '\n'
+          '    static boost::system::result<int> dropped_declared();\n'
+          '\n'
+          '    [[nodiscard]] static int member_body() {\n'
+          '        boost::system::result<int> member_local(kept_declared());\n'
+          '        return member_local.has_value() ? *member_local : 0;\n'
+          '    }\n'
+          '\n'
+          'protected:\n'
+          '    static boost::system::result<void> dropped_member() { return {}; }\n'
+          '};\n'
+          '\n'
+          'inline boost::system::result<int> holder::kept_declared() {\n'
+          '    return 1;\n'
+          '}\n'
+          '\n'
+          'inline boost::system::result<int> holder::dropped_declared() {\n'
+          '    return 2;\n'
+          '}\n'
+          '\n'
+          'namespace unqualified {\n'
+          '\n'
+          'using boost::system::result;\n'
+          '\n'
+          'inline result<int> dropped_unqualified() {\n'
+          '    return 1;\n'
+          '}\n'
+          '\n'
+          '}  // namespace unqualified\n'
+          '\n'
+          '// boost::system::result<int> commented_out();\n'
+          'inline boost::system::result<int> const constant_value{1};\n'
+          '\n'
+          '}  // namespace webcpp::demo\n'
+          '\n'
+          '#endif\n')
+
+
+def test_nodiscard_results(root):
+    prepare(root)
+    # A library that asks for it in meta/lint.json declares each function returning a result
+    # [[nodiscard]]: a free function, a template's, one whose result nests templates, one
+    # returning an alias of a result, one with a trailing return type, a member after an access
+    # specifier, a member declared in its class, a hidden friend defined in its class, and one
+    # naming result after a using-declaration fail at their lines, with the library's reason.
+    # What is kept, a member's out-of-line definition and a friend declaration without a body,
+    # which the first declaration answers for and which take no attribute, a lambda, a local
+    # written with parentheses in a function's or a member's body, a comment and a variable's
+    # type do not.
+    write(root, 'libs/demo/meta/lint.json', '{"nodiscard-results": "a dropped result is lost"}\n')
+    plant_results(root)
+    message = 'a function returning boost::system::result without [[nodiscard]]: '
+    result = lint(root)
+    expect_alone(result, 'nodiscard results', [
+        at(root, NODISCARD_HEADER, 'dropped_free') + ' ' + message + 'a dropped result is lost',
+        at(root, NODISCARD_HEADER, 'dropped_template') + ' ' + message,
+        at(root, NODISCARD_HEADER, 'dropped_nested') + ' ' + message,
+        at(root, NODISCARD_HEADER, 'dropped_alias()') + ' ' + message,
+        at(root, NODISCARD_HEADER, 'dropped_alias_template') + ' ' + message,
+        at(root, NODISCARD_HEADER, 'dropped_trailing') + ' ' + message,
+        at(root, NODISCARD_HEADER, ' dropped_declared();') + ' ' + message,
+        at(root, NODISCARD_HEADER, 'dropped_member') + ' ' + message,
+        at(root, NODISCARD_HEADER, 'dropped_unqualified') + ' ' + message,
+        at(root, NODISCARD_HEADER, 'dropped_friend') + ' ' + message,
+    ], spared=(at(root, NODISCARD_HEADER, 'friend boost::system::result<int> befriended'),
+               at(root, NODISCARD_HEADER, 'kept_free() noexcept'),
+               at(root, NODISCARD_HEADER, 'kept_template'),
+               at(root, NODISCARD_HEADER, 'kept_nested'),
+               at(root, NODISCARD_HEADER, 'outcome kept_alias()'),
+               at(root, NODISCARD_HEADER, 'kept_trailing'),
+               at(root, NODISCARD_HEADER, 'lambda_value'),
+               at(root, NODISCARD_HEADER, 'local_outcome('),
+               at(root, NODISCARD_HEADER, 'local_alias('),
+               at(root, NODISCARD_HEADER, 'kept_member'),
+               at(root, NODISCARD_HEADER, ' kept_declared();'),
+               at(root, NODISCARD_HEADER, 'member_local('),
+               at(root, NODISCARD_HEADER, 'holder::kept_declared'),
+               at(root, NODISCARD_HEADER, 'holder::dropped_declared'),
+               at(root, NODISCARD_HEADER, 'commented_out'),
+               at(root, NODISCARD_HEADER, 'constant_value')))
+    # Those ten and nothing else of the header.
+    assert result.stdout.count(message) == 10, result.stdout[-6000:]
+
+
+def test_nodiscard_results_is_asked_for(root):
+    prepare(root)
+    # Without meta/lint.json the same header passes; a file with another key fails, naming it.
+    plant_results(root)
+    expect_clean(lint(root))
+    write(root, 'libs/demo/meta/lint.json', '{"nodiscard": "misspelled"}\n')
+    expect_alone(lint(root), 'nodiscard results', [
+        "libs/demo/meta/lint.json:1: the file holds only the keys ['nodiscard-results']"])
+
+
 def test_include_boundaries_glob_matches_nothing(root):
     prepare(root)
     config = boundaries_config(root, [{
@@ -2229,6 +2532,100 @@ def test_changelog(root):
     number = text.split('\n').index('* Made a mistake.') + 1
     expect_alone(lint(root), 'changelog form',
                  [f'libs/demo/doc/changelog.adoc:{number}: a line starts with'])
+
+
+CANARY = (CPP + '\n#ifndef WEBCPP_CRYPTO_DETAIL_CANARY_H\n#define WEBCPP_CRYPTO_DETAIL_CANARY_H\n'
+          '#ifdef WEBCPP_CRYPTO_BEARSSL_CANARY_COMMIT\n'
+          '#define WEBCPP_CRYPTO_BEARSSL_COMMIT WEBCPP_CRYPTO_BEARSSL_CANARY_COMMIT\n#else\n'
+          '#define WEBCPP_CRYPTO_BEARSSL_COMMIT {bearssl}\n#endif\n'
+          '#define WEBCPP_CRYPTO_CTAES_COMMIT {ctaes}\n#endif\n')
+CANARY_HEADER = 'libs/crypto/include/webcpp/crypto/detail/canary.h'
+HASH_CANARY = (CPP + '\n#ifndef WEBCPP_HASH_DETAIL_CANARY_H\n#define WEBCPP_HASH_DETAIL_CANARY_H\n'
+               '#ifdef WEBCPP_HASH_XKCP_CANARY_COMMIT\n'
+               '#define WEBCPP_HASH_XKCP_COMMIT WEBCPP_HASH_XKCP_CANARY_COMMIT\n#else\n'
+               '#define WEBCPP_HASH_XKCP_COMMIT {xkcp}\n#endif\n'
+               '#define WEBCPP_HASH_SODIUM_COMMIT {sodium}\n'
+               '#define WEBCPP_HASH_BLAKE3_COMMIT {blake3}\n'
+               '#define WEBCPP_HASH_BEARSSL_COMMIT {bearssl}\n#endif\n')
+HASH_CANARY_HEADER = 'libs/hash/include/webcpp/hash/detail/canary.h'
+
+
+def record_submodule(root: Path, name: str, commit_id: str) -> None:
+    """Records the gitlink third_party/libs/name at commit_id in the scratch superproject's index,
+    as a submodule's is, without a checkout; the link the scratch copy has for third_party/libs
+    gives way to a directory first."""
+    libs = root / 'third_party/libs'
+    if libs.is_symlink():
+        git(root, 'rm', '-q', '--cached', 'third_party/libs')
+        libs.unlink()
+        libs.mkdir()
+    git(root, 'update-index', '--add', '--cacheinfo',
+        f'160000,{commit_id},third_party/libs/{name}')
+
+
+def commit_recorded(root: Path, message: str) -> None:
+    """Commits the header and the gitlinks recorded, without commit's git add -A, which would
+    drop a gitlink whose directory is not there."""
+    git(root, 'add', CANARY_HEADER)
+    if (root / HASH_CANARY_HEADER).exists():
+        git(root, 'add', '-f', HASH_CANARY_HEADER)
+    git(root, 'commit', '-q', '-m', message)
+
+
+def test_canary_pins(root):
+    prepare(root)
+    # Each pin of detail/canary.h is the first seven digits of the commit the superproject
+    # records for its submodule, ctaes' for bitcoin's; the macro of a test's override is no pin.
+    # A pin that differs, or whose submodule is not recorded, fails at the header, naming both; a
+    # pin that is not of the exact form (not seven hex digits) fails at its line.
+    bearssl = '7bea48e5e850ab4cafbe68d3765cdaba13a86d6f'
+    bitcoin = '1234567890abcdef1234567890abcdef12345678'
+    record_submodule(root, 'bearssl', bearssl)
+    record_submodule(root, 'bitcoin', bitcoin)
+    write(root, CANARY_HEADER, CANARY.format(bearssl='7bea48e', ctaes='1234567'))
+    commit_recorded(root, 'A canary')
+    expect_clean(lint(root))
+    write(root, CANARY_HEADER, CANARY.format(bearssl='1234567', ctaes='1234568'))
+    commit_recorded(root, 'Canaries at other commits')
+    expect_alone(lint(root), 'canary pins', [
+        f'{CANARY_HEADER}: bearssl is pinned at 1234567 and third_party/libs/bearssl is at 7bea48e',
+        f'{CANARY_HEADER}: ctaes is pinned at 1234568 and third_party/libs/bitcoin is at 1234567',
+    ])
+    record_submodule(root, 'bearssl', '1234567' + bearssl[7:])
+    write(root, CANARY_HEADER, CANARY.format(bearssl='1234567', ctaes='1234567'))
+    commit_recorded(root, 'Canaries at the recorded commits')
+    expect_clean(lint(root))
+    git(root, 'rm', '-q', '--cached', 'third_party/libs/bearssl')
+    commit_recorded(root, 'No bearssl')
+    expect_alone(lint(root), 'canary pins', [
+        'bearssl is pinned at 1234567 and third_party/libs/bearssl is at missing'])
+    record_submodule(root, 'bearssl', '1234567' + bearssl[7:])
+    write(root, CANARY_HEADER, CANARY.format(bearssl='1234567', ctaes='123456'))
+    commit_recorded(root, 'A malformed pin')
+    expect_alone(lint(root), 'canary pins', [
+        f'{CANARY_HEADER}: a pin is not of the form #define WEBCPP_CRYPTO_<NAME>_COMMIT <7 hex>: '
+        '#define WEBCPP_CRYPTO_CTAES_COMMIT 123456'])
+    # hash's detail/canary.h is read beside crypto's: sodium's submodule is libsodium, xkcp's,
+    # blake3's and bearssl's are their own names; a wrong pin fails at the header, naming both.
+    write(root, CANARY_HEADER, CANARY.format(bearssl='1234567', ctaes='1234567'))
+    xkcp = 'aaaaaaa' + '0' * 33
+    libsodium = 'bbbbbbb' + '0' * 33
+    blake3 = 'ccccccc' + '0' * 33
+    record_submodule(root, 'xkcp', xkcp)
+    record_submodule(root, 'libsodium', libsodium)
+    record_submodule(root, 'blake3', blake3)
+    write(root, HASH_CANARY_HEADER,
+          HASH_CANARY.format(xkcp='aaaaaaa', sodium='bbbbbbb', blake3='ccccccc',
+                             bearssl='1234567'))
+    commit_recorded(root, 'Hash canaries at the recorded commits')
+    expect_clean(lint(root))
+    write(root, HASH_CANARY_HEADER,
+          HASH_CANARY.format(xkcp='aaaaaaa', sodium='bbbbbba', blake3='ccccccc',
+                             bearssl='1234567'))
+    commit_recorded(root, 'A wrong hash pin')
+    expect_alone(lint(root), 'canary pins', [
+        f'{HASH_CANARY_HEADER}: sodium is pinned at bbbbbba and '
+        'third_party/libs/libsodium is at bbbbbbb'])
 
 
 def test_pyright(root):
@@ -2512,6 +2909,7 @@ CASES = [
     test_a_dependency_s_warnings_are_not_ours,
     test_clang_tidy_reads_boost_unordered_on_every_host,
     test_a_compiled_boost_library_s_sources_are_not_analysed,
+    test_a_native_lane_s_webassembly_commands_are_left_to_its_native_one,
     test_clang_tidy_uses_shipped_cobalt_sources_on_a_clean_tree,
     test_clang_tidy_refuses_a_throw_on_each_target_without_exceptions,
     test_a_native_header_that_needs_no_exceptions_has_its_twin,
@@ -2526,6 +2924,8 @@ CASES = [
     test_banned_word,
     test_third_party_code_is_never_read,
     test_world_rule,
+    test_entropy_sources,
+    test_entropy_sources_unreadable_header,
     test_bare_throw,
     test_raw_rules,
     test_include_boundaries_angle_brackets,
@@ -2535,6 +2935,8 @@ CASES = [
     test_include_boundaries_headers_glob_does_not_reach_a_deeper_path,
     test_include_boundaries_prefix_catches_bare_header,
     test_include_boundaries_glob_matches_nothing,
+    test_nodiscard_results,
+    test_nodiscard_results_is_asked_for,
     test_include_boundaries_unknown_key,
     test_include_boundaries_missing_key,
     test_include_boundaries_non_string_list_element,
@@ -2543,6 +2945,7 @@ CASES = [
     test_doc_comment_references,
     test_doc_comment_code_spans,
     test_changelog,
+    test_canary_pins,
     test_pyright,
     test_python_line_length,
     test_python_blank_lines,
