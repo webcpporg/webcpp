@@ -6,8 +6,10 @@
 
 name: wasi-sdk
 description: >-
-  Installs wasi-sdk 34.0 in .local/wasi-sdk, checked against its SHA-256: the compiler of the
-  wasip2 and wasip3 lanes, and the clang-format and clang-tidy of the lint.
+  Installs wasi-sdk 34.0 in .local/wasi-sdk, the runner's build with the release's
+  platform-independent sysroot and compiler-rt builtins, each archive checked against its
+  SHA-256: the compiler of the wasip2 and wasip3 lanes, whose programs are then the same bytes on
+  every host, and the clang-format and clang-tidy of the lint.
 
 runs:
   using: composite

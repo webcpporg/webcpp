@@ -237,7 +237,9 @@ Jamroot is its build configuration, and `libs/<name>` is its repository.
   configures, once per compiler and run of b2, and a GCC 15.2 stops the build
   before it compiles anything, naming PR121643 and asking for GCC 15.3 or newer;
 - Python 3.9 or newer;
-- for WebAssembly: wasi-sdk 34 and wasmtime 50.0.1;
+- for WebAssembly: wasi-sdk 34, with the release's platform-independent
+  sysroot and builtins (`bash tools/ci/actions/wasi-sdk/install.sh` installs
+  it so in `.local/wasi-sdk`), and wasmtime 50.0.1;
 - for WebAssembly components, such as wasi's: wit-bindgen 0.62.0, which
   generates a world's C bindings, and the `wasi:http` WIT of WASI 0.2.12 and
   0.3.0, the `wit/deps` directories of the Rust crates `wasip2` 1.0.4 and
@@ -1777,7 +1779,15 @@ wrapper each quoted as one word of Jam.
   action before it is cached. It refuses an empty or relative prefix: b2 given
   an empty `--prefix` installs into `/usr/local`. `install.sh source <dir>`
   fills such a tree alone, for a machine whose Boost comes from elsewhere.
-- `wasi-sdk` installs wasi-sdk 34 into `.local/wasi-sdk`, `wasmtime`
+- `wasi-sdk` installs wasi-sdk 34 into `.local/wasi-sdk`: the runner's
+  build of its clang and tools, with the release's platform-independent
+  `wasi-sysroot-34.0` and `libclang_rt-34.0` in place of that build's
+  sysroot and compiler-rt builtins, each archive pinned by its SHA-256. A
+  per-host build's own sysroot carries `__FILE__` strings with the paths of
+  the machine that built it, so a WASI program would differ by host; with
+  the shared sysroot it is the same bytes on every host. Its `install.sh`
+  also installs wasi-sdk locally, from the superproject's root, for the
+  machine's own system and processor. `wasmtime`
   installs wasmtime 50.0.1 on `PATH`, `mrdocs` installs MrDocs 2026.9.29 into
   `.local/mrdocs`, and `node` sets up Node 26.7.0, with npm's cache keyed on
   the lock files of `tools/doc`, `tools/lint`, every library's
@@ -1933,7 +1943,9 @@ The full lane set, `b2 -a`, fresh XML and missing-result checks remain mandatory
 action defines a function of its own that `helpers.sh` holds), the Boost action's prefix
 checks and the layouts it installs the headers and b2 in, and where the
 wit-bindgen, WASI WIT and emsdk actions install what they download, what
-they leave out, and their refusals: a runner no build of wit-bindgen or
+they leave out, and their refusals; that the wasi-sdk action replaces the
+runner's sysroot and builtins with the platform-independent ones, and fails
+on a target those lack builtins for: a runner no build of wit-bindgen or
 emsdk is pinned for, a crate that holds no WIT, an emsdk at another commit,
 a release without its `node_modules`, an archive emsdk would download
 unpinned, and an emcc that is not 6.0.11; the emsdk action's node wrapper,
@@ -1947,7 +1959,10 @@ corruption, interrupted transfers and atomic output. Their refusal tests cover b
 and unsupported runners. Source-provider tests live in
 `tools/openssl/build_test.py`, `tools/test/openssl_test.py` and
 `tools/test/libdatachannel_test.py`: they cover source pins, staged content,
-compiler variants and the single OpenSSL provider. They are separate from
+compiler variants, the single OpenSSL provider, and OpenSSL's one fixed
+prefix, `/webcpp-openssl`, which libcrypto keeps as its modules and engines
+directories and `install_dev` stages under `DESTDIR`, so that the library is
+the same bytes wherever it is built. They are separate from
 runtime evidence and the full upstream OpenSSL suite.
 
 **The site.** On every run of the superproject's CI, the job `site` runs

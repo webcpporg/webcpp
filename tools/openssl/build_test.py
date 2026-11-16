@@ -41,20 +41,29 @@ class HeaderPublicationTest(unittest.TestCase):
         (self.generated / 'include/openssl/configuration.h').write_bytes(self.original)
         self.header.write_bytes(self.original)
 
-    def publish(self, full: bool) -> None:
+    def publish(self, full: bool) -> list[list[str]]:
+        """Runs build_source with every command a stand-in, and returns the commands."""
         scratch = Path(tempfile.mkdtemp(dir=self.root))
         shutil.copytree(self.source, scratch / 'source')
+        commands: list[list[str]] = []
 
         def command(command: list[str], *, cwd: Path, env: dict, log: Path,
                     timeout: float = 600) -> None:
+            commands.append(command)
             log.write_text('completed\n')
             if command[-1] == 'build_generated':
                 shutil.copytree(self.generated / 'include', cwd / 'include')
             if command[-1] == 'install_dev':
-                shutil.copytree(self.generated / 'include', scratch / 'install/include')
-                (scratch / 'install/lib').mkdir()
+                # make install_dev writes to $(DESTDIR)$(INSTALLTOP), INSTALLTOP the prefix.
+                prefix = next(word.split('=', 1)[1] for word in commands[0]
+                              if word.startswith('--prefix='))
+                destination = next((word.split('=', 1)[1] for word in command
+                                    if word.startswith('DESTDIR=')), '')
+                install = Path(destination + prefix)
+                shutil.copytree(self.generated / 'include', install / 'include')
+                (install / 'lib').mkdir()
                 for name in ('libssl.a', 'libcrypto.a'):
-                    (scratch / 'install/lib' / name).write_bytes(b'archive fixture\n')
+                    (install / 'lib' / name).write_bytes(b'archive fixture\n')
 
         args = argparse.Namespace(cc=sys.executable, ar='ar', platform='wasi',
                                   threading='single', variant='release', test=False,
@@ -62,6 +71,21 @@ class HeaderPublicationTest(unittest.TestCase):
         with patch.object(build, 'run', side_effect=command):
             build.build_source(args, self.output,
                                {'version': 'fixture', 'source_date_epoch': 1700000000}, scratch)
+        return commands
+
+    def test_the_prefix_is_the_same_wherever_the_library_is_built(self) -> None:
+        # OpenSSL compiles its prefix into libcrypto (MODULESDIR, ENGINESDIR): a prefix in the
+        # build's temporary directory made the same program's bytes differ by host and by run.
+        # Configure takes one fixed prefix, and install_dev stages it under DESTDIR.
+        commands = self.publish(True)
+        configure = commands[0]
+        self.assertIn('--prefix=' + build.PREFIX, configure)
+        self.assertTrue(build.PREFIX.startswith('/'), build.PREFIX)
+        install = next(c for c in commands if c[-1] == 'install_dev')
+        destinations = [word for word in install if word.startswith('DESTDIR=')]
+        self.assertEqual(len(destinations), 1, install)
+        self.assertNotIn(build.PREFIX, destinations[0])
+        self.assertEqual((self.output / 'libssl.a').read_bytes(), b'archive fixture\n')
 
     def test_full_build_keeps_identical_headers_inode_timestamp_and_permissions(self) -> None:
         self.header.chmod(0o644)

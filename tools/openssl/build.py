@@ -29,6 +29,12 @@ import time
 from source import check_checkout, stage_source
 
 HERE = Path(__file__).resolve().parent
+# The prefix OpenSSL is configured with outside Windows, which libcrypto keeps as its MODULESDIR
+# and ENGINESDIR: one fixed path where nothing is ever installed, so that the library, and every
+# program that links it, is the same bytes wherever and whenever it is built. A prefix in the
+# build's temporary directory made a WASI program differ from one host, and one run, to another.
+# install_dev stages it under DESTDIR in that directory.
+PREFIX = '/webcpp-openssl'
 
 
 def run(command: list[str], *, cwd: Path, env: dict[str, str], log: Path,
@@ -252,7 +258,9 @@ def build_source(args: argparse.Namespace, output: Path, pin: dict, scratch: Pat
     started = time.monotonic()
     build = scratch / 'build'
     build.mkdir()
-    install = scratch / 'install'
+    # Windows stages its headers and archives itself (below), without install_dev.
+    install = scratch / 'install' if windows else scratch / 'stage' / PREFIX.lstrip('/')
+    prefix = str(install) if windows else PREFIX
     actual_target = target
     if args.platform == 'wasi':
         # Copying also works when symlink creation needs Windows privileges.
@@ -263,7 +271,7 @@ def build_source(args: argparse.Namespace, output: Path, pin: dict, scratch: Pat
         actual_target = ['--config=' + str(scratch / 'msvc.conf'), target[-1]]
     perl = windows_perl(env) if windows else 'perl'
     run([perl, str(scratch / 'source/Configure'), *actual_target, *options,
-         '--prefix=' + str(install)], cwd=build, env=env, log=output / 'configure.log')
+         '--prefix=' + prefix], cwd=build, env=env, log=output / 'configure.log')
     make = ['nmake', '/nologo'] if windows else ['make']
     jobs = [] if windows else ['-j2']
     if args.headers_only:
@@ -305,7 +313,8 @@ def build_source(args: argparse.Namespace, output: Path, pin: dict, scratch: Pat
         if symbols.is_file():
             shutil.copyfile(symbols, output / symbols.name)
     else:
-        run([*make, 'install_dev'], cwd=build, env=env, log=output / 'install.log')
+        run([*make, 'DESTDIR=' + str(scratch / 'stage'), 'install_dev'], cwd=build, env=env,
+            log=output / 'install.log')
     # Headers were already prepared with this configuration. Keep identical
     # files untouched: consumers can be compiling with them during this action.
     # Publish any changed headers atomically before making archives available.
