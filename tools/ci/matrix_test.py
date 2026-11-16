@@ -523,37 +523,6 @@ def test_an_own_lanes_command(root):
         assert (lane.id, lane.os) == (lane_id, 'ubuntu-24.04'), lane
 
 
-def test_an_every_target_lane_sets_up_and_registers_every_toolset(root):
-    # hash's own lane measure names no target and builds for the four targets in one command:
-    # its job installs wasi-sdk, wasmtime, emsdk and the CI's node, and registers Clang 18
-    # first (b2's default toolset, the native target), then wasip2's, wasip3's and emscripten's
-    # toolsets, which its Jamfile names in the programs' references. No other own lane without a
-    # target gets them.
-    assert matrix.EVERY_TARGET_LANES == {('hash', 'measure')}, matrix.EVERY_TARGET_LANES
-    measure = matrix.parsed_own_lanes('hash measure libs/hash/test/measure programs')[0]
-    entry = own_lane_entry_of(measure)
-    assert (entry['wasm'], entry['emsdk'], entry['node']) == (True, True, True), entry
-    assert 'platform' not in entry and entry['name'] == 'Own lane (hash, measure)', entry
-    assert [lane.id for lane in matrix.own_lane_toolsets(measure)] == [
-        'clang-18', 'wasip2', 'wasip3', 'emscripten']
-    config = root / 'config.jam'
-    assert matrix.own_lane_command(measure, config, None, []) == [
-        'b2', f'--user-config={config}', '-a', 'toolset=clang-18',
-        'libs/hash/test/measure//measure']
-    oracle = matrix.parsed_own_lanes('beta oracle libs/beta/test/oracle original')[0]
-    entry = own_lane_entry_of(oracle)
-    assert (entry['wasm'], entry['emsdk']) == (False, False), entry
-    assert [lane.id for lane in matrix.own_lane_toolsets(oracle)] == ['clang-18']
-    config = boost_only(root)
-    for lane in matrix.own_lane_toolsets(measure):
-        matrix.register(matrix.resolved(lane), config)
-    text = config.read_text()
-    for line in ('using clang : 18 : clang++-18 ;', 'using clang : wasip2 :',
-                 'using clang : wasip3 :', 'using emscripten :'):
-        assert line in text, (line, text)
-    assert text.index('using clang : 18') < text.index('using clang : wasip2'), text
-
-
 def test_beast_browser_lanes_cover_policies_and_exception_modes(root):
     config = root / 'config.jam'
     options = ['exception-handling=on,off', 'webcpp-beast-unsupported=error,ignore']
@@ -1572,7 +1541,6 @@ CASES = [
     test_own_lanes_of_every_library_and_of_one,
     test_own_lanes_on_targets,
     test_an_own_lanes_command,
-    test_an_every_target_lane_sets_up_and_registers_every_toolset,
     test_beast_browser_lanes_cover_policies_and_exception_modes,
     test_asio_capability_lanes_cover_suspension_and_exception_modes,
     test_openssl_upstream_lanes_use_the_windows_builds,

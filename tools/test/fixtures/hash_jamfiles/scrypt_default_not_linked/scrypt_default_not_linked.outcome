@@ -6,8 +6,8 @@
 
 # The compiler's line starts with the header's path on the machine, so the
 # message is a contains: line. Natively and on WASI the same text is
-# test/messages/two_overrides, a compile-diagnostic.
+# test/messages/scrypt_default_not_linked, a compile-diagnostic.
 [all]
 targets: emscripten
 build: fails
-contains: webcpp::hash: WEBCPP_HASH_DEFAULT_BACKEND_HKDF_HASH2 and WEBCPP_HASH_DEFAULT_BACKEND_HKDF_SODIUM are both defined. Keep one.
+contains: webcpp::hash: backends::sodium, argon2id and scrypt need libsodium. Add /third_party//sodium to the program's Jamfile: exe app : app.cpp /webcpp/hash//hash /third_party//sodium ;

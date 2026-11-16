@@ -46,21 +46,21 @@ def test_the_tree_has_no_fault():
 
 def test_a_message_without_fixture_is_a_fault():
     def change(messages: Path, _: Path) -> None:
-        shutil.copytree(messages / 'two_profiles', messages / 'three_profiles')
-        (messages / 'three_profiles' / 'two_profiles.cpp').rename(
-            messages / 'three_profiles' / 'three_profiles.cpp')
+        shutil.copytree(messages / 'sodium_hmac', messages / 'other_hmac')
+        (messages / 'other_hmac' / 'sodium_hmac.cpp').rename(
+            messages / 'other_hmac' / 'other_hmac.cpp')
 
     faults = faults_of_copies(change)
-    assert any('three_profiles has no fixture' in f for f in faults), faults
+    assert any('other_hmac has no fixture' in f for f in faults), faults
 
 
 def test_a_changed_source_is_a_fault():
     def change(messages: Path, _: Path) -> None:
-        source = messages / 'two_profiles' / 'two_profiles.cpp'
+        source = messages / 'sodium_not_linked' / 'sodium_not_linked.cpp'
         source.write_text(source.read_text().replace('return 0;', 'return 1;'))
 
     faults = faults_of_copies(change)
-    assert any(f.startswith('two_profiles: app.cpp') for f in faults), faults
+    assert any(f.startswith('sodium_not_linked: app.cpp') for f in faults), faults
 
 
 def test_a_changed_text_is_a_fault():
@@ -74,10 +74,10 @@ def test_a_changed_text_is_a_fault():
 
 def test_a_fixture_of_no_message_is_a_fault():
     def change(messages: Path, _: Path) -> None:
-        shutil.rmtree(messages / 'two_overrides')
+        shutil.rmtree(messages / 'pbkdf2_on_sodium')
 
     faults = faults_of_copies(change)
-    assert any(f.startswith('two_overrides: its Jamfile names') for f in faults), faults
+    assert any(f.startswith('pbkdf2_on_sodium: its Jamfile names') for f in faults), faults
 
 
 def main() -> int:
