@@ -6,7 +6,7 @@
 
 // A program that names /webcpp/hash//hash alone: SHA-256 of "abc" (FIPS 180-2), HMAC-SHA-256
 // (RFC 4231, case 2), HKDF (RFC 5869, A.1) and PBKDF2-HMAC-SHA-256 (RFC 7914, section 11, its
-// first case), each on Boost.Hash2 (backends::hash2, the default without a C library).
+// first case), each on Boost.Hash2 (backends::hash2, the default on every target).
 
 #include <webcpp/hash/algorithms.hpp>
 #include <webcpp/hash/hkdf.hpp>

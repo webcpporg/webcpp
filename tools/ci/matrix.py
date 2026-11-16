@@ -83,12 +83,9 @@ reach beyond the loopback. A lane whose entry says external gives b2 webcpp-requ
 from b2's command line alone; an own lane of such a library likewise.
 
 own-lane runs one own lane, OWN-LANE being one entry of the own-lanes matrix as JSON: it registers
-the toolset of the lane it shares (Clang 18 when it names no target), and for an own lane of
-EVERY_TARGET_LANES, which names no target yet builds for every target in one command, the toolsets
-of wasip2, wasip3 and emscripten after it (its entry says wasm, emsdk and node, which its job
-installs), prints its b2 command and runs it. Without a target, b2's exit status is its verdict;
-with one, it writes DIR/<id>.xml, which the job uploads, and fails only when b2 cannot build at
-all, as a lane does.
+the toolset of the lane it shares (Clang 18 when it names no target), prints its b2 command and runs
+it. Without a target, b2's exit status is its verdict; with one, it writes DIR/<id>.xml, which the
+job uploads, and fails only when b2 cannot build at all, as a lane does.
 
 register adds the toolsets of the lanes named by id to the user-config.jam, in their order, the
 first being b2's default toolset: what the CI's tools job builds the tests of the tools with. A WASI
@@ -188,16 +185,6 @@ CHROME_LANES = {('asio', 'browser'), ('asio', 'browser-workers'),
                 ('cobalt', 'browser-network-counterparts'),
                 ('document', 'js'), ('trystero', 'interop'),
                 ('webrtc', 'browser'), ('webrtc', 'interop')}
-
-# The own lanes that name no target yet build for every target in one command, (library, lane):
-# hash's measure, whose Jamfile names wasip2's, wasip3's and emscripten's toolsets in its
-# programs' references. Their job installs wasi-sdk, wasmtime, emsdk and the CI's node, and
-# registers those three toolsets after Clang 18's, b2's default, the native target's
-# (own_lane_toolsets).
-EVERY_TARGET_LANES = {('hash', 'measure')}
-
-# The lanes whose toolsets an own lane of EVERY_TARGET_LANES registers after its own.
-EVERY_TARGET_TOOLSETS = ('wasip2', 'wasip3', 'emscripten')
 
 # MSVC's lanes build 64-bit programs, embed their manifest with the linker and abbreviate b2's
 # paths against Windows's MAX_PATH, as xstate-cpp's green Windows jobs did. b2 abbreviates each
@@ -634,16 +621,6 @@ def own_lane_profile(own: OwnLane) -> Lane:
     return own_lane_base(own.target)
 
 
-def own_lane_toolsets(own: OwnLane) -> list[Lane]:
-    """The lanes whose toolsets the own lane's job registers, in order, the first b2's default:
-    the lane it shares, then, for one of EVERY_TARGET_LANES, the lanes of EVERY_TARGET_TOOLSETS."""
-    lanes = [own_lane_profile(own)]
-    if (own.library, own.lane) in EVERY_TARGET_LANES:
-        known = {lane.id: lane for lane in LANES}
-        lanes += [known[lane_id] for lane_id in EVERY_TARGET_TOOLSETS]
-    return lanes
-
-
 def own_lane_entry(own: OwnLane) -> dict[str, object]:
     """The own lane as an entry of the own-lanes matrix: its library, its lane and its
     directories; its target and its id when it names one; and, for every entry, its kind, the name
@@ -659,10 +636,7 @@ def own_lane_entry(own: OwnLane) -> dict[str, object]:
     # with it, and a driven test its driver. Without the CI's Node, one would run with the
     # image's own, another version. A lane of programs alone, a served one, needs none.
     node = base.node or own.kind == 'original'
-    wasm, emsdk = base.wasm, base.emsdk
-    if (own.library, own.lane) in EVERY_TARGET_LANES:
-        wasm = emsdk = node = True
-    entry.update(kind=own.kind, name=own.name, os=base.os, wasm=wasm, emsdk=emsdk,
+    entry.update(kind=own.kind, name=own.name, os=base.os, wasm=base.wasm, emsdk=base.emsdk,
                  node=node, cc=base.cc, cxx=base.cxx, external=needs_external(own.library),
                  chrome=(own.library, own.lane) in CHROME_LANES)
     return entry
@@ -912,9 +886,7 @@ def run_lane(lane: Lane, user_config: Path, out_dir: Path, extra: list[str]) -> 
 
 def run_own_lane(own: OwnLane, user_config: Path, out_dir: Path, extra: list[str]) -> int:
     """Runs the own lane, and returns its exit status."""
-    # Each read first, so that one that cannot be read leaves user_config as it was.
-    for lane in [resolved(lane) for lane in own_lane_toolsets(own)]:
-        register(lane, user_config)
+    register(resolved(own_lane_profile(own)), user_config)
     if own.target is None:
         label = f'own lane {" ".join(own.requests)}'
         status = run_b2(label, own_lane_command(own, user_config, None, extra))

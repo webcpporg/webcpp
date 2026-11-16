@@ -12,11 +12,12 @@ requirements).
     python3 tools/hash/doc_tables.py --check [--library libs/hash]
 
 Reads, in the library's doc/: capabilities.json (which backend implements each public name, on
-which targets, over which hmacs, with its constant time: Task 14), guide.json (what the guide
-says of each name that no test produces: its use, its security and where the world uses it, each
-with a source, and the rows of "Choose by use case"), and, when they are there,
-measurements.json (each program's size per target and its throughput, and the orders that
-detail/ranking.hpp is generated from: tools/hash/measure.py, Task 21). It writes, in doc/:
+which targets, over which hmacs, with its constant time, and each function's default backend:
+Task 14), guide.json (what the guide says of each name that no test produces: its use, its
+security and where the world uses it, each with a source, and the rows of "Choose by use case"),
+and, when it is there, measurements.json (each program's size per target and its throughput, a
+reference measured once, on 2026-11-16, that decides nothing: the default backend is fixed, spec
+4.1). It writes, in doc/:
 
 - generated/compare-<chapter>.adoc: the comparison that opens each chapter, two tables with a
   row per public name: what it is (output, security, standard, status, the browser's
@@ -24,26 +25,30 @@ detail/ranking.hpp is generated from: tools/hash/measure.py, Task 21). It writes
   smallest program on Emscripten, then where it is used, each with its source, and when to
   choose it);
 - generated/backends-<algorithm>.adoc: the backends of each algorithm, from the capability
-  table (backend, the Jamfile line, targets, hmacs, constant time), and, for an algorithm whose
-  backend the profile chooses, the order of each profile on each target from measurements.json;
+  table (backend, the Jamfile line, targets, hmacs, constant time), and each function's default;
 - generated/choose.adoc: the decision table "Choose by use case", whose backend column is the
   capability table's;
-- generated/measured.adoc: the includes of the data chapters other tools generate,
-  backends.adoc and measurements.adoc (tools/hash/measure.py), performance.adoc
-  (bench/collect.py) and allocation.adoc (bench/allocation_collect.py), each one that is there;
+- generated/measured.adoc: the includes of the data chapters, backends.adoc and
+  measurements.adoc (this tool), performance.adoc (bench/collect.py) and allocation.adoc
+  (bench/allocation_collect.py), each one that is there;
+- backends.adoc: the capability table as the guide's data chapter shows it;
+- measurements.adoc: measurements.json's tables, labelled as the dated reference they are;
 - llms.txt: the guide's index for language models, installed beside the page.
 
 --check renders the same files from the same data and fails, naming
 `python3 tools/hash/doc_tables.py --write`, when one differs from what is committed, is
 missing, or is left over; the doc build runs it (doc/Jamfile). It also fails when guide.json
 lacks a public name of the capability table, names one it does not have, or a use case names
-an example that example/ does not hold. Nothing in the output depends on the time or the
-machine, so the files change only with their data.
+an example that example/ does not hold; when a function of the capability table has no default
+or a type has one; and when measurements.json's digest does not match its content (a hand edit
+of the reference). Nothing in the output depends on the time or the machine, so the files
+change only with their data.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -56,18 +61,17 @@ LICENCE = ('// Copyright (c) 2026 WebCpp.org\n'
            '// Distributed under the Boost Software License, Version 1.0. (See\n'
            '// accompanying file LICENSE_1_0.txt or copy at\n'
            '// https://www.boost.org/LICENSE_1_0.txt)\n')
-# The chapters of the measured data, in the order the guide shows them, and the tool that
-# writes each.
+# The chapters of the measured data, in the order the guide shows them, and what writes each:
+# this tool writes the first two, from doc/capabilities.json and doc/measurements.json.
 MEASURED_CHAPTERS = (
-    ('backends.adoc', 'tools/hash/measure.py --capabilities'),
-    ('measurements.adoc', 'tools/hash/measure.py --write'),
+    ('backends.adoc', 'this tool, from doc/capabilities.json'),
+    ('measurements.adoc', 'this tool, from doc/measurements.json'),
     ('performance.adoc', 'bench/collect.py'),
     ('allocation.adoc', 'bench/allocation_collect.py'),
 )
-WASM = ('wasip2', 'wasip3', 'emscripten')
-# Spec 4.1's profiles, in the order the tables list them.
-PROFILES = ('auto', 'fastest', 'smallest', 'portable')
-# The chapters whose throughput is a rate over 1 MiB (tools/hash/measure.py's workloads).
+OWN_CHAPTERS = ('backends.adoc', 'measurements.adoc')
+TARGETS = ('native', 'wasip2', 'wasip3', 'emscripten')
+# The chapters whose throughput is a rate over 1 MiB (the measured table's workloads).
 RATE_CHAPTERS = ('digests', 'macs', 'non-cryptographic')
 
 
@@ -111,6 +115,34 @@ class Data:
             for function in algorithm['functions']:
                 self.functions[function['name']] = (algorithm, function)
         self.check_guide()
+        self.check_defaults()
+        self.check_digest()
+
+    def check_defaults(self) -> None:
+        """A function (a template with a Backend parameter) names its default, a backend that
+        has it; a type has none."""
+        faults = []
+        for name, (_, function) in self.functions.items():
+            default = function.get('default')
+            if function['kind'] == 'function' and default not in function['backends']:
+                faults.append(f'doc/capabilities.json: the function {name} has no default '
+                              f'among its backends ({default})')
+            if function['kind'] != 'function' and default is not None:
+                faults.append(f'doc/capabilities.json: the type {name} has a default, {default}')
+        if faults:
+            raise Failure('\n'.join(faults))
+
+    def check_digest(self) -> None:
+        """measurements.json's digest, the SHA-256 of its content without it: the reference is
+        never edited by hand."""
+        if self.measurements is None:
+            return
+        body = {k: v for k, v in self.measurements.items() if k != 'digest'}
+        digest = 'sha256:' + hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()
+        if self.measurements.get('digest') != digest:
+            raise Failure('doc/measurements.json: its digest does not match its content, which '
+                          'was edited by hand; the reference measured on 2026-11-16 is kept as '
+                          'measured')
 
     def check_guide(self) -> None:
         facts = self.guide['functions']
@@ -138,14 +170,6 @@ class Data:
         if self.measurements is None:
             return []
         return [r for r in self.measurements['records'] if r['operation'] == operation]
-
-    def order(self, operation: str, hmac: str | None, target: str, by: str) -> list[str] | None:
-        if self.measurements is None:
-            return None
-        for row in self.measurements['orders']:
-            if (row['operation'], row['hmac'], row['target']) == (operation, hmac, target):
-                return list(row[by])
-        return None
 
 
 def rate(ns: float) -> str:
@@ -230,11 +254,11 @@ def compare_table(data: Data, chapter: dict) -> str:
         out.append('|===')
         out.append('')
     if m is not None:
-        out.append(f'The measured columns are doc/measurements.json\'s ({m["date"]}, '
-                   f'{m["machine"]["cpu"]}): the native throughput over 1 MiB, or the time of '
-                   'one derivation over `hmac_sha2_256`, of the fastest backend, and the '
-                   'smallest Emscripten program that calls the function; <<hash-measurements>> '
-                   'has every backend on every target.' +
+        out.append(f'The measured columns are doc/measurements.json\'s, a reference measured '
+                   f'on {m["date"]} on {m["machine"]["cpu"]} that decides nothing: the native '
+                   'throughput over 1 MiB, or the time of one derivation over `hmac_sha2_256`, '
+                   'of the fastest backend, and the smallest Emscripten program that calls the '
+                   'function; <<hash-measurements>> has every backend on every target.' +
                    (' The data was measured on a loaded, shared machine, so close figures may '
                     'swap at the next measurement.' if m.get('loaded') else ''))
     else:
@@ -256,42 +280,8 @@ def hmacs_text(hmacs: list[str] | None) -> str:
                      for h in hmacs)
 
 
-def first_with(order: list[str], having: set[str]) -> str:
-    return next((b for b in order if b in having), '-')
-
-
-def defaults_rows(data: Data, function: dict) -> list[str]:
-    """Per target, the order of each profile, every backend linked: the function's own rows
-    of measurements.json (each HKDF step is measured and ordered alone, as detail/ranking.hpp
-    orders it), kept to the backends that have this function."""
-    having = set(function['backends'])
-    operation = function['name']
-    portable = [b['name'] for b in data.capabilities['backends'] if b['portable']]
-    rows = []
-    for target in data.capabilities['targets']:
-        present = {b for b in having if target in data.backends[b]['targets']}
-        if not present:
-            continue
-        hmac = 'hmac_sha2_256' if function['kind'] == 'function' and \
-            next(iter(function['backends'].values()))['hmacs'] is not None else None
-        by_size = data.order(operation, hmac, target, 'by_size')
-        by_speed = data.order(operation, hmac, target, 'by_throughput')
-        if by_size is None or by_speed is None:
-            continue
-        size = [b for b in by_size if b in present]
-        speed = [b for b in by_speed if b in present]
-        auto = size if target in WASM else speed
-        rows.append('')
-        rows.append(f'| {target}')
-        rows.append(f'| {", ".join(auto)}')
-        rows.append(f'| {", ".join(speed)}')
-        rows.append(f'| {", ".join(size)}')
-        rows.append(f'| {first_with(portable, present)}')
-    return rows
-
-
 def backends_table(data: Data, algorithm: dict) -> str:
-    out = [generated_header('doc/capabilities.json and doc/measurements.json'), '']
+    out = [generated_header('doc/capabilities.json'), '']
     out.append(f'[#hash-backends-of-{algorithm["name"].replace("_", "-")}]')
     names = [f['name'] for f in algorithm['functions']]
     shown = ', '.join(f'`{n}`' for n in names) if len(names) <= 3 else \
@@ -319,40 +309,24 @@ def backends_table(data: Data, algorithm: dict) -> str:
     out.append('')
     out.extend(f'* `{backend}`: {cell(source)}' for backend, source in sources)
     out.append('')
-    if not algorithm['overridable']:
+    defaults = [(f['name'], f['default']) for f in algorithm['functions'] if f['default']]
+    if not defaults:
         names = sorted({b for f in algorithm['functions'] for b in f['backends']})
-        out.append(f'One backend, {", ".join(f"`{n}`" for n in names)}: no profile or '
-                   'override changes it.')
+        out.append(f'One backend, {", ".join(f"`{n}`" for n in names)}: the types take no backend.')
         out.append('')
         return '\n'.join(out)
-    for function in algorithm['functions']:
-        rows = defaults_rows(data, function)
-        if not rows:
-            out.append(f'The default backend of `{function["name"]}` on each target follows '
-                       'the measured orders of doc/measurements.json, which this build of the '
-                       'guide does not have yet; until then, the order of '
-                       '`detail/ranking.hpp` applies.')
-            out.append('')
-            continue
-        out.append(f'.The default backend of `{function["name"]}`: the first linked backend '
-                   'of each order')
-        out.append('[cols="1,2,2,2,1",options="header"]')
-        out.append('|===')
-        out.append('| Target | auto (no profile) | fastest | smallest | portable')
-        out.extend(rows)
-        out.append('|===')
+    by_backend: dict[str, list[str]] = {}
+    for name, default in defaults:
+        by_backend.setdefault(default, []).append(f'`{name}`')
+    for default, names in by_backend.items():
+        named = names[0] if len(names) == 1 else \
+            ', '.join(names[:-1]) + f' and {names[-1]}'
+        others = sorted({b for f in algorithm['functions'] for b in f['backends']} - {default})
+        tail = (f'; {", ".join(f"`{b}`" for b in others)} only where the call names it, as its '
+                'second template argument') if others else ''
+        out.append(f'The default of {named}: `{default}` on every target, whatever the program '
+                   f'links{tail} (<<hash-default-backend>>).')
         out.append('')
-    has_hmac = any(held['hmacs'] is not None for function in algorithm['functions']
-                   for held in function['backends'].values())
-    over = ('The orders shown are those over `hmac_sha2_256`, and over every hmac the table '
-            'does not measure; `hmac_sha2_512` has its own orders, which can differ '
-            '(<<hash-measurements>>). ') if has_hmac else ''
-    out.append(f'{over}Each order is measured with every backend linked; a backend '
-               'the program does not link is skipped. A named profile, '
-               '`WEBCPP_HASH_PROFILE_BACKEND_<NAME>`, or an override, '
-               f'`WEBCPP_HASH_DEFAULT_BACKEND_{algorithm["macro"]}_<NAME>`, takes its backend '
-               'where it has the function (<<hash-profile>>).')
-    out.append('')
     return '\n'.join(out)
 
 
@@ -361,7 +335,7 @@ def choose_table(data: Data) -> str:
     out.append('[#hash-choose-table]')
     out.append('[cols="3,3,2,2,2",options="header"]')
     out.append('|===')
-    out.append('| I need to ... | Use | Its backends: the Jamfile names | Profile '
+    out.append('| I need to ... | Use | Its backends: the Jamfile names | Backend '
                '| Example')
     for case in data.guide['use_cases']:
         _, function = data.functions[case['function']]
@@ -371,18 +345,25 @@ def choose_table(data: Data) -> str:
         out.append(f'| {cell(case["need"])}')
         out.append(f'| <<{case["anchor"]},{cell(case["use"])}>>')
         out.append(f'| {jamfiles}')
-        out.append(f'| {cell(case["profile"])}')
+        out.append(f'| {cell(case["backend"])}')
         out.append(f'| `example/{case["example"]}`')
     out.append('|===')
     out.append('')
     return '\n'.join(out)
 
 
+def rendered_chapters(data: Data) -> set[str]:
+    """The data chapters this tool renders: backends.adoc always, measurements.adoc with its
+    data."""
+    return {'backends.adoc'} | ({'measurements.adoc'} if data.measurements is not None else set())
+
+
 def measured_includes(data: Data) -> str:
     out = [generated_header('the data chapters present in doc/'), '']
     missing = []
     for name, tool in MEASURED_CHAPTERS:
-        if (data.library / 'doc' / name).is_file():
+        if name in rendered_chapters(data) or (name not in OWN_CHAPTERS and
+                                               (data.library / 'doc' / name).is_file()):
             out.append(f'include::../{name}[]')
             out.append('')
         else:
@@ -405,7 +386,10 @@ def llms_txt(data: Data) -> str:
              'wasip2, wasip3, Emscripten): Boost.Hash2\'s digests and HMAC, Keccak-256, BLAKE3, '
              'HKDF, PBKDF2, Argon2id and scrypt over C backends. Every function is synchronous, '
              'returns boost::system::result and allocates nothing in webcpp\'s own code. A '
-             'program links /webcpp/hash//hash and the library of each backend it uses.', '',
+             'program links /webcpp/hash//hash and the library of each backend it uses. Every '
+             'key derivation runs on backends::hash2 unless the call names another backend as '
+             'its second template argument; argon2id and scrypt run on backends::sodium, their '
+             'only backend.', '',
              'Primitives only: protocol steps (BIP39, hash160, EIP-55, Nostr ids, NIP-44) '
              'are what a domain library builds from these functions; the guide shows them as '
              'examples, never as this library\'s API.', '',
@@ -435,7 +419,7 @@ def llms_txt(data: Data) -> str:
     lines.append('## Choose by use case')
     lines.append('')
     for case in data.guide['use_cases']:
-        lines.append(f'- I need to {case["need"]}: {case["use"]}; backend: {case["profile"]}; '
+        lines.append(f'- I need to {case["need"]}: {case["use"]}; backend: {case["backend"]}; '
                      f'example libs/hash/example/{case["example"]}. '
                      f'[Section]({page}#{case["anchor"]})')
     lines.append('')
@@ -443,9 +427,163 @@ def llms_txt(data: Data) -> str:
     lines.append('')
     lines.append('- doc/capabilities.json: which backend implements each function, on which '
                  'targets, over which hmacs, and its constant time')
+    lines.append('- doc/capabilities.json also names each function\'s default backend')
     lines.append('- doc/measurements.json: each backend\'s program size per target and its '
-                 'throughput')
+                 'throughput, a reference measured on 2026-11-16 that decides nothing')
     lines.append('')
+    return '\n'.join(lines)
+
+
+def chapter_header(title: str, anchor: str, sources: str) -> list[str]:
+    return [generated_header(sources), f'[#{anchor}]', f'== {title}', '']
+
+
+def backends_chapter(data: Data) -> str:
+    """The capability table as the guide's data chapter shows it: the backends; per chapter,
+    each function on each backend, its hmacs, its constant time and its targets; each
+    function's default; and what each upstream states on constant time."""
+    table = data.capabilities
+    names = [b['name'] for b in table['backends']]
+    lines = chapter_header('Backends', 'hash-backends', 'doc/capabilities.json')
+    lines += ['Which backend implements each function, over which hmacs, on which targets, and '
+              'what upstream', 'states about its constant time. The backends:', '',
+              '[cols="1,3,1,2,3",options="header"]', '|===',
+              '| Backend | Library | Licence | Jamfile | Targets']
+    for b in table['backends']:
+        lines += ['', f'| {b["name"]}', f'| {b["library"]}', f'| {b["licence"]}',
+                  f'| `{b["jamfile"]}`', f'| {", ".join(b["targets"])}']
+    lines += ['|===', '']
+    chapters: dict[str, list[dict]] = {}
+    for algorithm in table['algorithms']:
+        chapters.setdefault(algorithm['chapter'], []).append(algorithm)
+    for chapter, algorithms in chapters.items():
+        lines += [f'=== {chapter.replace("_", " ").capitalize()}', '',
+                  '[cols="2,1,3,1,4",options="header"]', '|===',
+                  '| Function | Backend | Hmacs | Constant time | Targets']
+        for algorithm in algorithms:
+            for function in algorithm['functions']:
+                for name in names:
+                    c = function['backends'].get(name)
+                    if c is None:
+                        continue
+                    hmacs = ', '.join(c['hmacs']) if c['hmacs'] else '-'
+                    targets = ', '.join(data.backends[name]['targets'])
+                    lines += ['', f'| {function["name"]}', f'| {name}', f'| {hmacs}',
+                              f'| {c["constant_time"]["value"]}', f'| {targets}']
+        lines += ['|===', '']
+    lines += ['=== The default backends', '',
+              'The backend a call that names none uses, on every target, whatever the program '
+              'links (<<hash-default-backend>>):', '',
+              '[cols="2,1",options="header"]', '|===', '| Function | Default']
+    for _, function in data.functions.values():
+        if function['default'] is not None:
+            lines += ['', f'| {function["name"]}', f'| {function["default"]}']
+    lines += ['|===', '', '=== Constant time', '',
+              'What each backend\'s upstream states, and where:', '']
+    seen = set()
+    for _, function in data.functions.values():
+        for name, c in function['backends'].items():
+            key = (name, c['constant_time']['value'], c['constant_time']['source'])
+            if key in seen:
+                continue
+            seen.add(key)
+            lines.append(f'* {name}: {c["constant_time"]["value"]}. '
+                         f'{c["constant_time"]["source"]}')
+    return '\n'.join(lines) + '\n'
+
+
+def measured_time(ns: float) -> str:
+    if ns >= 1e6:
+        return f'{ns / 1e6:.2f} ms'
+    if ns >= 1e3:
+        return f'{ns / 1e3:.2f} µs'
+    return f'{ns:.0f} ns'
+
+
+def measured_speed(data: Data, operation: str, t: dict) -> str:
+    algorithm, _ = data.functions[operation]
+    if algorithm['chapter'] in RATE_CHAPTERS:
+        def per_second(ns: float) -> str:
+            return f'{1e9 / ns:.0f}'
+        return (f'{per_second(t["median_ns"])} MiB/s ({per_second(t["max_ns"])} to '
+                f'{per_second(t["min_ns"])})')
+    return (f'{measured_time(t["median_ns"])} ({measured_time(t["min_ns"])} to '
+            f'{measured_time(t["max_ns"])})')
+
+
+def measurements_chapter(data: Data) -> str:
+    """measurements.json's tables, the size and the throughput of each cell on each target,
+    under the label of the dated reference they are."""
+    m = data.measurements
+    assert m is not None
+    machine = m['machine']
+    lines = chapter_header('Measured size and throughput', 'hash-measurements',
+                           'doc/measurements.json')
+    lines += [f'A reference measured once, on {m["date"]}, that decides nothing: what each '
+              'backend cost a program on each',
+              'target, in bytes and in time, when webcpp measured it. Every key derivation\'s '
+              'default is',
+              '`backends::hash2`, Argon2id\'s and scrypt\'s `backends::sodium`, whatever these '
+              'tables say',
+              '(<<hash-default-backend>>): `hash2` is the only backend that covers every hmac, '
+              'operation and',
+              'target; it is header-only, so a program carries only what it calls and shares the '
+              'SHA code it',
+              'already uses; and the differences measured here for HKDF are nanoseconds natively '
+              'and a few KB',
+              'of an isolated program on WebAssembly. No lane measures these figures again, and '
+              'a move of a',
+              'C library\'s pin leaves them as they were.', '',
+              f'Measured on {m["date"]} on {machine["cpu"]}, {machine["cores"]} cores, '
+              f'{machine["memory_gib"]} GiB, {machine["os"]};',
+              f'WebAssembly under {m["runtimes"]["wasip2"]} (wasip2, wasip3) and '
+              f'{m["runtimes"]["emscripten"]} (Emscripten).',
+              'Compilers: ' + '; '.join(f'{t}: {c}' for t, c in m['toolchains'].items())
+              + '.', '']
+    native = m.get('native_toolchain') or {}
+    if native:
+        lines += [f'The native rows hold for {native["compiler"]} on {native["os"]} '
+                  f'{native["processor"]}, stripped with {Path(native["strip"]).name}; another',
+                  'native toolchain gives other native sizes and times.', '']
+    if m['loaded']:
+        load = m['load_average_before_after']
+        lines += ['WARNING: the machine was shared and loaded while this was measured (many '
+                  'builds ran at once;',
+                  '1, 5 and 15 minute load averages '
+                  + '/'.join(f'{x:.0f}' for x in load[0]) + ' before and '
+                  + '/'.join(f'{x:.0f}' for x in load[1]) + f' after, on {machine["cores"]} '
+                  'cores).',
+                  'Every time is a median with its spread; read the spread, not a single '
+                  'figure. Sizes do not',
+                  'depend on the load.', '']
+    lines += [f'Sizes: {m["rules"]["size"]}. Throughput: {m["rules"]["throughput"]}.', '']
+    by_cell: dict[tuple, dict[str, dict]] = {}
+    for r in m['records']:
+        by_cell.setdefault((r['operation'], r['hmac'], r['backend']), {})[r['target']] = r
+    lines += ['=== Size of a program, in bytes', '',
+              '[cols="3,2,1,1,1,1,1",options="header"]', '|===',
+              '| Function | Hmac | Backend | native | wasip2 | wasip3 | emscripten']
+    for (operation, hmac, backend), targets in by_cell.items():
+        lines += ['', f'| {operation}', f'| {hmac or "-"}', f'| {backend}']
+        lines += [f'| {targets[t]["size_bytes"]}' if t in targets else '| -' for t in TARGETS]
+    lines += ['|===', '', '=== Throughput', '',
+              'A hash or MAC in MiB per second over 1 MiB, a key derivation in time per '
+              'derivation: the median, then',
+              'the range of its runs, the lower figure first. Per function, the workload:', '']
+    lines += [f'* {f}: {w}.' for f, w in m['workloads'].items()]
+    lines += ['', '[cols="3,2,1,3,3,3,3",options="header"]', '|===',
+              '| Function | Hmac | Backend | native | wasip2 | wasip3 | emscripten']
+    for (operation, hmac, backend), targets in by_cell.items():
+        lines += ['', f'| {operation}', f'| {hmac or "-"}', f'| {backend}']
+        for t in TARGETS:
+            r = targets.get(t)
+            if r is None:
+                lines.append('| -')
+            elif r['throughput'] is None:
+                lines.append(f'| not measured: {r["throughput_absent"]}')
+            else:
+                lines.append(f'| {measured_speed(data, operation, r["throughput"])}')
+    lines += ['|===', '']
     return '\n'.join(lines)
 
 
@@ -460,6 +598,9 @@ def render(data: Data) -> dict[str, str]:
             backends_table(data, algorithm)
     files['generated/choose.adoc'] = choose_table(data)
     files['generated/measured.adoc'] = measured_includes(data)
+    files['backends.adoc'] = backends_chapter(data)
+    if data.measurements is not None:
+        files['measurements.adoc'] = measurements_chapter(data)
     files['llms.txt'] = llms_txt(data)
     return files
 
@@ -479,6 +620,7 @@ def main(argv: list[str]) -> int:
         print(f'doc_tables.py: {failure}', file=sys.stderr)
         return 1
     present = {str(p.relative_to(doc)) for p in (doc / 'generated').glob('*.adoc')}
+    present |= {name for name in OWN_CHAPTERS if (doc / name).is_file()}
     if arguments.write:
         (doc / 'generated').mkdir(exist_ok=True)
         for name in present - set(files):
