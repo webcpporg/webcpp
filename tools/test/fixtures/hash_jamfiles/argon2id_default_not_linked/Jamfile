@@ -4,5 +4,6 @@
 # accompanying file LICENSE_1_0.txt or copy at
 # https://www.boost.org/LICENSE_1_0.txt)
 
-exe app : app.cpp /webcpp/hash//hash
-  : <define>WEBCPP_HASH_PROFILE_BACKEND_OPENSSL ;
+# test/messages/argon2id_default_not_linked of webcpp::hash, built for
+# Emscripten by a user's Jamfile.
+exe app : app.cpp /webcpp/hash//hash ;

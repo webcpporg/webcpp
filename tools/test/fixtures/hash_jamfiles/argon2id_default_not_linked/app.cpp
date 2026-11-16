@@ -4,9 +4,8 @@
 // accompanying file LICENSE_1_0.txt or copy at
 // https://www.boost.org/LICENSE_1_0.txt)
 
-// An override of argon2id's default backend is honoured (spec 4.1), even with libsodium linked:
-// WEBCPP_HASH_DEFAULT_BACKEND_ARGON2ID_HASH2 and a call that names no backend stop with
-// backends::hash2's refusal of spec 3.3, and with no other error.
+// argon2id on its default backend, backends::sodium, in a program that does not link libsodium
+// stops with the instruction to add /third_party//sodium (spec section 5.7, the third row).
 
 #include <webcpp/hash/argon2.hpp>
 

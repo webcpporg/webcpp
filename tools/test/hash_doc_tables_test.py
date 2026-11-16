@@ -12,15 +12,18 @@ table, the includes of the measured chapters and llms.txt, the same bytes each t
 passes on what it wrote, and fails naming `python3 tools/hash/doc_tables.py --write` when a
 generated file was edited by hand, is missing or is left over. A guide that lacks a function of
 the capability table, or describes one it does not have, fails, and so does a use case whose
-example is not there. Without doc/measurements.json the tables say so and carry no measured
-column; with it (a fixture in its shape) they carry the throughput and the size, and the default
-of `hkdf_extract` on Emscripten follows the step's own measured order, not HKDF's, as
-detail/ranking.hpp does. The includes of the measured chapters name only those present. And
-`--check` passes on the real library's committed files. Run with the names of some cases to run
-only those."""
+example is not there, and so does a function of the capability table without a default. Every
+function's default is the capability table's, `hash2` for HKDF whatever the measurements say.
+Without doc/measurements.json the tables say so, carry no measured column and render no
+measurements.adoc; with it (a fixture in its shape) they carry the throughput and the size, and
+measurements.adoc renders it as the dated reference that decides nothing; a hand edit of the
+data, which its digest tells, fails. The includes of the measured chapters name only those
+present. And `--check` passes on the real library's committed files. Run with the names of some
+cases to run only those."""
 
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import subprocess
@@ -64,6 +67,9 @@ def written(library: Path) -> dict[str, str]:
     files = {str(p.relative_to(doc)): p.read_text(encoding='utf-8')
              for p in (doc / 'generated').glob('*.adoc')}
     files['llms.txt'] = (doc / 'llms.txt').read_text(encoding='utf-8')
+    for name in ('backends.adoc', 'measurements.adoc'):
+        if (doc / name).is_file():
+            files[name] = (doc / name).read_text(encoding='utf-8')
     return files
 
 
@@ -73,10 +79,14 @@ def write_ok(library: Path) -> dict[str, str]:
     return written(library)
 
 
+def digest_of(data: dict) -> str:
+    body = {k: v for k, v in data.items() if k != 'digest'}
+    return 'sha256:' + hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()
+
+
 def measurements(library: Path) -> dict:
-    """doc/measurements.json's shape (tools/hash/measure.py), for HKDF's three operations and
-    sha2_256: HKDF is smallest on BearSSL, then sodium, then hash2; each step alone is smallest
-    on hash2, then sodium (an order of its own, which HKDF's must not replace)."""
+    """doc/measurements.json's shape, for HKDF's three operations and sha2_256: HKDF is smallest
+    and fastest on BearSSL, then sodium, then hash2, which must not move its default."""
     records = []
     whole = {'hash2': 3000, 'sodium': 2000, 'bearssl': 1000, 'openssl': 9000}
     step = {'hash2': 1500, 'sodium': 2000, 'openssl': 9000}
@@ -99,18 +109,15 @@ def measurements(library: Path) -> dict:
     records.append({'operation': 'sha2_256', 'hmac': None, 'backend': 'hash2',
                     'target': 'emscripten', 'size_bytes': 19235,
                     'throughput': None, 'throughput_absent': 'fixture'})
-    orders = []
-    for operation, sizes in (('hkdf', whole), ('hkdf_extract', step),
-                             ('hkdf_expand', step)):
-        for target in ('native', 'wasip2', 'wasip3', 'emscripten'):
-            have = [r['backend'] for r in records
-                    if r['operation'] == operation and r['target'] == target]
-            orders.append({'operation': operation, 'hmac': 'hmac_sha2_256', 'target': target,
-                           'by_size': sorted(have, key=lambda b: sizes[b]),
-                           'by_throughput': sorted(have, key=lambda b: sizes[b]),
-                           'throughput_from': target})
-    data = {'date': '2026-11-15', 'machine': {'cpu': 'Fixture CPU'}, 'loaded': True,
-            'records': records, 'orders': orders}
+    data = {'date': '2026-11-15',
+            'machine': {'cpu': 'Fixture CPU', 'cores': 2, 'memory_gib': 4, 'os': 'Fixture OS'},
+            'loaded': True, 'load_average_before_after': [[9.0, 8.0, 7.0], [6.0, 5.0, 4.0]],
+            'toolchains': {'native': 'Fixture clang'},
+            'runtimes': {'wasip2': 'Fixture wasmtime', 'emscripten': 'Fixture node'},
+            'native_toolchain': {}, 'workloads': {'hkdf': 'one derivation'},
+            'rules': {'size': 'fixture sizes', 'throughput': 'fixture throughput'},
+            'records': records}
+    data['digest'] = digest_of(data)
     (library / 'doc/measurements.json').write_text(json.dumps(data), encoding='utf-8')
     return data
 
@@ -182,6 +189,23 @@ def test_a_use_case_names_an_example_that_is_there(scratch: Path) -> None:
     expect('example/hkdf.cpp, which is not there' in done.stderr, done.stderr)
 
 
+def test_every_function_names_its_default(scratch: Path) -> None:
+    library = scratch_library(scratch)
+    path = library / 'doc/capabilities.json'
+    table = json.loads(path.read_text(encoding='utf-8'))
+    for algorithm in table['algorithms']:
+        for function in algorithm['functions']:
+            if function['name'] == 'pbkdf2':
+                function['default'] = None
+            if function['name'] == 'sha2_256':
+                function['default'] = 'hash2'
+    path.write_text(json.dumps(table), encoding='utf-8')
+    done = run(library, '--write')
+    expect(done.returncode == 1, 'a function without a default was rendered')
+    expect('the function pbkdf2 has no default' in done.stderr, done.stderr)
+    expect('the type sha2_256 has a default' in done.stderr, done.stderr)
+
+
 def test_without_measurements_the_tables_say_so(scratch: Path) -> None:
     library = scratch_library(scratch)
     files = write_ok(library)
@@ -189,9 +213,21 @@ def test_without_measurements_the_tables_say_so(scratch: Path) -> None:
            'a measured column without measurements')
     expect('does not have yet' in files['generated/compare-digests.adoc'],
            'the comparison table does not say its measurements are missing')
-    expect('detail/ranking.hpp' in files['generated/backends-hkdf.adoc'],
-           'the backends of HKDF do not say which order applies')
+    expect('measurements.adoc' not in files, 'measurements.adoc without its data')
+    hkdf = files['generated/backends-hkdf.adoc']
+    expect('The default of `hkdf_extract`, `hkdf_expand` and `hkdf`: `hash2` on every target'
+           in hkdf, f'the backends of HKDF do not name the default: {hkdf}')
+    expect('`bearssl`, `openssl`, `sodium` only where the call names it' in hkdf, hkdf)
+    expect('The default of `argon2id`: `sodium` on every target'
+           in files['generated/backends-argon2id.adoc'], 'Argon2id\'s default')
+    expect('One backend, `hash2`: the types take no backend.'
+           in files['generated/backends-blake2.adoc'], 'a type\'s backend')
+    backends = files['backends.adoc']
+    expect('| pbkdf2\n| hash2' in backends and '| scrypt\n| sodium' in backends,
+           'backends.adoc does not list the defaults')
     expect('Backends: hash2 (/webcpp/hash//hash' in files['llms.txt'], 'llms.txt has no backends')
+    expect('Every key derivation runs on backends::hash2' in files['llms.txt'],
+           'llms.txt does not say the default')
 
 
 def test_with_measurements_the_tables_carry_them(scratch: Path) -> None:
@@ -202,23 +238,34 @@ def test_with_measurements_the_tables_carry_them(scratch: Path) -> None:
     expect('Fastest natively' in digests, 'no measured column')
     expect('569 MiB/s (hash2)' in digests, 'sha2_256 throughput: 1 MiB in 1.757 ms')
     expect('19,235 bytes (hash2)' in digests, 'sha2_256 size on Emscripten')
-    hkdf = files['generated/backends-hkdf.adoc']
-    # Each step on Emscripten: its own order hash2, sodium; HKDF's would give sodium, hash2.
-    for name in ('hkdf_extract', 'hkdf_expand'):
-        rows = hkdf.split(f'default backend of `{name}`')[1].split('|===')[1]
-        emscripten = rows.split('| emscripten')[1].split('\n\n')[0]
-        expect('| hash2, sodium\n| hash2, sodium\n| hash2, sodium\n| hash2' in emscripten,
-               f'{name} on Emscripten does not follow its own order: {emscripten!r}')
-    expect('own orders' in hkdf and '`hmac_sha2_512`' in hkdf,
-           'HKDF\'s note does not say that another hmac has its own orders')
-    expect('hmac_sha2_256' not in files['generated/backends-argon2id.adoc'],
-           'Argon2id\'s note names an hmac it does not have')
+    expect('a reference measured on 2026-11-15 on Fixture CPU that decides nothing' in digests,
+           'the measured columns are not labelled as the reference')
     expect('a loaded, shared machine' in digests, 'the note hides that the machine was loaded')
+    hkdf = files['generated/backends-hkdf.adoc']
+    # BearSSL is the smallest and the fastest HKDF of the fixture: the default stays hash2.
+    expect('`hkdf`: `hash2` on every target' in hkdf, 'the measurements moved a default')
     expect('libsodium 1.0.22: its headers state constant time' in hkdf,
            'the constant-time column does not give its source')
-    whole = hkdf.split('default backend of `hkdf`')[1].split('|===')[1]
-    native = whole.split('| native')[1].split('\n\n')[0]
-    expect('| bearssl, sodium, hash2, openssl' in native, f'hkdf natively: {native!r}')
+    page = files['measurements.adoc']
+    expect('A reference measured once, on 2026-11-15, that decides nothing' in page,
+           'measurements.adoc is not labelled as the dated reference')
+    expect('`backends::hash2`' in page and 'header-only' in page,
+           'measurements.adoc does not say why hash2 is the default')
+    expect('WARNING: the machine was shared and loaded' in page, 'the load is hidden')
+    expect('| hkdf\n| hmac_sha2_256\n| bearssl\n| 1000\n| 1000\n| 1000\n| 1000' in page,
+           'the size table')
+    expect('| 569 MiB/s (500000000 to 1000000000)' in page, 'the throughput table')
+    expect('orders' not in page.lower(), 'measurements.adoc still shows the orders')
+
+
+def test_a_hand_edit_of_the_measurements_fails(scratch: Path) -> None:
+    library = scratch_library(scratch)
+    data = measurements(library)
+    data['records'][0]['size_bytes'] = 1
+    (library / 'doc/measurements.json').write_text(json.dumps(data), encoding='utf-8')
+    done = run(library, '--write')
+    expect(done.returncode == 1, 'measurements edited by hand were rendered')
+    expect('its digest does not match its content' in done.stderr, done.stderr)
 
 
 def test_no_table_is_a_matrix(scratch: Path) -> None:
@@ -248,11 +295,12 @@ def test_measured_chapters_are_included_when_present(scratch: Path) -> None:
     files = write_ok(library)
     measured = files['generated/measured.adoc']
     expect('include::../performance.adoc[]' in measured, 'performance.adoc not included')
-    expect('include::../backends.adoc[]' not in measured, 'an absent chapter is included')
-    expect('`doc/backends.adoc` (tools/hash/measure.py --capabilities)' in measured,
+    expect('include::../backends.adoc[]' in measured, 'backends.adoc, always rendered, is left out')
+    expect('include::../measurements.adoc[]' not in measured, 'an absent chapter is included')
+    expect('`doc/measurements.adoc` (this tool, from doc/measurements.json)' in measured,
            'the absent chapter is not named')
-    for name in ('backends.adoc', 'measurements.adoc', 'allocation.adoc'):
-        (library / 'doc' / name).write_text('x\n', encoding='utf-8')
+    measurements(library)
+    (library / 'doc/allocation.adoc').write_text('x\n', encoding='utf-8')
     measured = write_ok(library)['generated/measured.adoc']
     expect('NOTE' not in measured, 'a note with every chapter present')
     expect(measured.index('backends.adoc') < measured.index('measurements.adoc')
@@ -273,8 +321,10 @@ CASES: list[Callable[[Path], None]] = [
     test_a_missing_or_left_over_file_fails,
     test_the_guide_covers_the_capability_table,
     test_a_use_case_names_an_example_that_is_there,
+    test_every_function_names_its_default,
     test_without_measurements_the_tables_say_so,
     test_with_measurements_the_tables_carry_them,
+    test_a_hand_edit_of_the_measurements_fails,
     test_no_table_is_a_matrix,
     test_measured_chapters_are_included_when_present,
     test_the_real_library_s_files_are_its_data_s,

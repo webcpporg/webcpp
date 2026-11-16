@@ -24,10 +24,7 @@ not configured fails the database, naming the target: its programs would otherwi
 without a word. Every line that compiles a .cpp file of the source tree becomes an entry of
 <out>, once per distinct command: every native command, and, from the dry run of each other
 target, the commands of the sources that no earlier target compiles, which are analysed as the
-first target that compiles them does, with its own --target. A native own lane that builds for
-every target in one command (libs/hash's measure) gives the native run WebAssembly commands
-too: those of a source the run also compiles natively are left out, as a later target's are,
-and an em++ command of a source it compiles for WebAssembly alone is analysed as emscripten's.
+first target that compiles them does, with its own --target.
 
 clang-tidy reads a WebAssembly command only with the --target and the sysroot it names, and the
 lint gives any other command the host's --target, as to a native one. A command of wasip2 or
@@ -655,44 +652,19 @@ def imported_source(root: str, source: str) -> bool:
     return Path(root, source).resolve() in imported
 
 
-def webassembly(compiler: str) -> bool:
-    """Whether compiler builds for WebAssembly: wasi-sdk's clang++ or Emscripten's em++."""
-    return wasi_sdk(compiler) or emscripten(compiler)
-
-
-def natively(root: str, target: str, commands: list[list[str]]) -> list[list[str]]:
-    """commands, less, in a native dry run, the WebAssembly commands of a source that the run
-    also compiles natively: a native own lane may build its programs for every target in one
-    command (libs/hash's measure), and such a source is analysed natively alone."""
-    if target != 'native':
-        return commands
-    native = {source_path(root, words[-1]) for words in commands if not webassembly(words[0])}
-    return [words for words in commands
-            if not (webassembly(words[0]) and source_path(root, words[-1]) in native)]
-
-
-def compiled_for(target: str, words: list[str]) -> str:
-    """The target the command words compiles for, as the lint analyses it: target itself, but
-    for an em++ command of a native dry run (a native own lane that builds for every target),
-    emscripten, so that it is analysed as em++ compiles it and never as a host command. A
-    wasi-sdk command names its own --target, and the lint tells it by its compiler."""
-    return EMSCRIPTEN if target == 'native' and emscripten(words[0]) else target
-
-
 def read(root: str, target: str, lines: list[str], entries: list[dict[str, object]],
          seen: set[tuple[str, ...]], earlier: set[str],
          wasi_clang: str | None, request: list[str]) -> tuple[Units, set[str]]:
     """Adds to entries each command of lines, compiled for target, that compiles a .cpp file of
     the source tree that is not in earlier, a source an earlier target compiles, and that is not
-    in seen, as the lint analyses it (analysed), leaving out, natively, the WebAssembly commands
-    of a source the same run also compiles natively; a WebAssembly command of a compiler other than
+    in seen, as the lint analyses it (analysed); a WebAssembly command of a compiler other than
     wasi-sdk's clang++ or, on emscripten, Emscripten's em++ fails. Returns the commands of the
     headers-alone translation units, by library and by unit, and the sources of the tree that
     commands compile."""
     units: Units = {}
     sources: set[str] = set()
     selected: list[list[str]] = []
-    for words in natively(root, target, compiles(lines)):
+    for words in compiles(lines):
         source = words[-1]
         unit = ALONE.match(source)
         if unit:
@@ -710,8 +682,7 @@ def read(root: str, target: str, lines: list[str], entries: list[dict[str, objec
         seen.add(key)
         selected.append(words)
         entries.append({'directory': root, 'file': os.path.join(root, source),
-                        'arguments': analysed(compiled_for(target, words), source, words,
-                                              wasi_clang)})
+                        'arguments': analysed(target, source, words, wasi_clang)})
     prepare_provider_headers(root, request, selected, lines)
     return units, sources
 
@@ -813,7 +784,7 @@ def twins(root: str, target: str, chosen: dict[str, list[Aggregate]], units: Uni
     selected: list[list[str]] = []
     request = [*TARGETS[target], WITHOUT_EXCEPTIONS, *PROGRAMS, *lanes, *handler, *requested]
     lines = dry_run(root, request)
-    for words in natively(root, target, compiles(lines)):
+    for words in compiles(lines):
         source = words[-1]
         unit = ALONE.match(source)
         if unit:
@@ -836,8 +807,7 @@ def twins(root: str, target: str, chosen: dict[str, list[Aggregate]], units: Uni
         seen.add(key)
         selected.append(words)
         entries.append({'directory': root, 'file': os.path.join(root, source),
-                        'arguments': analysed(compiled_for(target, words), source, words,
-                                              wasi_clang)})
+                        'arguments': analysed(target, source, words, wasi_clang)})
     prepare_provider_headers(root, request, selected, lines)
     twinned.programs |= kept - compiled
     for library, theirs in aggregates.items():
