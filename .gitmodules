@@ -67,3 +67,6 @@
 	path = third_party/libs/bips
 	url = https://github.com/bitcoin/bips.git
 	shallow = true
+[submodule "libs/crypto"]
+	path = libs/crypto
+	url = ../crypto.git
