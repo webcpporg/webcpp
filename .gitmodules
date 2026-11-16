@@ -79,3 +79,6 @@
 [submodule "third_party/libs/blake3"]
 	path = third_party/libs/blake3
 	url = https://github.com/BLAKE3-team/BLAKE3.git
+[submodule "libs/hash"]
+	path = libs/hash
+	url = ../hash.git
