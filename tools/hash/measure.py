@@ -16,9 +16,9 @@ Run from anywhere; paths in messages are relative to the superproject. Every cel
 libs/hash/doc/capabilities.json (a function on a backend; a key derivation over hmac_sha2_256
 and over hmac_sha2_512) has one program, test/measure/<function>_<backend>.cpp, built on every
 target of its backend at variant=release optimization=space (its size: the native executable
-stripped with `strip`, or the .wasm) and at optimization=speed (its throughput, the median of
-five runs per invocation, natively and on each WebAssembly target where the program ends within
-BOUND seconds).
+stripped with `strip`, or the .wasm, linked without debug information) and at
+optimization=speed (its throughput, the median of five runs per invocation, natively and on each
+WebAssembly target where the program ends within BOUND seconds).
 
 --write builds every program with b2 (the target measure-programs of test/measure/Jamfile, in
 --build-dir), measures each, and writes doc/measurements.json (the data, with the machine,
@@ -32,12 +32,13 @@ in the shape of doc/measurements.json, instead of making them.
 --check is the measure lane's (test/measure/Jamfile): it re-measures every program for size b2
 built (the lists the lane writes, one per target), each run once, and fails, naming
 `python3 tools/hash/measure.py --write`, when a program of a cell is missing on a target (the
-lane built nothing), when a result differs from the committed one or from the independent value
-Python computes, when the order by size of any row differs from the committed one, when a
-generated file differs from what the committed data renders (a hand edit), or when the data's
-digest does not match (a hand edit of the data). With `--measured`, it compares those
-measurements instead, throughput included. It also runs bench/'s correctness program, which the
-lists name, on every target: it must exit 0.
+lane built nothing), when a WebAssembly program for size carries debug information (whose paths
+are those of the host that built its libraries), when a result differs from the committed one
+or from the independent value Python computes, when the order by size of any row differs from
+the committed one, when a generated file differs from what the committed data renders (a hand
+edit), or when the data's digest does not match (a hand edit of the data). With `--measured`,
+it compares those measurements instead, throughput included. It also runs bench/'s correctness
+program, which the lists name, on every target: it must exit 0.
 
 The orders follow spec 4.2 and nothing else. By size, the smallest program first.
 By throughput, the lowest median (of the invocations' medians) first; a committed order changes
@@ -109,7 +110,8 @@ LICENCE_HASH = '\n'.join('#' + line[2:] for line in LICENCE_SLASHES.splitlines()
 
 RULES = {
     'size': 'the bytes of the program built at variant=release optimization=space: natively the '
-            'executable stripped with strip, on WebAssembly the .wasm file',
+            'executable stripped with strip, on WebAssembly the .wasm file, which carries no '
+            'debug information',
     'throughput': 'the program built at variant=release optimization=speed, run with --time: one '
                   'computation to warm up, then five timed runs of the workload, each repeated '
                   '`repetitions` times; per invocation the median of its five runs, per record '
@@ -441,6 +443,67 @@ def programs_of(table: Table, lists: list[Path], required: tuple[str, ...]
     return list(found.values()), bench
 
 
+def leb128(data: bytes, at: int) -> tuple[int, int]:
+    """The unsigned LEB128 at data[at:], and the offset after it."""
+    value, shift = 0, 0
+    while True:
+        if at >= len(data):
+            raise ValueError('a LEB128 runs past the end')
+        byte = data[at]
+        at += 1
+        value |= (byte & 0x7f) << shift
+        shift += 7
+        if not byte & 0x80:
+            return value, at
+
+
+def custom_sections(data: bytes) -> list[str]:
+    """The names of the custom sections of a WebAssembly binary, a core module or a component,
+    and of every core module and component it nests."""
+    if data[:4] != b'\0asm' or len(data) < 8:
+        raise ValueError('not a WebAssembly binary')
+    component = data[4:8] != b'\x01\0\0\0'
+    names, at = [], 8
+    while at < len(data):
+        section = data[at]
+        size, start = leb128(data, at + 1)
+        end = start + size
+        if end > len(data):
+            raise ValueError('a section runs past the end')
+        if section == 0:
+            length, name = leb128(data, start)
+            names.append(data[name:name + length].decode('utf-8', 'replace'))
+        elif component and section in (1, 4):
+            # A component's core module section (1) and component section (4) each hold one
+            # whole binary.
+            names += custom_sections(data[start:end])
+        at = end
+    return names
+
+
+def check_stripped(programs: list[Program]) -> None:
+    """Fails naming each WebAssembly program for size that carries debug information: DWARF
+    holds the paths of the machine that built its libraries (wasi-sdk's libc++ was built at
+    /Users/runner/... for macOS and at /src/... for Linux), so its size would depend on the host
+    that measures it, and a WebAssembly order is compared on every host."""
+    found = []
+    for program in programs:
+        if program.target == 'native' or program.optimization != 'space':
+            continue
+        wasm = program.path.with_suffix('.wasm')
+        try:
+            sections = custom_sections(wasm.read_bytes())
+        except (OSError, ValueError) as error:
+            raise Failure(f'{wasm}: {error}') from error
+        debug = sorted({s for s in sections if s.startswith('.debug')})
+        if debug:
+            found.append(f'space-{program.cell.id} on {program.target} ({", ".join(debug)})')
+    if found:
+        raise Failure('debug information, whose paths depend on the host that built the '
+                      'libraries, is in ' + ', '.join(found) + ': test/measure/Jamfile links '
+                      'every WebAssembly program for size without it')
+
+
 def size_of(program: Program, strip: str) -> int:
     if program.target == 'native':
         with tempfile.TemporaryDirectory() as scratch:
@@ -547,6 +610,7 @@ def measure(table: Table, programs: list[Program], bench: list[tuple[str, Path]]
     over the programs, one at a time, so that a change of load falls on all alike."""
     space = [p for p in programs if p.optimization == 'space']
     speed = [p for p in programs if p.optimization == 'speed']
+    check_stripped(space)
     sizes = dict(zip([(p.cell.id, p.target) for p in space],
                      parallel(lambda p: size_of(p, strip), space, jobs)))
     once = dict(zip([(p.cell.id, p.target, p.optimization) for p in programs],

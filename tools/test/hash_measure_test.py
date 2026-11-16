@@ -13,11 +13,12 @@ bytes each time; `--check` passes on what it wrote, and fails naming
 `python3 tools/hash/measure.py --write` when the size order of a row changes, when a throughput
 median moves more than 10 percent past the one ahead of it (spec 4.2's rule alone: a
 first measurement orders by the medians, and the runs' spread plays no part), when a generated
-file or the data was edited by hand, and when a program of a cell is missing on a target (a lane
-that built nothing); a median that moves by under 10 percent changes nothing. Each key
-derivation operation has its own ranking (hkdf_extract and hkdf_expand beside hkdf); every order
-names every backend with a tag, so that the per-operation default always finds one; the
-portable order is hash2, sodium, bearssl. Native orders measured with another native toolchain
+file or the data was edited by hand, when a program of a cell is missing on a target (a lane
+that built nothing), and when a WebAssembly program for size carries debug information, whose
+paths are the host's that built its libraries; a median that moves by under 10 percent changes
+nothing. Each key derivation operation has its own ranking (hkdf_extract and hkdf_expand beside
+hkdf); every order names every backend with a tag, so that the per-operation default always
+finds one; the portable order is hash2, sodium, bearssl. Native orders measured with another native toolchain
 are not compared, said in one line, while WebAssembly's are. `--capabilities` renders the
 capability table; `--overrides`, run on the real library, gives detail/overrides.hpp byte for
 byte; and `--check` passes on the real library's committed data, without a build. Run with the names
@@ -455,6 +456,63 @@ def test_a_missing_program_fails(scratch: Path) -> None:
           'native', 'built nothing')
 
 
+def wasm_section(name: str, payload: bytes) -> bytes:
+    """A custom section of a WebAssembly binary: id 0, its size, its name and its payload (each
+    length one LEB128 byte, as the fixtures' are short)."""
+    body = bytes([len(name)]) + name.encode() + payload
+    return bytes([0, len(body)]) + body
+
+
+# A core module (version 1) and a component (layer 1, version 0x0d) with no section, and a
+# component holding a core module, the shape wasip2's programs have.
+WASM_MODULE = b'\0asm\x01\0\0\0'
+WASM_COMPONENT = b'\0asm\x0d\0\x01\0'
+
+
+def test_a_webassembly_program_with_debug_information_fails(scratch: Path) -> None:
+    # A .wasm's size is host-independent only without DWARF: wasi-sdk's prebuilt libc++ carries
+    # its include paths, /Users/runner/... in the macOS release and /src/... in the Linux one,
+    # so a debug section makes the same program's size depend on the host that measures it.
+    data = measured(capabilities())
+    directory = library(scratch)
+    written(directory, data, scratch)
+    lists = scratch / 'lists'
+    lists.mkdir()
+    debug = WASM_MODULE + wasm_section('.debug_info', b'/Users/runner/work/wasi-sdk')
+    nested = WASM_COMPONENT + bytes([1, len(debug)]) + debug
+    programs = []
+    for target in TARGETS:
+        names = [f'space-{r["operation"]}_{r["backend"]}'
+                 + (f'_{r["hmac"]}' if r['hmac'] else '')
+                 for r in data['records'] if r['target'] == target]
+        suffix = {'native': '', 'emscripten': '.js'}.get(target, '.wasm')
+        (lists / target).mkdir()
+        for name in names:
+            stem = lists / target / name
+            if target == 'native':
+                stem.write_bytes(b'program')
+            else:
+                content = WASM_COMPONENT if target in ('wasip2', 'wasip3') else WASM_MODULE
+                if name == 'space-hkdf_sodium_hmac_sha2_512' and target == 'wasip2':
+                    content = nested
+                if name == 'space-hkdf_hash2_hmac_sha2_256' and target == 'emscripten':
+                    content = debug
+                stem.with_suffix('.wasm').write_bytes(content)
+                if target == 'emscripten':
+                    stem.with_suffix('.js').write_text('')
+        path = lists / f'measure-programs-{target}-space.txt'
+        path.write_text(''.join(f'{lists}/{target}/{name}{suffix}\n' for name in names))
+        programs.append(str(path))
+    for target in TARGETS:
+        path = lists / f'measure-programs-{target}-bench.txt'
+        path.write_text(f'{lists}/bench-{target}\n')
+        programs.append(str(path))
+    fails(run('--library', str(directory), '--check', '--strip', 'true', '--programs',
+              *programs),
+          'space-hkdf_sodium_hmac_sha2_512 on wasip2', '.debug_info',
+          'space-hkdf_hash2_hmac_sha2_256 on emscripten', 'test/measure/Jamfile')
+
+
 def test_every_order_names_every_backend(scratch: Path) -> None:
     data = measured(capabilities())
     for record in data['records']:
@@ -561,6 +619,7 @@ CASES = [
     test_another_native_toolchain_compares_no_native_order,
     test_a_hand_edit_fails,
     test_a_missing_program_fails,
+    test_a_webassembly_program_with_debug_information_fails,
     test_every_order_names_every_backend,
     test_capabilities_renders_the_table,
     test_the_real_library_s_generated_files_are_its_data_s,
