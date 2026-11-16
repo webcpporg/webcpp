@@ -486,7 +486,11 @@ jobs:
     name: Lint (${{ matrix.shard }}/${{ strategy.job-total }})
     needs: plan
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    # A shard took up to 56 minutes on main (run 43689720995) and over 60 on
+    # webcpporg/webcpp#17 (runs 43757162271, 43809686703, 43893730166), where 60 cancelled
+    # it: which files a shard draws changes with every file the list gains, and the runners'
+    # speed varies.
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
