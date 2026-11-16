@@ -2168,8 +2168,12 @@ NODISCARD_HEADER = 'libs/demo/include/webcpp/demo/results.hpp'
 
 
 def plant_results(root) -> None:
-    """Writes NODISCARD_HEADER: functions returning boost::system::result with and without
-    [[nodiscard]], and results that are no function's."""
+    """Writes NODISCARD_HEADER: functions returning boost::system::result, by its name, an alias
+    of it or a trailing return type, with and without [[nodiscard]]; members declared in their
+    class and defined out of it; and results that are no function's: locals written with
+    parentheses in the bodies of functions and of members, a lambda's, a commented-out one and a
+    variable's type; a friend declaration, which takes no attribute, and the hidden friend
+    defined in the class, which does."""
     write(root, NODISCARD_HEADER, CPP + '\n'
           '#ifndef WEBCPP_DEMO_RESULTS_HPP\n'
           '#define WEBCPP_DEMO_RESULTS_HPP\n'
@@ -2198,13 +2202,92 @@ def plant_results(root) -> None:
           '    return T{};\n'
           '}\n'
           '\n'
+          'inline boost::system::result<std::pair<int, std::pair<int, int>>> dropped_nested() {\n'
+          '    return std::pair<int, std::pair<int, int>>{};\n'
+          '}\n'
+          '\n'
+          '[[nodiscard]] inline boost::system::result<std::pair<int, std::pair<int, int>>> '
+          'kept_nested() {\n'
+          '    return std::pair<int, std::pair<int, int>>{};\n'
+          '}\n'
+          '\n'
+          'using outcome = boost::system::result<int>;\n'
+          '\n'
+          'template <class T>\n'
+          'using outcome_of = boost::system::result<T>;\n'
+          '\n'
+          'inline outcome dropped_alias() {\n'
+          '    return 1;\n'
+          '}\n'
+          '\n'
+          '[[nodiscard]] inline outcome kept_alias() {\n'
+          '    return 1;\n'
+          '}\n'
+          '\n'
+          'template <class T>\n'
+          'outcome_of<T> dropped_alias_template() {\n'
+          '    return T{};\n'
+          '}\n'
+          '\n'
+          'inline auto dropped_trailing() -> boost::system::result<int> {\n'
+          '    return 1;\n'
+          '}\n'
+          '\n'
+          '[[nodiscard]] inline auto kept_trailing() noexcept -> boost::system::result<int> {\n'
+          '    return 1;\n'
+          '}\n'
+          '\n'
+          'inline auto const lambda_value = []() -> boost::system::result<int> { return 1; };\n'
+          '\n'
+          'inline int local_with_parentheses() {\n'
+          '    boost::system::result<int> local_outcome(kept_free());\n'
+          '    outcome const local_alias(kept_alias());\n'
+          '    return local_outcome.has_value() && local_alias.has_value() ? *local_outcome : 0;\n'
+          '}\n'
+          '\n'
+          'class holder;\n'
+          '\n'
+          '[[nodiscard]] boost::system::result<int> befriended(holder const& granting);\n'
+          '\n'
           'class holder {\n'
           'public:\n'
+          '    friend boost::system::result<int> befriended(holder const& granting);\n'
+          '\n'
+          '    friend boost::system::result<int> dropped_friend(holder const& /*granting*/) '
+          '{ return 1; }\n'
+          '\n'
           '    [[nodiscard]] static boost::system::result<void> kept_member() { return {}; }\n'
+          '\n'
+          '    [[nodiscard]] static boost::system::result<int> kept_declared();\n'
+          '\n'
+          '    static boost::system::result<int> dropped_declared();\n'
+          '\n'
+          '    [[nodiscard]] static int member_body() {\n'
+          '        boost::system::result<int> member_local(kept_declared());\n'
+          '        return member_local.has_value() ? *member_local : 0;\n'
+          '    }\n'
           '\n'
           'protected:\n'
           '    static boost::system::result<void> dropped_member() { return {}; }\n'
           '};\n'
+          '\n'
+          'inline boost::system::result<int> holder::kept_declared() {\n'
+          '    return 1;\n'
+          '}\n'
+          '\n'
+          'inline boost::system::result<int> holder::dropped_declared() {\n'
+          '    return 2;\n'
+          '}\n'
+          '\n'
+          'namespace unqualified {\n'
+          '\n'
+          'using boost::system::result;\n'
+          '\n'
+          'inline result<int> dropped_unqualified() {\n'
+          '    return 1;\n'
+          '}\n'
+          '\n'
+          '}  // namespace unqualified\n'
           '\n'
           '// boost::system::result<int> commented_out();\n'
           'inline boost::system::result<int> const constant_value{1};\n'
@@ -2217,21 +2300,47 @@ def plant_results(root) -> None:
 def test_nodiscard_results(root):
     prepare(root)
     # A library that asks for it in meta/lint.json declares each function returning a result
-    # [[nodiscard]]: a free function, a template's and a member after an access specifier fail
-    # at their lines, with the library's reason; what is kept, commented out or a variable's type
-    # does not.
+    # [[nodiscard]]: a free function, a template's, one whose result nests templates, one
+    # returning an alias of a result, one with a trailing return type, a member after an access
+    # specifier, a member declared in its class, a hidden friend defined in its class, and one
+    # naming result after a using-declaration fail at their lines, with the library's reason.
+    # What is kept, a member's out-of-line definition and a friend declaration without a body,
+    # which the first declaration answers for and which take no attribute, a lambda, a local
+    # written with parentheses in a function's or a member's body, a comment and a variable's
+    # type do not.
     write(root, 'libs/demo/meta/lint.json', '{"nodiscard-results": "a dropped result is lost"}\n')
     plant_results(root)
     message = 'a function returning boost::system::result without [[nodiscard]]: '
-    expect_alone(lint(root), 'nodiscard results', [
+    result = lint(root)
+    expect_alone(result, 'nodiscard results', [
         at(root, NODISCARD_HEADER, 'dropped_free') + ' ' + message + 'a dropped result is lost',
         at(root, NODISCARD_HEADER, 'dropped_template') + ' ' + message,
+        at(root, NODISCARD_HEADER, 'dropped_nested') + ' ' + message,
+        at(root, NODISCARD_HEADER, 'dropped_alias()') + ' ' + message,
+        at(root, NODISCARD_HEADER, 'dropped_alias_template') + ' ' + message,
+        at(root, NODISCARD_HEADER, 'dropped_trailing') + ' ' + message,
+        at(root, NODISCARD_HEADER, ' dropped_declared();') + ' ' + message,
         at(root, NODISCARD_HEADER, 'dropped_member') + ' ' + message,
-    ], spared=(at(root, NODISCARD_HEADER, 'kept_free'),
+        at(root, NODISCARD_HEADER, 'dropped_unqualified') + ' ' + message,
+        at(root, NODISCARD_HEADER, 'dropped_friend') + ' ' + message,
+    ], spared=(at(root, NODISCARD_HEADER, 'friend boost::system::result<int> befriended'),
+               at(root, NODISCARD_HEADER, 'kept_free() noexcept'),
                at(root, NODISCARD_HEADER, 'kept_template'),
+               at(root, NODISCARD_HEADER, 'kept_nested'),
+               at(root, NODISCARD_HEADER, 'outcome kept_alias()'),
+               at(root, NODISCARD_HEADER, 'kept_trailing'),
+               at(root, NODISCARD_HEADER, 'lambda_value'),
+               at(root, NODISCARD_HEADER, 'local_outcome('),
+               at(root, NODISCARD_HEADER, 'local_alias('),
                at(root, NODISCARD_HEADER, 'kept_member'),
+               at(root, NODISCARD_HEADER, ' kept_declared();'),
+               at(root, NODISCARD_HEADER, 'member_local('),
+               at(root, NODISCARD_HEADER, 'holder::kept_declared'),
+               at(root, NODISCARD_HEADER, 'holder::dropped_declared'),
                at(root, NODISCARD_HEADER, 'commented_out'),
                at(root, NODISCARD_HEADER, 'constant_value')))
+    # Those ten and nothing else of the header.
+    assert result.stdout.count(message) == 10, result.stdout[-6000:]
 
 
 def test_nodiscard_results_is_asked_for(root):

@@ -658,7 +658,7 @@ with `lint: failed: <rule>` for each rule that failed.
 | bare throw | a `throw` expression in a library's public header (`libs/*/include/**`), outside comments and literals, at its line: inside `#ifndef WEBCPP_<NAME>_NO_EXCEPTIONS` too, in a template that nothing instantiates, which clang-tidy's analysis without exceptions does not see, and as a rethrow, `throw;`; `boost::throw_exception` is the one way to raise, `std::rethrow_exception` the one way to rethrow (above) |
 | changelog form | a library's changelog or a version's release notes out of `AGENTS.md` chapter 5's form: a section or a region missing or out of order, a line that starts with no verb of the list, a cross-reference, an inline anchor such as `[[nodiscard]]` outside a passthrough, more than ten lines for a library and a version, text outside a bullet |
 | canary pins | a `WEBCPP_CRYPTO_<NAME>_COMMIT` of crypto's `detail/canary.h` that is not the first seven digits of the commit the superproject records for its submodule (`ctaes`: `bitcoin`) |
-| nodiscard results | a function of a library's `include/` that returns `boost::system::result` without `[[nodiscard]]`, at its line, when the library asks for the rule in its `meta/lint.json` (`"nodiscard-results"` and its reason; crypto and hash do): `boost::system::result` carries no `[[nodiscard]]` of its own; and a malformed file or an unknown key |
+| nodiscard results | a function of a library's `include/` that returns `boost::system::result` without `[[nodiscard]]`, at its line, when the library asks for the rule in its `meta/lint.json` (`"nodiscard-results"` and its reason; asio, beast, cobalt, crypto, hash and trystero do): `boost::system::result` carries no `[[nodiscard]]` of its own; and a malformed file or an unknown key |
 
 A source b2 expects not to compile (`webcpp.compile-fail`), and one that
 must stop with the error it states (`webcpp.compile-diagnostic`), are left
@@ -7457,10 +7457,14 @@ GCC 15.2's default-argument `await_suspend` regression (GCC PR121643) prevents
 unmodified native Cobalt `race` applications from compiling. The GCC 15 CI lane
 therefore provisions GCC 15.3 from a pinned official image and validates an
 independent compile/run coroutine probe, including after cache restoration.
-It does not change the native core or omit those tests. GCC 14's separate known
-coroutine-allocation false positive (boostorg/cobalt#7) is scoped to the affected
-test functions; the two immutable original application probes retain the warning
-as nonfatal for GCC 14 alone. Consumers inherit no warning-suppression flags.
+The lane does not change the native core or omit those tests.
+A local build probes the GCC 15 its user-config.jam configures the same way: the
+Jamroot's `gcc-probe` compiles and runs that probe once per compiler and run of b2,
+and a compiler that fails it stops the build with a message naming PR121643 and
+GCC 15.3, before a lane would end in internal compiler errors. GCC 14's separate
+known coroutine-allocation false positive (boostorg/cobalt#7) is scoped to the
+affected test functions; the two immutable original application probes retain the
+warning as nonfatal for GCC 14 alone. Consumers inherit no warning-suppression flags.
 
 The 2026-11-07 report covers 12 original applications in 432 cells, keeping
 counterparts, unavailable facilities and upstream defects separate. Shared Release

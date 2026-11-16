@@ -7,9 +7,10 @@
 
 """Checks the Jamroot: it finds the installed Boost and searches it first, refuses a missing or
 older one by naming the fix, refuses one whose version it cannot read, checks again when Boost
-changes, keeps Boost's warnings out of -Werror, refuses CPATH, reaches third_party/ through both
-of its project ids, and installs the headers. Each case builds a scratch superproject with the
-fixture library demo. Run with the names of some cases to run only those."""
+changes, keeps Boost's warnings out of -Werror, refuses CPATH, refuses a GCC 15 that fails the
+coroutine probe of GCC PR121643, reaches third_party/ through both of its project ids, and
+installs the headers. Each case builds a scratch superproject with the fixture library demo. Run
+with the names of some cases to run only those."""
 
 from __future__ import annotations
 
@@ -169,6 +170,60 @@ def test_cpath_set_is_refused(root):
     harness.expect(result, False, 'CPATH is set')
 
 
+# A line of a user-config.jam that configures gcc.
+USING_GCC_LINE = re.compile(r'^[ \t]*using[ \t]+gcc\b[^;]*;[ \t]*\n?', re.MULTILINE)
+
+
+def fake_gcc(root, version):
+    """Configures, in place of any gcc of root's user-config.jam, `using gcc : 15` on a fake
+    g++-15 whose -dumpfullversion says version, and which crashes on every compilation as GCC
+    15.2 crashes on tools/ci/actions/gcc/coroutine_probe.cpp (GCC PR121643). Returns its path."""
+    compiler = root / 'fake gcc/g++-15'
+    compiler.parent.mkdir(exist_ok=True)
+    compiler.write_text(
+        '#!/bin/sh\n'
+        'case "$1" in\n'
+        f'  -dumpfullversion|-dumpversion) echo {version} ;;\n'
+        '  -dumpmachine) c++ -dumpmachine ;;\n'
+        '  -print-prog-name=*) echo "${1#-print-prog-name=}" ;;\n'
+        '  *) echo "probe.cpp:39:30: internal compiler error: in make_decl_rtl" >&2; exit 4 ;;\n'
+        'esac\n')
+    compiler.chmod(0o755)
+    text = USING_GCC_LINE.sub('', harness.user_config(root).read_text())
+    harness.configure(root, text + f'using gcc : 15 : "{compiler}" ;\n')
+    return compiler
+
+
+def test_a_gcc_15_that_fails_the_coroutine_probe_is_refused(root):
+    # GCC 15.2 crashes on the await_suspend default argument of unmodified Cobalt race code (GCC
+    # PR121643). The build stops before it compiles anything, naming the compiler and the fix.
+    # The probe decides, not the version: a 15.3 that crashes is refused too.
+    for version in ('15.2.0', '15.3.0'):
+        compiler = fake_gcc(root, version)
+        result = harness.run_b2(root, 'toolset=gcc-15', 'libs/demo/test')
+        harness.expect(result, False, f'GCC {version}', str(compiler), 'GCC PR121643',
+                       'tools/ci/actions/gcc/coroutine_probe.cpp', 'internal compiler error',
+                       'GCC 15.3 or newer')
+        assert '**passed**' not in result.stdout, result.stdout[-4000:]
+        assert 'gcc.compile.c++' not in result.stdout, result.stdout[-4000:]
+
+
+def test_a_gcc_other_than_15_is_not_probed(root):
+    # The probe guards GCC 15 alone: another GCC goes on to Boost's check, which the fake fails.
+    fake_gcc(root, '14.2.0')
+    result = harness.run_b2(root, 'toolset=gcc-15', 'libs/demo/test')
+    harness.expect(result, False, 'Boost 1.92.0 was found in')
+    assert 'PR121643' not in result.stdout, result.stdout[-4000:]
+
+
+def test_a_working_gcc_passes_the_coroutine_probe(root):
+    # The gcc the checkout configures, GCC 15.3 where it is a GCC 15, builds; on a machine that
+    # configures none, as the CI's tools job, there is nothing to probe.
+    gcc = harness.gcc_request(root)
+    if gcc:
+        harness.expect(harness.run_b2(root, *gcc, 'libs/demo/test'), True, '**passed**')
+
+
 def test_a_relative_user_config_is_found(root):
     # WEBCPP_USER_CONFIG relative to the directory the tests run from, while b2 runs in root.
     shutil.rmtree(root / '.local', ignore_errors=True)
@@ -246,6 +301,9 @@ CASES = [
     test_boost_warnings_are_not_ours,
     test_configured_boost_is_searched_first,
     test_cpath_set_is_refused,
+    test_a_gcc_15_that_fails_the_coroutine_probe_is_refused,
+    test_a_gcc_other_than_15_is_not_probed,
+    test_a_working_gcc_passes_the_coroutine_probe,
     test_a_relative_user_config_is_found,
     test_install_copies_headers_to_prefix,
     test_third_party_has_both_ids,

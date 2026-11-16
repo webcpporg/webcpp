@@ -230,7 +230,11 @@ Jamroot is its build configuration, and `libs/<name>` is its repository.
 - the GCC 15 CI lane uses pinned GCC 15.3, since the Ubuntu runner's GCC 15.2
   has coroutine default-argument regression PR121643. Its action extracts the
   official Linux-X64 image's relocatable toolchain, verifies a compile/run probe
-  after installation and cache restoration, and selects its matching runtime;
+  after installation and cache restoration, and selects its matching runtime.
+  Locally, the Jamroot compiles and runs the same probe,
+  `tools/ci/actions/gcc/coroutine_probe.cpp`, with the GCC 15 a user-config.jam
+  configures, once per compiler and run of b2, and a GCC 15.2 stops the build
+  before it compiles anything, naming PR121643 and asking for GCC 15.3 or newer;
 - Python 3.9 or newer;
 - for WebAssembly: wasi-sdk 34 and wasmtime 50.0.1;
 - for WebAssembly components, such as wasi's: wit-bindgen 0.62.0, which
