@@ -37,7 +37,9 @@ Exit 0 when there is none, 1 when there is one, 2 on a usage error.
   include-boundaries  a library keeps to the include boundaries its own
                       libs/<name>/meta/include-boundaries.json declares, when it has one;
   nodiscard-results   a library whose libs/<name>/meta/lint.json asks for it declares every
-                      function of its headers that returns boost::system::result [[nodiscard]].
+                      function of its headers that returns boost::system::result, or an alias
+                      of it, [[nodiscard]]: a namespace's or a class's, not a local of a
+                      function's body written with parentheses.
 """
 
 from __future__ import annotations
@@ -731,51 +733,338 @@ LINT_CONFIG = re.compile(r'libs/([^/]+)/meta/lint\.json')
 LINT_CONFIG_KEYS = frozenset({'nodiscard-results'})
 
 
-def results_without_nodiscard(path: str, text: str) -> Iterator[int]:
-    """The line of each function a C++ header declares returning boost::system::result<...>
-    (system::result<...> too) with no [[nodiscard]] among the words of its declaration before
-    the return type: back to the ;, { or } before it, or to an access specifier's colon. A
-    result that is a variable's type, a cast's or a constructor call's, has no name and a
-    parenthesis after the >, and is not read."""
+# The keys of a class head: what opens a class's scope, whose members are declarations.
+CLASS_KEYS = frozenset({'class', 'struct', 'union'})
+
+# The words of a class head between its key and its name.
+CLASS_ATTRIBUTES = frozenset({'alignas', '__declspec', '__attribute__'})
+
+# The words that may stand between a function's parameter list and its trailing return type.
+FUNCTION_QUALIFIERS = frozenset({'const', 'volatile', 'noexcept', 'throw'})
+
+# A word that is no function's name, though a parenthesis follows it.
+NOT_A_NAME = frozenset({'operator', 'decltype', 'noexcept', 'alignas', 'requires', 'sizeof',
+                        'static_assert', 'throw'})
+
+
+def declaration_tokens(text: str) -> list[Token]:
+    """The tokens of the C++ text that the rule nodiscard-results reads: neither a comment nor
+    any token of a preprocessor directive, whose braces and parentheses open nothing, its lines
+    continued with a backslash too."""
     tokens = [token for token in cpp_tokens(text) if not token[0].endswith('-comment')]
-    count = len(tokens)
-    for index, (kind, word, line) in enumerate(tokens):
-        qualified = (index >= 3 and tokens[index - 1][1] == ':' and tokens[index - 2][1] == ':'
-                     and tokens[index - 3][1] == 'system')
-        if kind != 'word' or word != 'result' or not qualified:
+    lines = text.splitlines()
+    first_of_line: dict[int, str] = {}
+    for _, token, line in tokens:
+        first_of_line.setdefault(line, token)
+    directive: set[int] = set()
+    for line, token in first_of_line.items():
+        if token == '#':
+            while True:
+                directive.add(line)
+                if line > len(lines) or not lines[line - 1].endswith('\\'):
+                    break
+                line += 1
+    return [token for token in tokens if token[2] not in directive]
+
+
+def closing_angle(tokens: list[Token], opening: int) -> int | None:
+    """The index of the > that closes the < at opening: < and > inside parentheses, and the > of
+    an ->, count for nothing, so that >> closes two. None when a ;, { or } comes first."""
+    depth = parentheses = 0
+    for index in range(opening, len(tokens)):
+        token = tokens[index][1]
+        if token in (';', '{', '}'):
+            return None
+        if token == '(':
+            parentheses += 1
+        elif token == ')':
+            parentheses -= 1
+        elif parentheses == 0 and token == '<':
+            depth += 1
+        elif parentheses == 0 and token == '>' and tokens[index - 1][1] != '-':
+            depth -= 1
+            if depth == 0:
+                return index
+    return None
+
+
+def is_scope(tokens: list[Token], index: int) -> bool:
+    """Whether the tokens at index are ::, a scope resolution."""
+    return (index + 1 < len(tokens) and tokens[index][1] == ':' and tokens[index + 1][1] == ':')
+
+
+def after_name(tokens: list[Token], index: int) -> tuple[int, bool, int]:
+    """Past the name that starts at index, qualified or not, each of its parts a word with its
+    template arguments, if any: the index after it, whether it was qualified, and the index of
+    its last word."""
+    position, qualified, last = index, False, index
+    while position < len(tokens) and tokens[position][0] == 'word':
+        last = position
+        position += 1
+        if position < len(tokens) and tokens[position][1] == '<':
+            close = closing_angle(tokens, position)
+            if close is None:
+                break
+            position = close + 1
+        if not (is_scope(tokens, position) and position + 2 < len(tokens)
+                and tokens[position + 2][0] == 'word'):
+            break
+        position += 2
+        qualified = True
+    return position, qualified, last
+
+
+def is_class_head(head: list[Token]) -> bool:
+    """Whether head, the tokens before a {, is a class's: its last class, struct or union outside
+    angle brackets and parentheses, not an enum's, then its attributes, alignas(...) and export
+    macros, BOOST_SYMBOL_VISIBLE or WEBCPP_X_DECL(...), its name, final, and nothing but its base
+    clause before the {. A function that returns struct x * is not one, nor a variable
+    struct x y {...}."""
+    key = None
+    angles = parentheses = 0
+    for index, (_, token, _) in enumerate(head):
+        if token == '(':
+            parentheses += 1
+        elif token == ')':
+            parentheses -= 1
+        elif token == '<' and parentheses == 0:
+            angles += 1
+        elif token == '>' and parentheses == 0 and angles > 0:
+            angles -= 1
+        elif (token in CLASS_KEYS and angles == 0 and parentheses == 0
+              and (index == 0 or head[index - 1][1] != 'enum')):
+            key = index
+    if key is None:
+        return False
+    position = key + 1
+    while position < len(head):
+        token = head[position][1]
+        if token == '[' and position + 1 < len(head) and head[position + 1][1] == '[':
+            while position < len(head) and not (head[position][1] == ']'
+                                                and head[position - 1][1] == ']'):
+                position += 1
+            position += 1
+        elif (head[position][0] == 'word' and position + 1 < len(head)
+              and head[position + 1][0] == 'word' and head[position + 1][1] != 'final'):
+            position += 1
+        elif ((token in CLASS_ATTRIBUTES or token.isupper()) and position + 1 < len(head)
+              and head[position + 1][1] == '('):
+            depth = 0
+            position += 1
+            while position < len(head):
+                depth += {'(': 1, ')': -1}.get(head[position][1], 0)
+                position += 1
+                if depth == 0:
+                    break
+        else:
+            break
+    position, _, _ = after_name(head, position)
+    if position < len(head) and head[position][1] == 'final':
+        position += 1
+    # The name took any :: that qualifies it: a colon after it opens the base clause, whose first
+    # base may be ::qualified.
+    return position == len(head) or head[position][1] == ':'
+
+
+def opens_declarations(tokens: list[Token], brace: int) -> bool:
+    """Whether the { at brace opens a scope whose statements are declarations: a namespace's, a
+    class's, a struct's, a union's, or an extern "C" block. A function's body, a lambda's, an
+    initializer, an enum and a requires expression do not."""
+    start = brace
+    while start > 0 and tokens[start - 1][1] not in (';', '{', '}'):
+        start -= 1
+    head = tokens[start:brace]
+    if any(token == 'namespace' for _, token, _ in head):
+        return True
+    if len(head) >= 2 and head[-2][1] == 'extern' and head[-1][0] == 'literal':
+        return True
+    return is_class_head(head)
+
+
+def declaration_level(tokens: list[Token]) -> list[bool]:
+    """For each token, whether it stands where a namespace, a class or an extern "C" block
+    declares its members: inside no function body, lambda, initializer or enum, at any depth, and
+    inside no parenthesis opened in its scope, where a parameter is."""
+    level: list[bool] = []
+    scopes = [(True, 0)]
+    parentheses = 0
+    for index, (_, token, _) in enumerate(tokens):
+        declares, base = scopes[-1]
+        level.append(declares and parentheses == base)
+        if token == '{':
+            scopes.append((declares and parentheses == base and opens_declarations(tokens, index),
+                           parentheses))
+        elif token == '}' and len(scopes) > 1:
+            scopes.pop()
+        elif token == '(':
+            parentheses += 1
+        elif token == ')':
+            parentheses -= 1
+    return level
+
+
+def result_type(tokens: list[Token], index: int, aliases: dict[str, bool]) -> int | None:
+    """When the word at index names a boost::system::result: the index of the type's last token.
+    It is system::result<...>, qualified further or not, or the name of an alias of a result,
+    with its template arguments when the alias is a template's. None otherwise."""
+    kind, word, _ = tokens[index]
+    if kind != 'word' or index > 0 and tokens[index - 1][1] == '.':
+        return None
+    templated = aliases.get(word)
+    named = (word == 'result' and index >= 3 and is_scope(tokens, index - 2)
+             and tokens[index - 3][1] == 'system')
+    if named:
+        templated = True
+    if templated is None:
+        return None
+    if not templated:
+        return index
+    if index + 1 < len(tokens) and tokens[index + 1][1] == '<':
+        return closing_angle(tokens, index + 1)
+    return None
+
+
+def type_start(tokens: list[Token], index: int) -> int:
+    """The index of the first token of the qualified name whose last word is at index."""
+    start = index
+    while start >= 2 and is_scope(tokens, start - 2):
+        start -= 2
+        if start >= 1 and tokens[start - 1][0] == 'word':
+            start -= 1
+    return start
+
+
+def past_typename(tokens: list[Token], index: int) -> int:
+    """The index of the first word of the type that starts at index, past typename and a leading
+    ::."""
+    while index < len(tokens) and tokens[index][1] in ('typename', ':'):
+        index += 1
+    return index
+
+
+def result_aliases(tokens: list[Token]) -> dict[str, bool]:
+    """The names that the tokens give boost::system::result, each with whether it takes template
+    arguments: an alias declaration's, using name = ...;, or a typedef's whose type is a result,
+    an alias of such an alias too; and result itself after using boost::system::result; or using
+    namespace boost::system;."""
+    aliases: dict[str, bool] = {}
+    while True:
+        found = dict(aliases)
+        for index, (_, word, _) in enumerate(tokens[:-2]):
+            following = tokens[index + 1][1]
+            if word == 'using' and following != 'namespace' and tokens[index + 2][1] == '=':
+                position, _, last = after_name(tokens, past_typename(tokens, index + 3))
+                if (result_type(tokens, last, found) == position - 1 and position < len(tokens)
+                        and tokens[position][1] == ';'):
+                    found[following] = index > 0 and tokens[index - 1][1] == '>'
+            elif word == 'using':
+                namespace = following == 'namespace'
+                position, _, _ = after_name(tokens, past_typename(tokens, index + 1 + namespace))
+                named = [token for _, token, _ in tokens[index + 1:position]]
+                wanted = ['system'] if namespace else ['system', ':', ':', 'result']
+                if (position < len(tokens) and tokens[position][1] == ';'
+                        and named[-len(wanted):] == wanted):
+                    found['result'] = True
+            elif word == 'typedef':
+                position, _, last = after_name(tokens, past_typename(tokens, index + 1))
+                if (result_type(tokens, last, found) == position - 1 and position + 1 < len(tokens)
+                        and tokens[position][0] == 'word' and tokens[position + 1][1] == ';'):
+                    found[tokens[position][1]] = False
+        if found == aliases:
+            return aliases
+        aliases = found
+
+
+def is_nodiscard(tokens: list[Token], before: int) -> bool:
+    """Whether [[nodiscard]] is among the tokens of the declaration that ends at before, back to
+    the ;, { or } before it, or to an access specifier's colon."""
+    while before >= 0:
+        token = tokens[before][1]
+        if token in (';', '{', '}'):
+            return False
+        if token == ':' and not is_scope(tokens, before) and not (
+                before > 0 and is_scope(tokens, before - 1)):
+            return False
+        if token == 'nodiscard':
+            return True
+        before -= 1
+    return False
+
+
+def trailing_name(tokens: list[Token], arrow: int) -> int | None:
+    """The index of the name of the function whose trailing return type follows the -> whose -
+    is at arrow, back over its qualifiers and noexcept(...) to its parameter list. None when no
+    plain name comes before the list: a lambda's, an operator's or a qualified name's."""
+    position = arrow - 1
+    while position >= 0:
+        token = tokens[position][1]
+        if token in FUNCTION_QUALIFIERS or token == '&':
+            position -= 1
             continue
-        if index + 1 >= count or tokens[index + 1][1] != '<':
-            continue
-        depth, close = 0, index + 1
-        while close < count:
-            depth += {'<': 1, '>': -1}.get(tokens[close][1], 0)
+        if token != ')':
+            return None
+        depth = 0
+        while position >= 0:
+            depth += {')': 1, '(': -1}.get(tokens[position][1], 0)
             if depth == 0:
                 break
-            close += 1
-        name = close + 1
-        if not (name + 1 < count and tokens[name][0] == 'word' and tokens[name][1] != 'operator'
-                and tokens[name + 1][1] == '('):
+            position -= 1
+        name = position - 1
+        if name >= 0 and tokens[name][1] in ('noexcept', 'throw'):
+            position = name - 1
             continue
-        before = index - 4
-        words: set[str] = set()
-        while before >= 0:
-            token = tokens[before][1]
-            if token in (';', '{', '}'):
-                break
-            if (token == ':' and tokens[before - 1][1] != ':'
-                    and (before + 1 >= count or tokens[before + 1][1] != ':')):
-                break
-            words.add(token)
-            before -= 1
-        if 'nodiscard' not in words:
-            yield line
+        if (name < 0 or tokens[name][0] != 'word' or tokens[name][1] in NOT_A_NAME
+                or (name >= 2 and is_scope(tokens, name - 2))):
+            return None
+        return name
+    return None
+
+
+def results_without_nodiscard(path: str, text: str,
+                              aliases: dict[str, bool] | None = None) -> Iterator[int]:
+    """The line of the name of each function a C++ header declares returning a
+    boost::system::result, before its name or after it as a trailing return type, with no
+    [[nodiscard]] among the words of its declaration: back to the ;, { or } before it, or to an
+    access specifier's colon. The result is system::result<...>, or an alias of it: one of
+    aliases, else one the header declares. Only a namespace's, a class's and an extern "C"
+    block's declarations are read: a variable written T name(arguments); inside a function's body
+    is no declaration of a function. A qualified name, holder::member(...) or ns::function(...),
+    redeclares what its first declaration answers for, and is not read; nor is an operator, a
+    lambda or an explicit specialization, f<int>(...). A result that is a variable's type, a
+    cast's or a constructor call's has no name and a parenthesis after it."""
+    tokens = declaration_tokens(text)
+    if aliases is None:
+        aliases = result_aliases(tokens)
+    level = declaration_level(tokens)
+    for index in range(len(tokens)):
+        if not level[index]:
+            continue
+        end = result_type(tokens, index, aliases)
+        if end is None:
+            continue
+        start = type_start(tokens, index)
+        if start >= 2 and tokens[start - 1][1] == '>' and tokens[start - 2][1] == '-':
+            trailing = trailing_name(tokens, start - 2)
+            if trailing is None:
+                continue
+            name, declaration = trailing, trailing
+        else:
+            name = end + 1
+            after, qualified, _ = after_name(tokens, name)
+            if (qualified or after != name + 1 or after >= len(tokens)
+                    or tokens[name][1] in NOT_A_NAME or tokens[after][1] != '('):
+                continue
+            declaration = start
+        if not is_nodiscard(tokens, declaration - 1):
+            yield tokens[name][2]
 
 
 def nodiscard_results(paths: list[str]) -> Iterator[Finding]:
     """Each library of libs/ whose meta/lint.json holds "nodiscard-results", its reason, is held
-    to it: a function of its include/ headers that returns boost::system::result and is not
-    [[nodiscard]] fails at its line, with the reason. A malformed file, or an unknown key, fails
-    naming the file. A library without the file, or without the key, passes silently."""
+    to it: a function of its include/ headers that returns boost::system::result, or an alias of
+    it any of them declares, and is not [[nodiscard]] fails at its line, with the reason. A
+    malformed file, or an unknown key, fails naming the file. A library without the file, or
+    without the key, passes silently."""
     for config_path in sorted(paths):
         if not LINT_CONFIG.fullmatch(config_path):
             continue
@@ -795,11 +1084,16 @@ def nodiscard_results(paths: list[str]) -> Iterator[Finding]:
         if why is None:
             continue
         prefix = config_path[:-len('meta/lint.json')] + 'include/'
+        headers: dict[str, str] = {}
         for path in sorted(paths):
             if path.startswith(prefix) and LIBRARY_HEADER.fullmatch(path):
                 with open(path, encoding='utf-8', errors='replace') as file:
-                    header = file.read()
-                for line in results_without_nodiscard(path, header):
+                    headers[path] = file.read()
+        # An alias one header declares names a result in every header of the library.
+        aliases = result_aliases([token for header in headers.values()
+                                  for token in declaration_tokens(header)])
+        for path, header in headers.items():
+            for line in results_without_nodiscard(path, header, aliases):
                     yield (path, line, f'a function returning boost::system::result without '
                            f'[[nodiscard]]: {why}')
 

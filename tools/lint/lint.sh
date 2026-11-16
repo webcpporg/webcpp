@@ -858,7 +858,9 @@ fi
 # 20. A library that asks for it in its meta/lint.json, "nodiscard-results" and the reason,
 #     declares every function of its headers that returns boost::system::result [[nodiscard]]:
 #     boost::system::result carries no [[nodiscard]] of its own, so a dropped result, a
-#     verification's or an open's, compiles silently otherwise (tools/lint/rules.py).
+#     verification's or an open's, compiles silently otherwise (tools/lint/rules.py). The rule
+#     reads the declarations of namespaces and classes, an alias's result and a trailing return
+#     type too, and not a function's body, where T name(arguments); is a variable.
 rule 'nodiscard results'
 if python3 tools/lint/rules.py nodiscard-results < "${work_directory}/files"; then
     printf 'every library that asks for it declares its results [[nodiscard]]\n'
