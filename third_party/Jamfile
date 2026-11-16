@@ -9,8 +9,10 @@
 # licence, declared here as /webcpp/third_party//<target>, whose usage
 # requirements give a program what it needs. A target whose submodule is not
 # checked out stops the build that needs it, naming the command that checks
-# it out; a build that needs none never looks.
+# it out; a build that needs none never looks. The C libraries of
+# webcpp::crypto's backends are built here from their own sources, file by file.
 import errors ;
+import feature ;
 import path ;
 import regex ;
 import webcpp ;
@@ -79,6 +81,57 @@ alias nativejson-benchmark : : <conditional>@nativejson-checked-out : :
 
 explicit nativejson-benchmark ;
 
+# Wycheproof (Apache-2.0), C2SP/wycheproof: test data, never compiled. A test
+# that names wycheproof reads it from the directory WEBCPP_TEST_WYCHEPROOF
+# names, with forward slashes, the directory given to wasmtime on WASI
+# (webcpp.data), and runs again when one of its files changes.
+path-constant WYCHEPROOF : libs/wycheproof ;
+.wycheproof = [ regex.replace $(WYCHEPROOF) "\\\\" "/" ] ;
+.wycheproof-files = [ glob libs/wycheproof/testvectors_v1/*.json ] ;
+
+rule wycheproof-checked-out ( properties * )
+{
+    if ! [ path.exists [ path.native $(WYCHEPROOF)/testvectors_v1/aes_gcm_test.json ] ]
+    {
+        errors.user-error "third_party/libs/wycheproof is not checked out: it holds no"
+            "testvectors_v1/aes_gcm_test.json. Check it out with `git submodule update"
+            "--init third_party/libs/wycheproof`." ;
+    }
+}
+
+alias wycheproof : : <conditional>@wycheproof-checked-out : :
+    <define>"\"WEBCPP_TEST_WYCHEPROOF=\\\"$(.wycheproof)\\\"\""
+    [ webcpp.data $(WYCHEPROOF) ]
+    <dependency>$(.wycheproof-files) ;
+explicit wycheproof ;
+
+# bitcoin/bips (BSD-2-Clause, as BIP340's header states), shallow: test data,
+# never compiled. A test that names bips reads BIP340's
+# bip-0340/test-vectors.csv and BIP341's bip-0341/wallet-test-vectors.json
+# from the directory WEBCPP_TEST_BIPS names, with forward slashes, the
+# directory given to wasmtime on WASI (webcpp.data), and runs again when one
+# of the two files changes.
+path-constant BIPS : libs/bips ;
+.bips = [ regex.replace $(BIPS) "\\\\" "/" ] ;
+.bips-files = [ glob libs/bips/bip-0340/test-vectors.csv
+    libs/bips/bip-0341/wallet-test-vectors.json ] ;
+
+rule bips-checked-out ( properties * )
+{
+    if ! [ path.exists [ path.native $(BIPS)/bip-0340/test-vectors.csv ] ]
+    {
+        errors.user-error "third_party/libs/bips is not checked out: it holds no"
+            "bip-0340/test-vectors.csv. Check it out with `git submodule update --init"
+            "third_party/libs/bips`." ;
+    }
+}
+
+alias bips : : <conditional>@bips-checked-out : :
+    <define>"\"WEBCPP_TEST_BIPS=\\\"$(.bips)\\\"\""
+    [ webcpp.data $(BIPS) ]
+    <dependency>$(.bips-files) ;
+explicit bips ;
+
 # OpenSSL uses its upstream Configure/Make source manifest. The bridge emits
 # static archives and matching generated headers in B2's variant directory.
 import webcpp-openssl ;
@@ -108,3 +161,172 @@ import webcpp-ca-certificates ;
 webcpp-ca-certificates.declare ca_certificates/cacert.pem ca_certificates/manifest.json
     ../tools/ca_certificates/generate.py ../tools/ca_certificates/bundle.py ;
 explicit ca_certificates ca_certificates-header ;
+
+# The C libraries of webcpp::crypto's backends: each a static library compiled
+# file by file in the library's own C dialect (no -std), every function and
+# datum in a section of its own, so that a program keeps only what it calls
+# (CODING-GUIDELINES.md chapter 5, "Bringing a C library into webcpp").
+# Upstream's warnings are not ours. webcpp's libs/crypto/src/canary_<name>.c
+# joins each: it defines the symbol the backend's header reads, which names the
+# commit and the configuration.
+path-constant CRYPTO : ../libs/crypto ;
+
+# The canaries and their header are webcpp::crypto's: a checkout without
+# libs/crypto stops the build of a C library of crypto's, naming the command,
+# and leaves the other targets of this Jamfile as they are.
+rule crypto-checked-out ( properties * )
+{
+    if ! [ path.exists [ path.native $(CRYPTO)/src/canary_bearssl.c ] ]
+    {
+        errors.user-error "libs/crypto is not checked out: it holds no"
+            "src/canary_bearssl.c, which the C libraries of webcpp::crypto's backends"
+            "are built with. Check it out with `git submodule update --init libs/crypto`." ;
+    }
+}
+
+.c-library = <link>static <warnings>off <warnings-as-errors>off
+    <conditional>@crypto-checked-out
+    <toolset>clang:<cflags>"-ffunction-sections -fdata-sections"
+    <toolset>gcc:<cflags>"-ffunction-sections -fdata-sections"
+    <toolset>emscripten:<cflags>"-ffunction-sections -fdata-sections"
+    <toolset>msvc:<cflags>"/Gy /Gw"
+    <include>$(CRYPTO)/include ;
+
+# What a program that links one of them needs: the linker's removal of unused
+# sections, which wasm-ld, Emscripten and MSVC's release link do by default
+# (link.exe leaves /OPT:REF off under /DEBUG, so it is asked for).
+.gc = <target-os>darwin:<linkflags>-Wl,-dead_strip
+    <target-os>linux:<linkflags>-Wl,--gc-sections
+    <target-os>windows:<linkflags>"/OPT:REF" ;
+
+# BearSSL (MIT), from webcpp's unmodified mirror webcpporg/bearssl. Every .c
+# of src/, the POWER8 ones too, which off POWER compile to the stubs other
+# files call. One source of entropy, getentropy, with RDRAND and /dev/urandom
+# off (libs/crypto's random_device reads the same source): wasi-libc and
+# Emscripten declare getentropy only under _DEFAULT_SOURCE, and macOS only in
+# <sys/random.h>, which src/rand/sysrng.c does not include. On Windows
+# BearSSL's only seeder is CryptGenRandom, not the system's BCryptGenRandom,
+# so every seeder is off there and BearSSL has none.
+path-constant BEARSSL : libs/bearssl ;
+
+rule bearssl-checked-out ( properties * )
+{
+    if ! [ path.exists [ path.native $(BEARSSL)/inc/bearssl.h ] ]
+    {
+        errors.user-error "third_party/libs/bearssl is not checked out: it holds no"
+            "inc/bearssl.h. Check it out with `git submodule update --init"
+            "third_party/libs/bearssl`." ;
+    }
+}
+
+# The seeder's defines, keyed on one condition for both sides of it: a Windows
+# target, MSVC's or MinGW's, has no getentropy, and BearSSL's CryptGenRandom
+# seeder is off there too; every other target has getentropy.
+rule bearssl-seeder ( properties * )
+{
+    if <target-os>windows in $(properties)
+    {
+        return <define>BR_USE_GETENTROPY=0 <define>BR_USE_WIN32_RAND=0 ;
+    }
+    else
+    {
+        return <define>BR_USE_GETENTROPY=1 <define>_DEFAULT_SOURCE ;
+    }
+}
+
+# The defines that make BearSSL what webcpp builds: the library's files and
+# its own test program (libs/crypto/test/c_suites) compile with the same ones.
+.bearssl-config = <define>BR_RDRAND=0 <define>BR_USE_URANDOM=0
+    <conditional>@bearssl-seeder
+    <target-os>darwin:<cflags>"-include sys/random.h" ;
+
+# What a program that compiles BearSSL's own tests against the library adds:
+# the configuration of the build and the internal headers they include.
+alias bearssl-test-config : : : : $(.bearssl-config) <include>libs/bearssl/src ;
+explicit bearssl-test-config ;
+
+lib bearssl
+  : [ glob libs/bearssl/src/*.c libs/bearssl/src/*/*.c ] $(CRYPTO)/src/canary_bearssl.c
+  : $(.c-library) <conditional>@bearssl-checked-out
+    <include>libs/bearssl/inc <include>libs/bearssl/src $(.bearssl-config)
+  : : <include>libs/bearssl/inc <define>WEBCPP_CRYPTO_HAS_BEARSSL=1 $(.gc) ;
+explicit bearssl ;
+
+# ctaes (MIT), Pieter Wuille's constant-time AES as Bitcoin Core v31.1 ships it
+# in src/crypto/ctaes (the owner's "ctaes do Bitcoin Core", spec section 3.4):
+# the submodule libs/bitcoin is Bitcoin Core's tree at the tag, shallow, and
+# its one file of the library is compiled. Only src/crypto/ctaes is on an
+# include path: the tree's own libsecp256k1 (src/secp256k1) is never reached.
+path-constant BITCOIN : libs/bitcoin ;
+
+rule bitcoin-checked-out ( properties * )
+{
+    if ! [ path.exists [ path.native $(BITCOIN)/src/crypto/ctaes/ctaes.h ] ]
+    {
+        errors.user-error "third_party/libs/bitcoin is not checked out: it holds no"
+            "src/crypto/ctaes/ctaes.h. Check it out with `git submodule update --init"
+            "--depth 1 third_party/libs/bitcoin`." ;
+    }
+}
+
+lib ctaes : libs/bitcoin/src/crypto/ctaes/ctaes.c $(CRYPTO)/src/canary_ctaes.c
+  : $(.c-library) <conditional>@bitcoin-checked-out
+    <include>libs/bitcoin/src/crypto/ctaes
+  : : <include>libs/bitcoin/src/crypto/ctaes <define>WEBCPP_CRYPTO_HAS_CTAES=1 $(.gc) ;
+explicit ctaes ;
+
+# The precomputed tables of libsecp256k1 (spec section 3.5): auto (the
+# default) is small on Emscripten, the web's target, and large natively and on
+# WASI, the servers' (a ruling, spec section 10); small is window 2 and comb
+# 2x5, about 1 MB smaller and a third slower to verify; large is the library's
+# default, window 15 and comb 11x6. Propagated, so that a program's request
+# reaches the library.
+feature.feature webcpp-secp256k1-tables : auto small large : propagated ;
+
+# libsecp256k1 v0.8.0 (MIT) as its CMake builds it: src/secp256k1.c and the two
+# precomputed tables, with every module, recovery included. A program that uses
+# MSVC's static library needs SECP256K1_STATIC, or the header declares every
+# function imported from a DLL.
+path-constant SECP256K1 : libs/secp256k1 ;
+
+rule secp256k1-checked-out ( properties * )
+{
+    if ! [ path.exists [ path.native $(SECP256K1)/include/secp256k1.h ] ]
+    {
+        errors.user-error "third_party/libs/secp256k1 is not checked out: it holds no"
+            "include/secp256k1.h. Check it out with `git submodule update --init"
+            "third_party/libs/secp256k1`." ;
+    }
+}
+
+.secp256k1-small = <define>ECMULT_WINDOW_SIZE=2 <define>COMB_BLOCKS=2 <define>COMB_TEETH=5 ;
+
+# The defines that make libsecp256k1 what webcpp builds: the library and its own
+# tests (libs/crypto/test/c_suites), whose tests.c includes secp256k1.c and so
+# compiles the library again, use the same ones, the tables included.
+.secp256k1-config = <define>ENABLE_MODULE_ECDH=1 <define>ENABLE_MODULE_RECOVERY=1
+    <define>ENABLE_MODULE_EXTRAKEYS=1 <define>ENABLE_MODULE_SCHNORRSIG=1
+    <define>ENABLE_MODULE_MUSIG=1 <define>ENABLE_MODULE_ELLSWIFT=1
+    <define>ENABLE_MODULE_SILENTPAYMENTS=1 <toolset>msvc:<define>SECP256K1_STATIC
+    # Quoted, as b2 5.5 warns of an unquoted ":" before a variable; the product
+    # still gives one conditional property per define.
+    "<webcpp-secp256k1-tables>small:$(.secp256k1-small)"
+    "<toolset>emscripten,<webcpp-secp256k1-tables>auto:$(.secp256k1-small)" ;
+
+# What a program that compiles libsecp256k1's own tests adds: the configuration
+# of the build and the headers they include, the internal ones too.
+alias secp256k1-test-config : : : : $(.secp256k1-config)
+    <include>libs/secp256k1/include <include>libs/secp256k1/src ;
+explicit secp256k1-test-config ;
+
+lib secp256k1
+  : libs/secp256k1/src/secp256k1.c libs/secp256k1/src/precomputed_ecmult.c
+    libs/secp256k1/src/precomputed_ecmult_gen.c $(CRYPTO)/src/canary_secp256k1.c
+  : $(.c-library) <conditional>@secp256k1-checked-out
+    <include>libs/secp256k1/include <include>libs/secp256k1/src $(.secp256k1-config)
+  : : <include>libs/secp256k1/include <define>WEBCPP_CRYPTO_HAS_SECP256K1=1
+    <toolset>msvc:<define>SECP256K1_STATIC
+    <webcpp-secp256k1-tables>small:<define>WEBCPP_CRYPTO_SECP256K1_SMALL_TABLES=1
+    <toolset>emscripten,<webcpp-secp256k1-tables>auto:<define>WEBCPP_CRYPTO_SECP256K1_SMALL_TABLES=1
+    $(.gc) ;
+explicit secp256k1 ;

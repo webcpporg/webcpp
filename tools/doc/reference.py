@@ -119,6 +119,12 @@ def stray_macros(text: str) -> list[str]:
             if not any(name == family or name.startswith(f'{family}_') for family in families)]
 
 
+def detail_macros(text: str) -> list[str]:
+    """The detail macros, WEBCPP_<NAME>_DETAIL_*, of a reference, MrDocs's text: none is of the
+    library's interface, and mrdocs.yml.in excludes them, as a detail namespace is."""
+    return [name for name in MACRO_SECTION.findall(text) if '_DETAIL_' in name]
+
+
 def macro_prefix(library: str) -> str:
     """The prefix of the macros the library's reference lists: WEBCPP_<NAME>_, or WEBCPP_ for
     config."""
@@ -518,6 +524,10 @@ def reference(options: argparse.Namespace) -> int:
                    f'({", ".join(libraries.CONFIG_FAMILIES)}); a new family goes into '
                    'CONFIG_FAMILIES, in tools/doc/libraries.py'
                    for name in stray_macros(written.read_text())]
+    if written.is_file():
+        faults += [f'reference.py: {name}: a detail macro is in the reference, which '
+                   'tools/doc/mrdocs.yml.in excludes'
+                   for name in detail_macros(written.read_text())]
     try:
         found = doc_comments.check(clang, library, include,
                                    [*flags, f'-I{include}', *systems, str(aggregate)],

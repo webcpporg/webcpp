@@ -401,6 +401,10 @@ def read_lane(name: str, path: Path) -> Lane:
         action = Action(text_of(element, 'name'), status, slashed(text_of(element, 'path')),
                         command, text_of(element, 'output'))
         builds = owners.get(action.path, [])
+        # MSVC's link writes the program and its .pdb, and b2 may record the link under the .pdb,
+        # which no test needs: it is the link of the program beside it.
+        if not builds and action.path.endswith('.pdb'):
+            builds = owners.get(action.path[:-len('.pdb')] + '.exe', [])
         for build in builds:
             build.actions.append(action)
         if not builds and action.status != 0:

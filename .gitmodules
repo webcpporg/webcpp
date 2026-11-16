@@ -49,3 +49,24 @@
 [submodule "libs/cobalt"]
 	path = libs/cobalt
 	url = ../cobalt.git
+[submodule "third_party/libs/wycheproof"]
+	path = third_party/libs/wycheproof
+	url = https://github.com/C2SP/wycheproof.git
+	shallow = true
+[submodule "third_party/libs/bearssl"]
+	path = third_party/libs/bearssl
+	url = ../bearssl.git
+[submodule "third_party/libs/bitcoin"]
+	path = third_party/libs/bitcoin
+	url = https://github.com/bitcoin/bitcoin.git
+	shallow = true
+[submodule "third_party/libs/secp256k1"]
+	path = third_party/libs/secp256k1
+	url = https://github.com/bitcoin-core/secp256k1.git
+[submodule "third_party/libs/bips"]
+	path = third_party/libs/bips
+	url = https://github.com/bitcoin/bips.git
+	shallow = true
+[submodule "libs/crypto"]
+	path = libs/crypto
+	url = ../crypto.git

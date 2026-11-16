@@ -550,6 +550,11 @@ use-project /webcpp/doc-tools : tools/doc ;
 # under third_party/libs/ (third_party/Jamfile).
 use-project /webcpp/third_party : third_party ;
 
+# The same project under the id a user's Jamfile writes, /third_party//<name>
+# (CODING-GUIDELINES.md chapter 5, "Bringing a C library into webcpp"): b2
+# resolves both ids to the one Jamfile.
+use-project /third_party : third_party ;
+
 # The files under directory, at any depth, without its directories, which
 # glob-tree-ex returns too, and without hidden files such as .DS_Store.
 rule files-under ( directory )

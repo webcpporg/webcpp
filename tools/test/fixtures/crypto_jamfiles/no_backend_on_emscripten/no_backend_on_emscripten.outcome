@@ -1,0 +1,16 @@
+# Copyright (c) 2026 WebCpp.org
+#
+# Distributed under the Boost Software License, Version 1.0. (See
+# accompanying file LICENSE_1_0.txt or copy at
+# https://www.boost.org/LICENSE_1_0.txt)
+
+# The compiler's line of the #error starts with the header's path on the machine, so the
+# message is a contains: line. wasip2 and wasip3 have the same message in a compile-diagnostic
+# (test/messages/no_backend_wasm); compile-diagnostic is clang's and skips Emscripten, so this
+# fixture is the Emscripten one.
+[all]
+targets: emscripten
+build: fails
+# tag::messages[]
+contains: webcpp::crypto: no backend is linked. On WebAssembly the backend is BearSSL: in the program's Jamfile, add /third_party//bearssl beside /webcpp/crypto//crypto, as in: exe app : app.cpp /webcpp/crypto//crypto /third_party//bearssl ; (without b2: define WEBCPP_CRYPTO_HAS_BEARSSL=1 and link BearSSL built with webcpp's src/canary_bearssl.c)
+# end::messages[]

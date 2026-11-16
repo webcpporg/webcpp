@@ -159,16 +159,18 @@ EMSCRIPTEN_NODE = '.local/emscripten/node'
 # and end:: lines of the region emscripten.
 EMSDK_JAM = ROOT / 'tools/ci/emsdk.jam'
 
-# The libraries of libs/ whose build needs libraries webcpp does not build, and those libraries,
-# until webcpp builds them from third_party/ (CODING-GUIDELINES.md chapter 16): the CI's actions
-# of these names, tools/ci/actions/<name>, install each where the build looks, in .local/,
-# before a lane, an own lane, the docs or the lint that builds such a library runs.
-EXTERNAL_DEPENDENCIES = {'trystero': ('secp256k1',)}
+# The libraries of libs/ whose build needs libraries webcpp does not build, and those libraries:
+# none today, since webcpp builds every library it needs from third_party/ (libsecp256k1 as
+# /third_party//secp256k1, CODING-GUIDELINES.md chapter 16). The machinery stays for a later
+# library: the CI's action of such a library's name, tools/ci/actions/<name>, would install it
+# where the build looks, in .local/, before a lane, an own lane, the docs or the lint that builds
+# the library runs.
+EXTERNAL_DEPENDENCIES: dict[str, tuple[str, ...]] = {}
 
 # The variables that name those libraries' directories, which the actions give a job, and a lane
 # of such a library passes to b2 as -s<VARIABLE>=<dir>: a library's build.jam reads them from b2's
 # command line alone, never from the environment.
-EXTERNAL_VARIABLES = ('SECP256K1_ROOT', 'SECP256K1_EMSCRIPTEN_ROOT')
+EXTERNAL_VARIABLES: tuple[str, ...] = ()
 
 # The own lanes whose driver meets a browser, (library, lane), which the CI's chrome action gives
 # its pinned chrome-headless-shell, as CHROME: trystero's interop, natively and on emscripten, and

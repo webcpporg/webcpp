@@ -232,9 +232,10 @@ REPLACEMENT = re.compile(r'&#8230;(?:&#8203;)?|&#(?:8594|8658|8592|8656|169|174|
 # The inline code MrDocs writes for what it links, the whole of the code one link: a symbol's
 # name, to its section of the page, in a table of members, or the header where a symbol is
 # declared, between < and >, to its line in the library's repository (mrdocs.yml.in's base-url),
-# its text the header's path; postprocess.mjs breaks either between its parts.
-BREAK = re.compile(r'<span class="wbr(?: part)?"></span>')
-LINK_TEXT = r'(?:[^<]|<span class="wbr(?: part)?"></span>)*'
+# its text the header's path; postprocess.mjs breaks either between its parts, a path after its
+# / (part path).
+BREAK = re.compile(r'<span class="wbr(?: part(?: path)?)?"></span>')
+LINK_TEXT = r'(?:[^<]|<span class="wbr(?: part(?: path)?)?"></span>)*'
 SECTION_LINK = re.compile(rf'^<a href="#[^"<>]*">{LINK_TEXT}</a>$')
 HEADER_LINK = re.compile(rf'^&lt;<a href="https://github\.com/webcpporg/{LIBRARY_NAME}/blob/'
                          rf'[^"/#<>]+/include/([^"#<>]+)#L[0-9]+">({LINK_TEXT})</a>&gt;$')

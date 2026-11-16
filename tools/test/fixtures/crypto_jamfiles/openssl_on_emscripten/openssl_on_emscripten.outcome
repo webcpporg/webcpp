@@ -1,0 +1,6 @@
+[all]
+targets: emscripten
+build: fails
+# tag::messages[]
+contains: webcpp::crypto: /webcpp/crypto//openssl is named in a build for Emscripten, where webcpp does not build OpenSSL.
+# end::messages[]

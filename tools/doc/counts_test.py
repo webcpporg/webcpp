@@ -291,6 +291,18 @@ def test_a_negative_link_is_counted_on_its_declared_targets(root: Path) -> None:
         assert found[key] == baseline[key], found
 
 
+def test_a_same_program_is_a_test_on_its_declared_targets(root: Path) -> None:
+    # webcpp.same-program records the kind same-program, a test of its targets like a link-fail.
+    directory = library(root, 'demo')
+    baseline = counted(count(directory, DEMO_PROGRAMS))
+    more = (*DEMO_PROGRAMS, 'same-program unused_backend native wasip2')
+    found = counted(count(directory, more))
+    for key in ('n-tests', 'n-tests-native', 'n-tests-wasip2'):
+        assert int(found[key]) == int(baseline[key]) + 1, found
+    for key in ('n-tests-emscripten', 'n-tests-wasip3', 'n-headers', 'n-examples', 'n-linked'):
+        assert found[key] == baseline[key], found
+
+
 def test_library_counts_are_added(root: Path) -> None:
     directory = library(root, 'demo')
     own_counts(directory, 'import sys\n'
@@ -373,6 +385,7 @@ CASES = [
     test_headers_are_those_compiled_alone,
     test_a_compile_diagnostic_is_a_test,
     test_a_negative_link_is_counted_on_its_declared_targets,
+    test_a_same_program_is_a_test_on_its_declared_targets,
     test_served_programs_are_tests_and_counted,
     test_linked_and_driven_programs_are_tests_and_counted,
     test_library_counts_are_added,

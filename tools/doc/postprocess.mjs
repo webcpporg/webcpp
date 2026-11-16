@@ -31,11 +31,27 @@
 // stacks the table's rows; a table of two columns, a name and what it is,
 // reads stacked without them.
 //
+// A table with a header column gives its header cells their scope: the head's
+// `col`, the body's `row`.
+//
+// A word of inline code too long for any line from 600px, more than 60
+// characters, is marked `long`, and the style keeps its breaks at every width.
+//
+// In a table of the role key-column, a word marked `whole` has its parts
+// marked too, which the style breaks between only where the table does not fit
+// with its names whole, so that the table's first column keeps room for its
+// words.
+//
+// A table of eight columns or more, a matrix, is marked `matrix`, and each
+// hyphenated word of its first column, and of a key-column table's, `key`,
+// which the style keeps whole.
+//
 // A name too long for a phone's line, in inline code, in a heading of the
-// reference, `webcpp::xactor::scheduler::run_one`, or in a bare URL, may break
+// reference (and its entry in the table of contents, after a `::` only), `webcpp::xactor::scheduler::run_one`, or in a bare URL, may break
 // between its parts, which an empty `<span class="wbr">` marks: after a `::`,
 // a `_`, a `/`, or a `.` between letters, before the `(` or the `<` that ends
-// a name, and in code between the words of a name in camel case. So a phone
+// a name, and in code after a `-` inside a word and between the words of a
+// name in camel case. So a phone
 // breaks it there and never between two letters of a word, which the style
 // allows only to a part still wider than the line. From 600px, where such a
 // name has room, only the break after a `::` of a heading stays, as the
@@ -105,11 +121,21 @@ const INLINE_CODE = /<code>((?:[^<]|<a\b[^>]*>|<\/a>)*)<\/code>/g;
 // a list item or a stacked table cell narrows to about 260px.
 const WHOLE = 24;
 
+// The longest word of inline code that every line from 600px holds whole: at
+// 600px the content is about 565px wide, about 65 characters of the code font.
+// A longer word, a linker's symbol of 80 characters, keeps its breaks between
+// its parts at every width, marked `long`: kept whole, it would make the page
+// wider than the screen.
+const LONG = 60;
+
 // A break after a `::`, which a heading of the reference keeps at every width;
 // and one between the other parts of a name, which the style keeps only on a
-// phone: from 600px every such name has room on a line.
+// phone: from 600px every such name has room on a line. The break after a `/`
+// of a path is such a part, which a table too wide for its box breaks at as it
+// does after a `::` (docinfo.html).
 const SCOPE = '<span class="wbr"></span>';
 const PART = '<span class="wbr part"></span>';
+const PATH = '<span class="wbr part path"></span>';
 
 // The points a name breaks at, in text that holds no markup and its
 // references, each with what it becomes: after each `::`; after a run of `_`
@@ -119,20 +145,22 @@ const PART = '<span class="wbr part"></span>';
 const BREAKS = [
   [/::/g, (scope) => scope + SCOPE],
   [/(?<=[A-Za-z0-9])_+(?=[A-Za-z0-9])/g, (run) => run + PART],
-  [/(?<=[^\s/])\/+(?=[^\s/])/g, (run) => run + PART],
+  [/(?<=[^\s/])\/+(?=[^\s/])/g, (run) => run + PATH],
   [/(?<=[A-Za-z])\.(?=[A-Za-z])/g, (dot) => dot + PART],
   [/(?<=\w)(?=\(|&lt;)/g, () => PART]
 ];
 
-// Code breaks at these too, and between the words of a name written in camel
-// case, `resolveHistory` and `DefaultTransition`: never prose, whose JavaScript
-// is one word. And the hyphens that open a flag, `-mexec-model=reactor` or
+// Code breaks at these too, after a `-` inside a word, `websocket-client-async`,
+// and between the words of a name written in camel case, `resolveHistory` and
+// `DefaultTransition`: never prose, whose JavaScript is one word and whose
+// hyphens a line breaks after anyway. And the hyphens that open a flag, `-mexec-model=reactor` or
 // `--target`, at the start of a word or after a space, a `=`, a `(`, a `,` or
 // the `;` of a reference such as `&gt;`, stay with the flag's first character
 // in a span the style keeps on one line: a break right after them would end a
 // line with a hyphen alone, which reads as a dash.
 const CODE_BREAKS = [
   ...BREAKS,
+  [/(?<=[A-Za-z0-9])-(?=[A-Za-z0-9])/g, (hyphen) => hyphen + PART],
   [/(?<=[a-z])(?=[A-Z])/g, () => PART],
   [/(?<=^|[\s=(,;])-+[A-Za-z0-9]/g, (flag) => `<span class="lead">${flag}</span>`]
 ];
@@ -173,12 +201,19 @@ function isWhole(word) {
   return decodeEntities(textOf(word), { markup: true }).length <= WHOLE;
 }
 
-// A word of inline code, as an element: `whole`, or breakable between its
-// parts.
+// Whether a word of inline code is longer than a line from 600px holds.
+function isLong(word) {
+  return decodeEntities(textOf(word), { markup: true }).length > LONG;
+}
+
+// A word of inline code, as an element: `whole`, breakable between its parts
+// on a phone, or `long`, breakable between its parts at every width.
 function wordOf(element, word) {
-  return isWhole(word)
-    ? `<${element} class="whole">${word}</${element}>`
-    : `<${element}>${breakableCode(word)}</${element}>`;
+  if (isWhole(word)) {
+    return `<${element} class="whole">${word}</${element}>`;
+  }
+  const kind = isLong(word) ? ' class="long"' : '';
+  return `<${element}${kind}>${breakableCode(word)}</${element}>`;
 }
 
 function wordsOfCode(html) {
@@ -193,6 +228,60 @@ function wordsOfCode(html) {
     }
     const words = text.replace(/\S+/g, (word) => wordOf('span', word));
     return `<code class="words">${words}</code>`;
+  });
+}
+
+// A word of inline code a phone keeps whole, as code or as a word of code.
+const WHOLE_WORD = /<(code|span) class="whole">((?:(?!<\/\1>)[\s\S])*?)<\/\1>/g;
+
+// Each table of the role key-column, its words of code marked whole made
+// breakable between their parts: the style keeps them whole but where the
+// table does not fit with them whole (docinfo.html).
+function partsOfKeyColumnTables(html) {
+  return html.replace(TABLE, (table) =>
+    /^<table\b[^>]*\sclass="[^"]*\bkey-column\b/.test(table)
+      ? table.replace(WHOLE_WORD, (_word, element, text) =>
+        `<${element} class="whole">${breakableCode(text)}</${element}>`)
+      : table
+  );
+}
+
+// A table of MATRIX columns or more, a matrix, such as a benchmark's or a
+// profile's, read down its columns as much as along its rows: its table is
+// marked `matrix`, which the page's script lets scroll in its box rather than
+// stack (docinfo.html), and each word of its first column's text with a hyphen
+// inside, a key such as `native-single-on-native`, is marked `key`, which the
+// style keeps on one line; and so is each of the first column of a table of the
+// role key-column, `password-reset`.
+const MATRIX = 8;
+const FIRST_CELL = /(<tr>\s*<td\b[^>]*>)([\s\S]*?)(<\/td>)/g;
+const HYPHENATED = /[^\s<>]*[A-Za-z0-9]-[A-Za-z0-9][^\s<>]*/g;
+
+// The html of a cell with each hyphenated word of its text, outside its code,
+// marked a key.
+function keysOf(html) {
+  let code = false;
+  return html
+    .split(/(<[^>]+>)/)
+    .map((part, index) => {
+      if (index % 2 === 1) {
+        code = /^<code\b/.test(part) || (code && !/^<\/code>/.test(part));
+        return part;
+      }
+      return code ? part : part.replace(HYPHENATED, (word) => `<span class="key">${word}</span>`);
+    })
+    .join('');
+}
+
+function matrices(html) {
+  return html.replace(TABLE, (table) => {
+    const matrix = (table.match(/<col\b/g) ?? []).length >= MATRIX;
+    if (!matrix && !/^<table\b[^>]*\sclass="[^"]*\bkey-column\b/.test(table)) {
+      return table;
+    }
+    const marked = matrix ? table.replace(/^(<table\b[^>]*\sclass="[^"]*)"/, '$1 matrix"') : table;
+    return marked.replace(BODY, (body) =>
+      body.replace(FIRST_CELL, (_cell, open, text, close) => open + keysOf(text) + close));
   });
 }
 
@@ -273,6 +362,24 @@ function labelledTables(html) {
   });
 }
 
+// A table with a header column (cols="1h,...") has header cells in its body as in its head; each
+// says what it heads, as WCAG's technique H63 asks and html-validate's wcag/h63 checks: the head's
+// its column, the body's its row. A table without one keeps its cells as they are.
+const HEAD = /<thead>[\s\S]*?<\/thead>/;
+const TH = /<th\b/g;
+
+function scopedHeaders(html) {
+  return html.replace(TABLE, (table) => {
+    const body = table.match(BODY);
+    if (body === null || !/<th\b/.test(body[0])) {
+      return table;
+    }
+    return table
+      .replace(HEAD, (head) => head.replace(TH, '<th scope="col"'))
+      .replace(BODY, (rows) => rows.replace(TH, '<th scope="row"'));
+  });
+}
+
 // The tag that opens or closes a table.
 const TABLE_TAG = /<table\b[^>]*>|<\/table>/g;
 
@@ -288,6 +395,35 @@ function boxedTables(html) {
     }
     return open.pop() ? `${tag}\n</div>` : tag;
   });
+}
+
+// The table of contents at the side of the page, up to the content, and the
+// text of a link of it.
+const TOC = /<div id="toc"[\s\S]*?(?=<div id="content">)/;
+const TOC_LINK = /(<a href="#[^"]*">)([\s\S]*?)(<\/a>)/g;
+
+// An entry of the table of contents, about 14em wide at the side of the page,
+// breaks a name of the reference after each `::`, as the name's heading does,
+// rather than between two of its letters where it must: its text outside its
+// inline code, whose breaks wordsOfCode marked, and only after a `::`, which
+// the style keeps at every width.
+function scopesOfContents(html) {
+  return html.replace(TOC, (toc) =>
+    toc.replace(TOC_LINK, (_link, open, inner, close) => {
+      let code = false;
+      const broken = inner
+        .split(TAG)
+        .map((part, index) => {
+          if (index % 2 === 1) {
+            code = /^<code\b/.test(part) || (code && !/^<\/code>/.test(part));
+            return part;
+          }
+          return code ? part : breakable(part, [BREAKS[0]]);
+        })
+        .join('');
+      return open + broken + close;
+    })
+  );
 }
 
 // A heading, with what it holds.
@@ -384,8 +520,12 @@ function curledApostrophes(html) {
 
 class Page extends Postprocessor {
   process(_document, output) {
-    const page = labelledTables(wordsOfCode(decodeEntities(output)));
-    const built = curledApostrophes(boxedTables(partsOfURLs(partsOfHeadings(page))));
+    const page = scopedHeaders(
+      labelledTables(matrices(partsOfKeyColumnTables(wordsOfCode(decodeEntities(output)))))
+    );
+    const built = curledApostrophes(
+      boxedTables(partsOfURLs(scopesOfContents(partsOfHeadings(page))))
+    );
     return tbodied(styledColumns(silentAnchors(built)));
   }
 }
