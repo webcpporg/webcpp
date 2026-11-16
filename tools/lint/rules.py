@@ -975,19 +975,31 @@ def result_aliases(tokens: list[Token]) -> dict[str, bool]:
         aliases = found
 
 
-def is_nodiscard(tokens: list[Token], before: int) -> bool:
-    """Whether [[nodiscard]] is among the tokens of the declaration that ends at before, back to
-    the ;, { or } before it, or to an access specifier's colon."""
+def declaration_words(tokens: list[Token], before: int) -> set[str]:
+    """The tokens of the declaration that ends at before, back to the ;, { or } before it, or to
+    an access specifier's colon."""
+    words: set[str] = set()
     while before >= 0:
         token = tokens[before][1]
         if token in (';', '{', '}'):
-            return False
+            break
         if token == ':' and not is_scope(tokens, before) and not (
                 before > 0 and is_scope(tokens, before - 1)):
-            return False
-        if token == 'nodiscard':
-            return True
+            break
+        words.add(token)
         before -= 1
+    return words
+
+
+def has_body(tokens: list[Token], parameters: int) -> bool:
+    """Whether the function whose parameter list opens at parameters is defined there: a { comes
+    after the list, its qualifiers and its trailing return type, before a ;."""
+    depth = 0
+    for index in range(parameters, len(tokens)):
+        token = tokens[index][1]
+        depth += {'(': 1, ')': -1}.get(token, 0)
+        if depth == 0 and token in (';', '{', '}'):
+            return token == '{'
     return False
 
 
@@ -1029,8 +1041,9 @@ def results_without_nodiscard(path: str, text: str,
     aliases, else one the header declares. Only a namespace's, a class's and an extern "C"
     block's declarations are read: a variable written T name(arguments); inside a function's body
     is no declaration of a function. A qualified name, holder::member(...) or ns::function(...),
-    redeclares what its first declaration answers for, and is not read; nor is an operator, a
-    lambda or an explicit specialization, f<int>(...). A result that is a variable's type, a
+    redeclares what its first declaration answers for, and is not read; nor is a friend
+    declaration without a body, which takes no attribute, an operator, a lambda or an explicit
+    specialization, f<int>(...). A result that is a variable's type, a
     cast's or a constructor call's has no name and a parenthesis after it."""
     tokens = declaration_tokens(text)
     if aliases is None:
@@ -1054,8 +1067,16 @@ def results_without_nodiscard(path: str, text: str,
             if (qualified or after != name + 1 or after >= len(tokens)
                     or tokens[name][1] in NOT_A_NAME or tokens[after][1] != '('):
                 continue
-            declaration = start
-        if not is_nodiscard(tokens, declaration - 1):
+            # The walk back reads the type's own qualifiers too, and stops at none of them: a
+            # leading :: may follow a word that is no qualifier, friend ::boost::...
+            declaration = index
+        words = declaration_words(tokens, declaration - 1)
+        # A friend declaration without a body takes no attribute (clang refuses one, GCC
+        # ignores it): the function's first declaration answers for it. A friend defined in the
+        # class is its first declaration, and is read.
+        if 'friend' in words and not has_body(tokens, name + 1):
+            continue
+        if 'nodiscard' not in words:
             yield tokens[name][2]
 
 

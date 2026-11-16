@@ -2172,7 +2172,8 @@ def plant_results(root) -> None:
     of it or a trailing return type, with and without [[nodiscard]]; members declared in their
     class and defined out of it; and results that are no function's: locals written with
     parentheses in the bodies of functions and of members, a lambda's, a commented-out one and a
-    variable's type."""
+    variable's type; a friend declaration, which takes no attribute, and the hidden friend
+    defined in the class, which does."""
     write(root, NODISCARD_HEADER, CPP + '\n'
           '#ifndef WEBCPP_DEMO_RESULTS_HPP\n'
           '#define WEBCPP_DEMO_RESULTS_HPP\n'
@@ -2244,8 +2245,17 @@ def plant_results(root) -> None:
           '    return local_outcome.has_value() && local_alias.has_value() ? *local_outcome : 0;\n'
           '}\n'
           '\n'
+          'class holder;\n'
+          '\n'
+          '[[nodiscard]] boost::system::result<int> befriended(holder const& granting);\n'
+          '\n'
           'class holder {\n'
           'public:\n'
+          '    friend boost::system::result<int> befriended(holder const& granting);\n'
+          '\n'
+          '    friend boost::system::result<int> dropped_friend(holder const& /*granting*/) '
+          '{ return 1; }\n'
+          '\n'
           '    [[nodiscard]] static boost::system::result<void> kept_member() { return {}; }\n'
           '\n'
           '    [[nodiscard]] static boost::system::result<int> kept_declared();\n'
@@ -2292,10 +2302,12 @@ def test_nodiscard_results(root):
     # A library that asks for it in meta/lint.json declares each function returning a result
     # [[nodiscard]]: a free function, a template's, one whose result nests templates, one
     # returning an alias of a result, one with a trailing return type, a member after an access
-    # specifier, a member declared in its class, and one naming result after a using-declaration
-    # fail at their lines, with the library's reason. What is kept, a member's out-of-line
-    # definition, which its declaration answers for, a lambda, a local written with parentheses
-    # in a function's or a member's body, a comment and a variable's type do not.
+    # specifier, a member declared in its class, a hidden friend defined in its class, and one
+    # naming result after a using-declaration fail at their lines, with the library's reason.
+    # What is kept, a member's out-of-line definition and a friend declaration without a body,
+    # which the first declaration answers for and which take no attribute, a lambda, a local
+    # written with parentheses in a function's or a member's body, a comment and a variable's
+    # type do not.
     write(root, 'libs/demo/meta/lint.json', '{"nodiscard-results": "a dropped result is lost"}\n')
     plant_results(root)
     message = 'a function returning boost::system::result without [[nodiscard]]: '
@@ -2310,7 +2322,9 @@ def test_nodiscard_results(root):
         at(root, NODISCARD_HEADER, ' dropped_declared();') + ' ' + message,
         at(root, NODISCARD_HEADER, 'dropped_member') + ' ' + message,
         at(root, NODISCARD_HEADER, 'dropped_unqualified') + ' ' + message,
-    ], spared=(at(root, NODISCARD_HEADER, 'kept_free() noexcept'),
+        at(root, NODISCARD_HEADER, 'dropped_friend') + ' ' + message,
+    ], spared=(at(root, NODISCARD_HEADER, 'friend boost::system::result<int> befriended'),
+               at(root, NODISCARD_HEADER, 'kept_free() noexcept'),
                at(root, NODISCARD_HEADER, 'kept_template'),
                at(root, NODISCARD_HEADER, 'kept_nested'),
                at(root, NODISCARD_HEADER, 'outcome kept_alias()'),
@@ -2325,8 +2339,8 @@ def test_nodiscard_results(root):
                at(root, NODISCARD_HEADER, 'holder::dropped_declared'),
                at(root, NODISCARD_HEADER, 'commented_out'),
                at(root, NODISCARD_HEADER, 'constant_value')))
-    # Those nine and nothing else of the header.
-    assert result.stdout.count(message) == 9, result.stdout[-6000:]
+    # Those ten and nothing else of the header.
+    assert result.stdout.count(message) == 10, result.stdout[-6000:]
 
 
 def test_nodiscard_results_is_asked_for(root):
