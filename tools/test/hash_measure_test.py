@@ -18,11 +18,11 @@ that built nothing), and when a WebAssembly program for size carries debug infor
 paths are the host's that built its libraries; a median that moves by under 10 percent changes
 nothing. Each key derivation operation has its own ranking (hkdf_extract and hkdf_expand beside
 hkdf); every order names every backend with a tag, so that the per-operation default always
-finds one; the portable order is hash2, sodium, bearssl. Native orders measured with another native toolchain
-are not compared, said in one line, while WebAssembly's are. `--capabilities` renders the
-capability table; `--overrides`, run on the real library, gives detail/overrides.hpp byte for
-byte; and `--check` passes on the real library's committed data, without a build. Run with the names
-of some cases to run only those."""
+finds one; the portable order is hash2, sodium, bearssl. Native orders measured with another
+native toolchain are not compared, said in one line, while WebAssembly's are. `--capabilities`
+renders the capability table; `--overrides`, run on the real library, gives
+detail/overrides.hpp byte for byte; and `--check` passes on the real library's committed data,
+without a build. Run with the names of some cases to run only those."""
 
 from __future__ import annotations
 
