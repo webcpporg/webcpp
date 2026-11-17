@@ -249,6 +249,29 @@ def test_a_later_default_and_a_partial_cell_are_said(scratch: Path) -> None:
            'the backends chapter does not say what the partial cell refuses')
 
 
+def test_a_default_names_only_its_functions_backends(scratch: Path) -> None:
+    """An algorithm whose functions have different backends: the sentence of each default
+    names, as the backends a call may name instead, those of its own functions alone."""
+    library = scratch_library(scratch)
+    files = write_ok(library)
+    blake2 = files['generated/backends-blake2.adoc']
+    expect('The default of `digests::blake2s_256` and `macs::blake2s_mac`: `hash2` on every '
+           'target, whatever the program links (<<hash-default-backend>>).' in blake2, blake2)
+    expect('The default of `digests::blake2b`: `sodium` on every target, whatever the program '
+           'links; `hash2` only where the call names it' in blake2, blake2)
+
+
+def test_each_backend_s_constant_time_sources_are_together(scratch: Path) -> None:
+    library = scratch_library(scratch)
+    chapter = write_ok(library)['backends.adoc']
+    listed = [line.split(':')[0] for line in
+              chapter.split("What each backend's upstream states, and where:")[1].splitlines()
+              if line.startswith('* ')]
+    order = [b['name'] for b in json.loads(
+        (library / 'doc/capabilities.json').read_text(encoding='utf-8'))['backends']]
+    expect(listed == sorted(listed, key=lambda b: order.index(b[2:])), '\n'.join(listed))
+
+
 def test_without_measurements_the_tables_say_so(scratch: Path) -> None:
     library = scratch_library(scratch)
     files = write_ok(library)
@@ -367,6 +390,8 @@ CASES: list[Callable[[Path], None]] = [
     test_every_function_names_its_default,
     test_a_family_default_is_of_the_order_or_none,
     test_a_later_default_and_a_partial_cell_are_said,
+    test_a_default_names_only_its_functions_backends,
+    test_each_backend_s_constant_time_sources_are_together,
     test_without_measurements_the_tables_say_so,
     test_with_measurements_the_tables_carry_them,
     test_a_hand_edit_of_the_measurements_fails,
