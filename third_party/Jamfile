@@ -109,8 +109,9 @@ alias wycheproof : : <conditional>@wycheproof-checked-out : :
     <dependency>$(.wycheproof-files) ;
 explicit wycheproof ;
 
-# bitcoin/bips (BSD-2-Clause, as BIP340's header states), shallow: test data,
-# never compiled. A test that names bips reads BIP340's
+# bitcoin/bips, shallow: test data, never compiled, each BIP's files under the
+# licence its header states (BIP340 BSD-2-Clause; BIP341 and BIP 324
+# BSD-3-Clause). A test that names bips reads BIP340's
 # bip-0340/test-vectors.csv, BIP341's bip-0341/wallet-test-vectors.json and
 # BIP 324's bip-0324/ellswift_decode_test_vectors.csv and
 # bip-0324/packet_encoding_test_vectors.csv from the directory
