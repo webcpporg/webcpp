@@ -191,7 +191,11 @@ jobs:
     name: ${{ matrix.name }}
     needs: plan
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 90
+    # Since webcpp::crypto and webcpp::hash joined, an MSVC lane builds OpenSSL in more
+    # configurations (about 27 minutes each on a runner): on webcpporg/webcpp#24 (run
+    # 43982348264) MSVC 14.3 took 58 minutes and 90 cancelled MSVC 14.5 at 12,600 of its
+    # 12,948 targets; the runners' speed varies.
+    timeout-minutes: 150
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
@@ -486,7 +490,11 @@ jobs:
     name: Lint (${{ matrix.shard }}/${{ strategy.job-total }})
     needs: plan
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    # A shard took up to 56 minutes on main (run 43689720995) and over 60 on
+    # webcpporg/webcpp#17 (runs 43757162271, 43809686703, 43893730166), where 60 cancelled
+    # it: which files a shard draws changes with every file the list gains, and the runners'
+    # speed varies.
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
