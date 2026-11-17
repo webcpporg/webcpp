@@ -9097,7 +9097,7 @@ summary.
   `organization/openspec/changes/site-increments-4-5/specs/site/spec.md`
   (proposals).
 
-### hash (hashing and key derivation over Boost.Hash2 and C backends; wrapper; accepted 2026-11-14, increment 1 built, not merged)
+### hash (hashing and key derivation over Boost.Hash2 and C backends; wrapper; accepted 2026-11-14, increments 1 and 7 built, not merged)
 
 webcpp::hash is one entry point for hashing and key derivation in a C++20
 program on every target webcpp has, a wrapper (`"port-of": null`). Increment 1
@@ -9116,7 +9116,12 @@ lane). The C libraries are built by `third_party/Jamfile` (`xkcp`, `blake3`,
 lane (`test/c_suites`), the examples are in `example/` and the documentation
 in `doc/`. Every function is synchronous, reports failure as a
 `boost::system::result`, takes its data as `std::span` and allocates nothing in
-webcpp's own code. Its repository, `webcpporg/hash`, is still to be created by
+webcpp's own code; increment 7, built, gives them an asynchronous family in
+`async.hpp` over webcpp::asio (any completion token, Cobalt's `use_op`
+included): the password hashes and PBKDF2 on a thread pool where the build
+has threads, the digests, HMAC and HKDF through a post, and
+`backends::webcrypto`, the browser's WebCrypto on Emscripten, which only that
+family takes. Its repository, `webcpporg/hash`, is still to be created by
 the owner (gates G1, G2 and G4); the proposal, with the specification, the
 design and the plan, is in `libraries/hash/openspec/changes/genesis/`
 (proposals).
@@ -9151,8 +9156,9 @@ design and the plan, is in `libraries/hash/openspec/changes/genesis/`
 - **Seven increments, each usable alone.** The first, built, is Hash2 by alias,
   `keccak_256`, `blake3`, HKDF, PBKDF2, Argon2id, scrypt, the profile and the
   measured table; the next ones widen the backends' surface (libsodium's,
-  XKCP's, OpenSSL's, BearSSL's, Botan's) and add the browser backend over
-  WebCrypto through a parallel asynchronous family.
+  XKCP's, OpenSSL's, BearSSL's, Botan's), and the seventh, built, adds the
+  browser backend over WebCrypto through a parallel asynchronous family, whose
+  cells `doc/capabilities.json` marks asynchronous only.
   Source: `libraries/hash/openspec/changes/genesis/reference/spec.md` section
   1.5 (proposals).
 
