@@ -16,8 +16,9 @@ library needs and holds the canary's symbol; that a BearSSL or a libs/crypto tha
 stops the build that needs it, naming the command; and that loading third_party/Jamfile prints
 nothing b2 warns of. libsecp256k1, pinned, is built file by file with every module and
 webcpp::crypto's canary, with the large tables natively and the small ones on request and on
-emscripten. XKCP, pinned, is built from its one file of Keccak-p[1600] with webcpp::hash's adapter
-and canary, and an XKCP or a libs/hash that is not checked out stops it, naming the command.
+emscripten. XKCP, pinned, is built from its file of Keccak-p[1600] and its high-level files with
+webcpp::hash's adapter and canary, and an XKCP or a libs/hash that is not checked out stops it,
+naming the command.
 libsodium, pinned, is built file by file with the defines its own configure finds on each target and
 webcpp::hash's canary, its version.h copied into the build directory and its checkout left as it
 was. BLAKE3's C implementation, pinned, is built file by file with webcpp::hash's canary: natively
@@ -115,12 +116,25 @@ XKCP = 'third_party/libs/xkcp'
 XKCP_COMMIT = 'd20c8fcaecc543f816a0721d0dfc13b4cf27c14d'
 
 # The C files /third_party//xkcp compiles: XKCP's Keccak-p[1600] in the plain-64bits
-# implementation, and webcpp::hash's adapter and canary.
-XKCP_FILES = ['KeccakP-1600-opt64.c', 'xkcp_adapter.c', 'canary_xkcp.c']
+# implementation, its high-level files of the sponge, FIPS 202's Keccak_Hash, SP 800-185,
+# TurboSHAKE and KangarooTwelve (serial: no times-N permutation), and webcpp::hash's adapter
+# and canary.
+XKCP_FILES = ['KeccakP-1600-opt64.c', 'KeccakSponge.c', 'KeccakHash.c', 'SP800-185.c',
+              'TurboSHAKE.c', 'KangarooTwelve.c', 'xkcp_adapter.c', 'canary_xkcp.c']
 
-# The adapter's four functions (spec section 2.6).
+# The adapter's functions (spec section 2.6): the permutation's four, and the four phases
+# (initialize, update, final, squeeze) of each high-level interface.
 XKCP_ADAPTER = ['webcpp_hash_xkcp_initialize', 'webcpp_hash_xkcp_add_bytes',
-                'webcpp_hash_xkcp_permute', 'webcpp_hash_xkcp_extract_bytes']
+                'webcpp_hash_xkcp_permute', 'webcpp_hash_xkcp_extract_bytes'] + [
+    f'webcpp_hash_xkcp_{interface}_{phase}'
+    for interface in ('sponge', 'keccak_hash', 'turboshake', 'kangarootwelve', 'cshake128',
+                      'cshake256', 'kmac128', 'kmac256', 'tuplehash128', 'tuplehash256',
+                      'parallelhash128', 'parallelhash256')
+    for phase in ('initialize', 'update', 'final', 'squeeze')]
+
+# XKCP's unprefixed functions of FIPS 202 (SimpleFIPS202.c), which its unit tests compile into
+# their own program and /third_party//xkcp never holds, so that they never reach a user's link.
+XKCP_NOT_HELD = ['SHA3_224', 'SHA3_256', 'SHA3_384', 'SHA3_512', 'SHAKE128', 'SHAKE256']
 
 # The small tables: window 2 and comb 2x5.
 SECP256K1_SMALL = ['-DECMULT_WINDOW_SIZE=2', '-DCOMB_BLOCKS=2', '-DCOMB_TEETH=5']
@@ -493,7 +507,7 @@ def test_xkcp_is_built_file_by_file(root: Path) -> None:
     harness.expect(result, True)
     lines = C_COMPILE.findall(result.stdout)
     compiled = sorted(Path(line.rsplit(' ', 1)[-1].strip('"')).name for line in lines)
-    # XKCP's one file and webcpp::hash's two: nothing else of XKCP's tree.
+    # XKCP's six files and webcpp::hash's two: nothing else of XKCP's tree.
     assert compiled == sorted(XKCP_FILES), (compiled, result.stdout[-4000:])
     for line in lines:
         for flag in ('-ffunction-sections', '-fdata-sections'):
@@ -507,14 +521,17 @@ def test_xkcp_is_built_file_by_file(root: Path) -> None:
     canary = 'webcpp_hash_xkcp_d20c8fc_generic64__add_third_party_xkcp_to_your_link'
     for name in [canary, *XKCP_ADAPTER]:
         assert f'{prefix}{name}' in symbols, (name, symbols[-200:])
+    for name in XKCP_NOT_HELD:
+        assert f'{prefix}{name}' not in symbols, name
 
 
 def test_xkcp_not_checked_out_is_refused(root: Path) -> None:
     harness.copy_integration_libraries(root, 'config', 'hash')
     harness.third_party_of_its_own(root, 'xkcp', checked_out=False)
-    result = harness.run_b2(root, 'third_party//xkcp')
-    harness.expect(result, False, 'third_party/libs/xkcp is not checked out',
-                   'git submodule update --init third_party/libs/xkcp')
+    for target in ('third_party//xkcp', 'third_party//xkcp_vectors'):
+        result = harness.run_b2(root, target)
+        harness.expect(result, False, 'third_party/libs/xkcp is not checked out',
+                       'git submodule update --init third_party/libs/xkcp')
     # A build that needs no XKCP never looks for it.
     harness.expect(harness.run_b2(root, 'libs/demo/test//pass'), True)
 

@@ -391,12 +391,18 @@ rule bearssl-hash-usage ( properties * )
 
 # XKCP (CC0; brg_endian.h under Brian Gladman's terms), the Keccak team's code
 # package at d20c8fc (2026-11-10; XKCP has no release tags): its Keccak-p[1600]
-# alone, in the plain-64bits implementation with all rounds unrolled
-# ("generic64"), on every target: wasm32 has 64-bit integers, MSVC compiles it
-# with _rotl64, and XKCP's faster profiles are GNU assembly. Its config.h, which
-# XKCP's build generates, is webcpp's libs/hash/src/xkcp/config.h. A program
-# reaches it through webcpp::hash's adapter (libs/hash/src/xkcp_adapter.c), so
-# no include directory of XKCP's is a usage requirement.
+# in the plain-64bits implementation with all rounds unrolled ("generic64"),
+# on every target: wasm32 has 64-bit integers, MSVC compiles it with _rotl64,
+# and XKCP's faster profiles are GNU assembly. Over it, the high-level files
+# XKCP's lib/HighLevel.build names KeccakSponge, TurboSHAKE, FIPS202 (its
+# KeccakHash.c alone: SimpleFIPS202.c's unprefixed SHA3_256 and SHAKE128 are
+# never in a user's link), SP800-185 and KangarooTwelve. generic64 has no
+# parallel permutation (no XKCP_has_KeccakP1600times2, 4 or 8), so
+# KangarooTwelve and ParallelHash take their serial loops and no times-N file
+# is compiled. Its config.h, which XKCP's build generates, is webcpp's
+# libs/hash/src/xkcp/config.h. A program reaches it through webcpp::hash's
+# adapter (libs/hash/src/xkcp_adapter.c), so no include directory of XKCP's
+# is a usage requirement.
 path-constant XKCP : libs/xkcp ;
 
 rule xkcp-checked-out ( properties * )
@@ -412,14 +418,36 @@ rule xkcp-checked-out ( properties * )
 
 lib xkcp
   : libs/xkcp/lib/low/KeccakP-1600/plain-64bits/KeccakP-1600-opt64.c
+    libs/xkcp/lib/high/Keccak/KeccakSponge.c
+    libs/xkcp/lib/high/Keccak/FIPS202/KeccakHash.c
+    libs/xkcp/lib/high/Keccak/SP800-185/SP800-185.c
+    libs/xkcp/lib/high/TurboSHAKE/TurboSHAKE.c
+    libs/xkcp/lib/high/KangarooTwelve/KangarooTwelve.c
     $(HASH)/src/xkcp_adapter.c $(HASH)/src/canary_xkcp.c
   : $(.hash-c-library) <conditional>@xkcp-checked-out <include>$(HASH)/src/xkcp
     <include>libs/xkcp/lib/common <include>libs/xkcp/lib/low/common
     <include>libs/xkcp/lib/low/KeccakP-1600/common
     <include>libs/xkcp/lib/low/KeccakP-1600/plain-64bits
     <include>libs/xkcp/lib/low/KeccakP-1600/plain-64bits/SnP
+    <include>libs/xkcp/lib/high/common <include>libs/xkcp/lib/high/Keccak
+    <include>libs/xkcp/lib/high/Keccak/FIPS202
+    <include>libs/xkcp/lib/high/Keccak/SP800-185
+    <include>libs/xkcp/lib/high/TurboSHAKE
+    <include>libs/xkcp/lib/high/KangarooTwelve
   : : <define>WEBCPP_HASH_HAS_XKCP=1 $(.gc) ;
 explicit xkcp ;
+
+# XKCP's test vectors, tests/TestVectors at the pin (ShortMsgKAT_SHA3-*.txt
+# and ShortMsgKAT_SHAKE*.txt among them), read at run time from the directory
+# WEBCPP_TEST_XKCP_VECTORS gives, on every target. Quoted as wycheproof's
+# define is, with forward slashes, so that a path with a space or a backslash
+# survives.
+.xkcp-vectors = [ regex.replace $(XKCP)/tests/TestVectors "\\\\" "/" ] ;
+alias xkcp_vectors : : <conditional>@xkcp-checked-out : :
+    <define>"\"WEBCPP_TEST_XKCP_VECTORS=\\\"$(.xkcp-vectors)\\\"\""
+    [ webcpp.data $(XKCP)/tests/TestVectors ]
+    <dependency>libs/xkcp/tests/TestVectors/ShortMsgKAT_SHA3-256.txt ;
+explicit xkcp_vectors ;
 
 # libsodium 1.0.22 (ISC), jedisct1/libsodium at 77e1ce5: every .c of
 # src/libsodium/, one object per file, with the defines libsodium's own

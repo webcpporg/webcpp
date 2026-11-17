@@ -347,9 +347,9 @@ exactly its authors' and the program carries only what it calls.
    stubs other files call. A single unity source is not used. Three exceptions,
    each recorded in its row of chapter 10: BLAKE3's intrinsics files compile on
    their instruction sets alone, each flagged for its own set; XKCP is built
-   from the one file of Keccak-p[1600] the library calls (and the high-level
-   files increment 3 of webcpp::hash lists), not from every file of its
-   package; libsodium is built without its `.S` files.
+   from the one file of Keccak-p[1600] and the five high-level files
+   webcpp::hash's adapter calls, not from every file of its package;
+   libsodium is built without its `.S` files.
 3. Every file is compiled with `-ffunction-sections -fdata-sections` (`/Gy
    /Gw` on MSVC); upstream's warnings are not webcpp's (`<warnings>off`); each
    define the library cannot work out for itself on a target sits beside the
@@ -971,7 +971,7 @@ update --init third_party/libs/<name>`; a build that needs none never looks.
 | `sodium` | libsodium 1.0.22 at `77e1ce5`, the submodule `third_party/libs/libsodium`; a static library built file by file by `third_party/Jamfile` (every `.c` of `src/libsodium/`, no assembly, the defines libsodium's configure finds on each target, upstream's `builds/msvc/version.h` copied into the build directory) with webcpp::hash's canary, on every target; `WEBCPP_HASH_HAS_SODIUM=1`; `sodium-test-config` gives a program its private headers and test defines; shared with webcpp::crypto | ISC |
 | `sodium_vectors` | libsodium's own tests' expected outputs, `test/default/*.exp` of the submodule `third_party/libs/libsodium` at `77e1ce5`, test data: hash's tests read `generichash3.exp`, `kdf.exp`, `pwhash_argon2i.exp`, `shorthash.exp` and `siphashx24.exp` at run time under the directory its define `WEBCPP_TEST_SODIUM_VECTORS` gives, on every target (wasmtime is given it, `webcpp.data`), and run again when it changes | ISC |
 | `wycheproof` | C2SP's Wycheproof at `12fd3aaf` (2026-10-06), shallow, test data: crypto's tests read its `testvectors_v1/` at run time under the directory its define `WEBCPP_TEST_WYCHEPROOF` gives, on every target (wasmtime is given it, `webcpp.data`), and run again when one of its files changes | Apache-2.0 |
-| `xkcp` | XKCP (the Keccak team's code package) at `d20c8fc` (2026-11-10, no release tags); `third_party/Jamfile` compiles its `KeccakP-1600-opt64.c` alone (Keccak-p[1600], the generic64 profile) with webcpp::hash's adapter, `config.h` and canary, on every target; `WEBCPP_HASH_HAS_XKCP=1` | CC0; `brg_endian.h` under Brian Gladman's terms |
+| `xkcp` | XKCP (the Keccak team's code package) at `d20c8fc` (2026-11-10, no release tags); `third_party/Jamfile` compiles its `KeccakP-1600-opt64.c` (Keccak-p[1600], the generic64 profile) and the high-level files over it, `KeccakSponge.c`, `KeccakHash.c` (FIPS 202), `SP800-185.c`, `TurboSHAKE.c` and `KangarooTwelve.c` (serial: no times-N permutation), with webcpp::hash's adapter, `config.h` (`XKCP_has_KeccakP1600`, `_Sponge_Keccak`, `_TurboSHAKE`, `_FIPS202`, `_SP800_185`, `_KangarooTwelve`) and canary, on every target; `WEBCPP_HASH_HAS_XKCP=1` | CC0; `brg_endian.h` under Brian Gladman's terms |
 
 OpenSSL builds from a checkout or a source distribution. Before Configure, its
 builder stages the distributable tree and checks a digest of paths, Git file
@@ -9099,7 +9099,7 @@ summary.
   `organization/openspec/changes/site-increments-4-5/specs/site/spec.md`
   (proposals).
 
-### hash (hashing and key derivation over Boost.Hash2 and C backends; wrapper; accepted 2026-11-14, increments 1 and 2 built, not merged)
+### hash (hashing and key derivation over Boost.Hash2 and C backends; wrapper; accepted 2026-11-14, increments 1, 2 and 3 built, not merged)
 
 webcpp::hash is one entry point for hashing and key derivation in a C++20
 program on every target webcpp has, a wrapper (`"port-of": null`). Increment 1
@@ -9117,15 +9117,18 @@ nothing. The families `digest_of`, `hasher`, `mac` and `argon2` take the tags of
 `digests`, `macs` and `kdfs`; increment 2 gives them libsodium's whole surface:
 BLAKE2b with its key, salt, personalisation and length, SipHash-2-4 and
 SipHash-2-4x, BLAKE2b subkeys (`blake2b_subkey.hpp`), SHA-2, SHA-3, SHAKE,
-TurboSHAKE, HMAC, and Argon2i and Argon2id with one lane. The C libraries are
-built by `third_party/Jamfile` (`xkcp`, `blake3`, `sodium`, `bearssl`, each with
-a canary), their own suites by the `c-suites` lane (`test/c_suites`), the
-examples are in `example/` and the documentation in `doc/`. Every function is
-synchronous, reports failure as a `boost::system::result`, takes its data as
-`std::span` and allocates nothing in webcpp's own code. Its repository,
-`webcpporg/hash`, is still to be created by the owner (gates G1, G2 and G4); the
-proposal, with the specification, the design and the plan, is in
-`libraries/hash/openspec/changes/genesis/` (proposals).
+TurboSHAKE, HMAC, and Argon2i and Argon2id with one lane; increment 3 gives them
+XKCP's surface: Keccak-224 to Keccak-512, SHA-3, SHAKE, SP 800-185's cSHAKE,
+KMAC, TupleHash and ParallelHash, and RFC 9861's KangarooTwelve and TurboSHAKE.
+The C libraries are built by `third_party/Jamfile` (`xkcp`, `blake3`, `sodium`,
+`bearssl`, each with a canary), their own suites by the `c-suites` lane
+(`test/c_suites`), the examples are in `example/` and the documentation in
+`doc/`. Every function is synchronous, reports failure as a
+`boost::system::result`, takes its data as `std::span` and allocates nothing in
+webcpp's own code. Its repository, `webcpporg/hash`, is still to be created by
+the owner (gates G1, G2 and G4); the proposal, with the specification, the
+design and the plan, is in `libraries/hash/openspec/changes/genesis/`
+(proposals).
 
 - **Two constructions of webcpp's own, over an audited primitive each, and no
   primitive.** HKDF and PBKDF2 over Boost.Hash2's `hmac<H>` on every target,
@@ -9159,9 +9162,10 @@ proposal, with the specification, the design and the plan, is in
 - **Seven increments, each usable alone.** The first, built, is Hash2 by alias,
   `keccak_256`, `blake3`, HKDF, PBKDF2, Argon2id, scrypt, the default backend
   and the measured table; the second, built, is the families and libsodium's
-  whole surface; the next ones widen the other backends' surface (XKCP's,
-  OpenSSL's, BearSSL's, Botan's) and add the browser backend over WebCrypto
-  through a parallel asynchronous family.
+  whole surface; the third, built, is XKCP's whole surface through the
+  families; the others widen the other backends' surface (OpenSSL's,
+  BearSSL's, Botan's) and add the browser backend over WebCrypto through a
+  parallel asynchronous family.
   Source: `libraries/hash/openspec/changes/genesis/reference/spec.md` section
   1.5 (proposals).
 
