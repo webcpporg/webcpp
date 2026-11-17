@@ -849,11 +849,14 @@ explicit blake2_vectors ;
 
 # libsodium's own tests' expected outputs (ISC), test/default/*.exp at the pin,
 # read at run time from the directory WEBCPP_TEST_SODIUM_VECTORS gives, on
-# every target, never copied: webcpp::hash reads generichash3.exp. Quoted as
-# wycheproof's define is.
+# every target, never copied: webcpp::hash reads generichash3.exp, kdf.exp,
+# shorthash.exp and siphashx24.exp. Quoted as wycheproof's define is.
 .sodium-vectors = [ regex.replace $(SODIUM)/test/default "\\\\" "/" ] ;
 alias sodium_vectors : : <conditional>@sodium-checked-out : :
     <define>"\"WEBCPP_TEST_SODIUM_VECTORS=\\\"$(.sodium-vectors)\\\"\""
     [ webcpp.data $(SODIUM)/test/default ]
-    <dependency>libs/libsodium/test/default/generichash3.exp ;
+    <dependency>libs/libsodium/test/default/generichash3.exp
+    <dependency>libs/libsodium/test/default/kdf.exp
+    <dependency>libs/libsodium/test/default/shorthash.exp
+    <dependency>libs/libsodium/test/default/siphashx24.exp ;
 explicit sodium_vectors ;
