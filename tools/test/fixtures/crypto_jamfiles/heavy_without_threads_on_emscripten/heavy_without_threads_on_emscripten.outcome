@@ -1,0 +1,16 @@
+# Copyright (c) 2026 WebCpp.org
+#
+# Distributed under the Boost Software License, Version 1.0. (See
+# accompanying file LICENSE_1_0.txt or copy at
+# https://www.boost.org/LICENSE_1_0.txt)
+
+# The compiler's line of the refusal starts with the source's path on the machine, so the message is
+# a contains: line. wasip2 and wasip3 have the same message in a compile-diagnostic
+# (test/messages/heavy_without_threads); compile-diagnostic is clang's and skips Emscripten, so
+# this fixture is the Emscripten one, built without -pthread.
+[all]
+targets: emscripten
+build: fails
+# tag::messages[]
+contains: webcpp::crypto: async_slow runs on another thread and needs a build with threads (natively b2 threading=multi; on Emscripten -pthread). Without threads, call slow.
+# end::messages[]
