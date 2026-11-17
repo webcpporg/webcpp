@@ -21,10 +21,10 @@ webcpp::hash's adapter and canary, and an XKCP or a libs/hash that is not checke
 naming the command.
 libsodium, pinned, is built file by file with the defines its own configure finds on each target and
 webcpp::hash's canary, and webcpp::crypto's when libs/crypto is checked out, its version.h copied
-into the build directory and its checkout left as it was. BLAKE3's C implementation, pinned, is built file by file with webcpp::hash's canary: natively
-with the intrinsics files of the machine's instruction sets, each with its own flag, and on
-WebAssembly with the portable code alone. BLAKE2's test vectors are pinned. Run with the names of
-some cases to run only those."""
+into the build directory and its checkout left as it was. BLAKE3's C implementation, pinned, is
+built file by file with webcpp::hash's canary: natively with the intrinsics files of the machine's
+instruction sets, each with its own flag, and on WebAssembly with the portable code alone. BLAKE2's
+test vectors are pinned. Run with the names of some cases to run only those."""
 
 from __future__ import annotations
 
@@ -149,7 +149,7 @@ SODIUM_COMMIT = '77e1ce5d6dee871c49ef211222ba18ef0c486bda'
 SODIUM_CANARY = ('webcpp_hash_sodium_77e1ce5_configured__add_third_party_sodium_to_your_link')
 
 # webcpp::crypto's canary on the same target: its configuration is portable under the same defines.
-SODIUM_CRYPTO_CANARY = ('webcpp_crypto_sodium_77e1ce5_portable__add_third_party_sodium_to_your_link')
+SODIUM_CRYPTO_CANARY = 'webcpp_crypto_sodium_77e1ce5_portable__add_third_party_sodium_to_your_link'
 
 # The defines of every target: webcpp's three, then those libsodium's configure finds on every
 # target and its C files read.
