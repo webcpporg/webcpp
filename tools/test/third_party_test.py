@@ -332,6 +332,7 @@ def test_ed25519_speccheck_is_pinned(_: Path) -> None:
                             capture_output=True, text=True, check=True)
     assert listed.stdout.split()[:2] == ['160000', ED25519_SPECCHECK_COMMIT], listed.stdout
 
+
 def test_bearssl_is_pinned(_: Path) -> None:
     listed = subprocess.run(['git', '-C', str(harness.ROOT), 'ls-files', '-s', BEARSSL],
                             capture_output=True, text=True, check=True)
@@ -444,6 +445,19 @@ def test_a_suite_not_checked_out_is_refused(root: Path) -> None:
     harness.expect(result, False, 'third_party/libs/JSON-Schema-Test-Suite is not checked out',
                    'git submodule update --init third_party/libs/JSON-Schema-Test-Suite')
     # A build that needs no suite never looks for it.
+    harness.expect(harness.run_b2(root, 'libs/demo/test//pass'), True)
+
+
+def test_ed25519_speccheck_not_checked_out_is_refused(root: Path) -> None:
+    harness.third_party_of_its_own(root, 'ed25519-speccheck', checked_out=False)
+    harness.add_library(root, 'speccheck_reader', (
+        'import webcpp ;\n\nwebcpp.run reads_cases : reads_cases.cpp\n'
+        '  : <library>/webcpp/third_party//ed25519-speccheck ;\n'),
+        {'reads_cases.cpp': 'int main() { return 0; }\n'})
+    result = harness.run_b2(root, 'libs/speccheck_reader/test')
+    harness.expect(result, False, 'third_party/libs/ed25519-speccheck is not checked out',
+                   'git submodule update --init third_party/libs/ed25519-speccheck')
+    # A build that needs no cases never looks for them.
     harness.expect(harness.run_b2(root, 'libs/demo/test//pass'), True)
 
 
@@ -865,6 +879,7 @@ CASES = [
     test_the_suite_reaches_a_test_on_wasi,
     test_a_changed_suite_file_runs_the_test_again,
     test_a_suite_not_checked_out_is_refused,
+    test_ed25519_speccheck_not_checked_out_is_refused,
     test_bips_is_pinned,
     test_ed25519_speccheck_is_pinned,
     test_bearssl_is_pinned,
