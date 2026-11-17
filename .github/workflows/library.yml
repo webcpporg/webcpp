@@ -191,7 +191,11 @@ jobs:
     name: ${{ matrix.name }}
     needs: plan
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 90
+    # Since webcpp::crypto and webcpp::hash joined, an MSVC lane builds OpenSSL in more
+    # configurations (about 27 minutes each on a runner): on webcpporg/webcpp#24 (run
+    # 43982348264) MSVC 14.3 took 58 minutes and 90 cancelled MSVC 14.5 at 12,600 of its
+    # 12,948 targets; the runners' speed varies.
+    timeout-minutes: 150
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
