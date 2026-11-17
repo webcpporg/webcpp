@@ -9099,7 +9099,7 @@ summary.
   `organization/openspec/changes/site-increments-4-5/specs/site/spec.md`
   (proposals).
 
-### hash (hashing and key derivation over Boost.Hash2 and C backends; wrapper; accepted 2026-11-14, increments 1, 2 and 3 built, not merged)
+### hash (hashing and key derivation over Boost.Hash2 and C backends; wrapper; accepted 2026-11-14, increments 1, 2, 3 and 5 built, not merged)
 
 webcpp::hash is one entry point for hashing and key derivation in a C++20
 program on every target webcpp has, a wrapper (`"port-of": null`). Increment 1
@@ -9119,16 +9119,17 @@ BLAKE2b with its key, salt, personalisation and length, SipHash-2-4 and
 SipHash-2-4x, BLAKE2b subkeys (`blake2b_subkey.hpp`), SHA-2, SHA-3, SHAKE,
 TurboSHAKE, HMAC, and Argon2i and Argon2id with one lane; increment 3 gives them
 XKCP's surface: Keccak-224 to Keccak-512, SHA-3, SHAKE, SP 800-185's cSHAKE,
-KMAC, TupleHash and ParallelHash, and RFC 9861's KangarooTwelve and TurboSHAKE.
-The C libraries are built by `third_party/Jamfile` (`xkcp`, `blake3`, `sodium`,
-`bearssl`, each with a canary), their own suites by the `c-suites` lane
-(`test/c_suites`), the examples are in `example/` and the documentation in
-`doc/`. Every function is synchronous, reports failure as a
-`boost::system::result`, takes its data as `std::span` and allocates nothing in
-webcpp's own code. Its repository, `webcpporg/hash`, is still to be created by
-the owner (gates G1, G2 and G4); the proposal, with the specification, the
-design and the plan, is in `libraries/hash/openspec/changes/genesis/`
-(proposals).
+KMAC, TupleHash and ParallelHash, and RFC 9861's KangarooTwelve and TurboSHAKE;
+increment 5 gives them BearSSL's MD5, SHA-1, SHA-2, TLS 1.0's MD5-SHA1, SHAKE
+and HMAC, each reached only by naming `backends::bearssl`. The C libraries are
+built by `third_party/Jamfile` (`xkcp`, `blake3`, `sodium`, `bearssl`, each with
+a canary), their own suites by the `c-suites` lane (`test/c_suites`), the
+examples are in `example/` and the documentation in `doc/`. Every function is
+synchronous, reports failure as a `boost::system::result`, takes its data as
+`std::span` and allocates nothing in webcpp's own code. Its repository,
+`webcpporg/hash`, is still to be created by the owner (gates G1, G2 and G4); the
+proposal, with the specification, the design and the plan, is in
+`libraries/hash/openspec/changes/genesis/` (proposals).
 
 - **Two constructions of webcpp's own, over an audited primitive each, and no
   primitive.** HKDF and PBKDF2 over Boost.Hash2's `hmac<H>` on every target,
@@ -9163,9 +9164,11 @@ design and the plan, is in `libraries/hash/openspec/changes/genesis/`
   `keccak_256`, `blake3`, HKDF, PBKDF2, Argon2id, scrypt, the default backend
   and the measured table; the second, built, is the families and libsodium's
   whole surface; the third, built, is XKCP's whole surface through the
-  families; the others widen the other backends' surface (OpenSSL's,
-  BearSSL's, Botan's) and add the browser backend over WebCrypto through a
-  parallel asynchronous family.
+  families; the fifth, built, is BearSSL's MD5, SHA-1, SHA-2, TLS 1.0's
+  MD5-SHA1 and SHAKE through `digest_of` and `hasher`, and its HMAC through
+  `mac`, each reached only by naming `backends::bearssl`; the others widen
+  the other backends' surface (OpenSSL's, Botan's) and add the browser
+  backend over WebCrypto through a parallel asynchronous family.
   Source: `libraries/hash/openspec/changes/genesis/reference/spec.md` section
   1.5 (proposals).
 
