@@ -12,5 +12,5 @@
 targets: emscripten
 build: fails
 # tag::messages[]
-contains: webcpp::crypto: AES-GCM's default backend on this target is BearSSL, which is not linked, and the one backend that has it there. Add /third_party//bearssl to the program's Jamfile, as in: exe app : app.cpp /webcpp/crypto//crypto /third_party//bearssl ;
+contains: webcpp::crypto: AES-GCM's default backend on this target is BearSSL, which is not linked, and the one backend that has it there. Add /third_party//bearssl to the program's Jamfile, as in: exe app : app.cpp /webcpp/crypto//crypto /third_party//bearssl ; (without b2: define WEBCPP_CRYPTO_HAS_BEARSSL=1 and link BearSSL built with webcpp's src/canary_bearssl.c)
 # end::messages[]

@@ -5,7 +5,7 @@
 # https://www.boost.org/LICENSE_1_0.txt)
 
 [all]
-targets: native wasip2 wasip3 emscripten
+targets: wasip2 wasip3 emscripten
 build: succeeds
 run: app
 # tag::output[]
