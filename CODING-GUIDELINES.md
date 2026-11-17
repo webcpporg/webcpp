@@ -6921,8 +6921,9 @@ cryptography over widely used C libraries that webcpp builds from their
 sources: AES-GCM and the AES block cipher, a `random_device` on the system's
 generator, a constant-time `equal`, and secp256k1's BIP340 Schnorr and ECDSA
 signatures, ECDH, strict DER and the x-only tweak. Version 0.1 is the
-proposal's increments 1 and 2, as the owner set them on 2026-11-14; what is
-decided and not built is in chapter 17.
+proposal's increments 1 and 2, as the owner set them on 2026-11-14; OpenSSL's
+memory option is built after it (its block below, unreleased); what is decided
+and not built is in chapter 17.
 
 **Scope.**
 
@@ -7097,9 +7098,9 @@ decided and not built is in chapter 17.
 **Errors and exceptions.**
 
 - **Every operation that can fail returns `boost::system::result<T>` or
-  `result<void>`; the category `webcpp.crypto` declares the values 1 to 12,
-  fixed and never reused, and 13 and 14 are reserved for OpenSSL's memory
-  option.** The owner's rule that every library works with exceptions on and
+  `result<void>`; the category `webcpp.crypto` declares the values 1 to 14,
+  fixed and never reused; 13 and 14, reserved in 0.1, are OpenSSL's memory
+  option's.** The owner's rule that every library works with exceptions on and
   off; a value once given is never given again.
   Source: `include/webcpp/crypto/error.hpp` (libs/crypto); a ruling of the
   plan's revision of 2026-11-14 (proposals, `reference/plan.md`).
@@ -7208,15 +7209,99 @@ decided and not built is in chapter 17.
   the user gives; no seal, open, `encrypt`, `fill`, signature, `ecdh` or
   verification allocates on any backend; OpenSSL's `make` allocates its
   context through OpenSSL's own allocator, which its page states and
-  `allocation_openssl` counts.** The owner's allocators decision, with
-  OpenSSL's departure accepted on 2026-10-11 until its memory option.
+  `allocation_openssl` counts, unless the program takes OpenSSL's memory
+  option (below), which sends every allocation of OpenSSL's to the program's
+  resource, natively.** The owner's allocators decision, with OpenSSL's
+  departure accepted on 2026-10-11; the option serves a program that wants
+  OpenSSL's allocations in its own resource.
   Source: `libraries/crypto/openspec/changes/genesis/design.md` D17
-  (proposals); `test/support/counting.hpp` (libs/crypto).
+  (proposals); `test/support/counting.hpp`, `test/openssl_memory/Jamfile`
+  (libs/crypto).
 - **Key schedules inside webcpp's objects are wiped on destruction and on
   move by stores through a `volatile` pointer followed by
   `std::atomic_signal_fence(std::memory_order_seq_cst)`.** The optimiser
   cannot drop these stores, where it can drop a `memset`.
   Source: `include/webcpp/crypto/detail/wipe.hpp` (libs/crypto).
+
+**OpenSSL's memory option (built after 0.1.0; plan Tasks 15, 16 and 33).**
+
+- **`<define>WEBCPP_CRYPTO_OPENSSL_MEMORY_RESOURCE` sends every allocation of
+  OpenSSL in the process to a `std::pmr::memory_resource`; the program gives
+  it with `<library>/webcpp/crypto//openssl` in its project's requirements,
+  and `config.hpp` refuses it with an `#error` on every WebAssembly target,
+  Emscripten, wasip2 and wasip3, and without OpenSSL linked.** The owner's
+  decision of 2026-10-11 made `CRYPTO_set_mem_functions` an option of the
+  config, so that a program that wants OpenSSL's allocations in its own
+  allocator can say so; the library beside the define keeps every target that
+  gets it linked with OpenSSL. The owner's decision of 2026-11-17 made it
+  native only: on WebAssembly a program's default backend is BearSSL, which
+  allocates nothing, and the option's tests are native designs.
+  Source: `include/webcpp/crypto/config.hpp`, `doc/memory.adoc`
+  (libs/crypto); `libraries/crypto/openspec/changes/genesis/reference/spec.md`
+  section 3.7 and `design.md` D16 (proposals).
+- **Under the option the program defines
+  `webcpp::crypto::openssl_memory_resource()` once, a `noexcept` function that
+  returns a `std::pmr::memory_resource&`, and calls
+  `backends::openssl::install_memory_functions()` as the first statement of
+  `main`; webcpp never installs from a static initialiser.** OpenSSL's hook
+  carries no user data, so any other form would keep the resource in a global
+  variable of webcpp's, which the rulebook forbids; static initialisation
+  order is unspecified and cannot return an error.
+  Source: `include/webcpp/crypto/backends/openssl.hpp`,
+  `example/openssl_memory.cpp` (libs/crypto).
+- **The program's resource is never destroyed, is thread-safe wherever
+  OpenSSL may run on two threads, and is reached without an exception; the
+  example makes it with `new` and never deletes it.** OpenSSL frees through it
+  after `main`.
+  Source: `example/openssl_memory.cpp` (libs/crypto).
+- **`install_memory_functions()` only reads OpenSSL's state until its guards
+  pass: webcpp's adapter already in place is a success that changes nothing,
+  functions other than OpenSSL's three defaults are
+  `memory_functions_refused`, then the resource is constructed, then the
+  adapter is installed, and OpenSSL's refusal is `memory_functions_refused`;
+  every OpenSSL `make` under the option checks that the adapter is in place
+  and otherwise returns `memory_functions_not_installed`.** Replacing another
+  party's functions would make OpenSSL free that party's blocks through
+  webcpp's adapter; a forgotten install gives an error, not an allocation
+  outside the resource. The defaults are told by their three addresses alone,
+  so a libcrypto DLL, which webcpp never builds, is refused (chapter 19).
+  Source: `include/webcpp/crypto/backends/openssl.hpp` (libs/crypto).
+- **The adapter is three `extern "C"`, `inline`, `noexcept` functions of
+  external linkage, each block headed by its size and aligned to the larger
+  of `alignof(std::max_align_t)` and `__STDCPP_DEFAULT_NEW_ALIGNMENT__`; with
+  exceptions each call into the resource sits in a `try` whose `catch (...)`
+  returns null.** OpenSSL calls them as C functions and frees without a size;
+  no exception may cross OpenSSL.
+  Source: `include/webcpp/crypto/backends/openssl.hpp` (libs/crypto).
+- **On MSVC `backends/openssl.hpp` carries
+  `#pragma detect_mismatch("webcpp_crypto_openssl_memory", ...)`, `"resource"`
+  with the option and `"openssl"` without it.** Two files of one program
+  compiled one with the option and one without then fail with LNK2038.
+  Source: `include/webcpp/crypto/backends/openssl.hpp`,
+  `test/msvc/memory_two_files` (libs/crypto).
+- **Two allocations stay outside the resource, the C library's `FILE` while
+  OpenSSL reads its configuration file and OpenSSL's secure heap; a resource
+  that fails during the first `make` leaves OpenSSL unusable for the rest of
+  the process; the program's code that uses the backend lives in one module;
+  the page states each.** No hook of OpenSSL's reaches the first two; OpenSSL
+  keeps a failed initialisation; a second module has its own copy of the
+  adapter, whose address the guard does not recognise.
+  Source: `doc/memory.adoc` (libs/crypto).
+- **The option's programs are native, in `test/openssl_memory`, each declared
+  with exceptions and without by the rule `memory-run`: `adapter`;
+  `everything`, `late`, `foreign`, `fresh_install`, `forgotten`, `replaced`,
+  `second_install`, `fail_second`, `fail_init` and `handshake`, which count
+  every call of the C library's allocator through an interposer per system;
+  and `neighbours`, beside Asio's TLS and libdatachannel; `header_alone` and
+  the `windows_h` twins compile. The fixtures `memory_option`,
+  `memory_missing_definition_install`, `memory_missing_definition_make`,
+  `memory_two_files` and `openssl_memory_on_emscripten` build the user's
+  Jamfiles, and `test/messages` and `test/msvc` check each `#error`.** The
+  counter proves the whole process, Beast's TLS and libdatachannel's DTLS
+  included; a forgotten definition fails the link, and the project's form the
+  page shows is built and run.
+  Source: `test/openssl_memory/Jamfile` (libs/crypto);
+  `tools/test/fixtures/crypto_jamfiles/` (webcpp).
 
 **Build.**
 
@@ -8382,10 +8467,10 @@ What webcpp does not have yet, and the chapters that mention it:
   webcpp::asio (chapter 15's trystero entry). Authenticated encryption and
   randomness are webcpp::crypto's, and the relays' WebSockets Beast's.
   Trystero can then retain its protocol over those shared facilities.
-- **crypto after 0.1** (chapter 17): OpenSSL's memory option, constant time
-  checked, sizes and throughput measured, the browser lane, the CI's nightly
-  level, NIST CAVP's vectors, ChaCha20-Poly1305, Botan, and trystero's code on
-  the library (its sealers, its random and its signer).
+- **crypto after 0.1** (chapter 17): constant time checked, sizes and
+  throughput measured, the browser lane, the CI's nightly level, NIST CAVP's
+  vectors, ChaCha20-Poly1305, Botan, and trystero's code on the library (its
+  sealers, its random and its signer).
 - **The libraries web developers use most,** brought to C++: a JavaScript
   interpreter (QuickJS), libp2p, HTTP fetch.
 - **The site, increments 2 to 8.** Increment 1 is done: the site's
@@ -8446,66 +8531,12 @@ each with its decisions as decided. While a proposal is open, its own
 change that builds it moves its decisions into chapter 14 or 15. Their
 conflicts with chapters 1 to 13 are in chapter 19.
 
-### crypto, after 0.1 (accepted 2026-10-11; increments 1 and 2 built in 0.1.0, chapter 15)
+### crypto, after 0.1 (accepted 2026-10-11; increments 1 and 2 built in 0.1.0, and the memory option after it, chapter 15)
 
 The plan (`reference/plan.md`, revised on 2026-11-14) built version 0.1 from
-its increments 1 and 2; the owner deferred the rest, kept as written and
-re-read before it runs. What 0.1 built is in chapter 15; what follows is
-decided and not built.
-
-**OpenSSL's memory option (plan Tasks 15, 16 and 33).**
-
-- **`<define>WEBCPP_CRYPTO_OPENSSL_MEMORY_RESOURCE` sends every allocation of
-  OpenSSL in the process to a `std::pmr::memory_resource`; the program gives
-  it with `/webcpp/crypto//openssl` in its project's requirements, and
-  `config.hpp` refuses it on Emscripten and without OpenSSL linked.** The
-  owner's decision of 2026-10-11 made `CRYPTO_set_mem_functions` an option of
-  the config, so that a program that wants OpenSSL's allocations in its own
-  allocator can say so; the library beside the define keeps every target that
-  gets it linked with OpenSSL.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 3.7 (proposals).
-- **Under the option the program defines
-  `webcpp::crypto::openssl_memory_resource()` once, a `noexcept` function that
-  returns a `std::pmr::memory_resource&`, and calls
-  `backends::openssl::install_memory_functions()` as the first statement of
-  `main`; webcpp never installs from a static initialiser.** OpenSSL's hook
-  carries no user data, so any other form would keep the resource in a global
-  variable of webcpp's, which the rulebook forbids; static initialisation
-  order is unspecified and cannot return an error.
-  Source: `libraries/crypto/openspec/changes/genesis/design.md` D16
-  (proposals).
-- **The program's resource is never destroyed, is thread-safe wherever
-  OpenSSL may run on two threads, and is reached without an exception.**
-  OpenSSL frees through it after `main`.
-  Source: `libraries/crypto/openspec/changes/genesis/design.md` D16
-  (proposals).
-- **`install_memory_functions()` only reads OpenSSL's state until its guards
-  pass: webcpp's adapter already in place is a success that changes nothing,
-  another party's functions are `memory_functions_refused`, then the resource
-  is constructed, then the adapter is installed, and OpenSSL's refusal is
-  `memory_functions_refused`; every OpenSSL `make` under the option checks
-  that the adapter is in place and otherwise returns
-  `memory_functions_not_installed`.** Replacing another party's functions
-  would make OpenSSL free that party's blocks through webcpp's adapter; a
-  forgotten install gives an error, not an allocation outside the resource.
-  The two values are 13 and 14, reserved in 0.1.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  sections 2.9 and 3.7 (proposals).
-- **The adapter is three `extern "C"`, `inline`, `noexcept` functions of
-  external linkage, each block headed by its size and aligned to the larger
-  of `alignof(std::max_align_t)` and `__STDCPP_DEFAULT_NEW_ALIGNMENT__`; with
-  exceptions each call into the resource sits in a `try` whose `catch (...)`
-  returns null.** OpenSSL calls them as C functions and frees without a size;
-  no exception may cross OpenSSL.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 3.7 (proposals).
-- **On MSVC `backends/openssl.hpp` carries
-  `#pragma detect_mismatch("webcpp_crypto_openssl_memory", ...)`, `"resource"`
-  with the option and `"openssl"` without it.** Two files of one program
-  compiled one with the option and one without then fail with LNK2038.
-  Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  section 3.7 (proposals).
+its increments 1 and 2, and OpenSSL's memory option after it; the owner
+deferred the rest, kept as written and re-read before it runs. What is built
+is in chapter 15; what follows is decided and not built.
 
 **Constant time (plan Task 20).**
 
@@ -9727,6 +9758,14 @@ says what the tree does.
   unsupported policy's inline namespace, since they honoured every setting;
   the tree puts them inside it, since natively the policy decides a data
   channel's `max_packet_life_time` of 0 (webrtc `871a4ef`).
+- **crypto.** The genesis specification's section 3.7 and its plan's Task
+  15 give OpenSSL's memory option a Windows branch that tells a libcrypto
+  DLL's default functions by `GetModuleHandleExW` and `GetProcAddress`, and
+  Task 16 measures the MSVC shared link. The tree compares the three
+  addresses alone: webcpp builds OpenSSL static only, so the branch could
+  never run in a test, and a libcrypto DLL (a program built without b2) is
+  refused with `memory_functions_refused`, which the page says. Serving such
+  a program takes the plan's branch back, never measured.
 - **asio.** The 2026-11-03 amendment reconciles default turn limit 100,
   supported targets, source-built TLS, private configuration/allocation fixes
   and guide order. Proposal source snapshots must name the final committed
