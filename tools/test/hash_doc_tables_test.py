@@ -241,11 +241,11 @@ def test_a_family_default_is_of_the_order_or_none(scratch: Path) -> None:
 def test_a_later_default_and_a_partial_cell_are_said(scratch: Path) -> None:
     library = scratch_library(scratch)
     files = write_ok(library)
-    shake = files['generated/backends-sha3-shake.adoc']
-    expect('The default of `digests::shake_128` is `xkcp`, whose cell comes with a later '
-           'increment' in shake, shake)
-    expect('`hash2` (partial: an output past 32 bytes, one Boost.Hash2 result)' in shake, shake)
-    expect('| hash2 (partial: an output past 64 bytes' in files['backends.adoc'],
+    blake2 = files['generated/backends-blake2.adoc']
+    expect('The default of `digests::blake2b` is `sodium`, whose cell comes with a later '
+           'increment' in blake2, blake2)
+    expect('`hash2` (partial: an output under 64 bytes' in blake2, blake2)
+    expect('| hash2 (partial: a tag under 32 bytes' in files['backends.adoc'],
            'the backends chapter does not say what the partial cell refuses')
 
 
