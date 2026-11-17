@@ -239,7 +239,13 @@ def test_a_family_default_is_of_the_order_or_none(scratch: Path) -> None:
 
 
 def test_a_later_default_and_a_partial_cell_are_said(scratch: Path) -> None:
+    # The later default is made here, not read from the real table, whose cells land increment
+    # by increment: BLAKE2b's default sodium without its cell yet. The partial cells are hash2's.
     library = scratch_library(scratch)
+    path = library / 'doc/capabilities.json'
+    table = json.loads(path.read_text(encoding='utf-8'))
+    family_row(table, 'digests::blake2b')['backends'].pop('sodium', None)
+    path.write_text(json.dumps(table), encoding='utf-8')
     files = write_ok(library)
     blake2 = files['generated/backends-blake2.adoc']
     expect('The default of `digests::blake2b` is `sodium`, whose cell comes with a later '
