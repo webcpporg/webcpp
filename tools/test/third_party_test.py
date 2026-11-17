@@ -520,9 +520,10 @@ def test_xkcp_is_built_file_by_file(root: Path) -> None:
 def test_xkcp_not_checked_out_is_refused(root: Path) -> None:
     harness.copy_integration_libraries(root, 'config', 'hash')
     harness.third_party_of_its_own(root, 'xkcp', checked_out=False)
-    result = harness.run_b2(root, 'third_party//xkcp')
-    harness.expect(result, False, 'third_party/libs/xkcp is not checked out',
-                   'git submodule update --init third_party/libs/xkcp')
+    for target in ('third_party//xkcp', 'third_party//xkcp_vectors'):
+        result = harness.run_b2(root, target)
+        harness.expect(result, False, 'third_party/libs/xkcp is not checked out',
+                       'git submodule update --init third_party/libs/xkcp')
     # A build that needs no XKCP never looks for it.
     harness.expect(harness.run_b2(root, 'libs/demo/test//pass'), True)
 

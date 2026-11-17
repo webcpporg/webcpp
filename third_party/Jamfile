@@ -437,6 +437,18 @@ lib xkcp
   : : <define>WEBCPP_HASH_HAS_XKCP=1 $(.gc) ;
 explicit xkcp ;
 
+# XKCP's test vectors, tests/TestVectors at the pin (ShortMsgKAT_SHA3-*.txt
+# and ShortMsgKAT_SHAKE*.txt among them), read at run time from the directory
+# WEBCPP_TEST_XKCP_VECTORS gives, on every target. Quoted as wycheproof's
+# define is, with forward slashes, so that a path with a space or a backslash
+# survives.
+.xkcp-vectors = [ regex.replace $(XKCP)/tests/TestVectors "\\\\" "/" ] ;
+alias xkcp_vectors : : <conditional>@xkcp-checked-out : :
+    <define>"\"WEBCPP_TEST_XKCP_VECTORS=\\\"$(.xkcp-vectors)\\\"\""
+    [ webcpp.data $(XKCP)/tests/TestVectors ]
+    <dependency>libs/xkcp/tests/TestVectors/ShortMsgKAT_SHA3-256.txt ;
+explicit xkcp_vectors ;
+
 # libsodium 1.0.22 (ISC), jedisct1/libsodium at 77e1ce5: every .c of
 # src/libsodium/, one object per file, with the defines libsodium's own
 # configure finds on each target (sodium-target-defines), without its
