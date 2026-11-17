@@ -4,7 +4,8 @@
 // accompanying file LICENSE_1_0.txt or copy at
 // https://www.boost.org/LICENSE_1_0.txt)
 
-// argon2id on another backend than backends::sodium stops with spec section 3.3's text.
+// argon2id on another backend than backends::sodium and backends::openssl stops with spec section
+// 3.3's text.
 
 #include <webcpp/hash/argon2.hpp>
 #include <webcpp/hash/backends/hash2.hpp>

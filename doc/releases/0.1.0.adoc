@@ -313,6 +313,8 @@ eight columns from which a table scrolls.
 argon2): a default of hash2, xkcp, blake3 or sodium, or none, and what a partial cell refuses.
 * Fixed tools/hash/doc_tables.py naming, beside a default, backends of functions that do not
 share it, calling a tag without a default a type, and scattering constant-time statements.
+* Fixed tools/hash/doc_tables.py's llms.txt calling backends::sodium the only backend of
+argon2id and scrypt, which backends::openssl has too.
 * Added /third_party//openssl_evp_data, OpenSSL's EVP test files at the pin, which webcpp::hash's
 tests read at run time on every target.
 * Added /third_party//blake2_vectors, BLAKE2's test vectors at ed1974e (a shallow submodule), and

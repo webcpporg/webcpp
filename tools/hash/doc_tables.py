@@ -431,10 +431,11 @@ def llms_txt(data: Data) -> str:
              'returns boost::system::result and allocates nothing in webcpp\'s own code. A '
              'program links /webcpp/hash//hash and the library of each backend it uses. Every '
              'key derivation runs on backends::hash2 unless the call names another backend as '
-             'its second template argument; argon2id and scrypt run on backends::sodium, their '
-             'only backend. The families digest_of, hasher, mac and argon2 take a tag of '
-             'digests, macs or kdfs and a backend, by default the first of backends::hash2, '
-             'backends::xkcp, backends::blake3 and backends::sodium that has the tag.', '',
+             'its second template argument; argon2id and scrypt run on backends::sodium unless '
+             'the call names backends::openssl. The families digest_of, hasher, mac and argon2 '
+             'take a tag of digests, macs or kdfs and a backend, by default the first of '
+             'backends::hash2, backends::xkcp, backends::blake3 and backends::sodium that has '
+             'the tag.', '',
              'Primitives only: protocol steps (BIP39, hash160, EIP-55, Nostr ids, NIP-44) '
              'are what a domain library builds from these functions; the guide shows them as '
              'examples, never as this library\'s API.', '',
