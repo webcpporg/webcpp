@@ -354,11 +354,15 @@ def backends_table(data: Data, algorithm: dict) -> str:
         return '\n'.join(out)
     by_backend: dict[str, list[str]] = {}
     for name, default in defaults:
-        by_backend.setdefault(default, []).append(f'`{name}`')
-    for default, names in by_backend.items():
+        by_backend.setdefault(default, []).append(name)
+    for default, functions in by_backend.items():
+        names = [f'`{name}`' for name in functions]
         named = names[0] if len(names) == 1 else \
             ', '.join(names[:-1]) + f' and {names[-1]}'
-        others = sorted({b for f in algorithm['functions'] for b in f['backends']} - {default})
+        # The backends a call may name instead: those of these functions, not of the algorithm's
+        # others.
+        others = sorted({b for name in functions
+                         for b in data.functions[name][1]['backends']} - {default})
         tail = (f'; {", ".join(f"`{b}`" for b in others)} only where the call names it, as its '
                 'second template argument') if others else ''
         out.append(f'The default of {named}: `{default}` on every target, whatever the program '
@@ -522,15 +526,16 @@ def backends_chapter(data: Data) -> str:
             lines += ['', f'| {function["name"]}', '| none: the call names its backend']
     lines += ['|===', '', '=== Constant time', '',
               'What each backend\'s upstream states, and where:', '']
-    seen = set()
+    # Each backend's statements together, in the capability table's order of backends.
+    seen: list[tuple[str, str, str]] = []
     for _, function in data.functions.values():
         for name, c in function['backends'].items():
             key = (name, c['constant_time']['value'], c['constant_time']['source'])
-            if key in seen:
-                continue
-            seen.add(key)
-            lines.append(f'* {name}: {c["constant_time"]["value"]}. '
-                         f'{c["constant_time"]["source"]}')
+            if key not in seen:
+                seen.append(key)
+    order = list(data.backends)
+    for name, value, source in sorted(seen, key=lambda key: order.index(key[0])):
+        lines.append(f'* {name}: {value}. {source}')
     return '\n'.join(lines) + '\n'
 
 

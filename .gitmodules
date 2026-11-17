@@ -85,3 +85,7 @@
 [submodule "libs/webrtc"]
 	path = libs/webrtc
 	url = ../webrtc.git
+[submodule "third_party/libs/blake2"]
+	path = third_party/libs/blake2
+	url = https://github.com/BLAKE2/BLAKE2.git
+	shallow = true

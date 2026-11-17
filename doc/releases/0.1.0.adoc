@@ -311,8 +311,12 @@ llms.txt from its capability table and measurements, and checks them when its pa
 eight columns from which a table scrolls.
 * Changed tools/hash/doc_tables.py to render webcpp::hash's family tags (digest_of, hasher, mac,
 argon2): a default of hash2, xkcp, blake3 or sodium, or none, and what a partial cell refuses.
+* Fixed tools/hash/doc_tables.py naming, beside a default, backends of an algorithm's other
+functions, and scattering a backend's constant-time statements.
 * Added /third_party//openssl_evp_data, OpenSSL's EVP test files at the pin, which webcpp::hash's
 tests read at run time on every target.
+* Added /third_party//blake2_vectors, BLAKE2's test vectors at ed1974e (a shallow submodule), and
+/third_party//sodium_vectors, libsodium's test outputs, which webcpp::hash's tests read at run time.
 
 [#webcpp-0-1-0-compilers-tested]
 == Compilers tested

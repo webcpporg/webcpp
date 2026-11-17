@@ -22,7 +22,8 @@ libsodium, pinned, is built file by file with the defines its own configure find
 webcpp::hash's canary, its version.h copied into the build directory and its checkout left as it
 was. BLAKE3's C implementation, pinned, is built file by file with webcpp::hash's canary: natively
 with the intrinsics files of the machine's instruction sets, each with its own flag, and on
-WebAssembly with the portable code alone. Run with the names of some cases to run only those."""
+WebAssembly with the portable code alone. BLAKE2's test vectors are pinned. Run with the names of
+some cases to run only those."""
 
 from __future__ import annotations
 
@@ -85,6 +86,13 @@ BIPS = 'third_party/libs/bips'
 # The commit the Bitcoin Improvement Proposals' repository is pinned at: the test vectors of
 # BIP340 and BIP341 (libs/crypto/test/secp256k1_bip340_test.cpp, secp256k1_xonly_tweak_test.cpp).
 BIPS_COMMIT = '927b6de9915c9262615a6399de51b200f81e5aa4'
+
+BLAKE2 = 'third_party/libs/blake2'
+
+# The commit BLAKE2's reference repository is pinned at: the test vectors of webcpp::hash's
+# BLAKE2b (testvectors/blake2b-kat.txt and blake2-kat.json, read through
+# /third_party//blake2_vectors).
+BLAKE2_COMMIT = 'ed1974ea83433eba7b2d95c5dcd9ac33cb847913'
 
 SECP256K1 = 'third_party/libs/secp256k1'
 
@@ -707,6 +715,12 @@ def expect_blake3_portable(compiled: dict[str, str], archive: Path) -> None:
     assert blake3_canary('portable').encode() in archive.read_bytes()
 
 
+def test_blake2_is_pinned(_: Path) -> None:
+    listed = subprocess.run(['git', '-C', str(harness.ROOT), 'ls-files', '-s', BLAKE2],
+                            capture_output=True, text=True, check=True)
+    assert listed.stdout.split()[:2] == ['160000', BLAKE2_COMMIT], listed.stdout
+
+
 def test_blake3_is_pinned(_: Path) -> None:
     listed = subprocess.run(['git', '-C', str(harness.ROOT), 'ls-files', '-s', BLAKE3],
                             capture_output=True, text=True, check=True)
@@ -828,6 +842,7 @@ CASES = [
     test_sodium_unknown_architecture_is_refused,
     test_sodium_not_checked_out_is_refused,
     test_hash_not_checked_out_is_refused_by_sodium,
+    test_blake2_is_pinned,
     test_blake3_is_pinned,
     test_blake3_natively_has_the_machines_simd_files,
     test_blake3_on_x86_64_declares_the_intrinsics_files,
