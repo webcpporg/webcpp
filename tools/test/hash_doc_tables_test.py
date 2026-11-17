@@ -239,7 +239,18 @@ def test_a_family_default_is_of_the_order_or_none(scratch: Path) -> None:
 
 
 def test_a_later_default_and_a_partial_cell_are_said(scratch: Path) -> None:
+    # The case is made here, not read from the real table, whose cells land increment by
+    # increment: SHAKE's default xkcp without its cell yet, and hash2's partial cells.
     library = scratch_library(scratch)
+    path = library / 'doc/capabilities.json'
+    table = json.loads(path.read_text(encoding='utf-8'))
+    for name, size in (('digests::shake_128', 32), ('digests::shake_256', 64)):
+        row = family_row(table, name)
+        row['default'] = 'xkcp'
+        row['backends'].pop('xkcp', None)
+        row['backends']['hash2']['partial'] = (f'an output past {size} bytes, one Boost.Hash2 '
+                                               'result')
+    path.write_text(json.dumps(table), encoding='utf-8')
     files = write_ok(library)
     shake = files['generated/backends-sha3-shake.adoc']
     expect('The default of `digests::shake_128` is `xkcp`, whose cell comes with a later '
