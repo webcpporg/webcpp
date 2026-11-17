@@ -17,8 +17,9 @@ the fixture <name>, its Emscripten case: before building anything, the test chec
 fixture's app.cpp is the message's source without its expected-error directive, and that its
 outcome's one contains: line is the directive's text, unless the message is in NO_FIXTURE.
 
-The scratch superproject holds libs/config, libs/hash and libs/crypto (whose canary
-/third_party//bearssl compiles). Run with the names of some cases to run only those, and with
+The scratch superproject holds libs/config, libs/hash, libs/crypto (whose canary
+/third_party//bearssl compiles) and libs/asio (whose /webcpp/asio//asio the asynchronous family's
+messages name). Run with the names of some cases to run only those, and with
 --target <name> to run one target."""
 
 from __future__ import annotations
@@ -40,6 +41,8 @@ NOT_YET: dict[str, str] = {}
 NO_FIXTURE = {
     'ripemd128_on_openssl': 'it names /webcpp/hash//openssl, which Emscripten refuses before '
                             'the message (the fixture openssl_on_emscripten)',
+    'webcrypto_off_emscripten': 'its message is off Emscripten alone: there the asynchronous '
+                                'family takes backends::webcrypto',
 }
 
 DIRECTIVE = re.compile(r'^// expected-error@\S+ \{\{(.*)\}\}$', re.MULTILINE)
@@ -93,8 +96,8 @@ def message_faults(cases: list[Path]) -> list[str]:
 
 
 def main(argv: list[str]) -> int:
-    return user_jamfiles.main('hash_jamfiles', CASES, ('config', 'hash', 'crypto'), NOT_YET, argv,
-                              message_faults)
+    return user_jamfiles.main('hash_jamfiles', CASES, ('config', 'hash', 'crypto', 'asio'), NOT_YET,
+                              argv, message_faults)
 
 
 if __name__ == '__main__':

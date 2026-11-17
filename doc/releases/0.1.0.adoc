@@ -313,6 +313,8 @@ eight columns from which a table scrolls.
 argon2): a default of hash2, xkcp, blake3 or sodium, or none, and what a partial cell refuses.
 * Added /third_party//openssl_evp_data, OpenSSL's EVP test files at the pin, which webcpp::hash's
 tests read at run time on every target.
+* Changed tools/test/hash_jamfiles_test.py to copy libs/asio into its scratch superproject, so that
+the messages of webcpp::hash's asynchronous family are built on Emscripten too.
 
 [#webcpp-0-1-0-compilers-tested]
 == Compilers tested
