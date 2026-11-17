@@ -89,3 +89,7 @@
 	path = third_party/libs/blake2
 	url = https://github.com/BLAKE2/BLAKE2.git
 	shallow = true
+[submodule "third_party/libs/ed25519-speccheck"]
+	path = third_party/libs/ed25519-speccheck
+	url = https://github.com/novifinancial/ed25519-speccheck.git
+	shallow = true

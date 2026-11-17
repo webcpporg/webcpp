@@ -95,6 +95,12 @@ BLAKE2 = 'third_party/libs/blake2'
 # /third_party//blake2_vectors).
 BLAKE2_COMMIT = 'ed1974ea83433eba7b2d95c5dcd9ac33cb847913'
 
+ED25519_SPECCHECK = 'third_party/libs/ed25519-speccheck'
+
+# The commit novifinancial/ed25519-speccheck is pinned at: the twelve Ed25519 edge cases of
+# "Taming the many EdDSAs", its cases.json (libs/crypto/test/ed25519_speccheck_test.cpp).
+ED25519_SPECCHECK_COMMIT = '65519336fda78a3d016e947df6d82848aca0c9da'
+
 SECP256K1 = 'third_party/libs/secp256k1'
 
 # libsecp256k1 v0.8.0, the commit it is pinned at.
@@ -320,6 +326,11 @@ def test_bips_is_pinned(_: Path) -> None:
                             capture_output=True, text=True, check=True)
     assert listed.stdout.split()[:2] == ['160000', BIPS_COMMIT], listed.stdout
 
+
+def test_ed25519_speccheck_is_pinned(_: Path) -> None:
+    listed = subprocess.run(['git', '-C', str(harness.ROOT), 'ls-files', '-s', ED25519_SPECCHECK],
+                            capture_output=True, text=True, check=True)
+    assert listed.stdout.split()[:2] == ['160000', ED25519_SPECCHECK_COMMIT], listed.stdout
 
 def test_bearssl_is_pinned(_: Path) -> None:
     listed = subprocess.run(['git', '-C', str(harness.ROOT), 'ls-files', '-s', BEARSSL],
@@ -855,6 +866,7 @@ CASES = [
     test_a_changed_suite_file_runs_the_test_again,
     test_a_suite_not_checked_out_is_refused,
     test_bips_is_pinned,
+    test_ed25519_speccheck_is_pinned,
     test_bearssl_is_pinned,
     test_bearssl_is_built_file_by_file,
     test_bearssl_without_hash_has_cryptos_canary_alone,

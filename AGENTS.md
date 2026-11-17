@@ -266,8 +266,9 @@ Jamroot is its build configuration, and `libs/<name>` is its repository.
 - for crypto: nothing installed, with the pinned submodules initialised:
   `git submodule update --init third_party/libs/bearssl
   third_party/libs/secp256k1 third_party/libs/bitcoin third_party/libs/wycheproof
-  third_party/libs/bips`, and `third_party/libs/openssl` for its OpenSSL
-  backend (below); b2 builds every backend from its sources;
+  third_party/libs/bips third_party/libs/ed25519-speccheck`, and
+  `third_party/libs/openssl` for its OpenSSL backend (below); b2 builds every
+  backend from its sources;
 - for native Trystero: CMake and Make (nmake on Windows), and the pinned
   `third_party/libs/libdatachannel` checkout with its required nested sources.
   Initialize it, and the libsecp256k1 every room links, with `git submodule
