@@ -7173,16 +7173,21 @@ and not built is in chapter 17.
 
 **Default backend.**
 
-- **The AEADs' default backend is BearSSL on Emscripten, wasip2 and wasip3,
-  OpenSSL natively when it is linked, BearSSL natively otherwise, and a
-  program picks BearSSL with `<define>WEBCPP_CRYPTO_DEFAULT_BACKEND_BEARSSL`;
-  on MSVC the default follows the same rule.** OpenSSL's assembly uses the
-  CPU's AES and carry-less multiplication instructions on x86-64 and ARMv8,
-  and BearSSL has them on x86 only; on WebAssembly BearSSL is constant time
-  where the `no-asm` OpenSSL is not (the owner's decision 2 of 2026-11-14).
-  Speed and size are not measured until the deferred lanes (chapter 17).
-  Source: `include/webcpp/crypto/config.hpp` (libs/crypto); the plan's
-  revision of 2026-11-14 (proposals, `reference/plan.md`).
+- **Each family has one default backend per target, chosen by the target
+  alone for a stated reason, whatever the program links; no define changes it,
+  and a program names any other backend in the type.** AES-GCM's is OpenSSL
+  natively, on MSVC too, and BearSSL on Emscripten, wasip2 and wasip3:
+  OpenSSL's assembly uses the CPU's AES and carry-less multiplication
+  instructions on x86-64 and ARMv8, and BearSSL has them on x86 only; on
+  WebAssembly BearSSL is constant time where the `no-asm` OpenSSL is not. A
+  program that uses a default it does not link stops where it calls it, with
+  the Jamfile line and the type that names another backend; version 0.1's
+  `WEBCPP_CRYPTO_DEFAULT_BACKEND_BEARSSL` and `_OPENSSL` stop the build with the
+  type to write. Measurements are references and decide no default.
+  Source: `doc/tables/crypto.json` and the generated
+  `include/webcpp/crypto/detail/defaults.hpp` (libs/crypto); design D32 and the
+  owner's answers Q1 to Q4 of 2026-11-17 (proposals, `foundation/design.md`,
+  `reference/roadmap.md`).
 - **The page warns that natively without OpenSSL a server on ARM runs
   BearSSL's portable code, and names `/webcpp/crypto//openssl`; it states no
   factor.** BearSSL has no ARMv8 AES or PMULL code; the slowdown on the
@@ -7357,7 +7362,7 @@ and not built is in chapter 17.
 - **The user's Jamfiles are the fixtures `tools/test/fixtures/crypto_jamfiles/<case>/`,
   each with its `<case>.outcome` (targets, build, what runs print, what each
   linker prints), built on a scratch superproject: `web`, `server`,
-  `both_bearssl_default`, `block`, `encrypt_and_sign`, `openssl_linked`,
+  `both_bearssl_named`, `block`, `encrypt_and_sign`, `openssl_linked`,
   `sign`, `sign_small`, and the stops (canaries, OpenSSL on Emscripten); a
   `same-as:` line keeps a copied program equal to its original, and the page
   includes each Jamfile and outcome by tag.** A user's Jamfile is what an
