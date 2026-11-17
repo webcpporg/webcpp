@@ -5,10 +5,20 @@
 # https://www.boost.org/LICENSE_1_0.txt)
 
 [all]
-targets: wasip2 wasip3 emscripten
+targets: native wasip2 wasip3 emscripten
 build: succeeds
 run: app
 # tag::output[]
+[native]
+aes256_gcm ok backend=openssl
+schnorr ok
+[wasip2]
+aes256_gcm ok backend=bearssl
+schnorr ok
+[wasip3]
+aes256_gcm ok backend=bearssl
+schnorr ok
+[emscripten]
 aes256_gcm ok backend=bearssl
 schnorr ok
 # end::output[]
