@@ -670,18 +670,44 @@ rule sodium-test-defines ( properties * )
     return $(.sodium-test-common) $(.sodium-test-arc4random) ;
 }
 
+# libsodium, /third_party//sodium below, is webcpp::hash's target and carries
+# webcpp::crypto's canary too: an object of its own, compiled with libsodium's
+# defines, which the library's sources gain only when libs/crypto holds it, so
+# that a checkout without libs/crypto builds hash's libsodium as before.
+# WEBCPP_CRYPTO_HAS_SODIUM then joins the usage requirements.
+obj sodium_crypto_canary : $(CRYPTO)/src/canary_sodium.c
+  : $(.c-library) <conditional>@sodium-target-defines ;
+explicit sodium_crypto_canary ;
+
+rule sodium-crypto-canary ( properties * )
+{
+    if [ path.exists [ path.native $(CRYPTO)/src/canary_sodium.c ] ]
+    {
+        return <source>sodium_crypto_canary ;
+    }
+}
+
+rule sodium-crypto-usage ( properties * )
+{
+    if [ path.exists [ path.native $(CRYPTO)/src/canary_sodium.c ] ]
+    {
+        return <define>WEBCPP_CRYPTO_HAS_SODIUM=1 ;
+    }
+}
+
 lib sodium
   : [ glob-tree-ex libs/libsodium/src/libsodium : *.c ]
     $(HASH)/src/canary_sodium.c
   : $(.hash-c-library) <conditional>@sodium-checked-out
     <conditional>@sodium-target-defines
+    <conditional>@sodium-crypto-canary
     <implicit-dependency>sodium/version.h <dependency>sodium/version.h
     <include>libs/libsodium/src/libsodium/include
     <include>libs/libsodium/src/libsodium/include/sodium
     <include>$(.sodium-version) <include>$(.sodium-version)/sodium
   : : <include>libs/libsodium/src/libsodium/include <include>$(.sodium-version)
     <implicit-dependency>sodium/version.h <define>SODIUM_STATIC=1
-    <define>WEBCPP_HASH_HAS_SODIUM=1 $(.gc)
+    <define>WEBCPP_HASH_HAS_SODIUM=1 <conditional>@sodium-crypto-usage $(.gc)
     <toolset>emscripten:<linkflags>-sALLOW_MEMORY_GROWTH=1 ;
 explicit sodium ;
 

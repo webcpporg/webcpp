@@ -20,8 +20,8 @@ emscripten. XKCP, pinned, is built from its file of Keccak-p[1600] and its high-
 webcpp::hash's adapter and canary, and an XKCP or a libs/hash that is not checked out stops it,
 naming the command.
 libsodium, pinned, is built file by file with the defines its own configure finds on each target and
-webcpp::hash's canary, its version.h copied into the build directory and its checkout left as it
-was. BLAKE3's C implementation, pinned, is built file by file with webcpp::hash's canary: natively
+webcpp::hash's canary, and webcpp::crypto's when libs/crypto is checked out, its version.h copied
+into the build directory and its checkout left as it was. BLAKE3's C implementation, pinned, is built file by file with webcpp::hash's canary: natively
 with the intrinsics files of the machine's instruction sets, each with its own flag, and on
 WebAssembly with the portable code alone. BLAKE2's test vectors are pinned. Run with the names of
 some cases to run only those."""
@@ -147,6 +147,9 @@ SODIUM_COMMIT = '77e1ce5d6dee871c49ef211222ba18ef0c486bda'
 # The canary /third_party//sodium defines when its defines are the ones third_party/Jamfile derives
 # from libsodium's configure.
 SODIUM_CANARY = ('webcpp_hash_sodium_77e1ce5_configured__add_third_party_sodium_to_your_link')
+
+# webcpp::crypto's canary on the same target: its configuration is portable under the same defines.
+SODIUM_CRYPTO_CANARY = ('webcpp_crypto_sodium_77e1ce5_portable__add_third_party_sodium_to_your_link')
 
 # The defines of every target: webcpp's three, then those libsodium's configure finds on every
 # target and its C files read.
@@ -594,6 +597,25 @@ def test_sodium_is_built_file_by_file(root: Path) -> None:
     assert f'{prefix}{SODIUM_CANARY}' in symbols.stdout.split(), symbols.stdout[-2000:]
 
 
+def test_sodium_carries_cryptos_canary_too(root: Path) -> None:
+    # With libs/crypto beside libs/hash, libsodium gains webcpp::crypto's canary, compiled with
+    # libsodium's defines: one more file, a second symbol, and the define its header asks for.
+    harness.copy_integration_libraries(root, 'config', 'crypto', 'hash')
+    result = harness.run_b2(root, '-a', '-d+2', 'third_party//sodium')
+    harness.expect(result, True)
+    lines = compiled_sodium(result)
+    # The 141 C files of libsodium's src/libsodium and the canaries of webcpp::hash and crypto.
+    assert len(lines) == 143, (len(lines), result.stdout[-4000:])
+    expect_sodium_defines(lines, None)
+    archive = sorted((root / 'bin').rglob('libsodium.a'))
+    assert len(archive) == 1, archive
+    symbols = subprocess.run(['nm', str(archive[0])], capture_output=True, text=True, check=True)
+    prefix = '_' if sys.platform == 'darwin' else ''
+    names = symbols.stdout.split()
+    assert f'{prefix}{SODIUM_CANARY}' in names, symbols.stdout[-2000:]
+    assert f'{prefix}{SODIUM_CRYPTO_CANARY}' in names, symbols.stdout[-2000:]
+
+
 def test_sodium_defines_on_each_webassembly_target(root: Path) -> None:
     # -n prints each command without running it: the defines, not the build, are the case's.
     harness.link_emsdk(root)
@@ -853,6 +875,7 @@ CASES = [
     test_hash_not_checked_out_is_refused,
     test_sodium_is_pinned,
     test_sodium_is_built_file_by_file,
+    test_sodium_carries_cryptos_canary_too,
     test_sodium_defines_on_each_webassembly_target,
     test_sodium_test_config_reaches_the_private_headers,
     test_sodium_msvc_inline_reaches_c_alone,
