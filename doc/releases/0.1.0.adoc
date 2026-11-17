@@ -283,8 +283,8 @@ could not read and dropped, such as one naming a header that does not exist.
 * Added ctaes, Bitcoin Core's constant-time AES at v31.1, built from source as
 /third_party//ctaes, and the fixtures of the user's Jamfiles of webcpp::crypto's block cipher
 and signing programs.
-* Added XKCP's Keccak-p[1600], built from source with webcpp::hash's adapter as
-`/third_party//xkcp`.
+* Added XKCP's Keccak-p[1600] and its sponge, FIPS 202, SP 800-185, TurboSHAKE and
+KangarooTwelve files, built from source with webcpp::hash's adapter as `/third_party//xkcp`.
 * Added libsodium 1.0.22, built from source as /third_party//sodium with the defines
 its own configure finds on each target, and /third_party//sodium-test-config for a
 program that compiles against its private headers.
