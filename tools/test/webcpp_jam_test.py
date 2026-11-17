@@ -8,7 +8,9 @@
 """Checks tools/webcpp.jam: a program is built only for the targets its Jamfile declares, and only
 once per target; every target builds with exceptions, and a build without them is the user's own
 request, which links the handler on any target and reaches every program but one that declares
-<exception-handling>on; no variant is built without RTTI; an example is compared with its expected
+<exception-handling>on; a WASI program built without debug symbols, as a release is, carries no
+debug information in any core module of its component, and one built with them keeps it; no variant
+is built without RTTI; an example is compared with its expected
 output, its standard input its .input file or nothing; every public header compiles alone, each call
 of webcpp.headers-alone taking the headers its globs match, with requirements and targets of its
 own, and a header two calls take or a glob that matches none refused; a compile-diagnostic test
@@ -74,6 +76,40 @@ def stand_in_emscripten(root):
     emcc.chmod(0o755)
     config = root / '.local/user-config.jam'
     config.write_text(config.read_text() + f'using emscripten : : "{emcc}" ;\n')
+
+
+def leb128(data, offset):
+    """The unsigned LEB128 number at offset in data, and the offset after it."""
+    value = shift = 0
+    while True:
+        byte = data[offset]
+        offset += 1
+        value |= (byte & 0x7f) << shift
+        shift += 7
+        if not byte & 0x80:
+            return value, offset
+
+
+def custom_sections(data):
+    """The names of the custom sections of the WebAssembly binary data, a core module or a
+    component, and of every core module and component a component nests, at any depth."""
+    assert data[:4] == b'\0asm', data[:8]
+    layer = int.from_bytes(data[6:8], 'little')
+    names = []
+    offset = 8
+    while offset < len(data):
+        identifier = data[offset]
+        size, offset = leb128(data, offset + 1)
+        body = data[offset:offset + size]
+        if identifier == 0:
+            length, start = leb128(body, 0)
+            names.append(body[start:start + length].decode())
+        elif layer == 1 and identifier in (1, 4):
+            # A component's core module section (1) and component section (4) each hold a whole
+            # binary of their own.
+            names += custom_sections(body)
+        offset += size
+    return names
 
 
 NATIVE_DEMO = {'pass', 'fails', 'rejects', 'native_only', 'native_only_compiles', 'alone-demo',
@@ -159,6 +195,28 @@ def test_wasip3_catches_a_throw(root):
                                  stderr=subprocess.STDOUT, text=True, check=False)
         assert refused.returncode != 0, (version, refused.stdout)
         assert 'legacy_exceptions feature required' in refused.stdout, (version, refused.stdout)
+
+
+def test_a_wasi_release_program_carries_no_debug_information(root):
+    # wasi-sdk's prebuilt libc++ and libc++abi carry DWARF, which wasm-ld would copy into every
+    # program, a release one too, as most of its bytes. A program built without debug symbols, as
+    # a release is, is linked with --strip-debug, which drops every .debug section of its core
+    # module; a debug build, or a release that asks for debug symbols, keeps them. A wasip2 or
+    # wasip3 program is a component, whose core modules are read too.
+    for target in (WASIP2, WASIP3):
+        for request, debug in ((('variant=release',), False), (('variant=debug',), True),
+                               (('variant=release', 'debug-symbols=on'), True)):
+            shutil.rmtree(root / 'bin', ignore_errors=True)
+            result = harness.run_b2(root, *target, *request, 'libs/demo/example')
+            harness.expect(result, True)
+            assert output_of(root, 'catches.output') == 'caught: boom\n'
+            program = sorted((root / 'bin').rglob('catches.wasm'))
+            assert len(program) == 1, program
+            data = program[0].read_bytes()
+            assert data[6:8] == b'\x01\x00', (target, request, data[:8])
+            sections = custom_sections(data)
+            found = [name for name in sections if name.startswith('.debug')]
+            assert bool(found) == debug, (target, request, sections)
 
 
 def test_compile_builds_only_where_declared(root):
@@ -1390,6 +1448,7 @@ CASES = [
     test_link_fail_checks_linking_and_keeps_success_controls,
     test_source_only_corpus_is_not_loaded_as_a_build,
     test_native_builds_exactly_the_declared_programs,
+    test_a_wasi_release_program_carries_no_debug_information,
     test_wasip2_skips_native_only_and_has_exceptions,
     test_wasip3_catches_a_throw,
     test_compile_builds_only_where_declared,
