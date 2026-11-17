@@ -822,3 +822,38 @@ alias openssl_evp_data : : <conditional>@openssl-evp-data-checked-out : :
     [ webcpp.data $(OPENSSL_EVP_DATA) ]
     <dependency>libs/openssl/test/recipes/30-test_evp_data/evpmac_blake.txt ;
 explicit openssl_evp_data ;
+
+# BLAKE2's reference code package (CC0-1.0) at ed1974e, shallow, as test data
+# that nothing compiles: webcpp::hash reads testvectors/blake2b-kat.txt (the
+# keyed BLAKE2b cases) and testvectors/blake2-kat.json (the unkeyed ones) at
+# run time from the directory WEBCPP_TEST_BLAKE2_VECTORS gives, on every
+# target. Quoted as wycheproof's define is.
+path-constant BLAKE2_VECTORS : libs/blake2/testvectors ;
+
+rule blake2-vectors-checked-out ( properties * )
+{
+    if ! [ path.exists [ path.native $(BLAKE2_VECTORS)/blake2b-kat.txt ] ]
+    {
+        errors.user-error "third_party/libs/blake2 is not checked out. Check it out with"
+            "`git submodule update --init third_party/libs/blake2`." ;
+    }
+}
+
+.blake2-vectors = [ regex.replace $(BLAKE2_VECTORS) "\\\\" "/" ] ;
+alias blake2_vectors : : <conditional>@blake2-vectors-checked-out : :
+    <define>"\"WEBCPP_TEST_BLAKE2_VECTORS=\\\"$(.blake2-vectors)\\\"\""
+    [ webcpp.data $(BLAKE2_VECTORS) ]
+    <dependency>libs/blake2/testvectors/blake2b-kat.txt
+    <dependency>libs/blake2/testvectors/blake2-kat.json ;
+explicit blake2_vectors ;
+
+# libsodium's own tests' expected outputs (ISC), test/default/*.exp at the pin,
+# read at run time from the directory WEBCPP_TEST_SODIUM_VECTORS gives, on
+# every target, never copied: webcpp::hash reads generichash3.exp. Quoted as
+# wycheproof's define is.
+.sodium-vectors = [ regex.replace $(SODIUM)/test/default "\\\\" "/" ] ;
+alias sodium_vectors : : <conditional>@sodium-checked-out : :
+    <define>"\"WEBCPP_TEST_SODIUM_VECTORS=\\\"$(.sodium-vectors)\\\"\""
+    [ webcpp.data $(SODIUM)/test/default ]
+    <dependency>libs/libsodium/test/default/generichash3.exp ;
+explicit sodium_vectors ;
