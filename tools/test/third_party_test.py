@@ -85,8 +85,8 @@ WYCHEPROOF_COMMIT = '12fd3aaf33eb5fa1f52e026912ee00c054f9d984'
 BIPS = 'third_party/libs/bips'
 
 # The commit the Bitcoin Improvement Proposals' repository is pinned at: the test vectors of
-# BIP340, BIP341 and BIP 324 (libs/crypto/test/secp256k1_bip340_test.cpp,
-# secp256k1_xonly_tweak_test.cpp, secp256k1_ellswift_test.cpp).
+# BIP340, BIP341, BIP 324 and BIP 327 (libs/crypto/test/secp256k1_bip340_test.cpp,
+# secp256k1_xonly_tweak_test.cpp, secp256k1_ellswift_test.cpp, secp256k1_musig_test.cpp).
 BIPS_COMMIT = '927b6de9915c9262615a6399de51b200f81e5aa4'
 
 BLAKE2 = 'third_party/libs/blake2'
@@ -109,6 +109,14 @@ BIPS_FILES = [
     'libs/bips/bip-0341/wallet-test-vectors.json',
     'libs/bips/bip-0324/ellswift_decode_test_vectors.csv',
     'libs/bips/bip-0324/packet_encoding_test_vectors.csv',
+    'libs/bips/bip-0327/vectors/det_sign_vectors.json',
+    'libs/bips/bip-0327/vectors/key_agg_vectors.json',
+    'libs/bips/bip-0327/vectors/key_sort_vectors.json',
+    'libs/bips/bip-0327/vectors/nonce_agg_vectors.json',
+    'libs/bips/bip-0327/vectors/nonce_gen_vectors.json',
+    'libs/bips/bip-0327/vectors/sig_agg_vectors.json',
+    'libs/bips/bip-0327/vectors/sign_verify_vectors.json',
+    'libs/bips/bip-0327/vectors/tweak_vectors.json',
 ]
 
 SECP256K1 = 'third_party/libs/secp256k1'
