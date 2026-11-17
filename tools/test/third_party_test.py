@@ -85,7 +85,8 @@ WYCHEPROOF_COMMIT = '12fd3aaf33eb5fa1f52e026912ee00c054f9d984'
 BIPS = 'third_party/libs/bips'
 
 # The commit the Bitcoin Improvement Proposals' repository is pinned at: the test vectors of
-# BIP340 and BIP341 (libs/crypto/test/secp256k1_bip340_test.cpp, secp256k1_xonly_tweak_test.cpp).
+# BIP340, BIP341 and BIP 324 (libs/crypto/test/secp256k1_bip340_test.cpp,
+# secp256k1_xonly_tweak_test.cpp, secp256k1_ellswift_test.cpp).
 BIPS_COMMIT = '927b6de9915c9262615a6399de51b200f81e5aa4'
 
 BLAKE2 = 'third_party/libs/blake2'
@@ -100,6 +101,15 @@ ED25519_SPECCHECK = 'third_party/libs/ed25519-speccheck'
 # The commit novifinancial/ed25519-speccheck is pinned at: the twelve Ed25519 edge cases of
 # "Taming the many EdDSAs", its cases.json (libs/crypto/test/ed25519_speccheck_test.cpp).
 ED25519_SPECCHECK_COMMIT = '65519336fda78a3d016e947df6d82848aca0c9da'
+
+# The files of bitcoin/bips that /third_party//bips depends on, so that a test that names it runs
+# again when one of them changes: the vectors the secp256k1 tests read.
+BIPS_FILES = [
+    'libs/bips/bip-0340/test-vectors.csv',
+    'libs/bips/bip-0341/wallet-test-vectors.json',
+    'libs/bips/bip-0324/ellswift_decode_test_vectors.csv',
+    'libs/bips/bip-0324/packet_encoding_test_vectors.csv',
+]
 
 SECP256K1 = 'third_party/libs/secp256k1'
 
@@ -331,6 +341,16 @@ def test_ed25519_speccheck_is_pinned(_: Path) -> None:
     listed = subprocess.run(['git', '-C', str(harness.ROOT), 'ls-files', '-s', ED25519_SPECCHECK],
                             capture_output=True, text=True, check=True)
     assert listed.stdout.split()[:2] == ['160000', ED25519_SPECCHECK_COMMIT], listed.stdout
+
+
+def test_bips_target_files(_: Path) -> None:
+    jamfile = (harness.ROOT / 'third_party' / 'Jamfile').read_text()
+    found = re.search(r'^\.bips-files = \[ glob ([^\]]*)\] ;', jamfile, re.MULTILINE)
+    assert found is not None, 'third_party/Jamfile holds no .bips-files glob'
+    listed = found.group(1).split()
+    assert listed == BIPS_FILES, (
+        f'missing: {[name for name in BIPS_FILES if name not in listed]}, '
+        f'unexpected: {[name for name in listed if name not in BIPS_FILES]}')
 
 
 def test_bearssl_is_pinned(_: Path) -> None:
@@ -882,6 +902,7 @@ CASES = [
     test_ed25519_speccheck_not_checked_out_is_refused,
     test_bips_is_pinned,
     test_ed25519_speccheck_is_pinned,
+    test_bips_target_files,
     test_bearssl_is_pinned,
     test_bearssl_is_built_file_by_file,
     test_bearssl_without_hash_has_cryptos_canary_alone,
