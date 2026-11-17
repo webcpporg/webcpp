@@ -8531,7 +8531,7 @@ each with its decisions as decided. While a proposal is open, its own
 change that builds it moves its decisions into chapter 14 or 15. Their
 conflicts with chapters 1 to 13 are in chapter 19.
 
-### crypto, after 0.1 (accepted 2026-10-11; increments 1 and 2 built in 0.1.0, and the memory option after it, chapter 15)
+### crypto, after 0.1 (accepted 2026-10-11; increments 1 and 2 built in 0.1.0 and the memory option built after 0.1, chapter 15)
 
 The plan (`reference/plan.md`, revised on 2026-11-14) built version 0.1 from
 its increments 1 and 2, and OpenSSL's memory option after it; the owner
