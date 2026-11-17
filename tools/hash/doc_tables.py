@@ -285,15 +285,34 @@ def backend_targets(data: Data, backend: str) -> str:
     return ', '.join(data.backends[backend]['targets'])
 
 
+ASYNCHRONOUS_ONLY = 'asynchronous family only'
+
+
+def asynchronous_only(data: Data, backend: str) -> bool:
+    """Whether only the asynchronous family takes the backend (backends::webcrypto)."""
+    return bool(data.backends[backend].get('asynchronous_only'))
+
+
+def llms_note(data: Data, backend: str) -> str:
+    """backend_note in llms.txt's form, after a comma."""
+    return f', {ASYNCHRONOUS_ONLY}' if asynchronous_only(data, backend) else ''
+
+
+def backend_note(data: Data, backend: str) -> str:
+    """What follows a backend's name in a table: that only the asynchronous family takes it."""
+    return f' ({ASYNCHRONOUS_ONLY})' if asynchronous_only(data, backend) else ''
+
+
 def partial_text(held: dict) -> str:
     """What a partial cell refuses, after its backend's name; nothing for a whole cell."""
     partial = held.get('partial')
     return f' (partial: {cell(partial)})' if partial else ''
 
 
-def backend_text(backend: str, held: dict) -> str:
-    """A cell's backend, with what it refuses when it is partial."""
-    return f'`{backend}`{partial_text(held)}'
+def backend_text(data: Data, backend: str, held: dict) -> str:
+    """A cell's backend, with what it refuses when it is partial, and whether only the
+    asynchronous family takes it."""
+    return f'`{backend}`{backend_note(data, backend)}{partial_text(held)}'
 
 
 def hmacs_text(hmacs: list[str] | None) -> str:
@@ -318,7 +337,7 @@ def backends_table(data: Data, algorithm: dict) -> str:
         for backend, held in function['backends'].items():
             out.append('')
             out.append(f'| `{function["name"]}`')
-            out.append(f'| {backend_text(backend, held)}')
+            out.append(f'| {backend_text(data, backend, held)}')
             out.append(f'| `{data.backends[backend]["jamfile"]}`')
             out.append(f'| {backend_targets(data, backend)}')
             out.append(f'| {hmacs_text(held["hmacs"])}')
@@ -355,14 +374,20 @@ def backends_table(data: Data, algorithm: dict) -> str:
     by_backend: dict[str, list[str]] = {}
     for name, default in defaults:
         by_backend.setdefault(default, []).append(f'`{name}`')
+    used = {b for f in algorithm['functions'] for b in f['backends']}
     for default, names in by_backend.items():
         named = names[0] if len(names) == 1 else \
             ', '.join(names[:-1]) + f' and {names[-1]}'
-        others = sorted({b for f in algorithm['functions'] for b in f['backends']} - {default})
+        others = sorted(b for b in used - {default} if not asynchronous_only(data, b))
         tail = (f'; {", ".join(f"`{b}`" for b in others)} only where the call names it, as its '
                 'second template argument') if others else ''
         out.append(f'The default of {named}: `{default}` on every target, whatever the program '
                    f'links{tail} (<<hash-default-backend>>).')
+        out.append('')
+    for backend in sorted(b for b in used if asynchronous_only(data, b)):
+        out.append(f'`{backend}` serves the asynchronous family alone, on '
+                   f'{backend_targets(data, backend).replace(", ", " and ").capitalize()}, where '
+                   'the type of its asynchronous call names it (<<hash-async-webcrypto>>).')
         out.append('')
     return '\n'.join(out)
 
@@ -376,7 +401,7 @@ def choose_table(data: Data) -> str:
                '| Example')
     for case in data.guide['use_cases']:
         _, function = data.functions[case['function']]
-        jamfiles = ', '.join(f'`{b}`: `{data.backends[b]["jamfile"]}`'
+        jamfiles = ', '.join(f'`{b}`{backend_note(data, b)}: `{data.backends[b]["jamfile"]}`'
                              for b in function['backends'])
         out.append('')
         out.append(f'| {cell(case["need"])}')
@@ -422,7 +447,9 @@ def llms_txt(data: Data) -> str:
              '> Hashing and key derivation for C++20 on every target webcpp has (native, '
              'wasip2, wasip3, Emscripten): Boost.Hash2\'s digests and HMAC, Keccak-256, BLAKE3, '
              'HKDF, PBKDF2, Argon2id and scrypt over C backends. Every function is synchronous, '
-             'returns boost::system::result and allocates nothing in webcpp\'s own code. A '
+             'returns boost::system::result and allocates nothing in webcpp\'s own code; '
+             'async.hpp gives them an asynchronous form over webcpp::asio, and '
+             'backends::webcrypto, the browser\'s WebCrypto, serves that form alone. A '
              'program links /webcpp/hash//hash and the library of each backend it uses. Every '
              'key derivation runs on backends::hash2 unless the call names another backend as '
              'its second template argument; argon2id and scrypt run on backends::sodium, their '
@@ -445,7 +472,7 @@ def llms_txt(data: Data) -> str:
                 continue
             for function in algorithm['functions']:
                 facts = data.guide['functions'][function['name']]
-                backends = ', '.join(f'{b} ({data.backends[b]["jamfile"]}; '
+                backends = ', '.join(f'{b}{llms_note(data, b)} ({data.backends[b]["jamfile"]}; '
                                      f'{backend_targets(data, b)})'
                                      for b in function['backends'])
                 standard = facts.get('standard', algorithm['standard'])
@@ -486,11 +513,13 @@ def backends_chapter(data: Data) -> str:
     lines = chapter_header('Backends', 'hash-backends', 'doc/capabilities.json')
     lines += ['Which backend implements each function, over which hmacs, on which targets, and '
               'what upstream', 'states about its constant time. The backends:', '',
-              '[cols="1,3,1,2,3",options="header"]', '|===',
-              '| Backend | Library | Licence | Jamfile | Targets']
+              '[cols="1,3,1,2,2,2",options="header"]', '|===',
+              '| Backend | Library | Licence | Jamfile | Targets | Called by']
     for b in table['backends']:
+        called = (f'{ASYNCHRONOUS_ONLY} (async.hpp)' if b.get('asynchronous_only')
+                  else 'every function of its cells')
         lines += ['', f'| {b["name"]}', f'| {b["library"]}', f'| {b["licence"]}',
-                  f'| `{b["jamfile"]}`', f'| {", ".join(b["targets"])}']
+                  f'| `{b["jamfile"]}`', f'| {", ".join(b["targets"])}', f'| {called}']
     lines += ['|===', '']
     chapters: dict[str, list[dict]] = {}
     for algorithm in table['algorithms']:
@@ -507,7 +536,8 @@ def backends_chapter(data: Data) -> str:
                         continue
                     hmacs = ', '.join(c['hmacs']) if c['hmacs'] else '-'
                     targets = ', '.join(data.backends[name]['targets'])
-                    lines += ['', f'| {function["name"]}', f'| {name}{partial_text(c)}',
+                    lines += ['', f'| {function["name"]}',
+                              f'| {name}{backend_note(data, name)}{partial_text(c)}',
                               f'| {hmacs}',
                               f'| {c["constant_time"]["value"]}', f'| {targets}']
         lines += ['|===', '']
