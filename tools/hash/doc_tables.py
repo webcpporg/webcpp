@@ -348,21 +348,23 @@ def backends_table(data: Data, algorithm: dict) -> str:
     defaults = [(name, default) for name, default in defaults
                 if default in data.functions[name][1]['backends']]
     if not defaults:
-        names = sorted({b for f in algorithm['functions'] for b in f['backends']})
-        out.append(f'One backend, {", ".join(f"`{n}`" for n in names)}: the types take no backend.')
-        out.append('')
+        # Types alone take no backend; a family's tag without a default has said so above.
+        if not families:
+            names = sorted({b for f in algorithm['functions'] for b in f['backends']})
+            out.append(f'One backend, {", ".join(f"`{n}`" for n in names)}: the types take no '
+                       'backend.')
+            out.append('')
         return '\n'.join(out)
-    by_backend: dict[str, list[str]] = {}
+    # One sentence per default and set of other backends, so that each names, as the backends a
+    # call may name instead, those of its own functions alone.
+    by_backend: dict[tuple[str, tuple[str, ...]], list[str]] = {}
     for name, default in defaults:
-        by_backend.setdefault(default, []).append(name)
-    for default, functions in by_backend.items():
+        others = tuple(sorted(set(data.functions[name][1]['backends']) - {default}))
+        by_backend.setdefault((default, others), []).append(name)
+    for (default, others), functions in by_backend.items():
         names = [f'`{name}`' for name in functions]
         named = names[0] if len(names) == 1 else \
             ', '.join(names[:-1]) + f' and {names[-1]}'
-        # The backends a call may name instead: those of these functions, not of the algorithm's
-        # others.
-        others = sorted({b for name in functions
-                         for b in data.functions[name][1]['backends']} - {default})
         tail = (f'; {", ".join(f"`{b}`" for b in others)} only where the call names it, as its '
                 'second template argument') if others else ''
         out.append(f'The default of {named}: `{default}` on every target, whatever the program '
