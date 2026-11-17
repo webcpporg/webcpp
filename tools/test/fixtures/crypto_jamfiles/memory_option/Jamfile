@@ -1,0 +1,15 @@
+# Copyright (c) 2026 WebCpp.org
+#
+# Distributed under the Boost Software License, Version 1.0. (See
+# accompanying file LICENSE_1_0.txt or copy at
+# https://www.boost.org/LICENSE_1_0.txt)
+
+# The memory option as spec section 7.3 gives it: the define and OpenSSL in the
+# requirements of the program's project, so that every target of the program
+# gets both.
+# tag::jamfile[]
+project app
+  : requirements <define>WEBCPP_CRYPTO_OPENSSL_MEMORY_RESOURCE <library>/webcpp/crypto//openssl ;
+
+exe app : app.cpp /webcpp/crypto//crypto ;
+# end::jamfile[]
