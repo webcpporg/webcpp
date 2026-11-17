@@ -95,6 +95,9 @@ None.
 * Fixed a stacked table's caption shrinking to its longest word.
 * Added the user's Jamfiles of webcpp::hash, tested as fixtures of a test of the tools.
 * Changed the lint's canary-pins rule to read webcpp::hash's detail/canary.h beside webcpp::crypto's.
+* Changed wasi-sdk's install to use the release's platform-independent sysroot and builtins, so a WASI program is the same bytes on every host.
+* Fixed OpenSSL's libcrypto keeping the temporary directory it was built in; one fixed prefix makes it the same bytes on every build.
+* Changed webcpp.size-table's tables and webcpp::hash's PBKDF2 throughput table (bench/collect.py) to be built only from release builds.
 * Fixed the WASIp2 test launcher interrupting large finite workloads after 60 seconds.
 * Fixed Chrome provisioning and browser/TLS profile coverage in Asio CI lanes.
 * Added source-built OpenSSL and Cobalt SSL targets for WASIp2.

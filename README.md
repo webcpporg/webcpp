@@ -47,7 +47,8 @@ library on every target are published at <https://webcpporg.github.io/>.
 - Python 3.9 or newer, which compares the examples with their expected output
   and runs the tests of the build itself;
 - for WebAssembly, wasi-sdk 34, whose clang builds for wasm32-wasip2 and
-  wasm32-wasip3, and wasmtime 50.0.1, which runs what it builds;
+  wasm32-wasip3, with the release's platform-independent sysroot (below),
+  and wasmtime 50.0.1, which runs what it builds;
 - for emscripten, Emscripten 6.0.11 from emsdk, and Node, which runs what it
   builds;
 - for trystero's native backend, CMake, which builds libdatachannel 0.24.6 and
@@ -145,8 +146,18 @@ with `python3 tools/openssl/update.py` after changing the source commit.
 ### WebAssembly
 
 Each library declares the targets it is built for. To build them for
-wasm32-wasip2 and wasm32-wasip3, register two clang toolsets against
-wasi-sdk 34 in `~/user-config.jam`:
+wasm32-wasip2 and wasm32-wasip3, install wasi-sdk 34 in `.local/wasi-sdk`
+from the superproject's root, as the CI does:
+
+    bash tools/ci/actions/wasi-sdk/install.sh
+
+It installs the build of wasi-sdk for your system and processor, with the
+release's platform-independent sysroot and compiler-rt builtins in place of
+that build's own, each archive checked against its SHA-256. A per-host
+archive's sysroot carries the paths of the machine that built it in its
+libraries, so the same WASI program would differ from one host to another;
+with the shared sysroot it is the same bytes on every host. Then register
+two clang toolsets against it in `~/user-config.jam`:
 
     local wasi-sdk = /path/to/wasi-sdk ;
     modules.poke : WASI_SDK : $(wasi-sdk) ;

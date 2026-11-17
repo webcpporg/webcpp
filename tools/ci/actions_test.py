@@ -20,7 +20,12 @@ other directory before it downloads anything, and leaves the tree as it was and 
 when it fails. The wit-bindgen action
 installs the build of the runner's system and processor, the program alone, in .local/wit-bindgen,
 where the build looks for it, in place of what was there, and refuses a runner it pins no build
-for before it downloads anything; the wasmtime action installs the pinned build for each runner
+for before it downloads anything; the wasi-sdk action installs the runner's build of wasi-sdk 34.0
+in .local/wasi-sdk, in place of what was there, with the release's platform-independent sysroot and
+compiler-rt builtins in place of the build's own, the same archives on every runner (outside a
+runner, this machine's build), fails, naming the target, when the build has builtins for a target
+the platform-independent archive has none for, and refuses a runner it pins no build for before it
+downloads anything; the wasmtime action installs the pinned build for each runner
 in RUNNER_TEMP/wasmtime, replaces an earlier install, exports its directory through GITHUB_PATH,
 and refuses an unsupported runner before downloading; the wasi-wit action installs the wit/deps
 directory of each crate, wasip2's and wasip3's, in .local/wasi-wit/p2 and .local/wasi-wit/p3,
@@ -49,6 +54,7 @@ from __future__ import annotations
 import hashlib
 import io
 import os
+import platform
 import re
 import shutil
 import socket
@@ -67,6 +73,7 @@ BOOST = CI / 'actions/boost/install.sh'
 WIT_BINDGEN = CI / 'actions/wit-bindgen/install.sh'
 WASMTIME = CI / 'actions/wasmtime/install.sh'
 WASI_WIT = CI / 'actions/wasi-wit/install.sh'
+WASI_SDK = CI / 'actions/wasi-sdk/install.sh'
 EMSDK = CI / 'actions/emsdk/install.sh'
 HELPERS = CI / 'helpers.sh'
 
@@ -561,6 +568,146 @@ def test_wit_bindgen_refuses_a_runner_it_pins_no_build_for(scratch: Path) -> Non
                                 check=False, cwd=scratch, env={**os.environ, **runner})
         assert result.returncode == 1, (system, processor, result.returncode, result.stderr)
         assert (f'install.sh: no wit-bindgen 0.62.0 is pinned for {system} on {processor}'
+                in result.stderr), result.stderr
+    assert downloads(scratch) == []
+    assert not (scratch / '.local').exists()
+
+
+WASI_SDK_RELEASE = 'https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-34'
+
+# The runners the action pins a build of wasi-sdk 34.0 for, the build's name and its digest.
+WASI_SDK_BUILDS = {
+    ('Linux', 'X64'): (
+        'x86_64-linux', 'b761e3a0721dbae9c09a0059e5fdb2bf917d1b4a8a7b430fb3b5aafb0984b2c4'),
+    ('Linux', 'ARM64'): (
+        'arm64-linux', 'f7e243dff54d60bcc576e94d6166b69f410f2500ae4a9ceef34315be10e77971'),
+    ('macOS', 'ARM64'): (
+        'arm64-macos', '9c59398106b417f8f14913380fdf0097a8cc0ff4af9eb3ce0065a859e88d49e9'),
+    ('macOS', 'X64'): (
+        'x86_64-macos', '87d27fa8adc68dee59bfbf2e22a6d34ef717c34d6bf1d8af2a56fc929d9ce0eb'),
+}
+# The release's platform-independent archives, the same on every runner.
+WASI_SYSROOT = (f'{WASI_SDK_RELEASE}/wasi-sysroot-34.0.tar.gz',
+                '9d813544eeebe38b7b8f2244ed591de46b6db812c6dd1a257ff9f0d2a905a2be')
+WASI_BUILTINS = (f'{WASI_SDK_RELEASE}/libclang_rt-34.0.tar.gz',
+                 'eee3e634dcf71aa22b1333391623cf5c9965a637dc428a27b1a858c026c587f1')
+WASI_TARGETS = ('wasm32-unknown-wasip2', 'wasm32-unknown-wasip3')
+
+
+def wasi_sdk_archives(scratch: Path, build: str, sdk_targets: tuple[str, ...] = WASI_TARGETS,
+                      shared_targets: tuple[str, ...] = WASI_TARGETS) -> dict[str, Path]:
+    """Stand-ins of the three archives the action downloads, by URL: the build's wasi-sdk, whose
+    sysroot and builtins (of sdk_targets) say they are the build's, and the release's
+    platform-independent sysroot and builtins (of shared_targets)."""
+    sdk = scratch / 'archive' / build
+    (sdk / 'bin').mkdir(parents=True)
+    clang = sdk / 'bin/clang++'
+    clang.write_text(f'#!/bin/sh\necho "clang version 23.1.0-wasi-sdk (stand-in {build})"\n')
+    clang.chmod(0o755)
+    (sdk / 'share/wasi-sysroot/lib/wasm32-wasip2').mkdir(parents=True)
+    (sdk / 'share/wasi-sysroot/lib/wasm32-wasip2/libc++abi.a').write_text(f'{build}\n')
+    (sdk / 'lib/clang/23/include').mkdir(parents=True)
+    (sdk / 'lib/clang/23/include/stdint.h').write_text('header\n')
+    for target in sdk_targets:
+        (sdk / 'lib/clang/23/lib' / target).mkdir(parents=True)
+        (sdk / 'lib/clang/23/lib' / target / 'libclang_rt.builtins.a').write_text(f'{build}\n')
+    sysroot = scratch / 'archive/sysroot'
+    (sysroot / 'lib/wasm32-wasip2').mkdir(parents=True)
+    (sysroot / 'VERSION').write_text('34.0\n')
+    (sysroot / 'lib/wasm32-wasip2/libc++abi.a').write_text('platform-independent\n')
+    builtins = scratch / 'archive/builtins'
+    for target in shared_targets:
+        (builtins / target).mkdir(parents=True)
+        (builtins / target / 'libclang_rt.builtins.a').write_text('platform-independent\n')
+    return {
+        f'{WASI_SDK_RELEASE}/wasi-sdk-34.0-{build}.tar.gz':
+            tar_gz(scratch / f'wasi-sdk-34.0-{build}.tar.gz', sdk, f'wasi-sdk-34.0-{build}'),
+        WASI_SYSROOT[0]: tar_gz(scratch / 'wasi-sysroot-34.0.tar.gz', sysroot,
+                                'wasi-sysroot-34.0'),
+        WASI_BUILTINS[0]: tar_gz(scratch / 'libclang_rt-34.0.tar.gz', builtins,
+                                 'libclang_rt-34.0'),
+    }
+
+
+def tree_of(directory: Path) -> dict[str, str]:
+    """Every file under directory, by its path relative to it, and its text."""
+    return {path.relative_to(directory).as_posix(): path.read_text()
+            for path in sorted(directory.rglob('*')) if path.is_file()}
+
+
+def test_wasi_sdk_installs_the_platform_independent_sysroot_and_builtins(scratch: Path) -> None:
+    for (system, processor), (build, digest) in WASI_SDK_BUILDS.items():
+        root = scratch / build
+        root.mkdir()
+        script = serving_tree(root, 'wasi-sdk', WASI_SDK, wasi_sdk_archives(root, build))
+        stale = root / '.local/wasi-sdk/stale'
+        stale.parent.mkdir(parents=True)
+        stale.write_text('stale\n')
+        runner = {'RUNNER_OS': system, 'RUNNER_ARCH': processor,
+                  'RUNNER_TEMP': str(root / 'temp')}
+        result = subprocess.run(['bash', str(script)], capture_output=True, text=True,
+                                check=False, cwd=root, env={**os.environ, **runner})
+        assert result.returncode == 0, (build, result.returncode, result.stderr)
+        installed = root / '.local/wasi-sdk'
+        assert f'stand-in {build}' in result.stdout, (build, result.stdout)
+        assert tree_of(installed) == {
+            'bin/clang++': f'#!/bin/sh\necho "clang version 23.1.0-wasi-sdk (stand-in {build})"\n',
+            'lib/clang/23/include/stdint.h': 'header\n',
+            'lib/clang/23/lib/wasm32-unknown-wasip2/libclang_rt.builtins.a':
+                'platform-independent\n',
+            'lib/clang/23/lib/wasm32-unknown-wasip3/libclang_rt.builtins.a':
+                'platform-independent\n',
+            'share/wasi-sysroot/VERSION': '34.0\n',
+            'share/wasi-sysroot/lib/wasm32-wasip2/libc++abi.a': 'platform-independent\n',
+        }, (build, tree_of(installed))
+        assert downloads(root) == [(f'{WASI_SDK_RELEASE}/wasi-sdk-34.0-{build}.tar.gz', digest),
+                                   WASI_SYSROOT, WASI_BUILTINS], (build, downloads(root))
+        assert list((root / 'temp').iterdir()) == [], (build, list((root / 'temp').iterdir()))
+
+
+def test_wasi_sdk_outside_a_runner_installs_this_machine_s_build(scratch: Path) -> None:
+    system = {'Darwin': 'macOS', 'Linux': 'Linux'}.get(platform.system(), '')
+    processor = {'arm64': 'ARM64', 'aarch64': 'ARM64', 'x86_64': 'X64',
+                 'AMD64': 'X64'}.get(platform.machine(), '')
+    if (system, processor) not in WASI_SDK_BUILDS:
+        print('test_wasi_sdk_outside_a_runner_installs_this_machine_s_build: no wasi-sdk is '
+              f'pinned for {platform.system()} on {platform.machine()}; skipped')
+        return
+    build, digest = WASI_SDK_BUILDS[(system, processor)]
+    script = serving_tree(scratch, 'wasi-sdk', WASI_SDK, wasi_sdk_archives(scratch, build))
+    environ = {k: v for k, v in os.environ.items()
+               if k not in ('RUNNER_OS', 'RUNNER_ARCH', 'RUNNER_TEMP')}
+    result = subprocess.run(['bash', str(script)], capture_output=True, text=True, check=False,
+                            cwd=scratch, env=environ)
+    assert result.returncode == 0, (result.returncode, result.stderr)
+    assert f'stand-in {build}' in result.stdout, result.stdout
+    assert downloads(scratch)[0] == (f'{WASI_SDK_RELEASE}/wasi-sdk-34.0-{build}.tar.gz', digest)
+    assert (scratch / '.local/wasi-sdk/share/wasi-sysroot/VERSION').is_file()
+
+
+def test_wasi_sdk_fails_on_a_target_without_platform_independent_builtins(
+        scratch: Path) -> None:
+    archives = wasi_sdk_archives(scratch, 'x86_64-linux',
+                                 sdk_targets=WASI_TARGETS + ('wasm32-unknown-wasip1',))
+    script = serving_tree(scratch, 'wasi-sdk', WASI_SDK, archives)
+    runner = {'RUNNER_OS': 'Linux', 'RUNNER_ARCH': 'X64', 'RUNNER_TEMP': str(scratch / 'temp')}
+    result = subprocess.run(['bash', str(script)], capture_output=True, text=True, check=False,
+                            cwd=scratch, env={**os.environ, **runner})
+    assert result.returncode == 1, (result.returncode, result.stderr)
+    assert ('install.sh: libclang_rt-34.0.tar.gz has no builtins for wasm32-unknown-wasip1'
+            in result.stderr), result.stderr
+    assert list((scratch / 'temp').iterdir()) == []
+
+
+def test_wasi_sdk_refuses_a_runner_it_pins_no_build_for(scratch: Path) -> None:
+    script = serving_tree(scratch, 'wasi-sdk', WASI_SDK, {})
+    for system, processor in (('Windows', 'X64'), ('Linux', 'ARM')):
+        runner = {'RUNNER_OS': system, 'RUNNER_ARCH': processor,
+                  'RUNNER_TEMP': str(scratch / 'temp')}
+        result = subprocess.run(['bash', str(script)], capture_output=True, text=True,
+                                check=False, cwd=scratch, env={**os.environ, **runner})
+        assert result.returncode == 1, (system, processor, result.returncode, result.stderr)
+        assert (f'install.sh: no wasi-sdk 34.0 is pinned for {system} on {processor}'
                 in result.stderr), result.stderr
     assert downloads(scratch) == []
     assert not (scratch / '.local').exists()
@@ -1354,6 +1501,10 @@ CASES: list[Callable[[Path], None]] = [
     test_boost_source_that_fails_leaves_the_tree_and_no_files,
     test_wit_bindgen_installs_the_runners_build_alone,
     test_wit_bindgen_refuses_a_runner_it_pins_no_build_for,
+    test_wasi_sdk_installs_the_platform_independent_sysroot_and_builtins,
+    test_wasi_sdk_outside_a_runner_installs_this_machine_s_build,
+    test_wasi_sdk_fails_on_a_target_without_platform_independent_builtins,
+    test_wasi_sdk_refuses_a_runner_it_pins_no_build_for,
     test_wasmtime_installs_the_pinned_runners_build,
     test_wasmtime_refuses_a_runner_it_pins_no_build_for,
     test_wasi_wit_installs_each_crates_wit_deps,

@@ -8,7 +8,7 @@
 """Writes the manifest of a page program's suspension variants, and the table of their sizes.
 
 Usage: variants.py manifest --out FILE --jspi SCRIPT --asyncify SCRIPT
-       variants.py table --out FILE MANIFEST...
+       variants.py table --variant VARIANT --out FILE MANIFEST...
 
 manifest writes FILE, <name>.variants.json, which a page's loader reads: for each variant, the
 script, its JavaScript glue, relative to FILE's directory and written with /, and the size in bytes
@@ -17,7 +17,10 @@ exist is refused before anything is written.
 
 table writes FILE, a Markdown table of every manifest's sizes, one row per program named by its
 manifest's file name less .variants.json, sorted, with asyncify's size over jspi's, and prints it.
-A manifest that lacks a variant, its script or a positive integer size is refused, naming it.
+A manifest that lacks a variant, its script or a positive integer size is refused, naming it. A
+table is built only from release builds: VARIANT, the b2 variant the manifests were built at
+(webcpp.size-table, which requires <variant>release, gives it), other than release is refused
+before anything is written.
 
 A failure is a line on the standard error and status 1; a usage error is status 2.
 """
@@ -33,6 +36,8 @@ from typing import Any
 
 VARIANTS = ('jspi', 'asyncify')
 SUFFIX = '.variants.json'
+# The only b2 variant a size table is built from.
+RELEASE = 'release'
 
 
 class Refused(Exception):
@@ -83,9 +88,12 @@ def program(path: Path) -> str:
     return name[:-len(SUFFIX)] if name.endswith(SUFFIX) else name
 
 
-def table(out: Path, manifests: list[Path]) -> str:
-    """Writes out, the Markdown table of the manifests' sizes, and returns it; refuses a manifest
-    that is not one before it writes anything."""
+def table(out: Path, manifests: list[Path], variant: str) -> str:
+    """Writes out, the Markdown table of the manifests' sizes, and returns it; refuses a build at
+    another variant than release, and a manifest that is not one, before it writes anything."""
+    if variant != RELEASE:
+        raise Refused(f'a size table is built only from release builds, not variant={variant}: '
+                      'webcpp.size-table requires <variant>release')
     rows = sorted((program(path), *sizes(path)) for path in manifests)
     lines = ['| program | jspi | asyncify | asyncify / jspi |', '| --- | ---: | ---: | ---: |']
     lines += [f'| {name} | {jspi:,} | {asyncify:,} | {asyncify / jspi:.2f} |'
@@ -105,6 +113,8 @@ def parser() -> argparse.ArgumentParser:
     for variant in VARIANTS:
         written.add_argument(f'--{variant}', type=Path, required=True)
     sized = commands.add_parser('table', help='write the table of the manifests\' sizes')
+    sized.add_argument('--variant', required=True,
+                       help='the b2 variant the manifests were built at: only release is taken')
     sized.add_argument('--out', type=Path, required=True)
     sized.add_argument('manifests', type=Path, nargs='+')
     return parsed
@@ -118,7 +128,7 @@ def main(argv: list[str]) -> int:
             manifest(arguments.out, {variant: getattr(arguments, variant)
                                      for variant in VARIANTS})
         else:
-            sys.stdout.write(table(arguments.out, arguments.manifests))
+            sys.stdout.write(table(arguments.out, arguments.manifests, arguments.variant))
     except Refused as refused:
         print(f'variants.py: {refused}', file=sys.stderr)
         return 1
