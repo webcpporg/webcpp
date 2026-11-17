@@ -7188,10 +7188,11 @@ and not built is in chapter 17.
   `include/webcpp/crypto/detail/defaults.hpp` (libs/crypto); design D32 and the
   owner's answers Q1 to Q4 of 2026-11-17 (proposals, `foundation/design.md`,
   `reference/roadmap.md`).
-- **The page warns that natively without OpenSSL a server on ARM runs
-  BearSSL's portable code, and names `/webcpp/crypto//openssl`; it states no
-  factor.** BearSSL has no ARMv8 AES or PMULL code; the slowdown on the
-  source-built OpenSSL is not measured.
+- **The page warns that a native program that names BearSSL runs BearSSL's
+  portable code on an ARM server, where the default, OpenSSL, uses ARMv8's AES;
+  the examples use the default and link `/webcpp/crypto//openssl` natively; it
+  states no factor.** BearSSL has no ARMv8 AES or PMULL code; the slowdown on
+  the source-built OpenSSL is not measured.
   Source: `doc/aead.adoc` (libs/crypto).
 
 **Randomness and memory.**
