@@ -13,7 +13,9 @@ passes on what it wrote, and fails naming `python3 tools/hash/doc_tables.py --wr
 generated file was edited by hand, is missing or is left over. A guide that lacks a function of
 the capability table, or describes one it does not have, fails, and so does a use case whose
 example is not there, and so does a function of the capability table without a default. Every
-function's default is the capability table's, `hash2` for HKDF whatever the measurements say.
+function's default is the capability table's, `hash2` for HKDF whatever the measurements say. A
+family's tag (spec 2.15) names a default of the order hash2, xkcp, blake3, sodium, or none, and
+one whose cell comes in a later increment is said so; a partial cell says what it refuses.
 Without doc/measurements.json the tables say so, carry no measured column and render no
 measurements.adoc; with it (a fixture in its shape) they carry the throughput and the size, and
 measurements.adoc renders it as the dated reference that decides nothing; a hand edit of the
@@ -206,6 +208,47 @@ def test_every_function_names_its_default(scratch: Path) -> None:
     expect('the type sha2_256 has a default' in done.stderr, done.stderr)
 
 
+def family_row(table: dict, name: str) -> dict:
+    for algorithm in table['algorithms']:
+        for function in algorithm['functions']:
+            if function['name'] == name:
+                return function
+    raise AssertionError(f'no row {name}')
+
+
+def test_a_family_default_is_of_the_order_or_none(scratch: Path) -> None:
+    library = scratch_library(scratch)
+    path = library / 'doc/capabilities.json'
+    table = json.loads(path.read_text(encoding='utf-8'))
+    family_row(table, 'digests::sha2_256')['default'] = 'openssl'
+    family_row(table, 'macs::hmac<digests::sha2_256>')['default'] = None
+    path.write_text(json.dumps(table), encoding='utf-8')
+    done = run(library, '--write')
+    expect(done.returncode == 1, 'a family default outside the order was rendered')
+    expect('the tag digests::sha2_256 has the default openssl' in done.stderr, done.stderr)
+    expect('hmac<digests::sha2_256>' not in done.stderr, f'none is a default: {done.stderr}')
+
+    family_row(table, 'digests::sha2_256')['default'] = 'hash2'
+    path.write_text(json.dumps(table), encoding='utf-8')
+    files = write_ok(library)
+    hmac = files['generated/backends-hmac.adoc']
+    expect('`macs::hmac<digests::sha2_256>` has no default backend: the call names one' in hmac,
+           hmac)
+    expect('| macs::hmac<digests::sha2_256>\n| none: the call names its backend'
+           in files['backends.adoc'], 'the default backends do not say none')
+
+
+def test_a_later_default_and_a_partial_cell_are_said(scratch: Path) -> None:
+    library = scratch_library(scratch)
+    files = write_ok(library)
+    shake = files['generated/backends-sha3-shake.adoc']
+    expect('The default of `digests::shake_128` is `xkcp`, whose cell comes with a later '
+           'increment' in shake, shake)
+    expect('`hash2` (partial: an output past 32 bytes, one Boost.Hash2 result)' in shake, shake)
+    expect('| hash2 (partial: an output past 64 bytes' in files['backends.adoc'],
+           'the backends chapter does not say what the partial cell refuses')
+
+
 def test_without_measurements_the_tables_say_so(scratch: Path) -> None:
     library = scratch_library(scratch)
     files = write_ok(library)
@@ -221,7 +264,7 @@ def test_without_measurements_the_tables_say_so(scratch: Path) -> None:
     expect('The default of `argon2id`: `sodium` on every target'
            in files['generated/backends-argon2id.adoc'], 'Argon2id\'s default')
     expect('One backend, `hash2`: the types take no backend.'
-           in files['generated/backends-blake2.adoc'], 'a type\'s backend')
+           in files['generated/backends-non-cryptographic.adoc'], 'a type\'s backend')
     backends = files['backends.adoc']
     expect('| pbkdf2\n| hash2' in backends and '| scrypt\n| sodium' in backends,
            'backends.adoc does not list the defaults')
@@ -322,6 +365,8 @@ CASES: list[Callable[[Path], None]] = [
     test_the_guide_covers_the_capability_table,
     test_a_use_case_names_an_example_that_is_there,
     test_every_function_names_its_default,
+    test_a_family_default_is_of_the_order_or_none,
+    test_a_later_default_and_a_partial_cell_are_said,
     test_without_measurements_the_tables_say_so,
     test_with_measurements_the_tables_carry_them,
     test_a_hand_edit_of_the_measurements_fails,

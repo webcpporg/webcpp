@@ -309,6 +309,10 @@ webcpp::hash's and webcpp::crypto's OpenSSL, when libs/hash is checked out.
 llms.txt from its capability table and measurements, and checks them when its page is built.
 * Changed tools/hash/doc_tables.py to give each chapter two comparison tables, each under the
 eight columns from which a table scrolls.
+* Changed tools/hash/doc_tables.py to render webcpp::hash's family tags (digest_of, hasher, mac,
+argon2): a default of hash2, xkcp, blake3 or sodium, or none, and what a partial cell refuses.
+* Added /third_party//openssl_evp_data, OpenSSL's EVP test files at the pin, which webcpp::hash's
+tests read at run time on every target.
 
 [#webcpp-0-1-0-compilers-tested]
 == Compilers tested

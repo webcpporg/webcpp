@@ -40,9 +40,10 @@ reference measured once, on 2026-11-16, that decides nothing: the default backen
 missing, or is left over; the doc build runs it (doc/Jamfile). It also fails when guide.json
 lacks a public name of the capability table, names one it does not have, or a use case names
 an example that example/ does not hold; when a function of the capability table has no default
-or a type has one; and when measurements.json's digest does not match its content (a hand edit
-of the reference). Nothing in the output depends on the time or the machine, so the files
-change only with their data.
+among its backends, a family's tag (kind digest, mac or kdf) a default outside the order hash2,
+xkcp, blake3, sodium (design D34; null for a tag with none), or a type has one; and when
+measurements.json's digest does not match its content (a hand edit of the reference). Nothing in
+the output depends on the time or the machine, so the files change only with their data.
 """
 
 from __future__ import annotations
@@ -73,6 +74,10 @@ OWN_CHAPTERS = ('backends.adoc', 'measurements.adoc')
 TARGETS = ('native', 'wasip2', 'wasip3', 'emscripten')
 # The chapters whose throughput is a rate over 1 MiB (the measured table's workloads).
 RATE_CHAPTERS = ('digests', 'macs', 'non-cryptographic')
+# The kinds of a family's tag (spec 2.15), and the backends that may be its default, in their order
+# (design D34): the first that has the tag; never bearssl, openssl, botan or webcrypto.
+FAMILY_KINDS = ('digest', 'mac', 'kdf')
+FAMILY_DEFAULTS = ('hash2', 'xkcp', 'blake3', 'sodium')
 
 
 class Failure(Exception):
@@ -120,15 +125,22 @@ class Data:
 
     def check_defaults(self) -> None:
         """A function (a template with a Backend parameter) names its default, a backend that
-        has it; a type has none."""
+        has it; a family's tag names one of the order, or none (null), whose cell may come in a
+        later increment; a type has none."""
         faults = []
         for name, (_, function) in self.functions.items():
             default = function.get('default')
-            if function['kind'] == 'function' and default not in function['backends']:
+            kind = function['kind']
+            if kind == 'function' and default not in function['backends']:
                 faults.append(f'doc/capabilities.json: the function {name} has no default '
                               f'among its backends ({default})')
-            if function['kind'] != 'function' and default is not None:
+            elif kind in FAMILY_KINDS and default is not None and default not in FAMILY_DEFAULTS:
+                faults.append(f'doc/capabilities.json: the tag {name} has the default {default}, '
+                              f'which is not one of {", ".join(FAMILY_DEFAULTS)}')
+            elif kind == 'type' and default is not None:
                 faults.append(f'doc/capabilities.json: the type {name} has a default, {default}')
+            elif kind not in FAMILY_KINDS + ('function', 'type'):
+                faults.append(f'doc/capabilities.json: {name} has the unknown kind {kind}')
         if faults:
             raise Failure('\n'.join(faults))
 
@@ -273,6 +285,17 @@ def backend_targets(data: Data, backend: str) -> str:
     return ', '.join(data.backends[backend]['targets'])
 
 
+def partial_text(held: dict) -> str:
+    """What a partial cell refuses, after its backend's name; nothing for a whole cell."""
+    partial = held.get('partial')
+    return f' (partial: {cell(partial)})' if partial else ''
+
+
+def backend_text(backend: str, held: dict) -> str:
+    """A cell's backend, with what it refuses when it is partial."""
+    return f'`{backend}`{partial_text(held)}'
+
+
 def hmacs_text(hmacs: list[str] | None) -> str:
     if hmacs is None:
         return '-'
@@ -295,7 +318,7 @@ def backends_table(data: Data, algorithm: dict) -> str:
         for backend, held in function['backends'].items():
             out.append('')
             out.append(f'| `{function["name"]}`')
-            out.append(f'| `{backend}`')
+            out.append(f'| {backend_text(backend, held)}')
             out.append(f'| `{data.backends[backend]["jamfile"]}`')
             out.append(f'| {backend_targets(data, backend)}')
             out.append(f'| {hmacs_text(held["hmacs"])}')
@@ -310,6 +333,20 @@ def backends_table(data: Data, algorithm: dict) -> str:
     out.extend(f'* `{backend}`: {cell(source)}' for backend, source in sources)
     out.append('')
     defaults = [(f['name'], f['default']) for f in algorithm['functions'] if f['default']]
+    families = [f for f in algorithm['functions'] if f['kind'] in FAMILY_KINDS]
+    for function in families:
+        if function['default'] is None:
+            out.append(f'`{function["name"]}` has no default backend: the call names one of its '
+                       'backends (<<hash-default-backend>>).')
+            out.append('')
+        elif function['default'] not in function['backends']:
+            out.append(f'The default of `{function["name"]}` is `{function["default"]}`, whose '
+                       'cell comes with a later increment: until then a call on the default '
+                       'stops at compile time, and a call names a backend of the table '
+                       '(<<hash-default-backend>>).')
+            out.append('')
+    defaults = [(name, default) for name, default in defaults
+                if default in data.functions[name][1]['backends']]
     if not defaults:
         names = sorted({b for f in algorithm['functions'] for b in f['backends']})
         out.append(f'One backend, {", ".join(f"`{n}`" for n in names)}: the types take no backend.')
@@ -389,7 +426,9 @@ def llms_txt(data: Data) -> str:
              'program links /webcpp/hash//hash and the library of each backend it uses. Every '
              'key derivation runs on backends::hash2 unless the call names another backend as '
              'its second template argument; argon2id and scrypt run on backends::sodium, their '
-             'only backend.', '',
+             'only backend. The families digest_of, hasher, mac and argon2 take a tag of '
+             'digests, macs or kdfs and a backend, by default the first of backends::hash2, '
+             'backends::xkcp, backends::blake3 and backends::sodium that has the tag.', '',
              'Primitives only: protocol steps (BIP39, hash160, EIP-55, Nostr ids, NIP-44) '
              'are what a domain library builds from these functions; the guide shows them as '
              'examples, never as this library\'s API.', '',
@@ -468,7 +507,8 @@ def backends_chapter(data: Data) -> str:
                         continue
                     hmacs = ', '.join(c['hmacs']) if c['hmacs'] else '-'
                     targets = ', '.join(data.backends[name]['targets'])
-                    lines += ['', f'| {function["name"]}', f'| {name}', f'| {hmacs}',
+                    lines += ['', f'| {function["name"]}', f'| {name}{partial_text(c)}',
+                              f'| {hmacs}',
                               f'| {c["constant_time"]["value"]}', f'| {targets}']
         lines += ['|===', '']
     lines += ['=== The default backends', '',
@@ -478,6 +518,8 @@ def backends_chapter(data: Data) -> str:
     for _, function in data.functions.values():
         if function['default'] is not None:
             lines += ['', f'| {function["name"]}', f'| {function["default"]}']
+        elif function['kind'] in FAMILY_KINDS:
+            lines += ['', f'| {function["name"]}', '| none: the call names its backend']
     lines += ['|===', '', '=== Constant time', '',
               'What each backend\'s upstream states, and where:', '']
     seen = set()
