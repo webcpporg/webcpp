@@ -1733,10 +1733,10 @@ jobs:
   `external` is `true`, the
   external libraries, built with Clang 18, whose headers the reference of
   the library, or of a library it uses, parses (none today).
-- **lint:** `tools/lint/lint.sh` in eight shards (`--shard 1/8` to `8/8`),
-  with wasi-sdk's clang-format and clang-tidy, Node, Clang 18 as b2's default
-  toolset and the wasip2 and wasip3 toolsets after it (`matrix.py register
-  clang-18 wasip2 wasip3`), wit-bindgen and the WASI WIT, which the WASI dry
+- **lint:** `tools/lint/lint.sh` in twelve shards (`--shard 1/12` to
+  `12/12`), with wasi-sdk's clang-format and clang-tidy, Node, Clang 18 as
+  b2's default toolset and the wasip2 and wasip3 toolsets after it
+  (`matrix.py register clang-18 wasip2 wasip3`), wit-bindgen and the WASI WIT, which the WASI dry
   runs of the compilation database need; when the plan's `has-emscripten`
   is `true`, the emscripten toolset after them and emsdk, without its system
   libraries (`libraries: 'false'`), whose `em++` the emscripten dry run

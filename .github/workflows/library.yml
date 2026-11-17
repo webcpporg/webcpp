@@ -490,15 +490,19 @@ jobs:
     name: Lint (${{ matrix.shard }}/${{ strategy.job-total }})
     needs: plan
     runs-on: ubuntu-24.04
-    # A shard took up to 56 minutes on main (run 43689720995) and over 60 on
-    # webcpporg/webcpp#17 (runs 43757162271, 43809686703, 43893730166), where 60 cancelled
-    # it: which files a shard draws changes with every file the list gains, and the runners'
-    # speed varies.
+    # Every shard writes the same compilation database, then analyses its slice. With eight
+    # shards, on main's runs 43883027557, 43991796754, 44060501712 and 44061028543, the
+    # database took 12 to 15 minutes on most runners and the slice 17 to 25: the slices weigh
+    # alike, each 1.2 to 1.7 times its own runner's database. A runner one in eight times
+    # runs at half that speed, the database in 26 minutes, so its shard took 67 to 72 minutes,
+    # and over 60 cancelled Lint (5/8) and Lint (2/8). Twelve shards cut the slice by a third:
+    # such a runner's shard takes about 57 minutes, the others 30 to 40; 90 leaves a third
+    # spare for the slower runner and the files to come.
     timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
     steps:
       # The whole history, of the superproject and of every library: the banned-word rule reads
       # every commit, not only the tree.
