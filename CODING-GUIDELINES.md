@@ -1328,6 +1328,14 @@ site's own decisions follow in the next sections.
   late value keeps gcc's Unix link options (`--start-group`, `-Bstatic`,
   rpath), which wasm-component-ld rejects, from being chosen.
   Source: `AGENTS.md` (webcpp); `Jamroot` (webcpp).
+- **A wasip2 or wasip3 program built without debug symbols, as a release
+  is, carries no debug information: the Jamroot links it with
+  `-Wl,--strip-debug` (its region `wasi-strip-debug`); a debug build keeps
+  its DWARF.** The owner decided it on 2026-11-17. wasi-sdk's prebuilt
+  libc++, libc++abi and libunwind carry DWARF, which wasm-ld copied into
+  every program: a release example of xactor was 3,489,365 bytes on wasip2,
+  397,678 without it.
+  Source: `AGENTS.md` (webcpp); `Jamroot` (webcpp).
 - **Every target builds with exceptions on and RTTI is never restricted; a
   build without exceptions is its builder's choice, which every library
   supports.** Whether a program uses exceptions is the choice of whoever

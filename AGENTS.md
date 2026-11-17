@@ -948,6 +948,20 @@ outside JSPI, gives the module's exports short names: an abort prints
 only what the program uses. `tools/test/emscripten_test.py` pins each level
 and its order.
 
+**A program on wasip2 or wasip3 built without debug symbols carries no debug
+information** (the Jamroot's region `wasi-strip-debug`): with
+`<debug-symbols>off`, as a release build has it, it links with
+`-Wl,--strip-debug`, which wasm-component-ld passes to wasm-ld, so the core
+module of the component has no `.debug` section. wasi-sdk's prebuilt libc++,
+libc++abi and libunwind carry DWARF, which wasm-ld otherwise copies into
+every program that links them, a release one too: xactor's release example
+`xactor_quick_start` was 3,489,365 bytes on wasip2 and is 397,678. A debug
+build, or a release that asks for `debug-symbols=on`, keeps it.
+`tools/test/webcpp_jam_test.py` reads every custom section of a release, a
+debug and a `debug-symbols=on` program on both targets, nested core modules
+included. An Emscripten release link, at `-O3`, keeps no debug section
+already.
+
 **The suspension variant on emscripten.** A program on emscripten that
 suspends, waiting inside a call for the browser's event loop, is built for
 one of two variants, the feature `webcpp-suspend` (the region `suspend` of

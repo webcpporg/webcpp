@@ -372,6 +372,17 @@ project /webcpp
       <toolset>clang-wasip3,<exception-handling>on:<cxxflags>"-fwasm-exceptions -mllvm -wasm-use-legacy-eh=false"
       <toolset>clang-wasip3,<exception-handling>on:<linkflags>"-fwasm-exceptions -lunwind"
       # end::wasi-exceptions[]
+      # wasi-sdk's prebuilt libc++, libc++abi and libunwind carry DWARF, which
+      # wasm-ld copies into every program that links them, a release one
+      # too: up to most of its bytes, naming the paths of the machine that
+      # built wasi-sdk. A program built without debug symbols, as a release
+      # is, is linked with --strip-debug, which wasm-component-ld passes to
+      # wasm-ld, so the core module of a wasip2 or wasip3 component has no
+      # .debug section. A debug build, or one that asks for debug-symbols=on,
+      # keeps them.
+      # tag::wasi-strip-debug[]
+      <target-os>wasi,<debug-symbols>off:<linkflags>-Wl,--strip-debug
+      # end::wasi-strip-debug[]
       # The compiler first: a broken one would fail Boost's check too.
       <conditional>@gcc-probe
       <conditional>@boost-check
