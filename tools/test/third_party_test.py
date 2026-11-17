@@ -85,8 +85,10 @@ WYCHEPROOF_COMMIT = '12fd3aaf33eb5fa1f52e026912ee00c054f9d984'
 BIPS = 'third_party/libs/bips'
 
 # The commit the Bitcoin Improvement Proposals' repository is pinned at: the test vectors of
-# BIP340, BIP341, BIP 324 and BIP 327 (libs/crypto/test/secp256k1_bip340_test.cpp,
-# secp256k1_xonly_tweak_test.cpp, secp256k1_ellswift_test.cpp, secp256k1_musig_test.cpp).
+# BIP340, BIP341, BIP 324, BIP 327 and BIP 352 (libs/crypto/test/secp256k1_bip340_test.cpp,
+# secp256k1_xonly_tweak_test.cpp, secp256k1_ellswift_test.cpp, secp256k1_musig_test.cpp;
+# secp256k1_silent_payments_test.cpp reads BIP 352's through libsecp256k1's vectors.h, derived
+# from the same file, which test_bip352_vectors_match_libsecp256k1 checks).
 BIPS_COMMIT = '927b6de9915c9262615a6399de51b200f81e5aa4'
 
 BLAKE2 = 'third_party/libs/blake2'
@@ -117,6 +119,7 @@ BIPS_FILES = [
     'libs/bips/bip-0327/vectors/sig_agg_vectors.json',
     'libs/bips/bip-0327/vectors/sign_verify_vectors.json',
     'libs/bips/bip-0327/vectors/tweak_vectors.json',
+    'libs/bips/bip-0352/send_and_receive_test_vectors.json',
 ]
 
 SECP256K1 = 'third_party/libs/secp256k1'
@@ -359,6 +362,15 @@ def test_bips_target_files(_: Path) -> None:
     assert listed == BIPS_FILES, (
         f'missing: {[name for name in BIPS_FILES if name not in listed]}, '
         f'unexpected: {[name for name in listed if name not in BIPS_FILES]}')
+
+
+def test_bip352_vectors_match_libsecp256k1(_: Path) -> None:
+    # libsecp256k1's vectors.h, which the silent payments test reads, is derived from its copy of
+    # BIP 352's vectors; the two pins hold the same bytes, so the test checks BIP 352's own.
+    bips_copy = harness.ROOT / BIPS / 'bip-0352' / 'send_and_receive_test_vectors.json'
+    secp256k1_copy = (harness.ROOT / SECP256K1 / 'src' / 'modules' / 'silentpayments'
+                      / 'bip352_send_and_receive_test_vectors.json')
+    assert bips_copy.read_bytes() == secp256k1_copy.read_bytes(), (bips_copy, secp256k1_copy)
 
 
 def test_bearssl_is_pinned(_: Path) -> None:
@@ -911,6 +923,7 @@ CASES = [
     test_bips_is_pinned,
     test_ed25519_speccheck_is_pinned,
     test_bips_target_files,
+    test_bip352_vectors_match_libsecp256k1,
     test_bearssl_is_pinned,
     test_bearssl_is_built_file_by_file,
     test_bearssl_without_hash_has_cryptos_canary_alone,

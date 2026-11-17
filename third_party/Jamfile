@@ -110,12 +110,14 @@ alias wycheproof : : <conditional>@wycheproof-checked-out : :
 explicit wycheproof ;
 
 # bitcoin/bips, shallow: test data, never compiled, each BIP's files under the
-# licence its header states (BIP340 BSD-2-Clause; BIP341, BIP 324 and BIP 327
-# BSD-3-Clause). A test that names bips reads BIP340's
+# licence its header states (BIP340 and BIP 352 BSD-2-Clause; BIP341, BIP 324
+# and BIP 327 BSD-3-Clause). A test that names bips reads BIP340's
 # bip-0340/test-vectors.csv, BIP341's bip-0341/wallet-test-vectors.json,
 # BIP 324's bip-0324/ellswift_decode_test_vectors.csv and
-# bip-0324/packet_encoding_test_vectors.csv, and BIP 327's eight
-# bip-0327/vectors/*_vectors.json from the directory
+# bip-0324/packet_encoding_test_vectors.csv, BIP 327's eight
+# bip-0327/vectors/*_vectors.json, and BIP 352's
+# bip-0352/send_and_receive_test_vectors.json (whose copy in libsecp256k1 its
+# vectors.h is derived from) from the directory
 # WEBCPP_TEST_BIPS names, with forward slashes, the directory given to
 # wasmtime on WASI (webcpp.data), and runs again when one of the files
 # changes.
@@ -132,7 +134,8 @@ path-constant BIPS : libs/bips ;
     libs/bips/bip-0327/vectors/nonce_gen_vectors.json
     libs/bips/bip-0327/vectors/sig_agg_vectors.json
     libs/bips/bip-0327/vectors/sign_verify_vectors.json
-    libs/bips/bip-0327/vectors/tweak_vectors.json ] ;
+    libs/bips/bip-0327/vectors/tweak_vectors.json
+    libs/bips/bip-0352/send_and_receive_test_vectors.json ] ;
 
 rule bips-checked-out ( properties * )
 {
