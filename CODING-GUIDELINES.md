@@ -8469,8 +8469,7 @@ What webcpp does not have yet, and the chapters that mention it:
   Trystero can then retain its protocol over those shared facilities.
 - **crypto after 0.1** (chapter 17): constant time checked, sizes and
   throughput measured, the browser lane, the CI's nightly level, NIST CAVP's
-  vectors, ChaCha20-Poly1305, Botan, and trystero's code on the library (its
-  sealers, its random and its signer).
+  vectors, ChaCha20-Poly1305 and Botan.
 - **The libraries web developers use most,** brought to C++: a JavaScript
   interpreter (QuickJS), libp2p, HTTP fetch.
 - **The site, increments 2 to 8.** Increment 1 is done: the site's
@@ -8631,18 +8630,6 @@ is in chapter 15; what follows is decided and not built.
   additional data between messages; Botan 3.13.0 has no allocation hook.
   Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
   section 3.6, and `design.md` D9 and D17 (proposals).
-
-**trystero's migration (increment 3).**
-
-- **trystero moves onto the library: `ciphers::aes256_gcm` with its 16-byte
-  IVs replaces its native and browser sealers, `random_device::fill` its
-  `random`, `curves::secp256k1::keypair` its signer, and its direct use of
-  OpenSSL goes.** 0.1 built only its build's half: trystero links
-  `/third_party//secp256k1`, its code unchanged. Errors are values, so a
-  system without entropy fails the operation that needed the bytes with
-  `entropy_unavailable` where trystero aborts today.
-  Source: `libraries/crypto/openspec/changes/genesis/design.md` Migration
-  Plan (proposals).
 
 **Open questions for the owner.**
 
