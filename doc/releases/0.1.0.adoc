@@ -75,6 +75,7 @@ None.
 * Fixed driven-test execution and descendant cleanup on Windows.
 * Fixed driven-test executable reuse for Windows and WASI builds.
 * Improved lint preparation by separating OpenSSL headers from archive builds and upstream tests.
+* Changed the CI's lint to twelve shards, which a slow runner no longer takes past its time limit.
 * Added the user's Jamfiles of webcpp::crypto, tested as fixtures of a test of the tools.
 * Added same-as: to crypto's user Jamfiles test, which keeps copied programs identical.
 * Added not-contains: to crypto's user Jamfiles test, which shows the canary is a library's only link error.
