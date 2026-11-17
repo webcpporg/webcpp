@@ -7190,9 +7190,9 @@ and not built is in chapter 17.
   `reference/roadmap.md`).
 - **The page warns that a native program that names BearSSL runs BearSSL's
   portable code on an ARM server, where the default, OpenSSL, uses ARMv8's AES;
-  the examples use the default and link `/webcpp/crypto//openssl` natively; it
-  states no factor.** BearSSL has no ARMv8 AES or PMULL code; the slowdown on
-  the source-built OpenSSL is not measured.
+  the examples use the default and link it on every target with
+  `/webcpp/crypto//gcm-default`; it states no factor.** BearSSL has no ARMv8
+  AES or PMULL code; the slowdown on the source-built OpenSSL is not measured.
   Source: `doc/aead.adoc` (libs/crypto).
 
 **Randomness and memory.**
@@ -7363,8 +7363,8 @@ and not built is in chapter 17.
 - **The user's Jamfiles are the fixtures `tools/test/fixtures/crypto_jamfiles/<case>/`,
   each with its `<case>.outcome` (targets, build, what runs print, what each
   linker prints), built on a scratch superproject: `web`, `server`,
-  `both_bearssl_named`, `block`, `encrypt_and_sign`, `openssl_linked`,
-  `sign`, `sign_small`, and the stops (canaries, OpenSSL on Emscripten); a
+  `both_bearssl_named`, `gcm_default`, `block`, `encrypt_and_sign`,
+  `openssl_linked`, `sign`, `sign_small`, and the stops (canaries, OpenSSL on Emscripten); a
   `same-as:` line keeps a copied program equal to its original, and the page
   includes each Jamfile and outcome by tag.** A user's Jamfile is what an
   agent copies, so each one shown is built and run as it is shown.
