@@ -86,7 +86,12 @@ BIPS = 'third_party/libs/bips'
 # The commit the Bitcoin Improvement Proposals' repository is pinned at: the test vectors of
 # BIP340 and BIP341 (libs/crypto/test/secp256k1_bip340_test.cpp, secp256k1_xonly_tweak_test.cpp).
 BIPS_COMMIT = '927b6de9915c9262615a6399de51b200f81e5aa4'
+
 BLAKE2 = 'third_party/libs/blake2'
+
+# The commit BLAKE2's reference repository is pinned at: the test vectors of webcpp::hash's
+# BLAKE2b (testvectors/blake2b-kat.txt and blake2-kat.json, read through
+# /third_party//blake2_vectors).
 BLAKE2_COMMIT = 'ed1974ea83433eba7b2d95c5dcd9ac33cb847913'
 
 SECP256K1 = 'third_party/libs/secp256k1'
