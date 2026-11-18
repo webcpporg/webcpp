@@ -39,18 +39,7 @@ runs:
           'tools/webcpp-libdatachannel.jam', 'tools/ci/actions/third-party/**',
           'tools/ci/actions/gcc/**', 'tools/ci/actions/wasi-sdk/**', 'tools/ci/actions/emsdk/**',
           'tools/ci/actions/container/**', 'tools/ci/container/**') }}
-      run: |
-        # The runner image's compilers, and the job's: a key holds no comma, which a name may.
-        prefix="third-party-v1-${JOB//[^A-Za-z0-9._-]/-}-${ImageOS:-image}-${ImageVersion:-0}-"
-        prefix="$prefix${INPUTS:0:16}-"
-        names="$(find bin/third_party/openssl bin/third_party/libdatachannel -mindepth 1 \
-          -maxdepth 1 -name 'config-*' 2>/dev/null | sort)"
-        {
-          echo "prefix=$prefix"
-          echo "key=$prefix$(sha256sum <<< "$names" | cut -c1-16)"
-          # A job whose programs use neither library has no configuration to save.
-          echo "built=$([[ -n "$names" ]] && echo true || echo false)"
-        } >> "$GITHUB_OUTPUT"
+      run: bash tools/ci/actions/third-party/key.sh
 
     - name: Restore the third-party builds
       id: restore
