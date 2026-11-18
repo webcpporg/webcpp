@@ -4,8 +4,8 @@
 # accompanying file LICENSE_1_0.txt or copy at
 # https://www.boost.org/LICENSE_1_0.txt)
 
-# Two files of one program, one compiled with the memory option and one without, as a
-# project that gives the define to one target alone builds them.
+# Two files of one program, one compiled with the memory option and one without,
+# as a project that gives the define to one target alone builds them.
 # tag::jamfile[]
 obj with : with.cpp /webcpp/crypto//crypto /webcpp/crypto//openssl
   : <define>WEBCPP_CRYPTO_OPENSSL_MEMORY_RESOURCE ;
