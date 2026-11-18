@@ -141,7 +141,12 @@ explicit bips ;
 # configuration, bin/third_party/openssl/config-<hash>, named by the bytes of
 # the inputs below and the build command (tools/webcpp-third-party.jam).
 import webcpp-openssl ;
-.openssl-headers = [ glob libs/openssl/include/openssl/*.h ] ;
+# OpenSSL's VMS prologue and epilogue, __DECC_INCLUDE_*.H, are no header of the
+# install (tools/openssl/build.py leaves them out). b2's glob, which ignores
+# case on Windows, would declare them outputs never made, which would generate
+# the headers again on every run.
+.openssl-headers = [ glob libs/openssl/include/openssl/*.h
+    : libs/openssl/include/openssl/__DECC_* ] ;
 .openssl-templates = [ glob libs/openssl/include/openssl/*.h.in ] ;
 webcpp-openssl.declare $(WEBCPP_ROOT)
     : $(.openssl-headers:B).h $(.openssl-templates:B)
