@@ -30,16 +30,19 @@ int main() {
     for (std::size_t index = 0; index < iv.size(); ++index) {
         iv[index] = static_cast<std::uint8_t>(0x40 + index);
     }
-    std::array<std::uint8_t, 12> const additional_data{0x50, 0x51, 0x52, 0x53, 0xc0, 0xc1,
-                                                       0xc2, 0xc3, 0xc4, 0xc5, 0xc6, 0xc7};
+    std::array<std::uint8_t, 12> const additional_data{
+        0x50, 0x51, 0x52, 0x53, 0xc0, 0xc1, 0xc2, 0xc3, 0xc4, 0xc5, 0xc6, 0xc7,
+    };
     constexpr std::string_view sunscreen =
         "Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the "
         "future, sunscreen would be it.";
     std::array<std::uint8_t, sunscreen.size()> plaintext{};
-    std::copy(sunscreen.begin(), sunscreen.end(), plaintext.begin());
+    std::ranges::copy(sunscreen, plaintext.begin());
     auto data = plaintext;
-    std::array<std::uint8_t, 16> const expected_tag{0xc0, 0x87, 0x59, 0x24, 0xc1, 0xc7, 0x98, 0x79,
-                                                    0x47, 0xde, 0xaf, 0xd8, 0x78, 0x0a, 0xcf, 0x49};
+    std::array<std::uint8_t, 16> const expected_tag{
+        0xc0, 0x87, 0x59, 0x24, 0xc1, 0xc7, 0x98, 0x79,
+        0x47, 0xde, 0xaf, 0xd8, 0x78, 0x0a, 0xcf, 0x49,
+    };
     std::array<std::uint8_t, 8> const expected_head{0xbd, 0x6d, 0x17, 0x9d, 0x3e, 0x83, 0xd4, 0x3b};
     auto sealer = aead::make(key);
     bool ok = false;
