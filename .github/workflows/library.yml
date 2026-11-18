@@ -34,7 +34,10 @@
 #               emscripten lane emsdk and Node, which runs its programs, and a lane whose entry
 #               says external the libraries its libraries need, built with the lane's compilers.
 #               GCC 14 and Clang 18 run their b2 in a container with no network but the loopback,
-#               whose image is prepared separately and pulled by its immutable digest.
+#               whose image is prepared separately and pulled by its immutable digest. A lane, an
+#               own lane but OpenSSL's upstream suite and the lint restore the OpenSSL and
+#               libdatachannel configurations they built before, which b2 -a keeps, and save
+#               those their cache lacks (tools/ci/actions/third-party).
 #   own-lanes   one job per own lane of a library and target it runs on, which runs the lane
 #               in every directory that declares it there. One that names no target, as an
 #               oracle, runs on Linux x86-64 with Clang 18, and with Node when it runs the
@@ -256,6 +259,14 @@ jobs:
       - if: matrix.container
         uses: ./tools/ci/actions/container
 
+      # The configurations of OpenSSL and libdatachannel this lane built before, which its b2 -a
+      # keeps; it saves those it builds that its cache does not hold.
+      - name: Restore the third-party builds
+        uses: ./tools/ci/actions/third-party
+        with:
+          step: restore
+          job: ${{ matrix.id }}
+
       # The lane registers its toolset in .local/user-config.jam, prints its b2 command and runs
       # it; Windows's Python is python.
       - name: Lane
@@ -264,6 +275,13 @@ jobs:
           LANE: ${{ toJSON(matrix) }}
           PYTHON: ${{ runner.os == 'Windows' && 'python' || 'python3' }}
         run: '"$PYTHON" tools/ci/matrix.py lane "$LANE"'
+
+      - name: Save the third-party builds
+        if: ${{ !cancelled() }}
+        uses: ./tools/ci/actions/third-party
+        with:
+          step: save
+          job: ${{ matrix.id }}
 
       - name: Upload the lane's XML
         if: always() && steps.lane.outputs.xml != ''
@@ -370,12 +388,28 @@ jobs:
           python3 libs/beast/test/applications/inventory_test.py
           python3 libs/beast/test/applications/driver_test.py
 
+      # As a lane's, except where the lane runs OpenSSL's upstream suite, which a configuration
+      # restored from the cache would not run again.
+      - name: Restore the third-party builds
+        if: ${{ !startsWith(matrix.lane, 'openssl-upstream') }}
+        uses: ./tools/ci/actions/third-party
+        with:
+          step: restore
+          job: own-${{ matrix.id || matrix.name }}
+
       # It registers its toolset in .local/user-config.jam, prints its b2 command and runs it.
       - name: Own lane
         id: lane
         env:
           LANE: ${{ toJSON(matrix) }}
         run: python3 tools/ci/matrix.py own-lane "$LANE"
+
+      - name: Save the third-party builds
+        if: ${{ !cancelled() && !startsWith(matrix.lane, 'openssl-upstream') }}
+        uses: ./tools/ci/actions/third-party
+        with:
+          step: save
+          job: own-${{ matrix.id || matrix.name }}
 
       - name: Upload the lane's XML
         if: always() && steps.lane.outputs.xml != ''
@@ -554,6 +588,14 @@ jobs:
       # builds, with the toolset of that target: a WASI dry run generates the bindings its
       # commands include, and an emscripten command is analysed with the sysroot of the cache the
       # emsdk action restores.
+      #
+      # The configured headers of OpenSSL and libdatachannel, which each shard generates for its
+      # compilation database, come from the lint's cache, which the first shard saves.
+      - name: Restore the third-party headers
+        uses: ./tools/ci/actions/third-party
+        with:
+          step: restore
+          job: lint
       - name: Lint
         env:
           SHARD: ${{ matrix.shard }}/${{ strategy.job-total }}
@@ -566,6 +608,12 @@ jobs:
           python3 tools/ci/matrix.py register "${toolsets[@]}"
           tools/lint/lint.sh --clang-format .local/wasi-sdk/bin/clang-format \
             --clang-tidy .local/wasi-sdk/bin/clang-tidy --shard "$SHARD"
+      - name: Save the third-party headers
+        if: ${{ !cancelled() && matrix.shard == 1 }}
+        uses: ./tools/ci/actions/third-party
+        with:
+          step: save
+          job: lint
 
   tools:
     name: Tests of the tools (${{ matrix.shard }}/${{ strategy.job-total }})
