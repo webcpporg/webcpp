@@ -6648,15 +6648,17 @@ makes a room read, through webcpp::beast's bounded handshake layer.
   header line in the room's resource, and no byte of a refusal's body, the
   verify callback and its copy of the host, the waits of Beast's timers and
   each keep-alive ping's frame), where in a page the stream's state is in
-  the room's resource; in a page, for each relay connection, the results of
-  webcpp::asio's page resolver, and the strings embind makes of each event's
+  the room's resource; in a page, the strings embind makes of each event's
   type, two for a message; Emscripten's `select()`, Asyncify's unwind data
   when the run suspends, and the storage of the map in which webcpp::asio's
   bridge finds each pending Web Crypto promise.** They belong to a
   dependency or to Asio, and webcpp::webrtc's posts from libdatachannel's
-  threads may not touch a resource used only on the executor; and removing
-  a page relay's needs a change to webcpp::beast's page stream and to
-  webcpp::asio's page resolver (chapter 19).
+  threads may not touch a resource used only on the executor. A page
+  relay's embind strings stay, as the owner decided: each is freed at once,
+  and avoiding them needs webcpp::beast's page stream to read an event's
+  type without a `std::string`. webcpp::asio's page resolver holds its
+  results' one entry in place, so that a page relay's resolution allocates
+  nothing.
   Source: `doc/allocation.adoc` (libs/trystero).
 - **No check catches a resource that ends too early: it is declared before the
   `io_context`, and its lifetime is the user's.** trystero holds a raw pointer
@@ -9825,18 +9827,6 @@ owners.
   both failing closed today; and natively, a deadline on the resolution of a
   relay's name, which has none (the system's resolver on Asio's resolver
   thread).
-- **trystero, a page relay's allocations outside the room's resource.** In a
-  page webcpp::beast's stream reads, through embind, the type of each event
-  of the page's `WebSocket` into a `std::string` (`deliver`), and a
-  message's data type into another (`receive_message`), each a C library
-  allocation: two for each message a relay sends, one each for its open and
-  its close; and
-  webcpp::asio's page resolver makes its results with `new`, three for each
-  connection, five for a host longer than 10 bytes. trystero's
-  `doc/allocation.adoc` lists them, and `platform_page_relay_allocation`
-  counts exactly these; removing them needs a change to webcpp::beast's page
-  stream and to webcpp::asio's page resolver, which the owner has not
-  decided.
 - **trystero, document's cost.** As WP7 measured it, natively at `-O2` and
   before document took an allocator, document reads a relay's event in
   about 12 us, where Boost.JSON took 1.6 us, and the chat's debug
