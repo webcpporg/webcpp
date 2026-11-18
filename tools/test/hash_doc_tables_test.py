@@ -361,8 +361,8 @@ def test_without_measurements_the_tables_say_so(scratch: Path) -> None:
     expect('| pbkdf2\n| hash2' in backends and '| scrypt\n| sodium' in backends,
            'backends.adoc does not list the defaults')
     expect('Backends: hash2 (/webcpp/hash//hash' in files['llms.txt'], 'llms.txt has no backends')
-    expect('Every key derivation runs on backends::hash2' in files['llms.txt'],
-           'llms.txt does not say the default')
+    expect('HKDF and PBKDF2 run on backends::hash2 unless the call names another backend'
+           in files['llms.txt'], 'llms.txt does not say the default')
 
 
 def test_with_measurements_the_tables_carry_them(scratch: Path) -> None:
