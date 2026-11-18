@@ -9099,7 +9099,7 @@ summary.
   `organization/openspec/changes/site-increments-4-5/specs/site/spec.md`
   (proposals).
 
-### hash (hashing and key derivation over Boost.Hash2 and C backends; wrapper; accepted 2026-11-14, increments 1, 2, 3, 5 and 7 built, not merged)
+### hash (hashing and key derivation over Boost.Hash2 and C backends; wrapper; accepted 2026-11-14, increments 1, 2, 3, 4, 5 and 7 built, not merged)
 
 webcpp::hash is one entry point for hashing and key derivation in a C++20
 program on every target webcpp has, a wrapper (`"port-of": null`). Increment 1
@@ -9120,10 +9120,17 @@ SipHash-2-4x, BLAKE2b subkeys (`blake2b_subkey.hpp`), SHA-2, SHA-3, SHAKE,
 TurboSHAKE, HMAC, and Argon2i and Argon2id with one lane; increment 3 gives them
 XKCP's surface: Keccak-224 to Keccak-512, SHA-3, SHAKE, SP 800-185's cSHAKE,
 KMAC, TupleHash and ParallelHash, and RFC 9861's KangarooTwelve and TurboSHAKE;
-increment 5 gives them BearSSL's MD5, SHA-1, SHA-2, TLS 1.0's MD5-SHA1, SHAKE
-and HMAC, each reached only by naming `backends::bearssl`. The C libraries are
-built by `third_party/Jamfile` (`xkcp`, `blake3`, `sodium`, `bearssl`, each with
-a canary), their own suites by the `c-suites` lane (`test/c_suites`), the
+increment 4 gives them OpenSSL's surface, each reached only by naming
+`backends::openssl` (native, wasip2 and wasip3): MD5, SHA-1, SHA-2, SHA-3,
+SHAKE, Keccak-224 to Keccak-512, BLAKE2, RIPEMD-160, TLS 1.0's MD5-SHA1 and
+SM3; HMAC, KMAC, keyed BLAKE2 and SipHash; scrypt, and Argon2d, Argon2i and
+Argon2id with every parameter of RFC 9106; and the key derivations of
+standards (`kdf_standards.hpp`), SP 800-108's KBKDF, SP 800-56C's one-step KDF
+and ANSI X9.63's KDF, which have no default backend; increment 5 gives them
+BearSSL's MD5, SHA-1, SHA-2, TLS 1.0's MD5-SHA1, SHAKE and HMAC, each reached
+only by naming `backends::bearssl`. The C libraries are built by
+`third_party/Jamfile` (`xkcp`, `blake3`, `sodium`, `bearssl`, each with a
+canary), their own suites by the `c-suites` lane (`test/c_suites`), the
 examples are in `example/` and the documentation in `doc/`. Every function
 reports failure as a `boost::system::result`, takes its data as `std::span` and
 allocates nothing in webcpp's own code; increment 7 adds an asynchronous family
@@ -9168,12 +9175,14 @@ and G4); the proposal, with the specification, the design and the plan, is in
   `keccak_256`, `blake3`, HKDF, PBKDF2, Argon2id, scrypt, the default backend
   and the measured table; the second, built, is the families and libsodium's
   whole surface; the third, built, is XKCP's whole surface through the families;
+  the fourth, built, is OpenSSL's whole surface through the families and the key
+  derivations of standards, each reached only by naming `backends::openssl`;
   the fifth, built, is BearSSL's MD5, SHA-1, SHA-2, TLS 1.0's MD5-SHA1 and SHAKE
   through `digest_of` and `hasher`, and its HMAC through `mac`, each reached
   only by naming `backends::bearssl`; the seventh, built, adds the browser
   backend over WebCrypto through a parallel asynchronous family, whose cells
-  `doc/capabilities.json` marks asynchronous only; the others widen the other
-  backends' surface (OpenSSL's, Botan's).
+  `doc/capabilities.json` marks asynchronous only; the sixth widens Botan's
+  surface.
   Source: `libraries/hash/openspec/changes/genesis/reference/spec.md` section
   1.5 (proposals).
 

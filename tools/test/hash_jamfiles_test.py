@@ -43,6 +43,8 @@ NO_FIXTURE = {
                             'the message (the fixture openssl_on_emscripten)',
     'webcrypto_off_emscripten': 'its message is off Emscripten alone: there the asynchronous '
                                 'family takes backends::webcrypto',
+    'kbkdf_hmac_on_openssl': 'it names /webcpp/hash//openssl, which Emscripten refuses before '
+                             'the message (the fixture openssl_on_emscripten)',
 }
 
 DIRECTIVE = re.compile(r'^// expected-error@\S+ \{\{(.*)\}\}$', re.MULTILINE)

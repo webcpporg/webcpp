@@ -10,4 +10,4 @@
 [all]
 targets: emscripten
 build: fails
-contains: webcpp::hash: scrypt is in backends::sodium alone. Name backends::sodium and add /third_party//sodium to the program's Jamfile.
+contains: webcpp::hash: scrypt is in backends::sodium and backends::openssl alone. Name one, and add /third_party//sodium or /webcpp/hash//openssl to the program's Jamfile.
