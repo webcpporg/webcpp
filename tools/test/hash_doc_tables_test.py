@@ -56,11 +56,12 @@ def expect(condition: bool, message: str) -> None:
 
 
 def scratch_library(scratch: Path) -> Path:
-    """A library with the real capability table and guide, and an example file for each use
-    case."""
+    """A library with the real capability table, guide and public headers, and an example file
+    for each use case."""
     library = scratch / 'hash'
     (library / 'doc').mkdir(parents=True)
     (library / 'example').mkdir()
+    shutil.copytree(LIBRARY / 'include', library / 'include')
     for name in ('capabilities.json', 'guide.json'):
         shutil.copy(LIBRARY / 'doc' / name, library / 'doc' / name)
     guide = json.loads((library / 'doc/guide.json').read_text(encoding='utf-8'))
@@ -334,21 +335,70 @@ def test_an_asynchronous_backend_s_targets_are_spelled(scratch: Path) -> None:
 
 
 def test_llms_txt_s_defaults_are_the_table_s(scratch: Path) -> None:
+    """Each clause whole, its template position the header's: argon2id's and scrypt's backend is
+    their only template argument, hkdf's and pbkdf2's the second, after the hmac."""
     library = scratch_library(scratch)
     llms = write_ok(library)['llms.txt']
-    expect('argon2id and scrypt run on backends::sodium unless the call names '
-           'backends::openssl' in llms, llms.split('\n\n')[1])
-    expect('kbkdf, sskdf and x963kdf have no default backend, and the call names '
-           'backends::openssl' in llms, llms.split('\n\n')[1])
+    expect('By default, hkdf_extract, hkdf_expand and hkdf run on backends::hash2 unless the '
+           'call names another of its backends as its second template argument; pbkdf2 runs on '
+           'backends::hash2 unless the call names backends::openssl as its second template '
+           'argument; blake2b_subkey runs on backends::sodium alone; kbkdf, sskdf and x963kdf '
+           'have no default backend, and the call names backends::openssl as its second template '
+           'argument; argon2id and scrypt run on backends::sodium unless the call names '
+           'backends::openssl as its only template argument. The families' in llms,
+           llms.split('\n\n')[1])
 
     def scrypt_alone(table: dict) -> None:
         family_row(table, 'scrypt')['backends'].pop('openssl')
     edit_capabilities(library, scrypt_alone)
     llms = write_ok(library)['llms.txt']
-    expect('argon2id runs on backends::sodium unless the call names backends::openssl' in llms,
+    expect('; blake2b_subkey and scrypt run on backends::sodium alone; ' in llms,
            llms.split('\n\n')[1])
-    expect('blake2b_subkey and scrypt run on backends::sodium alone' in llms,
-           llms.split('\n\n')[1])
+    expect('; argon2id runs on backends::sodium unless the call names backends::openssl as its '
+           'only template argument. ' in llms, llms.split('\n\n')[1])
+
+
+def test_a_backend_s_position_is_its_header_s(scratch: Path) -> None:
+    """The template argument a call names its backend as is read from the header that declares
+    the template: every generated sentence follows a moved parameter, and a header that does not
+    declare it fails."""
+    library = scratch_library(scratch)
+    files = write_ok(library)
+    expect('The default of `argon2id`: `sodium` on every target, whatever the program links; '
+           '`openssl` only where the call names it, as its only template argument '
+           '(<<hash-default-backend>>).' in files['generated/backends-argon2id.adoc'],
+           files['generated/backends-argon2id.adoc'])
+    expect('The default of `scrypt`: `sodium` on every target, whatever the program links; '
+           '`openssl` only where the call names it, as its only template argument '
+           '(<<hash-default-backend>>).' in files['generated/backends-scrypt.adoc'],
+           files['generated/backends-scrypt.adoc'])
+    expect('The default of `kdfs::argon2i` and `kdfs::argon2id`: `sodium` on every target, '
+           'whatever the program links; `openssl` only where the call names it, as its second '
+           'template argument (<<hash-default-backend>>).'
+           in files['generated/backends-argon2.adoc'], files['generated/backends-argon2.adoc'])
+    expect('The default of `pbkdf2`: `hash2` on every target, whatever the program links; '
+           '`openssl` only where the call names it, as its second template argument '
+           '(<<hash-default-backend>>).' in files['generated/backends-pbkdf2.adoc'],
+           files['generated/backends-pbkdf2.adoc'])
+    header = library / 'include/webcpp/hash/scrypt.hpp'
+    text = header.read_text(encoding='utf-8')
+    moved = 'template <class Fixture = void, class Backend = default_backend<kdfs::scrypt>>'
+    expect('template <class Backend = default_backend<kdfs::scrypt>>' in text, text)
+    header.write_text(text.replace('template <class Backend = default_backend<kdfs::scrypt>>',
+                                   moved, 1), encoding='utf-8')
+    files = write_ok(library)
+    expect('`openssl` only where the call names it, as its second template argument'
+           in files['generated/backends-scrypt.adoc'], files['generated/backends-scrypt.adoc'])
+    expect('argon2id runs on backends::sodium unless the call names backends::openssl as its '
+           'only template argument; scrypt runs on backends::sodium unless the call names '
+           'backends::openssl as its second template argument.' in files['llms.txt'],
+           files['llms.txt'].split('\n\n')[1])
+    header.write_text(text.replace('scrypt(', 'scrypt_gone(').replace('scrypt (', 'gone ('),
+                      encoding='utf-8')
+    done = run(library, '--write')
+    expect(done.returncode == 1, 'a header without the template was rendered')
+    expect('webcpp/hash/scrypt.hpp declares no template scrypt with a Backend parameter'
+           in done.stderr, done.stderr)
 
 
 def edit_capabilities(library: Path, edit: Callable[[dict], None]) -> None:
@@ -591,6 +641,7 @@ CASES: list[Callable[[Path], None]] = [
     test_an_asynchronous_backend_is_never_a_default,
     test_an_asynchronous_backend_s_targets_are_spelled,
     test_llms_txt_s_defaults_are_the_table_s,
+    test_a_backend_s_position_is_its_header_s,
     test_a_default_names_only_its_functions_backends,
     test_a_tag_without_a_default_is_not_said_a_type,
     test_a_function_without_a_backend_of_the_order_has_no_default,

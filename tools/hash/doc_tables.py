@@ -25,7 +25,9 @@ reference measured once, on 2026-11-16, that decides nothing: the default backen
   smallest program on Emscripten, then where it is used, each with its source, and when to
   choose it);
 - generated/backends-<algorithm>.adoc: the backends of each algorithm, from the capability
-  table (backend, the Jamfile line, targets, hmacs, constant time), and each function's default;
+  table (backend, the Jamfile line, targets, hmacs, constant time), and each function's default,
+  with the template argument a call names another backend as, read from the header that declares
+  the template (the library's include/);
 - generated/choose.adoc: the decision table "Choose by use case", whose backend column is the
   capability table's;
 - generated/measured.adoc: the includes of the data chapters, backends.adoc and
@@ -44,7 +46,9 @@ default that is not among its backends, or none (null) though a backend of the o
 xkcp, blake3, sodium has it; when a family's tag (kind digest, mac or kdf) names a default
 outside that order (design D34; null for a tag with none) or one without its cell; when any
 default is a backend that only the asynchronous family takes, a type has a default, or a row
-has an unknown kind; when a tag of digests or macs sits outside its namespace's chapter; and
+has an unknown kind; when a tag of digests or macs sits outside its namespace's chapter; when
+the header a row names declares no template of it (or of its family) with a Backend parameter;
+and
 when measurements.json's digest does not match its content (a hand edit of the reference).
 Nothing in the output depends on the time or the machine, so the files change only with their
 data.
@@ -55,6 +59,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -84,6 +89,10 @@ FAMILY_KINDS = ('digest', 'mac', 'kdf')
 FAMILY_DEFAULTS = ('hash2', 'xkcp', 'blake3', 'sodium')
 # The chapter each namespace's tags belong in: a tag of macs is listed with the MACs.
 NAMESPACE_CHAPTERS = {'digests::': 'digests', 'macs::': 'macs'}
+# The templates a family's tag is the first template argument of, by its kind, each declared in
+# the tag's header: the position of their Backend is read there.
+FAMILY_TEMPLATES = {'digest': ('digest_of', 'hasher'), 'mac': ('mac',), 'kdf': ('argon2',)}
+ORDINALS = ('first', 'second', 'third', 'fourth')
 # How the guide spells each target in prose.
 TARGET_NAMES = {'native': 'native', 'wasip2': 'wasip2', 'wasip3': 'wasip3',
                 'emscripten': 'Emscripten'}
@@ -132,6 +141,39 @@ class Data:
         self.check_defaults()
         self.check_chapters()
         self.check_digest()
+        # The template argument each function's and each tag's call names its backend as.
+        self.arguments = {name: self.backend_argument(function)
+                          for name, (_, function) in self.functions.items()
+                          if function['kind'] == 'function' or function['kind'] in FAMILY_KINDS}
+
+    def backend_argument(self, function: dict) -> str:
+        """The words "as its <position> template argument", where a call names the backend,
+        read from the header that declares the template (the function's own, or its family's
+        templates), so that no sentence states a position the signature does not have."""
+        names = FAMILY_TEMPLATES.get(function['kind'], (function['name'],))
+        header = function['header']
+        path = self.library / 'include' / header
+        try:
+            text = path.read_text(encoding='utf-8')
+        except OSError as error:
+            raise Failure(f'{path}: {error}') from error
+        # (position, number of parameters) of the Backend in each declaration of each template.
+        found = set()
+        for name in names:
+            places = {(i, len(parameters)) for parameters in template_parameters(text, name)
+                      for i, parameter in enumerate(parameters)
+                      if re.match(r'(?:class|typename)\s+Backend\b', parameter)}
+            if not places:
+                raise Failure(f'{header} declares no template {name} with a Backend parameter '
+                              f'(doc/capabilities.json, {function["name"]})')
+            found |= places
+        indices = {i for i, _ in found}
+        if len(indices) != 1:
+            raise Failure(f'{header}: {listed(list(names))} take the Backend at different '
+                          f'positions (doc/capabilities.json, {function["name"]})')
+        (index,) = indices
+        position = 'only' if all(count == 1 for _, count in found) else ORDINALS[index]
+        return f'as its {position} template argument'
 
     def check_defaults(self) -> None:
         """A function (a template with a Backend parameter) names its default, a backend that
@@ -322,6 +364,30 @@ def backend_targets(data: Data, backend: str) -> str:
     return ', '.join(data.backends[backend]['targets'])
 
 
+def template_parameters(text: str, name: str) -> list[list[str]]:
+    """The template parameter lists of each declaration of the template `name` (a function or a
+    class) in a header's text, its comments removed: each list split at its top-level commas."""
+    code = re.sub(r'//[^\n]*|/\*.*?\*/', ' ', text, flags=re.DOTALL)
+    found = []
+    for match in re.finditer(r'\btemplate\s*<', code):
+        depth, end = 1, match.end()
+        while depth and end < len(code):
+            depth += {'<': 1, '>': -1}.get(code[end], 0)
+            end += 1
+        head = re.match(r'[^;{(]*', code[end:])
+        if head is None or not re.search(rf'(?<![\w:]){re.escape(name)}\s*$', head.group(0)):
+            continue
+        parameters, depth, start = [], 0, match.end()
+        for i in range(match.end(), end - 1):
+            depth += {'<': 1, '(': 1, '>': -1, ')': -1}.get(code[i], 0)
+            if code[i] == ',' and depth == 0:
+                parameters.append(code[start:i].strip())
+                start = i + 1
+        parameters.append(code[start:end - 1].strip())
+        found.append(parameters)
+    return found
+
+
 def listed(names: list[str]) -> str:
     """Names as prose lists them: a, b and c."""
     return names[0] if len(names) == 1 else ', '.join(names[:-1]) + f' and {names[-1]}'
@@ -418,7 +484,8 @@ def backends_table(data: Data, algorithm: dict) -> str:
     for function in families:
         if function['default'] is None:
             out.append(f'`{function["name"]}` has no default backend: the call names one of its '
-                       'backends (<<hash-default-backend>>).')
+                       f'backends, {data.arguments[function["name"]]} '
+                       '(<<hash-default-backend>>).')
             out.append('')
     if not defaults:
         # Types alone take no backend; a family's tag without a default has said so above.
@@ -430,20 +497,20 @@ def backends_table(data: Data, algorithm: dict) -> str:
         return '\n'.join(out)
     # One sentence per default and set of other backends, so that each names, as the backends a
     # call may name instead, those of its own functions alone.
-    by_backend: dict[tuple[str, tuple[str, ...]], list[str]] = {}
+    by_backend: dict[tuple[str, tuple[str, ...], str], list[str]] = {}
     for name, default in defaults:
         # The backends a call may name instead: those of this function, not of the algorithm's
         # others, and never one only the asynchronous family takes.
         others = tuple(sorted(b for b in set(data.functions[name][1]['backends']) - {default}
                               if not asynchronous_only(data, b)))
-        by_backend.setdefault((default, others), []).append(name)
+        by_backend.setdefault((default, others, data.arguments[name]), []).append(name)
     used = {b for f in algorithm['functions'] for b in f['backends']}
-    for (default, others), functions in by_backend.items():
+    for (default, others, argument), functions in by_backend.items():
         names = [f'`{name}`' for name in functions]
         named = names[0] if len(names) == 1 else \
             ', '.join(names[:-1]) + f' and {names[-1]}'
-        tail = (f'; {", ".join(f"`{b}`" for b in others)} only where the call names it, as its '
-                'second template argument') if others else ''
+        tail = (f'; {", ".join(f"`{b}`" for b in others)} only where the call names it, '
+                f'{argument}') if others else ''
         out.append(f'The default of {named}: `{default}` on every target, whatever the program '
                    f'links{tail} (<<hash-default-backend>>).')
         out.append('')
@@ -506,10 +573,10 @@ def measured_includes(data: Data) -> str:
 
 def function_defaults(data: Data) -> str:
     """The defaults of the functions with a Backend parameter, as the capability table names
-    them: one clause per default and per backend a call may name instead (none, one, or several,
-    never one only the asynchronous family takes), and one for the functions without a
-    default."""
-    clauses: dict[tuple[str | None, str], list[str]] = {}
+    them: one clause per default, per backend a call may name instead (none, one, or several,
+    never one only the asynchronous family takes) and per template argument the call names it as
+    (the header's), and one for the functions without a default."""
+    clauses: dict[tuple[str | None, str, str], list[str]] = {}
     for name, (_, function) in data.functions.items():
         if function['kind'] != 'function':
             continue
@@ -525,20 +592,21 @@ def function_defaults(data: Data) -> str:
             instead = f'backends::{others[0]}'
         else:
             instead = 'another of its backends'
-        clauses.setdefault((default, instead), []).append(name)
+        clauses.setdefault((default, instead, data.arguments[name] if instead else ''),
+                           []).append(name)
     sentences = []
-    for (default, instead), names in clauses.items():
+    for (default, instead, argument), names in clauses.items():
         many = len(names) > 1
         if default is None:
             sentences.append(f'{listed(names)} {"have" if many else "has"} no default backend, '
-                             f'and the call names {instead}')
+                             f'and the call names {instead} {argument}')
         elif not instead:
             sentences.append(f'{listed(names)} {"run" if many else "runs"} on '
                              f'backends::{default} alone')
         else:
             sentences.append(f'{listed(names)} {"run" if many else "runs"} on '
-                             f'backends::{default} unless the call names {instead} as its '
-                             'second template argument')
+                             f'backends::{default} unless the call names {instead} '
+                             f'{argument}')
     return f'By default, {"; ".join(sentences)}.' if sentences else ''
 
 
