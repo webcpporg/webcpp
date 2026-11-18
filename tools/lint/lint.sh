@@ -298,11 +298,22 @@ PYTHON
         # open-addressing containers include <arm_neon.h>, which it does not have, so it is told to
         # leave NEON out there and read Boost.Unordered's portable path, on which no analysis of
         # webcpp's own code depends.
+        # Nor does it ship the sanitizer interface headers, sanitizer/msan_interface.h and its
+        # siblings, which a native program built with a sanitizer includes (crypto's
+        # constant-time lane): when the host compiler's resource directory holds them, it is
+        # searched after every other directory (-idirafter), so that only what clang-tidy's own
+        # headers lack, sanitizer/, is read from there.
         host_target=''
         host_sysroot=''
         host_define=''
+        host_headers=''
         if [ -n "$(cat "${work_directory}/compiler")" ]; then
             host_target="$("$(cat "${work_directory}/compiler")" -dumpmachine)"
+            host_resource="$("$(cat "${work_directory}/compiler")" -print-resource-dir \
+                2>/dev/null || true)"
+            if [ -n "${host_resource}" ] && [ -d "${host_resource}/include/sanitizer" ]; then
+                host_headers="${host_resource}/include"
+            fi
             if [ "$(uname -s)" = Darwin ] && command -v xcrun >/dev/null 2>&1; then
                 host_sysroot="$(xcrun --show-sdk-path)"
             fi
@@ -329,6 +340,9 @@ PYTHON
                 if [ -n "${host_define}" ]; then
                     arguments+=("--extra-arg=${host_define}")
                 fi
+                if [ -n "${host_headers}" ]; then
+                    arguments+=(--extra-arg=-idirafter "--extra-arg=${host_headers}")
+                fi
             fi
             local status=0
             "${clang_tidy}" --quiet "${arguments[@]}" "${file}" \
@@ -336,7 +350,8 @@ PYTHON
             printf '%s\n' "${status}" > "${work_directory}/${index}.status"
         }
         export -f tidy_one
-        export clang_tidy host_target host_sysroot host_define work_directory tidy_exclude
+        export clang_tidy host_target host_sysroot host_define host_headers work_directory \
+            tidy_exclude
 
         # This shard's slice: the files whose position in the sorted list is K modulo N.
         # Interleaving keeps the slices alike, since neighbours are alike (the examples of one

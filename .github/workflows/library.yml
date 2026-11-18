@@ -336,13 +336,15 @@ jobs:
           product: ${{ (matrix.library == 'beast' || matrix.library == 'cobalt') && 'chrome' || 'chrome-headless-shell' }}
 
       # The packages the lane needs from apt (its entry's apt, tools/ci/matrix.py's
-      # OWN_LANE_PACKAGES): crypto's constant-time lane has Valgrind and llvm-18. The lane runs on
-      # the runner, never in the container, so they are installed here.
+      # OWN_LANE_PACKAGES): crypto's constant-time lane natively has Valgrind, llvm-18 and
+      # clang-18's sanitizer runtime. The lane runs on the runner, never in the container, so
+      # they are installed here. A mirror's transient error is retried, and an index that still
+      # cannot be fetched fails the step, as in the container's image.
       - name: Install the lane's packages
         if: runner.os == 'Linux' && join(matrix.apt, ' ') != ''
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends ${{ join(matrix.apt, ' ') }}
+          sudo apt-get -o Acquire::Retries=5 -o APT::Update::Error-Mode=any update
+          sudo apt-get -o Acquire::Retries=5 install --yes --no-install-recommends ${{ join(matrix.apt, ' ') }}
 
       - name: Build the native Beast interoperability peer
         if: matrix.library == 'beast' && (matrix.lane == 'browser' || matrix.lane == 'browser-node')
@@ -591,6 +593,15 @@ jobs:
         uses: ./tools/ci/actions/emsdk
         with:
           libraries: 'false'
+
+      # The own lanes' packages (tools/ci/matrix.py lint-packages): the lint analyses their
+      # programs natively, which include valgrind/memcheck.h and clang-18's sanitizer/ headers.
+      - name: Install the own lanes' packages
+        run: |
+          packages="$(python3 tools/ci/matrix.py lint-packages)"
+          sudo apt-get -o Acquire::Retries=5 -o APT::Update::Error-Mode=any update
+          # shellcheck disable=SC2086
+          sudo apt-get -o Acquire::Retries=5 install --yes --no-install-recommends $packages
 
       # The compilation database is what b2 compiles with its default toolset, the first that
       # user-config.jam registers, Clang 18, and, for what only a WASI target or emscripten
