@@ -16,8 +16,11 @@ example is not there, and so does a function of the capability table without a d
 backend of the order hash2, xkcp, blake3, sodium has (one that none has, as kbkdf, has none). Every
 function's default is the capability table's, `hash2` for HKDF whatever the measurements say. A
 family's tag (spec 2.15) names a default of the order hash2, xkcp, blake3, sodium, or none, and
-one whose cell comes in a later increment is said so; a partial cell says what it refuses. A
-backend of the asynchronous family alone (backends::webcrypto) is named so in every table.
+one without its cell fails; a partial cell says what it refuses. A tag of `digests` or `macs`
+sits in its namespace's chapter. A backend of the asynchronous family alone (backends::webcrypto)
+is named so in every table, with its targets as the guide spells them, and is never a default; a
+row of an unknown kind fails. Each backend's constant-time statements are one bullet. llms.txt's
+defaults are the capability table's, not a text written once.
 Without doc/measurements.json the tables say so, carry no measured column and render no
 measurements.adoc; with it (a fixture in its shape) they carry the throughput and the size, and
 measurements.adoc renders it as the dated reference that decides nothing; a hand edit of the
@@ -256,21 +259,96 @@ def test_a_family_default_is_of_the_order_or_none(scratch: Path) -> None:
            in files['backends.adoc'], 'the default backends do not say none')
 
 
-def test_a_later_default_and_a_partial_cell_are_said(scratch: Path) -> None:
-    # The later default is made here, not read from the real table, whose cells land increment
-    # by increment: BLAKE2b's default sodium without its cell yet. The partial cells are hash2's.
+def test_a_default_without_its_cell_fails_and_a_partial_cell_is_said(scratch: Path) -> None:
+    # Every default has its engine once increments 2 to 7 have landed (ruling R84): a family's
+    # default without its cell is a fault of the data, not a cell to come. The partial cells are
+    # hash2's and backends::webcrypto's.
     library = scratch_library(scratch)
-    path = library / 'doc/capabilities.json'
-    table = json.loads(path.read_text(encoding='utf-8'))
-    family_row(table, 'digests::blake2b')['backends'].pop('sodium', None)
-    path.write_text(json.dumps(table), encoding='utf-8')
     files = write_ok(library)
     blake2 = files['generated/backends-blake2.adoc']
-    expect('The default of `digests::blake2b` is `sodium`, whose cell comes with a later '
-           'increment' in blake2, blake2)
     expect('`hash2` (partial: an output under 64 bytes' in blake2, blake2)
     expect('| hash2 (partial: a tag under 32 bytes' in files['backends.adoc'],
            'the backends chapter does not say what the partial cell refuses')
+    expect('`webcrypto` (asynchronous family only) (partial: an info longer than 1,024 bytes'
+           in files['generated/backends-hkdf.adoc'], files['generated/backends-hkdf.adoc'])
+    expect('| webcrypto (asynchronous family only) (partial: an iteration count above 2^32 - 1'
+           in files['backends.adoc'], 'webcrypto\'s PBKDF2 limits are not said')
+
+    def drop_cell(table: dict) -> None:
+        family_row(table, 'digests::blake2b')['backends'].pop('sodium', None)
+    edit_capabilities(library, drop_cell)
+    done = run(library, '--write')
+    expect(done.returncode == 1, 'a default without its cell was rendered')
+    expect('the tag digests::blake2b has the default sodium, which has no cell of it'
+           in done.stderr, done.stderr)
+
+
+def test_a_tag_sits_in_its_namespace_s_chapter(scratch: Path) -> None:
+    # A tag of macs is a MAC, listed with the MACs and under llms.txt's MAC section; a tag of
+    # digests with the digests.
+    library = scratch_library(scratch)
+    files = write_ok(library)
+    expect('macs::blake2b_mac' in files['generated/compare-macs.adoc'], 'keyed BLAKE2b')
+    expect('macs::blake2b_mac' not in files['generated/compare-digests.adoc'],
+           'keyed BLAKE2b among the digests')
+    macs = files['llms.txt'].split('## Message authentication')[1].split('\n## ')[0]
+    expect('webcpp::hash::macs::blake2s_mac' in macs, macs)
+
+    def misplace(table: dict) -> None:
+        kmac = next(a for a in table['algorithms'] if a['name'] == 'kmac')
+        sha2 = next(a for a in table['algorithms'] if a['name'] == 'md5_sha1_sha2')
+        row = next(f for f in kmac['functions'] if f['name'] == 'macs::kmac_128')
+        kmac['functions'].remove(row)
+        sha2['functions'].append(row)
+    edit_capabilities(library, misplace)
+    done = run(library, '--write')
+    expect(done.returncode == 1, 'a tag of macs among the digests was rendered')
+    expect('the tag macs::kmac_128 is in the chapter digests, not macs' in done.stderr,
+           done.stderr)
+
+
+def test_an_asynchronous_backend_is_never_a_default(scratch: Path) -> None:
+    library = scratch_library(scratch)
+
+    def webcrypto_default(table: dict) -> None:
+        family_row(table, 'hkdf')['default'] = 'webcrypto'
+        family_row(table, 'pbkdf2')['kind'] = 'fixture'
+    edit_capabilities(library, webcrypto_default)
+    done = run(library, '--write')
+    expect(done.returncode == 1, 'an asynchronous-only default was rendered')
+    expect('the function hkdf has the default webcrypto, which only the asynchronous family '
+           'takes' in done.stderr, done.stderr)
+    expect('pbkdf2 has the unknown kind fixture' in done.stderr, done.stderr)
+
+
+def test_an_asynchronous_backend_s_targets_are_spelled(scratch: Path) -> None:
+    library = scratch_library(scratch)
+
+    def two_targets(table: dict) -> None:
+        webcrypto = next(b for b in table['backends'] if b['name'] == 'webcrypto')
+        webcrypto['targets'] = ['native', 'wasip2', 'emscripten']
+    edit_capabilities(library, two_targets)
+    hkdf = write_ok(library)['generated/backends-hkdf.adoc']
+    expect('serves the asynchronous family alone, on native, wasip2 and Emscripten, where' in hkdf,
+           hkdf)
+
+
+def test_llms_txt_s_defaults_are_the_table_s(scratch: Path) -> None:
+    library = scratch_library(scratch)
+    llms = write_ok(library)['llms.txt']
+    expect('argon2id and scrypt run on backends::sodium unless the call names '
+           'backends::openssl' in llms, llms.split('\n\n')[1])
+    expect('kbkdf, sskdf and x963kdf have no default backend, and the call names '
+           'backends::openssl' in llms, llms.split('\n\n')[1])
+
+    def scrypt_alone(table: dict) -> None:
+        family_row(table, 'scrypt')['backends'].pop('openssl')
+    edit_capabilities(library, scrypt_alone)
+    llms = write_ok(library)['llms.txt']
+    expect('argon2id runs on backends::sodium unless the call names backends::openssl' in llms,
+           llms.split('\n\n')[1])
+    expect('blake2b_subkey and scrypt run on backends::sodium alone' in llms,
+           llms.split('\n\n')[1])
 
 
 def edit_capabilities(library: Path, edit: Callable[[dict], None]) -> None:
@@ -301,9 +379,10 @@ def test_a_default_names_only_its_functions_backends(scratch: Path) -> None:
         rows['blake2s_256']['backends'] = {'hash2': a_cell(1)}
     edit_capabilities(library, blake2)
     files = write_ok(library)
-    blake2_file = files['generated/backends-blake2.adoc']
+    blake2_mac = files['generated/backends-blake2-mac.adoc']
     expect('The default of `macs::blake2s_mac`: `hash2` on every target, whatever the program '
-           'links (<<hash-default-backend>>).' in blake2_file, blake2_file)
+           'links (<<hash-default-backend>>).' in blake2_mac, blake2_mac)
+    blake2_file = files['generated/backends-blake2.adoc']
     expect('The default of `digests::blake2s_256`: `hash2` on every target, whatever the '
            'program links; `openssl` only where the call names it' in blake2_file, blake2_file)
     expect('The default of `digests::blake2b`: `sodium` on every target, whatever the program '
@@ -337,14 +416,26 @@ def test_a_tag_without_a_default_is_not_said_a_type(scratch: Path) -> None:
 
 
 def test_each_backend_s_constant_time_sources_are_together(scratch: Path) -> None:
+    # One bullet per backend and value, in the table's order of backends, its sources under it
+    # when it has several; and one bullet per backend in an algorithm's table.
     library = scratch_library(scratch)
-    chapter = write_ok(library)['backends.adoc']
+    files = write_ok(library)
+    chapter = files['backends.adoc']
     listed = [line.split(':')[0] for line in
               chapter.split("What each backend's upstream states, and where:")[1].splitlines()
               if line.startswith('* ')]
     order = [b['name'] for b in json.loads(
         (library / 'doc/capabilities.json').read_text(encoding='utf-8'))['backends']]
     expect(listed == sorted(listed, key=lambda b: order.index(b[2:])), '\n'.join(listed))
+    expect(len(listed) == len(set(listed)), '\n'.join(listed))
+    expect('* openssl: not stated.\n** ' in chapter, 'openssl\'s sources are not under it')
+    for name, text in files.items():
+        if not name.startswith('generated/backends-'):
+            continue
+        bullets = [line.split(':')[0] for line in
+                   text.split('What each backend states on constant time')[1].splitlines()
+                   if line.startswith('* ')]
+        expect(len(bullets) == len(set(bullets)), f'{name}: {bullets}')
 
 
 def test_an_asynchronous_backend_is_said(scratch: Path) -> None:
@@ -397,8 +488,9 @@ def test_without_measurements_the_tables_say_so(scratch: Path) -> None:
     expect('| pbkdf2\n| hash2' in backends and '| scrypt\n| sodium' in backends,
            'backends.adoc does not list the defaults')
     expect('Backends: hash2 (/webcpp/hash//hash' in files['llms.txt'], 'llms.txt has no backends')
-    expect('HKDF and PBKDF2 run on backends::hash2 unless the call names another backend'
-           in files['llms.txt'], 'llms.txt does not say the default')
+    expect('hkdf_extract, hkdf_expand and hkdf run on backends::hash2 unless the call names '
+           'another of its backends as its second template argument' in files['llms.txt'],
+           'llms.txt does not say the default')
 
 
 def test_with_measurements_the_tables_carry_them(scratch: Path) -> None:
@@ -494,7 +586,11 @@ CASES: list[Callable[[Path], None]] = [
     test_a_use_case_names_an_example_that_is_there,
     test_every_function_names_its_default,
     test_a_family_default_is_of_the_order_or_none,
-    test_a_later_default_and_a_partial_cell_are_said,
+    test_a_default_without_its_cell_fails_and_a_partial_cell_is_said,
+    test_a_tag_sits_in_its_namespace_s_chapter,
+    test_an_asynchronous_backend_is_never_a_default,
+    test_an_asynchronous_backend_s_targets_are_spelled,
+    test_llms_txt_s_defaults_are_the_table_s,
     test_a_default_names_only_its_functions_backends,
     test_a_tag_without_a_default_is_not_said_a_type,
     test_a_function_without_a_backend_of_the_order_has_no_default,
