@@ -7280,17 +7280,26 @@ and not built is in chapter 17.
   Source: `include/webcpp/crypto/backends/openssl.hpp`,
   `test/msvc/memory_two_files` (libs/crypto).
 - **Two allocations stay outside the resource, the C library's `FILE` while
-  OpenSSL reads its configuration file and OpenSSL's secure heap; a resource
-  that fails during the first `make` leaves OpenSSL unusable for the rest of
-  the process; the program's code that uses the backend lives in one module;
-  the page states each.** No hook of OpenSSL's reaches the first two; OpenSSL
-  keeps a failed initialisation; a second module has its own copy of the
-  adapter, whose address the guard does not recognise.
-  Source: `doc/memory.adoc` (libs/crypto).
+  OpenSSL reads its configuration file and OpenSSL's secure heap; the
+  resource must serve OpenSSL's initialisation: one that fails there leaves
+  OpenSSL unusable for the rest of the process on an OpenSSL built without
+  threads, and on one built with threads (MSVC's only build) the call never
+  returns; on Windows a thread that used OpenSSL calls
+  `OPENSSL_thread_stop()` before it ends, or its blocks stay in the resource;
+  the program's code that uses the backend lives in one module; the page
+  states each.** No hook of OpenSSL's reaches the first two; OpenSSL keeps a
+  failed initialisation, and with threads reports the failure through an
+  error queue that needs the initialisation running, which it re-enters; the
+  static libcrypto on Windows is never told that a thread ends; a second
+  module has its own copy of the adapter, whose address the guard does not
+  recognise.
+  Source: `doc/memory.adoc`, `example/openssl_memory.cpp`,
+  `test/openssl_memory/fail_init_test.cpp` (libs/crypto).
 - **The option's programs are native, in `test/openssl_memory`, each declared
   with exceptions and without by the rule `memory-run`: `adapter`;
   `everything`, `late`, `foreign`, `fresh_install`, `forgotten`, `replaced`,
-  `second_install`, `fail_second`, `fail_init` and `handshake`, which count
+  `second_install`, `fail_second`, `fail_init`, `fail_init_threads` (the
+  same program on an OpenSSL built with threads) and `handshake`, which count
   every call of the C library's allocator through an interposer per system;
   and `neighbours`, beside Asio's TLS and libdatachannel; `header_alone` and
   the `windows_h` twins compile. The fixtures `memory_option`,
