@@ -809,7 +809,7 @@ def test_program_sizes_are_those_of_release_builds(root):
         kind = 'executable' if target == 'native' else 'wasm'
         assert rows['larger']['file'] == kind and rows['larger']['over_baseline'] > 0, rows
         assert rows['baseline']['over_baseline'] == 0, rows
-        assert tables[0].read_text().startswith(f'Linked programs on {target}, '), tables
+        assert tables[0].read_text().startswith(f'Linked programs on {target} ('), tables
         programs = [p for p in (root / f'bin/{target}').rglob('larger-program*')
                     if p.suffix in ('', '.wasm')]
         assert programs and all('release' in p.parts for p in programs), programs

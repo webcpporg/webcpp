@@ -29,11 +29,13 @@ before anything is written.
 programs writes FILE, <name>.sizes.json (webcpp.program-sizes), the sizes of the programs NAME, each
 a <name>-program file of webcpp.link among PROGRAM (other files, a project's library objects that b2
 appends to the make, are not programs): per file, its raw bytes, its gzip -9n bytes and their
-excess over the baseline's same file. The file is natively the executable, stripped with strip (a
-copy: the program is left as it is); on wasip2 and wasip3 the .wasm; on emscripten the .wasm and
-its .js glue, two rows. A name without its program, a baseline not among the names, and a build at
-another VARIANT than release are refused before anything is written. programs-table writes FILE,
-the Markdown table of such a JSON, and prints it; it refuses a JSON not built at release.
+excess over the baseline's same file, dated by the build, with the host it ran on and the format
+of the program (natively ELF, PE or Mach-O, read from its file; else WebAssembly). The file is
+natively the executable, stripped with strip (a copy: the program is left as it is); on wasip2
+and wasip3 the .wasm; on emscripten the .wasm and its .js glue, two rows. A name without its
+program, a baseline not among the names, and a build at another VARIANT than release are refused
+before anything is written. programs-table writes FILE, the Markdown table of such a JSON, and
+prints it; it refuses a JSON not built at release.
 
 A failure is a line on the standard error and status 1; a usage error is status 2.
 """
@@ -41,9 +43,11 @@ A failure is a line on the standard error and status 1; a usage error is status 
 from __future__ import annotations
 
 import argparse
+import datetime
 import gzip
 import json
 import os
+import platform
 import shutil
 import subprocess
 import sys
@@ -157,6 +161,22 @@ def files_of(path: Path, target: str) -> list[tuple[str, bytes]]:
     return sorted(files)
 
 
+# A native executable's format, by the first bytes of its file.
+FORMATS = ((b'\x7fELF', 'ELF'), (b'MZ', 'PE'), (b'\xcf\xfa\xed\xfe', 'Mach-O'),
+           (b'\xca\xfe\xba\xbe', 'Mach-O'))
+
+
+def format_of(path: Path, target: str) -> str:
+    """The format of a program's file: WebAssembly off native, else read from its magic."""
+    if target != 'native':
+        return 'WebAssembly'
+    head = path.read_bytes()[:4]
+    for magic, name in FORMATS:
+        if head.startswith(magic):
+            return name
+    raise Refused(f'{path}: not an executable of a known format (ELF, PE, Mach-O)')
+
+
 def name_of(path: Path) -> str:
     """The webcpp.link program a file is of: its name less its suffix and -program."""
     stem = path.name if path.suffix not in ('.js', '.wasm', '.exe') else path.stem
@@ -187,7 +207,9 @@ def programs(variant: str, target: str, toolset: str, baseline: str, names: list
                          'over_baseline': raw - base[kind][0],
                          'gzip_over_baseline': packed - base[kind][1]})
     return {'variant': variant, 'target': target, 'toolset': toolset, 'baseline': baseline,
-            'programs': rows}
+            'date': datetime.date.today().isoformat(),
+            'host': f'{platform.system()} {platform.machine()}',
+            'format': format_of(found[baseline], target), 'programs': rows}
 
 
 def programs_table(path: Path) -> str:
@@ -200,8 +222,9 @@ def programs_table(path: Path) -> str:
     if variant != RELEASE:
         raise Refused(f'{path}: ' + RELEASE_ONLY.format(variant=variant)
                       + 'webcpp.program-sizes requires <variant>release')
-    lines = [f'Linked programs on {read["target"]}, built with {read["toolset"]} at '
-             f'variant={variant}, against the baseline {read["baseline"]}.', '',
+    lines = [f'Linked programs on {read["target"]} ({read["format"]}), built with '
+             f'{read["toolset"]} at variant={variant} on {read["date"]}, against the baseline '
+             f'{read["baseline"]}.', '',
              '| program | file | bytes | gzip -9n | over baseline | gzip -9n over baseline |',
              '| --- | --- | ---: | ---: | ---: | ---: |']
     lines += [f'| {r["program"]} | {r["file"]} | {r["bytes"]:,} | {r["gzip"]:,} '

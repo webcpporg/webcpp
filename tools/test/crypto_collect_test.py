@@ -11,7 +11,8 @@ b2's bench/<toolset>/<variant>/..., names another variant, or does not say, is r
 anything runs or is written; one at variant=release is taken (it gets as far as running); a cell
 whose operation is not the one doc/tables/crypto.json states for its family is refused; and
 `--render-only` refuses data whose build is not variant=release, before it writes the page, and
-renders the committed data as the committed page. Run with the names of some cases to run only
+renders the committed data as the committed page; and the page always states the load it was
+measured under, warning above half the cores. Run with the names of some cases to run only
 those."""
 
 from __future__ import annotations
@@ -114,11 +115,29 @@ def test_render_only_refuses_data_not_built_at_variant_release(scratch: Path) ->
         raise AssertionError('the committed data does not render the committed page')
 
 
+def test_the_page_states_the_load_and_warns_above_half_the_cores(scratch: Path) -> None:
+    # The page always prints the load averages it was measured under, and warns when the larger
+    # 1-minute load exceeds half the cores: a shared machine's spread, not its figures.
+    committed = json.loads(DATA.read_text())
+    page = scratch / 'page.adoc'
+    cores = committed['machine']['cores']
+    for one_minute, warned in ((cores / 2 + 1, True), (cores / 2 - 1, False)):
+        data = dict(committed)
+        data['load_average_before_after'] = [[one_minute, 1.0, 1.0], [1.0, 1.0, 1.0]]
+        path = scratch / 'data.json'
+        path.write_text(json.dumps(data))
+        expect(run('--render-only', '--data', path, '--page', page), 0)
+        text = page.read_text()
+        if 'load averages' not in text or ('WARNING' in text) != warned:
+            raise AssertionError(f'{one_minute} on {cores} cores:\n{text}')
+
+
 CASES: list[Callable[[Path], None]] = [
     test_a_program_not_built_at_variant_release_is_refused,
     test_a_program_built_at_variant_release_is_measured,
     test_an_operation_crypto_json_does_not_state_is_refused,
     test_render_only_refuses_data_not_built_at_variant_release,
+    test_the_page_states_the_load_and_warns_above_half_the_cores,
 ]
 
 

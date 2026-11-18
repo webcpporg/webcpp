@@ -19,8 +19,10 @@ the names of some cases to run only those."""
 
 from __future__ import annotations
 
+import datetime
 import gzip
 import json
+import platform
 import shutil
 import subprocess
 import sys
@@ -160,8 +162,12 @@ def test_programs_size_each_wasm_against_the_baseline(root: Path) -> None:
     assert result.returncode == 0, result.stderr
     read = json.loads((root / 'p.sizes.json').read_text())
     base, sealed = (p.read_bytes() for p in programs)
+    # The JSON is dated by the build that wrote it, and names the host and the program's format.
+    assert read.pop('date') == datetime.date.today().isoformat(), read
+    assert read.pop('host') == f'{platform.system()} {platform.machine()}', read
     assert read == {
         'variant': 'release', 'target': 'wasip2', 'toolset': 'clang', 'baseline': 'baseline',
+        'format': 'WebAssembly',
         'programs': [
             {'program': 'baseline', 'file': 'wasm', 'bytes': 2560, 'gzip': gzipped(base),
              'over_baseline': 0, 'gzip_over_baseline': 0},
@@ -190,6 +196,8 @@ def test_programs_strip_a_native_executable(root: Path) -> None:
     shutil.copyfile(programs[0], copy)
     subprocess.run(['strip', str(copy)], check=True, capture_output=True)
     stripped = copy.read_bytes()
+    native_format = {'Darwin': 'Mach-O', 'Linux': 'ELF'}.get(platform.system())
+    assert json.loads((root / 'p.sizes.json').read_text())['format'] == native_format
     assert [(r['file'], r['bytes'], r['gzip'], r['over_baseline']) for r in rows] == [
         ('executable', len(stripped), gzipped(stripped), 0),
         ('executable', len(stripped), gzipped(stripped), 0)], rows
@@ -225,8 +233,8 @@ def test_programs_table_is_the_json_s(root: Path) -> None:
     result = variants('programs-table', '--out', out, root / 'p.sizes.json')
     assert result.returncode == 0, result.stderr
     read = json.loads((root / 'p.sizes.json').read_text())['programs']
-    table = ('Linked programs on wasip2, built with clang at variant=release, against the '
-             'baseline baseline.\n\n'
+    table = (f'Linked programs on wasip2 (WebAssembly), built with clang at variant=release on '
+             f'{datetime.date.today().isoformat()}, against the baseline baseline.\n\n'
              '| program | file | bytes | gzip -9n | over baseline | gzip -9n over baseline |\n'
              '| --- | --- | ---: | ---: | ---: | ---: |\n'
              f'| baseline | wasm | 2,560 | {read[0]["gzip"]:,} | 0 | 0 |\n'
