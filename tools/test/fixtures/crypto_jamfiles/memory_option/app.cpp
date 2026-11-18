@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <memory_resource>
+#include <string>
 
 // Declared by crypto under WEBCPP_CRYPTO_OPENSSL_MEMORY_RESOURCE, defined once here. Never
 // destroyed: OpenSSL frees through it after main returns.
@@ -29,7 +30,8 @@ std::pmr::memory_resource& webcpp::crypto::openssl_memory_resource() noexcept {
 int main() {
     auto const installed = webcpp::crypto::backends::openssl::install_memory_functions();
     if (!installed) {
-        std::printf("install: %s\n", installed.error().message().c_str());
+        std::string const message = installed.error().message();
+        std::printf("install: %s\n", message.c_str());
         return 1;
     }
     std::array<std::uint8_t, 32> const key{};
@@ -37,7 +39,8 @@ int main() {
     std::array<std::uint8_t, 16> data{};
     auto aead = webcpp::crypto::ciphers::aes256_gcm::make(key);
     if (!aead) {
-        std::printf("make: %s\n", aead.error().message().c_str());
+        std::string const message = aead.error().message();
+        std::printf("make: %s\n", message.c_str());
         return 1;
     }
     auto const tag = aead->seal(iv, {}, data);
