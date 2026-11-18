@@ -43,7 +43,10 @@ libraries step builds the system libraries the lanes link into that cache, or, f
 only parses (the input libraries: 'false', under the same key), the sysroot alone, a cache the
 action never saves. The node action keys npm's
 cache on the lock file of every directory a job runs npm ci in: tools/doc, tools/lint, every
-library's oracle and the site. Nothing is fetched
+library's oracle and the site. The third-party action's key.sh keys a job's cache of the
+OpenSSL and libdatachannel configurations by the job, its runner image and the builds' inputs,
+and the configurations under bin/third_party, which a fresh checkout, or either library alone,
+lacks, under the Bash on PATH and /bin/bash, macOS's 3.2. Nothing is fetched
 from the network: the downloads are file:// URLs or a server of the test's own on the loopback, git
 is a stand-in, and install.sh runs against
 a download.sh that only says it was called, or that hands it a stand-in archive. Run with the
@@ -75,6 +78,7 @@ WASMTIME = CI / 'actions/wasmtime/install.sh'
 WASI_WIT = CI / 'actions/wasi-wit/install.sh'
 WASI_SDK = CI / 'actions/wasi-sdk/install.sh'
 EMSDK = CI / 'actions/emsdk/install.sh'
+THIRD_PARTY = CI / 'actions/third-party/key.sh'
 HELPERS = CI / 'helpers.sh'
 
 # What the stand-in download.sh prints, and its exit status: install.sh got past its guards.
@@ -1475,8 +1479,8 @@ def test_the_shared_helpers(scratch: Path) -> None:
         'gcc-14 (stand-in) 14.2.0\ng++-14 (stand-in) 14.2.0\n')
     assert helper('compiler_identity', CC='gcc-14') == 'gcc-14 (stand-in) 14.2.0\n'
     assert helper('compiler_identity', ImageOS='win22', ImageVersion='1') == 'default win22 1\n'
-    # Each action sources it, and defines none of the four itself.
-    for script in sorted(CI.glob('actions/*/install.sh')):
+    # Each action's script sources it, and defines none of the four itself.
+    for script in sorted(CI.glob('actions/*/*.sh')):
         text = script.read_text()
         for name in ('digest', 'mixed', 'configuration', 'compiler_identity'):
             assert f'\n{name}() {{' not in text, (script, name)
@@ -1484,8 +1488,84 @@ def test_the_shared_helpers(scratch: Path) -> None:
             assert '. "${here}/../../helpers.sh"' in text, script
 
 
+def bashes() -> list[str]:
+    """Each bash an action's step may run in here: the one on PATH, and /bin/bash, which is Bash
+    3.2 on macOS, the one the macOS runners run a step with."""
+    found = {}
+    for candidate in (shutil.which('bash'), '/bin/bash'):
+        if candidate and os.access(candidate, os.X_OK):
+            found.setdefault(os.path.realpath(candidate), candidate)
+    return list(found.values())
+
+
+def third_party_key(root: Path, bash: str, job: str = 'gcc-15',
+                    **variables: str) -> tuple[subprocess.CompletedProcess, dict[str, str]]:
+    """Runs the third-party action's key step in root, a checkout, as the action does, and
+    returns what it wrote to GITHUB_OUTPUT."""
+    output = root / 'github-output'
+    output.unlink(missing_ok=True)
+    environment = {**os.environ, 'JOB': job, 'INPUTS': 'fd7fb185cbfac59a' + '0' * 48,
+                   'ImageOS': 'ubuntu26', 'ImageVersion': '20261111.196',
+                   'GITHUB_OUTPUT': str(output), **variables}
+    result = subprocess.run([bash, str(THIRD_PARTY)], capture_output=True, text=True,
+                            check=False, cwd=root, env=environment)
+    written = (dict(line.split('=', 1) for line in output.read_text().splitlines())
+               if output.exists() else {})
+    return result, written
+
+
+def test_third_party_key_of_a_checkout_without_builds(scratch: Path) -> None:
+    # A fresh checkout has no bin/third_party, nor has a job whose programs use neither library:
+    # neither is an error, and neither has a configuration to save. A key holds no comma, which
+    # a job's name may, nor a space.
+    for bash in bashes():
+        result, written = third_party_key(scratch, bash, 'own-Own lane (asio, tls)')
+        assert result.returncode == 0, (bash, result.returncode, result.stderr)
+        prefix = 'third-party-v1-own-Own-lane--asio--tls--ubuntu26-20261111.196-fd7fb185cbfac59a-'
+        assert written['prefix'] == prefix, (bash, written)
+        assert re.fullmatch(re.escape(prefix) + '[0-9a-f]{16}', written['key']), (bash, written)
+        assert written['built'] == 'false', (bash, written)
+    # Without the job or the inputs, the key would name no cache.
+    for missing in ('JOB', 'INPUTS'):
+        result, written = third_party_key(scratch, bashes()[0], **{missing: ''})
+        assert result.returncode == 2, (missing, result.returncode, result.stderr)
+        assert 'usage: key.sh' in result.stderr, (missing, result.stderr)
+        assert written == {}, (missing, written)
+    # The action keys both its steps with the script, which the tests run.
+    action = (THIRD_PARTY.parent / 'action.yml').read_text()
+    steps = {step.split('\n', 1)[0]: step for step in action.split('    - name: ')[1:]}
+    assert 'run: bash tools/ci/actions/third-party/key.sh\n' in steps['Cache key'], (
+        steps['Cache key'])
+
+
+def test_third_party_key_names_the_configurations(scratch: Path) -> None:
+    # The key is the prefix and a hash of the names of the configurations, which either
+    # library's directory may hold alone: a job saves its cache under a new key when it built a
+    # configuration its restored entry did not hold.
+    openssl = scratch / 'bin/third_party/openssl'
+    libdatachannel = scratch / 'bin/third_party/libdatachannel'
+    for bash in bashes():
+        keys = []
+        shutil.rmtree(scratch / 'bin', ignore_errors=True)
+        for made in (openssl / 'config-1', libdatachannel / 'config-2', openssl / 'config-1'):
+            if made == libdatachannel / 'config-2':
+                shutil.rmtree(openssl)
+            made.mkdir(parents=True)
+            result, written = third_party_key(scratch, bash)
+            assert result.returncode == 0, (bash, made, result.returncode, result.stderr)
+            assert written['built'] == 'true', (bash, made, written)
+            assert written['key'].startswith(written['prefix']), (bash, written)
+            # The same configurations give the same key, and a file there is no configuration.
+            (made.parent / 'config-stray').write_text('stray\n')
+            assert third_party_key(scratch, bash)[1] == written, (bash, made)
+            keys.append(written['key'])
+        assert len(set(keys)) == 3, (bash, keys)
+
+
 CASES: list[Callable[[Path], None]] = [
     test_the_shared_helpers,
+    test_third_party_key_of_a_checkout_without_builds,
+    test_third_party_key_names_the_configurations,
     test_a_pinned_download_is_kept,
     test_another_digest_leaves_no_file,
     test_a_failed_download_exits_1_and_leaves_no_file,

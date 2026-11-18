@@ -507,6 +507,22 @@ def test_compile_database_prepares_generated_header_dependencies(root):
     assert not list((root / 'bin').rglob('*.run'))
 
 
+def test_provider_headers_of_a_kept_configuration(root):
+    # A configuration whose archives exist is kept, b2 -a included (tools/webcpp-third-party.jam):
+    # a dry run prints only the generation of its headers, when they are missing, and the lint
+    # still prepares them, as it does those of a configuration the dry run builds.
+    kept = root / 'bin/third_party/openssl/config-1'
+    built = root / 'bin/third_party/libdatachannel/config-2'
+    lines = [f'webcpp-openssl.generate-headers {kept}/include/openssl/aes.h',
+             f'webcpp-libdatachannel.build {built}/libdatachannel.a',
+             f'webcpp-openssl.generate-headers {root}/bin/third_party/openssl/config-3/'
+             'include/openssl/aes.h']
+    includes = {(kept / 'include').resolve(), (built / 'include').resolve()}
+    assert compile_commands.provider_headers(str(root), lines, includes) == {
+        str(kept / 'include/openssl/configuration.h'),
+        str(built / 'include/rtc/datachannel.hpp')}
+
+
 def test_compile_database_prepares_program_openssl_variants(root):
     # A program-only define selects a different OpenSSL configuration than any
     # public header unit. Both exception modes must be analysable on a clean tree.
@@ -540,7 +556,9 @@ def test_compile_database_prepares_program_openssl_variants(root):
     assert planned.returncode == 0, planned.stdout[-6000:]
     directories = re.findall(r'^webcpp-openssl\.build (.+)[/\\]libssl\.(?:a|lib)$',
                              planned.stdout, re.MULTILINE)
-    assert len(directories) == 4, planned.stdout[-6000:]
+    # One configuration with the upstream suite and one without: OpenSSL's C is the same in
+    # both exception modes, which share its build.
+    assert len(directories) == 2, planned.stdout[-6000:]
     preparation = harness.run_b2(
         root, '-n', f'--webcpp-lint-source={request}',
         '--webcpp-lint-property=exception-handling=on,off',
@@ -593,15 +611,12 @@ def test_compile_database_prepares_program_openssl_variants(root):
     tested = harness.run_b2(root, '-n', 'libs/tls_user/test/release//tls_upstream')
     assert tested.returncode == 0, tested.stdout[-6000:]
     assert 'webcpp-openssl.build ' in tested.stdout and '--test' in tested.stdout
-    # A missing header and an existing, stale variant must both be updated.
-    # Inspect B2's actual actions without rebuilding OpenSSL a third time.
-    # B2 roots output paths at its actual cwd. Preserve the bin symlink while
-    # resolving the parent's /var alias on macOS, just as its dry run does.
+    # A missing header is generated again, without the archives of its configuration, which
+    # B2 keeps (tools/webcpp-third-party.jam). B2 roots output paths at its actual cwd. Preserve
+    # the bin symlink while resolving the parent's /var alias on macOS, as its dry run does.
     headers = sorted(root.resolve() / header.relative_to(root)
                      for header in (root / 'bin/third_party').rglob('configuration.h'))
-    assert len(headers) == 4, headers
-    changed = max(header.stat().st_mtime for header in headers) + 1
-    os.utime(root / 'tools/openssl/build.py', (changed, changed))
+    assert len(headers) == 2, headers
     headers[0].unlink()
     pending = harness.run_b2(
         root, '-n', '--webcpp-lint-source=libs/tls_user/test/release//tls-variant',
@@ -609,11 +624,21 @@ def test_compile_database_prepares_program_openssl_variants(root):
         *(f'--webcpp-lint-header={header}' for header in headers), 'lint-provider-headers')
     assert pending.returncode == 0, pending.stdout[-6000:]
     assert len(re.findall(r'^webcpp-openssl\.generate-headers ', pending.stdout,
-                          re.MULTILINE)) == 4, (
-        pending.stdout[-6000:])
+                          re.MULTILINE)) == 1, pending.stdout[-6000:]
     assert not re.search(r'^webcpp-openssl\.build ', pending.stdout, re.MULTILINE)
     assert 'testing.capture-output' not in pending.stdout, pending.stdout[-6000:]
     assert not re.search(r'^\S+\.compile', pending.stdout, re.MULTILINE), pending.stdout[-6000:]
+    # A changed input names other configurations: the lint prepares their headers, and still
+    # builds no archive.
+    script = root / 'tools/openssl/build.py'
+    script.write_text(script.read_text() + '\n# A changed input.\n')
+    completed = compile_database(root)
+    assert completed.returncode == 0, completed.stdout[-6000:]
+    prepared = {header.parent.parent.parent.resolve()
+                for header in (root / 'bin/third_party').rglob('configuration.h')}
+    earlier = {header.parent.parent.parent.resolve() for header in headers}
+    assert len(prepared - earlier) == 2, (prepared, earlier)
+    assert len(list((root / 'bin/third_party').rglob('build.json'))) == 1
 
 
 def test_compile_database_prepares_program_libdatachannel_variants(root):
@@ -2840,6 +2865,7 @@ CASES = [
     test_a_user_config_the_environment_names_is_read,
     test_compile_database_lists_what_b2_builds,
     test_compile_database_prepares_generated_header_dependencies,
+    test_provider_headers_of_a_kept_configuration,
     test_compile_database_prepares_program_openssl_variants,
     test_compile_database_prepares_program_libdatachannel_variants,
     test_compile_database_reads_what_only_wasi_builds,
