@@ -39,9 +39,11 @@ reference measured once, on 2026-11-16, that decides nothing: the default backen
 `python3 tools/hash/doc_tables.py --write`, when one differs from what is committed, is
 missing, or is left over; the doc build runs it (doc/Jamfile). It also fails when guide.json
 lacks a public name of the capability table, names one it does not have, or a use case names
-an example that example/ does not hold; when a function of the capability table has no default
-among its backends, a family's tag (kind digest, mac or kdf) a default outside the order hash2,
-xkcp, blake3, sodium (design D34; null for a tag with none), or a type has one; and when
+an example that example/ does not hold; when a function of the capability table names a default
+that is not among its backends, or none (null) though a backend of the order hash2, xkcp, blake3,
+sodium has it, a family's tag (kind digest, mac
+or kdf) a default outside the order hash2, xkcp, blake3, sodium (design D34; null for a tag with
+none), or a type has one; and when
 measurements.json's digest does not match its content (a hand edit of the reference). Nothing in
 the output depends on the time or the machine, so the files change only with their data.
 """
@@ -125,13 +127,19 @@ class Data:
 
     def check_defaults(self) -> None:
         """A function (a template with a Backend parameter) names its default, a backend that
-        has it; a family's tag names one of the order, or none (null), whose cell may come in a
-        later increment; a type has none."""
+        has it, or none (null) exactly when no backend of the order hash2, xkcp, blake3, sodium
+        has it (design D34, as kbkdf); a family's tag names one of the order, or none (null),
+        whose cell may come in a later increment; a type has none."""
         faults = []
         for name, (_, function) in self.functions.items():
             default = function.get('default')
             kind = function['kind']
-            if kind == 'function' and default not in function['backends']:
+            ordered = [b for b in FAMILY_DEFAULTS if b in function['backends']]
+            if kind == 'function' and default is None and ordered:
+                faults.append(f'doc/capabilities.json: the function {name} has no default, '
+                              f'though {ordered[0]}, a backend of the order, has it')
+            elif kind == 'function' and default is not None and \
+                    default not in function['backends']:
                 faults.append(f'doc/capabilities.json: the function {name} has no default '
                               f'among its backends ({default})')
             elif kind in FAMILY_KINDS and default is not None and default not in FAMILY_DEFAULTS:
@@ -333,7 +341,10 @@ def backends_table(data: Data, algorithm: dict) -> str:
     out.extend(f'* `{backend}`: {cell(source)}' for backend, source in sources)
     out.append('')
     defaults = [(f['name'], f['default']) for f in algorithm['functions'] if f['default']]
-    families = [f for f in algorithm['functions'] if f['kind'] in FAMILY_KINDS]
+    # A family's tag, and a function without a default (design D34), each say how its default
+    # stands.
+    families = [f for f in algorithm['functions']
+                if f['kind'] in FAMILY_KINDS or (f['kind'] == 'function' and f['default'] is None)]
     for function in families:
         if function['default'] is None:
             out.append(f'`{function["name"]}` has no default backend: the call names one of its '
@@ -427,11 +438,13 @@ def llms_txt(data: Data) -> str:
     lines = ['# webcpp::hash', '',
              '> Hashing and key derivation for C++20 on every target webcpp has (native, '
              'wasip2, wasip3, Emscripten): Boost.Hash2\'s digests and HMAC, Keccak-256, BLAKE3, '
-             'HKDF, PBKDF2, Argon2id and scrypt over C backends. Every function is synchronous, '
-             'returns boost::system::result and allocates nothing in webcpp\'s own code. A '
-             'program links /webcpp/hash//hash and the library of each backend it uses. Every '
-             'key derivation runs on backends::hash2 unless the call names another backend as '
-             'its second template argument; argon2id and scrypt run on backends::sodium unless '
+             'HKDF, PBKDF2, Argon2id, scrypt and the KDFs of NIST SP 800-108, SP 800-56C and '
+             'ANSI X9.63 over C backends. Every function is synchronous, returns '
+             'boost::system::result and allocates nothing in webcpp\'s own code. A program '
+             'links /webcpp/hash//hash and the library of each backend it uses. HKDF and PBKDF2 '
+             'run on backends::hash2 unless the call names another backend as its second '
+             'template argument; argon2id and scrypt run on backends::sodium unless the call '
+             'names backends::openssl; kbkdf, sskdf and x963kdf have no default backend, and '
              'the call names backends::openssl. The families digest_of, hasher, mac and argon2 '
              'take a tag of digests, macs or kdfs and a backend, by default the first of '
              'backends::hash2, backends::xkcp, backends::blake3 and backends::sodium that has '

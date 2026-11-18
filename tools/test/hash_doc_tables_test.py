@@ -12,7 +12,8 @@ table, the includes of the measured chapters and llms.txt, the same bytes each t
 passes on what it wrote, and fails naming `python3 tools/hash/doc_tables.py --write` when a
 generated file was edited by hand, is missing or is left over. A guide that lacks a function of
 the capability table, or describes one it does not have, fails, and so does a use case whose
-example is not there, and so does a function of the capability table without a default. Every
+example is not there, and so does a function of the capability table without a default that a
+backend of the order hash2, xkcp, blake3, sodium has (one that none has, as kbkdf, has none). Every
 function's default is the capability table's, `hash2` for HKDF whatever the measurements say. A
 family's tag (spec 2.15) names a default of the order hash2, xkcp, blake3, sodium, or none, and
 one whose cell comes in a later increment is said so; a partial cell says what it refuses.
@@ -206,6 +207,22 @@ def test_every_function_names_its_default(scratch: Path) -> None:
     expect(done.returncode == 1, 'a function without a default was rendered')
     expect('the function pbkdf2 has no default' in done.stderr, done.stderr)
     expect('the type sha2_256 has a default' in done.stderr, done.stderr)
+
+
+def test_a_function_without_a_backend_of_the_order_has_no_default(scratch: Path) -> None:
+    """A function that no backend of the order hash2, xkcp, blake3, sodium has (kbkdf, on
+    backends::openssl alone) has no default (design D34), and its backends say that the call
+    names one; given a backend of the order, it must name its default."""
+    library = scratch_library(scratch)
+    kbkdf = write_ok(library)['generated/backends-kbkdf.adoc']
+    expect('`kbkdf` has no default backend: the call names one of its backends' in kbkdf, kbkdf)
+
+    def hash2_cell(table: dict) -> None:
+        family_row(table, 'kbkdf')['backends']['hash2'] = a_cell(4)
+    edit_capabilities(library, hash2_cell)
+    done = run(library, '--write')
+    expect(done.returncode == 1, 'a function of hash2 without a default was rendered')
+    expect('the function kbkdf has no default, though hash2' in done.stderr, done.stderr)
 
 
 def family_row(table: dict, name: str) -> dict:
@@ -444,6 +461,7 @@ CASES: list[Callable[[Path], None]] = [
     test_a_later_default_and_a_partial_cell_are_said,
     test_a_default_names_only_its_functions_backends,
     test_a_tag_without_a_default_is_not_said_a_type,
+    test_a_function_without_a_backend_of_the_order_has_no_default,
     test_each_backend_s_constant_time_sources_are_together,
     test_without_measurements_the_tables_say_so,
     test_with_measurements_the_tables_carry_them,

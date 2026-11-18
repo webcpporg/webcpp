@@ -40,6 +40,8 @@ NOT_YET: dict[str, str] = {}
 NO_FIXTURE = {
     'ripemd128_on_openssl': 'it names /webcpp/hash//openssl, which Emscripten refuses before '
                             'the message (the fixture openssl_on_emscripten)',
+    'kbkdf_hmac_on_openssl': 'it names /webcpp/hash//openssl, which Emscripten refuses before '
+                             'the message (the fixture openssl_on_emscripten)',
 }
 
 DIRECTIVE = re.compile(r'^// expected-error@\S+ \{\{(.*)\}\}$', re.MULTILINE)
