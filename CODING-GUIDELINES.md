@@ -9182,7 +9182,8 @@ and G4); the proposal, with the specification, the design and the plan, is in
   only by naming `backends::bearssl`; the seventh, built, adds the browser
   backend over WebCrypto through a parallel asynchronous family, whose cells
   `doc/capabilities.json` marks asynchronous only; the sixth widens Botan's
-  surface.
+  surface. Across the built increments every tag that two backends or more
+  have is checked to give the same bytes on each pair of them, on random cases.
   Source: `libraries/hash/openspec/changes/genesis/reference/spec.md` section
   1.5 (proposals).
 
