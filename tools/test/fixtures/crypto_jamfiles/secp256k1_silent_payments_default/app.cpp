@@ -4,10 +4,10 @@
 // accompanying file LICENSE_1_0.txt or copy at
 // https://www.boost.org/LICENSE_1_0.txt)
 
-// Pays a BIP 352 silent payments address from one fixed input on silent payments' default
-// backend, scans the output with the recipient's scan key pair, checks that the payment is found
-// as the output paid, and prints the backend that ran. The secrets are fixed: a real program
-// draws its own.
+// Pays a BIP 352 silent payments recipient (its scan and spend keys) from one fixed input on
+// silent payments' default backend, scans the output with the recipient's scan key pair, checks
+// that the payment is found as the output created, and prints the backend that ran. The secrets
+// are fixed: a real program draws its own.
 #include <webcpp/crypto/curves/secp256k1.hpp>
 #include <webcpp/crypto/curves/secp256k1/silent_payments.hpp>
 
@@ -29,9 +29,15 @@ namespace silent_payments = webcpp::crypto::curves::secp256k1::silent_payments;
 
 bool pay_and_scan(secp256k1::keypair const& scan_pair, secp256k1::keypair const& spend_pair,
                   secp256k1::keypair const& donor) {
-    auto const scan_key = secp256k1::parse_public_key(*scan_pair.public_key());
-    auto const spend_key = secp256k1::parse_public_key(*spend_pair.public_key());
-    auto const donor_key = secp256k1::parse_public_key(*donor.public_key());
+    auto const scan_encoding = scan_pair.public_key();
+    auto const spend_encoding = spend_pair.public_key();
+    auto const donor_encoding = donor.public_key();
+    if (!scan_encoding || !spend_encoding || !donor_encoding) {
+        return false;
+    }
+    auto const scan_key = secp256k1::parse_public_key(*scan_encoding);
+    auto const spend_key = secp256k1::parse_public_key(*spend_encoding);
+    auto const donor_key = secp256k1::parse_public_key(*donor_encoding);
     if (!scan_key || !spend_key || !donor_key) {
         return false;
     }

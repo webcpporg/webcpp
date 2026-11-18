@@ -36,8 +36,11 @@ int main() {
         auto const sent = secp256k1::ellswift_create(*initiator, repeated(0x33));
         auto const received = secp256k1::ellswift_create(*responder, repeated(0x44));
         auto const initiator_key = initiator->public_key();
-        if (sent && received && initiator_key &&
-            secp256k1::serialize_public_key(secp256k1::ellswift_decode(*sent)) == *initiator_key) {
+        auto const responder_key = responder->public_key();
+        if (sent && received && initiator_key && responder_key &&
+            secp256k1::serialize_public_key(secp256k1::ellswift_decode(*sent)) == *initiator_key &&
+            secp256k1::serialize_public_key(secp256k1::ellswift_decode(*received)) ==
+                *responder_key) {
             auto const mine = secp256k1::ellswift_xdh(*initiator, *sent, *received,
                                                       secp256k1::ellswift_party::initiator);
             auto const theirs = secp256k1::ellswift_xdh(*responder, *sent, *received,
