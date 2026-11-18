@@ -34,7 +34,7 @@ int main() {
             }
             std::array<unsigned char, 32> buffer{};
             for (int round = 0; round < 16; ++round) {
-                if (RAND_priv_bytes(buffer.data(), buffer.size()) != 1) {
+                if (RAND_priv_bytes(buffer.data(), static_cast<int>(buffer.size())) != 1) {
                     return;
                 }
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));

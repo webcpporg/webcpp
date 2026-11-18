@@ -1,0 +1,91 @@
+# Copyright (c) 2026 WebCpp.org
+#
+# Distributed under the Boost Software License, Version 1.0. (See
+# accompanying file LICENSE_1_0.txt or copy at
+# https://www.boost.org/LICENSE_1_0.txt)
+
+# What the B2 rules of the source-built OpenSSL and libdatachannel share
+# (CODING-GUIDELINES.md chapter 15): where a configuration is built, that it
+# is built once, and how its consumers follow a change of configuration.
+#
+# A configuration's directory is bin/third_party/<name>/config-<hash>, the
+# hash of the key of the library's inputs (tools/third_party_build.py key: its
+# scripts and its pin) and of the build command's values. So a
+# directory that exists holds the build of exactly those inputs and that
+# command: its outputs are NOUPDATE, built when missing and never again, b2 -a
+# included, which the CI's lanes run, and a directory the CI restores from its
+# cache is used as it is. Consumers whose properties differ only in what the
+# command leaves out, as exception-handling for OpenSSL's C, share one build.
+#
+# A consumer depends on <name>-config-<hash>.selected in its own variant
+# directory, which tools/third_party_build.py select writes when the consumer's
+# configuration changes, removing the other selections of the library there:
+# the consumer is built again, even when the configuration it changes to was
+# built earlier and its directory, NOUPDATE, is older than the consumer. A
+# variant directory holds one selection of a library: in one b2 run, its
+# requests differ only in free features, and no free feature propagates, so
+# each reaches the library from b2's command line alone, the same in all.
+
+import "class" : new ;
+import errors ;
+import path ;
+import type ;
+import virtual-target ;
+
+type.register WEBCPP_THIRD_PARTY_SELECTION ;
+
+# The key of name's inputs, files named relative to root, once per b2 run. The
+# checkout source, relative to root, is first checked with name's own rules,
+# tools/<name>/source.py, against tools/<name>/pin.json: one that differs from
+# its pin stops b2 here, with their reason.
+rule inputs-key ( root : name : source : inputs + )
+{
+    if ! $(.key.$(name))
+    {
+        .script = [ path.native $(root)/tools/third_party_build.py ] ;
+        local command = python3 \"$(.script)\" key \"$(root)\" $(name) $(source)
+            $(inputs) ;
+        local result = [ SHELL $(command:J=" ") : strip-eol : exit-status ] ;
+        if $(result[2]) != 0
+        {
+            errors.user-error "The inputs of $(name) have no key:" $(result[1]) ;
+        }
+        .key.$(name) = $(result[1]) ;
+    }
+    return $(.key.$(name)) ;
+}
+
+# The directory of the configuration of name that values give, under project's
+# build directory.
+rule directory ( project : name : values * )
+{
+    local build = [ path.root [ path.make [ $(project).get build-dir ] ] [ path.pwd ] ] ;
+    local hash = [ MD5 "$(values:J=|)" ] ;
+    return $(build)/$(name)/config-$(hash) ;
+}
+
+# The outputs of a configuration's action, which exist only as its build.
+rule keep ( outputs * )
+{
+    NOUPDATE $(outputs) ;
+}
+
+# The selection of name's configuration in directory for a consumer built with
+# properties, in project, which the consumer depends on.
+rule selection ( project : name : directory : properties )
+{
+    local action = [ new action : webcpp-third-party.select : $(properties) ] ;
+    local stamp = [ new file-target $(name)-$(directory:B).selected exact
+        : WEBCPP_THIRD_PARTY_SELECTION : $(project) : $(action) ] ;
+    return [ virtual-target.register $(stamp) ] ;
+}
+
+rule select ( targets * : sources * : properties * )
+{
+    SCRIPT on $(targets) = $(.script) ;
+}
+
+actions select
+{
+    python3 "$(SCRIPT)" select "$(<)"
+}

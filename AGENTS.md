@@ -281,7 +281,10 @@ Jamroot is its build configuration, and `libs/<name>` is its repository.
 - for native or WASIp2/P3 guest TLS: Python 3, Perl, Make (nmake on Windows),
   the selected compiler and `third_party/libs/openssl`, initialized with
   `git submodule update --init third_party/libs/openssl`. B2 builds the pinned
-  OpenSSL sources and matching generated headers. Native Trystero's
+  OpenSSL sources and matching generated headers, each configuration once, in
+  `bin/third_party/openssl/config-<hash>`, which its inputs and its command
+  name and `b2 -a` keeps, as it does libdatachannel's: removing the directory
+  builds it again (`CODING-GUIDELINES.md` chapter 15). Native Trystero's
   libdatachannel uses that same provider. Neither `OPENSSL_ROOT` nor
   `LIBDATACHANNEL_ROOT` selects a separate installed copy. Source archives
   contain the required sources and do not require Git for these builds.

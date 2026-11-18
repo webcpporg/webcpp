@@ -1,0 +1,18 @@
+# Copyright (c) 2026 WebCpp.org
+#
+# Distributed under the Boost Software License, Version 1.0. (See
+# accompanying file LICENSE_1_0.txt or copy at
+# https://www.boost.org/LICENSE_1_0.txt)
+
+# The lines of each linker, measured on 2026-11-17: ld64 (Apple clang 21), GNU ld 2.44 (gcc
+# 15.3, Debian 13). MSVC's link.exe is test/msvc/memory_missing_definition_*'s case.
+[all]
+targets: native
+build: fails
+# tag::messages[]
+[native-darwin]
+contains: Undefined symbols for architecture
+contains: "webcpp::crypto::openssl_memory_resource()", referenced from:
+[native-linux]
+contains: undefined reference to `webcpp::crypto::openssl_memory_resource()'
+# end::messages[]

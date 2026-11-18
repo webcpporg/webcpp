@@ -64,6 +64,12 @@ def test_one_native_provider_in_a_path_with_spaces(root: Path) -> None:
                             'libs/datachannel_user/test')
     harness.expect(result, True)
     assert 'webcpp-libdatachannel.build ' not in result.stdout, result.stdout
+    # b2 -a, which the CI's lanes run, builds the program again, not the providers it uses.
+    result = harness.run_b2(root, '-a', '-j4', 'toolset=clang', 'variant=release',
+                            'libs/datachannel_user/test')
+    harness.expect(result, True, '**passed**')
+    assert 'webcpp-libdatachannel.' not in result.stdout, result.stdout
+    assert 'webcpp-openssl.' not in result.stdout, result.stdout
     # A free C++ ABI/compiler option changes the dependency's output directory.
     changed = harness.run_b2(root, '-n', '-a', '-d+2', 'toolset=clang', 'variant=release',
                              'cxxflags=-DWEBCPP_TEST_DATACHANNEL_VARIANT=1',
