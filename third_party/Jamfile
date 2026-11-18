@@ -804,9 +804,10 @@ explicit blake3_vectors ;
 # OpenSSL's EVP test data (Apache-2.0), test/recipes/30-test_evp_data at the
 # pin, read at run time from the directory WEBCPP_TEST_OPENSSL_EVP_DATA gives,
 # on every target, as test data that nothing compiles: webcpp::hash reads the
-# Argon2 cases of evpkdf_argon2.txt, the keyed BLAKE2 cases of evpmac_blake.txt,
-# the KMAC cases of evpmac_common.txt and the SipHash cases of
-# evpmac_siphash.txt. Quoted as wycheproof's define is.
+# Argon2 cases of evpkdf_argon2.txt, the KBKDF, SSKDF and X9.63 KDF cases of
+# evpkdf_kbkdf_counter.txt, evpkdf_ss.txt and evpkdf_x963.txt, the keyed BLAKE2
+# cases of evpmac_blake.txt, the KMAC cases of evpmac_common.txt and the SipHash
+# cases of evpmac_siphash.txt. Quoted as wycheproof's define is.
 path-constant OPENSSL_EVP_DATA : libs/openssl/test/recipes/30-test_evp_data ;
 
 rule openssl-evp-data-checked-out ( properties * )
@@ -823,6 +824,9 @@ alias openssl_evp_data : : <conditional>@openssl-evp-data-checked-out : :
     <define>"\"WEBCPP_TEST_OPENSSL_EVP_DATA=\\\"$(.openssl-evp-data)\\\"\""
     [ webcpp.data $(OPENSSL_EVP_DATA) ]
     <dependency>libs/openssl/test/recipes/30-test_evp_data/evpkdf_argon2.txt
+    <dependency>libs/openssl/test/recipes/30-test_evp_data/evpkdf_kbkdf_counter.txt
+    <dependency>libs/openssl/test/recipes/30-test_evp_data/evpkdf_ss.txt
+    <dependency>libs/openssl/test/recipes/30-test_evp_data/evpkdf_x963.txt
     <dependency>libs/openssl/test/recipes/30-test_evp_data/evpmac_blake.txt
     <dependency>libs/openssl/test/recipes/30-test_evp_data/evpmac_common.txt
     <dependency>libs/openssl/test/recipes/30-test_evp_data/evpmac_siphash.txt ;
