@@ -1,0 +1,12 @@
+# Copyright (c) 2026 WebCpp.org
+#
+# Distributed under the Boost Software License, Version 1.0. (See
+# accompanying file LICENSE_1_0.txt or copy at
+# https://www.boost.org/LICENSE_1_0.txt)
+
+# A record: two files compiled one with and one without the memory option link here, GNU ld
+# and ld64 keeping one of the two make functions. Only MSVC's linker stops them, with LNK2038
+# (backends/openssl.hpp's #pragma detect_mismatch), libs/crypto/test/msvc/memory_two_files.
+[all]
+targets: native
+build: succeeds

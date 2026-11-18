@@ -67,7 +67,7 @@ None.
 == Tools and build
 
 * Fixed emscripten release programs linking unoptimized; they now link at `-O3`.
-* Fixed WASI release programs carrying wasi-sdk's libc++ debug information, most of their size; they now link with `--strip-debug`.
+* Fixed WASI release programs carrying wasi-sdk's `libc++` debug information, most of their size; they now link with `--strip-debug`.
 * Fixed clean CMake consumer audits rejecting system libraries and phony dependency rules.
 * Changed CI to consume verified prepared environments without rebuilding images in PR jobs.
 * Added verified archive caches and isolated container availability from unrelated CI lanes.
