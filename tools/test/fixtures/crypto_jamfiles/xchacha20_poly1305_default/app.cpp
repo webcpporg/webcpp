@@ -30,9 +30,11 @@ int main() {
     for (std::size_t index = 0; index < iv.size(); ++index) {
         iv[index] = static_cast<std::uint8_t>(0x40 + index);
     }
-    std::array<std::uint8_t, 12> const additional_data{
-        0x50, 0x51, 0x52, 0x53, 0xc0, 0xc1, 0xc2, 0xc3, 0xc4, 0xc5, 0xc6, 0xc7,
-    };
+    // NOLINTBEGIN(readability-trailing-comma): it asks a list of one row, wrapped, for the comma
+    // and refuses it once clang-format puts the brace on a line of its own
+    std::array<std::uint8_t, 12> const additional_data{0x50, 0x51, 0x52, 0x53, 0xc0, 0xc1,
+                                                       0xc2, 0xc3, 0xc4, 0xc5, 0xc6, 0xc7};
+    // NOLINTEND(readability-trailing-comma)
     constexpr std::string_view sunscreen =
         "Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the "
         "future, sunscreen would be it.";
