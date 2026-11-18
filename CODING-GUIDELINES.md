@@ -7972,6 +7972,22 @@ The closure record distinguishes the baseline CI from validation of later change
   archives for one configuration, two OpenSSL copies in one program.
   Source: `docs/superpowers/plans/2026-10-16-openssl-source-build.md`,
   `docs/superpowers/plans/2026-10-16-cobalt-ssl.md` (superproject).
+- **Each configuration of OpenSSL and libdatachannel is built once, in
+  `bin/third_party/<name>/config-<hash>`, named by the bytes of its inputs
+  (its scripts and its pin) and by its build command, and never again, `b2 -a`
+  included: its outputs are `NOUPDATE`.** A directory that exists holds the
+  build of exactly those inputs and that command, so consumers whose
+  properties differ only in what the command leaves out, as
+  `exception-handling` for OpenSSL's C, share it, and the CI restores a lane's
+  directories from its cache (`tools/ci/actions/third-party`) and builds only
+  those the cache lacks. A consumer depends on the selection of its
+  configuration, `<name>-config-<hash>.selected` in its own variant directory,
+  which is written when the configuration changes, to a new one or back to one
+  built earlier, so the consumer is built again. Removing a configuration's
+  directory builds it again. A checkout that differs from its pin stops b2
+  before any build, by the library's own `check_checkout`.
+  Source: `tools/webcpp-third-party.jam`, `tools/third_party_build.py`
+  (superproject).
 - **A dated curl export of Mozilla's root certificates (2026-09-25, 121 CAs)
   is checked in under `third_party/ca_certificates`, with a manifest of its
   URL, SHA-256 and DER fingerprints and its MPL-2.0 licence, verified and

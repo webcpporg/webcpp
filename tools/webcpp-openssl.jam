@@ -16,6 +16,7 @@ import toolset ;
 import type ;
 import virtual-target ;
 import webcpp-lint-headers ;
+import webcpp-third-party ;
 import webcpp-wasi ;
 
 feature.feature webcpp-openssl-tests : on : optional propagated ;
@@ -31,6 +32,7 @@ class openssl-target : basic-target
     import regex ;
     import toolset ;
     import virtual-target ;
+    import webcpp-third-party ;
     rule __init__ ( name : project : sources * : requirements *
         : default-build * : usage-requirements * )
     {
@@ -60,27 +62,40 @@ class openssl-target : basic-target
             errors.user-error "Source-built OpenSSL supports native Clang/GCC on macOS/Linux, MSVC on Windows, clang-wasip2 and clang-wasip3."
                 "Other targets are not supported by this recipe." ;
         }
-        # B2's normal directory omits free flags. Add the effective compiler
-        # configuration so changing cflags or a user-config tool cannot reuse
-        # archives or headers from the previous configuration.
+        # The configuration's directory is named by the key of the inputs and
+        # by every value of the build command, free flags and user-config tools
+        # included: consumers that differ in nothing the command uses share it
+        # (tools/webcpp-third-party.jam).
         local relevant = [ toolset.relevant webcpp-openssl.build ] ;
         properties = [ $(properties).add $(relevant) ] ;
-        local fingerprint = [ modules.call-in webcpp-openssl : fingerprint $(properties) ] ;
+        local directory = [ webcpp-third-party.directory $(self.project) : openssl
+            : [ modules.call-in webcpp-openssl : command-values $(properties) ] ] ;
+        local built = [ modules.peek webcpp-openssl : .built.$(directory) ] ;
+        if ! $(built)
+        {
+            built = [ build-configuration $(directory) : $(properties) ] ;
+            modules.poke webcpp-openssl : .built.$(directory) : $(built) ;
+        }
+        local selection = [ webcpp-third-party.selection $(self.project) : openssl
+            : $(directory) : $(properties) ] ;
+        return [ property-set.create [ $(relevant).raw ] <include>$(directory)/include
+            <dependency>$(built[3-]) <dependency>$(selection) ] $(built[1-2]) ;
+    }
+
+    # The archives, then the headers and every other output, of the
+    # configuration that properties give, in directory.
+    rule build-configuration ( directory : properties )
+    {
+        local os = [ $(properties).get <target-os> ] ;
         # Analysis needs the configured headers, but no archives or upstream
         # suite. Keep generation separate, under the exact same properties.
-        local header-action = [ new action $(source-targets)
-            : webcpp-openssl.generate-headers : $(properties) ] ;
-        local directory ;
+        local header-action = [ new action : webcpp-openssl.generate-headers
+            : $(properties) ] ;
         local headers ;
         for local header in [ modules.peek webcpp-openssl : .headers ]
         {
             local generated = [ new file-target include/openssl/$(header) exact
                 : H : $(self.project) : $(header-action) ] ;
-            if ! $(directory)
-            {
-                directory = [ path.root [ path.make [ $(generated).path ] ] [ path.pwd ] ] ;
-                directory = $(directory)/config-$(fingerprint) ;
-            }
             $(generated).set-path $(directory) ;
             generated = [ virtual-target.register $(generated) ] ;
             headers += $(generated) ;
@@ -93,8 +108,7 @@ class openssl-target : basic-target
         # The complete build publishes into that directory too. Its dependency
         # on the headers orders both writers and leaves archives/proof pending
         # after a lint preparation, including on an incremental build.
-        local action = [ new action $(source-targets) $(headers)
-            : webcpp-openssl.build : $(properties) ] ;
+        local action = [ new action $(headers) : webcpp-openssl.build : $(properties) ] ;
         local extension = a ;
         if $(os) = windows { extension = lib ; }
         local ssl = [ new file-target libssl.$(extension) exact : STATIC_LIB : $(self.project) : $(action) ] ;
@@ -118,17 +132,22 @@ class openssl-target : basic-target
             $(symbols).set-path $(directory) ;
             headers += [ virtual-target.register $(symbols) ] ;
         }
-        return [ property-set.create [ $(relevant).raw ] <include>$(directory)/include
-            <dependency>$(headers) ] $(ssl) $(crypto) ;
+        return $(ssl) $(crypto) $(headers) ;
     }
 }
 
-rule declare ( root : headers * : sources * )
+# Declares the openssl target of the current project, the checkout of
+# third_party/libs/openssl under root built with tools/openssl/build.py, which
+# installs headers, named relative to include/openssl. inputs, relative to
+# root, are the files whose bytes make the build what it is, the key of its
+# configurations (tools/webcpp-third-party.jam).
+rule declare ( root : headers * : inputs * )
 {
     .root = $(root) ;
     .headers = $(headers) ;
+    .inputs = $(inputs) ;
     targets.create-metatarget openssl-target : [ project.current ] : openssl
-        : $(sources) : <link>static <warnings>off <warnings-as-errors>off
+        : : <link>static <warnings>off <warnings-as-errors>off
             <conditional>@webcpp-openssl.configuration
         : : <target-os>darwin:<linkflags>-Wl,-dead_strip
             <target-os>linux:<linkflags>-Wl,--gc-sections
@@ -155,19 +174,30 @@ rule configuration ( properties * )
     }
 }
 
-rule fingerprint ( ps )
+# The values of the build command of the configuration that ps gives, after
+# the key of the inputs: what names its directory.
+rule command-values ( ps )
 {
     # Toolset variables append to their target. Cache by immutable property set
     # to avoid accumulating flags or building duplicate archives on each visit.
-    if $(.fingerprint.$(ps))
+    if $(.values.$(ps))
     {
-        return $(.fingerprint.$(ps)) ;
+        return $(.values.$(ps)) ;
     }
     local settings = openssl-settings-$(ps) ;
     compiler-settings $(settings) : $(ps) ;
-    local values = [ on $(settings) return $(DRIVER) $(C_OPTIONS) $(DEFINES) $(ARCHIVER) $(.SETUP) $(.SETUP-SCRIPT) $(.SETUP-OPTIONS) ] ;
-    .fingerprint.$(ps) = [ MD5 "$(values:J=|)" ] ;
-    return $(.fingerprint.$(ps)) ;
+    local key = [ webcpp-third-party.inputs-key $(.root) : openssl
+        : third_party/libs/openssl : $(.inputs) ] ;
+    local named ;
+    for local feature in target-os threading variant debug-symbols debug-store webcpp-openssl-tests
+    {
+        local value = [ $(ps).get <$(feature)> ] ;
+        named += $(feature)=$(value:E=) ;
+    }
+    .values.$(ps) = $(key)
+        [ on $(settings) return $(DRIVER) $(C_OPTIONS) $(DEFINES) $(ARCHIVER) $(.SETUP) $(.SETUP-SCRIPT) $(.SETUP-OPTIONS) ]
+        $(named) ;
+    return $(.values.$(ps)) ;
 }
 
 rule compiler-settings ( outputs * : ps )
@@ -220,6 +250,7 @@ rule build-settings ( outputs * : properties * )
 rule build ( outputs * : inputs * : properties * )
 {
     build-settings $(outputs) : $(properties) ;
+    webcpp-third-party.keep $(outputs) ;
 }
 
 actions build
@@ -230,6 +261,7 @@ actions build
 rule generate-headers ( outputs * : inputs * : properties * )
 {
     build-settings $(outputs) : $(properties) ;
+    webcpp-third-party.keep $(outputs) ;
 }
 
 actions generate-headers

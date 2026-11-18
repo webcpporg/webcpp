@@ -105,6 +105,7 @@ None.
 * Added source-built OpenSSL and Cobalt SSL targets for WASIp2.
 * Added explicit browser pthread profiles with main-thread handoff tests.
 * Fixed the lint's clang-tidy stopping at Boost.Unordered on arm64 hosts.
+* Changed OpenSSL and libdatachannel to build each configuration once, in a directory its inputs name, which b2 -a keeps.
 * Changed lint to verify WASIp3 ABI snapshots before excluding upstream headers.
 * Fixed embedded CA headers using an unowned namespace and include path.
 * Added source-built Boost.Context for native stackful coroutine applications.

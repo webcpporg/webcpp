@@ -139,12 +139,65 @@ def test_native_source_dependency(root: Path) -> None:
     custom = [record for record in records
               if '-DWEBCPP_TEST_OPENSSL_CONFIGURATION=17' in record['flags']]
     assert len(custom) == 1, records
-    # All installed headers, not just configuration.h, are generated outputs.
+    # All installed headers, not just configuration.h, are generated outputs. The archives of
+    # their configuration exist, and are kept: only the headers are generated again.
     for header in (root / 'bin/third_party').rglob('include/openssl/ssl.h'):
         header.unlink()
     result = harness.run_b2(root, 'toolset=clang', 'variant=release',
                             'threading=single', 'libs/openssl_user/test')
-    harness.expect(result, True, 'webcpp-openssl.build', '**passed**')
+    harness.expect(result, True, 'webcpp-openssl.generate-headers', '**passed**')
+    assert 'webcpp-openssl.build ' not in result.stdout, result.stdout
+
+
+def test_one_c_configuration_is_built_once(root: Path) -> None:
+    harness.add_library(root, 'openssl_user', JAM, {'uses_openssl.cpp': SOURCE})
+    # exception-handling changes the consumer's C++, not OpenSSL's C: both consumers share
+    # one build of the same configuration, as they would otherwise build it twice.
+    result = harness.run_b2(root, '-n', '-a', '-d+2', 'toolset=clang', 'variant=release',
+                            'threading=single', 'exception-handling=on,off',
+                            'libs/openssl_user/test')
+    harness.expect(result, True)
+    builds = re.findall(r'^webcpp-openssl\.build .*$', result.stdout, re.M)
+    assert len(builds) == 1, builds
+    archives = set(re.findall(r'"([^"\n]+/config-[^"\n]+/libcrypto\.a)"', result.stdout))
+    assert len(archives) == 1, archives
+
+
+def test_a_built_configuration_is_kept_and_selected(root: Path) -> None:
+    harness.add_library(root, 'openssl_user', JAM, {'uses_openssl.cpp': SOURCE})
+    request = ('toolset=clang', 'variant=release', 'threading=single', 'libs/openssl_user/test')
+    harness.expect(harness.run_b2(root, *request), True, 'webcpp-openssl.build', '**passed**')
+    archive = next((root / 'bin/third_party').rglob('libcrypto.a'))
+    built = archive.stat().st_mtime_ns
+    # b2 -a, which the CI's lanes run, builds the program again, not the archives it uses: a
+    # configuration's directory is named by its inputs, so the one that exists is theirs.
+    result = harness.run_b2(root, '-a', *request)
+    harness.expect(result, True, '**passed**')
+    assert 'webcpp-openssl.' not in result.stdout, result.stdout
+    assert archive.stat().st_mtime_ns == built
+    # A changed input names another configuration.
+    script = root / 'tools/openssl/build.py'
+    original = script.read_text()
+    script.write_text(original + '\n# A changed input.\n')
+    planned = harness.run_b2(root, '-n', *request)
+    harness.expect(planned, True)
+    changed = re.findall(r'^webcpp-openssl\.build (.+[/\\])libssl\.a$', planned.stdout, re.M)
+    assert len(changed) == 1, planned.stdout
+    other = root / changed[0]
+    assert other.resolve() != archive.parent.resolve(), other
+    # A program is built again when its configuration changes to one that exists, here a copy
+    # of the first, and when it changes back.
+    shutil.copytree(archive.parent, other)
+    result = harness.run_b2(root, *request)
+    harness.expect(result, True, '**passed**')
+    assert 'webcpp-openssl.build' not in result.stdout, result.stdout
+    script.write_text(original)
+    result = harness.run_b2(root, *request)
+    harness.expect(result, True, '**passed**')
+    assert 'webcpp-openssl.build' not in result.stdout, result.stdout
+    result = harness.run_b2(root, *request)
+    harness.expect(result, True)
+    assert '**passed**' not in result.stdout, result.stdout
 
 
 def test_wasip2_source_dependency(root: Path) -> None:
@@ -421,6 +474,8 @@ def test_source_archive_without_git_and_inside_parent_checkout(root: Path) -> No
     for parent_checkout in (False, True):
         if parent_checkout:
             subprocess.run(['git', 'init', '--quiet', str(root)], check=True)
+            # b2 -a keeps a configuration that exists: build this one again, in the parent.
+            shutil.rmtree(root / 'bin/third_party/openssl')
         result = harness.run_b2(root, '-a', 'toolset=clang', 'variant=release',
                                 'threading=single', 'libs/openssl_user/test')
         if result.returncode:
@@ -464,7 +519,9 @@ def test_source_archive_tampering_fails_before_configuration(root: Path) -> None
 CASES = [test_native_upstream_suite_checks_the_consumed_archives,
          test_upstream_suite_rejects_wasi_by_name,
          test_upstream_failure_prevents_archive_publication,
-         test_native_source_dependency, test_wasip2_source_dependency,
+         test_native_source_dependency, test_one_c_configuration_is_built_once,
+         test_a_built_configuration_is_kept_and_selected,
+         test_wasip2_source_dependency,
          test_symlinked_compiler_without_c_sibling,
          test_msvc_build_commands_preserve_the_consumers_configuration,
          test_msvc_tls_lanes_keep_distinct_openssl_thread_profiles,

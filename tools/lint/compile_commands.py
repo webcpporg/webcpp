@@ -583,6 +583,34 @@ def of_the_tree(root: str, source: str) -> bool:
 Units = dict[str, dict[str, list[list[str]]]]
 
 
+# What a dry run prints for a provider configuration it builds: its archives, or, when they
+# exist, which B2 keeps (tools/webcpp-third-party.jam), only its headers' generation, when they
+# are missing.
+PROVIDER_ACTION = re.compile(
+    r'webcpp-(openssl|libdatachannel)\.(?:build (.+[/\\])'
+    r'(?:libssl|libdatachannel|datachannel)\.(?:a|lib)'
+    r'|(?:generate|prepare)-headers (.+[/\\])include[/\\](?:openssl|rtc)[/\\].+)')
+
+
+def provider_headers(root: str, lines: list[str], includes: set[Path]) -> set[str]:
+    """The header that stands for each provider configuration of lines, a dry run's, whose
+    include directory is one of includes."""
+    # Select each provider by its real B2 action, preserving the exact variant
+    # that the consumer uses, including program-only definitions and ABI flags.
+    headers: set[str] = set()
+    for line in lines:
+        action = PROVIDER_ACTION.fullmatch(line)
+        if action:
+            directory = Path(root, action.group(2) or action.group(3), 'include')
+            # B2 aliases explicit outputs by their original spelling, even when
+            # the build directory is a symlink. Canonicalize only comparisons.
+            if directory.resolve() in includes:
+                header = ('openssl/configuration.h' if action.group(1) == 'openssl'
+                          else 'rtc/datachannel.hpp')
+                headers.add(str(directory / header))
+    return headers
+
+
 def prepare_provider_headers(root: str, request: list[str], commands: list[list[str]],
                             lines: list[str]) -> None:
     """Build each program's configured provider headers without executing its test target."""
@@ -602,21 +630,7 @@ def prepare_provider_headers(root: str, request: list[str], commands: list[list[
                 includes.add(directory)
     if not includes:
         return
-    # Select each provider by its real B2 action, preserving the exact variant
-    # that the consumer uses, including program-only definitions and ABI flags.
-    headers: set[str] = set()
-    for line in lines:
-        built = re.fullmatch(
-            r'webcpp-(openssl|libdatachannel)\.build (.+[/\\])'
-            r'(?:libssl|libdatachannel|datachannel)\.(?:a|lib)', line)
-        if built:
-            directory = Path(root, built.group(2), 'include')
-            # B2 aliases explicit outputs by their original spelling, even when
-            # the build directory is a symlink. Canonicalize only comparisons.
-            if directory.resolve() in includes:
-                header = ('openssl/configuration.h' if built.group(1) == 'openssl'
-                          else 'rtc/datachannel.hpp')
-                headers.add(str(directory / header))
+    headers = provider_headers(root, lines, includes)
     if not headers:
         return
     # Resolve the original consumers inside a dedicated B2 preparation target.
