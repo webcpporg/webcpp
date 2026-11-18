@@ -39,10 +39,12 @@ whose original runs with the CI's Node, and for one whose shared lane has Node, 
 lane's, which runs its programs; a served lane on wasip2 or wasip3 has none; "cc" and "cxx", the
 compilers of the lane it shares; "external", as a lane's; and "chrome", true for a lane of
 CHROME_LANES, whose driver meets a browser, which its job gives the pinned chrome-headless-shell as
-CHROME. One that names no target runs as `b2 -a toolset=clang-18 D//N ...`, whose exit status is its
-verdict: it writes no XML, so it is no column of the report. One that names targets is an entry per
-target T, which adds "platform": T and the "id" <T>.<L>.<N> (wasip2.wasi.http), and shares T's own
-lane, or the oracle's Clang 18 for native. It runs as that lane runs, with --dump-tests and
+CHROME; and "apt", the packages of OWN_LANE_PACKAGES for its library and lane, which its job
+installs on Linux, [] for every other. One that names no target runs as
+`b2 -a toolset=clang-18 D//N ...`, whose exit status is its verdict: it writes no XML, so it is
+no column of the report. One that names targets is an entry per target T, which adds
+"platform": T and the "id" <T>.<L>.<N> (wasip2.wasi.http), and shares T's own lane, or the
+oracle's Clang 18 for native. It runs as that lane runs, with --dump-tests and
 --out-xml, and its XML, <id>.xml, is a column of the report under its id, which
 tools/report/report.py checks against the toolset it was built with and the library whose tests it
 lists. A target the CI has no lane to set up an own lane on fails the listing by name: an own lane
@@ -185,6 +187,14 @@ CHROME_LANES = {('asio', 'browser'), ('asio', 'browser-workers'),
                 ('cobalt', 'browser-network-counterparts'),
                 ('document', 'js'), ('trystero', 'interop'),
                 ('webrtc', 'browser'), ('webrtc', 'interop')}
+
+# The packages an own lane needs from the runner's apt, by (library, lane), on every target it
+# runs on: an own lane runs on its runner, never in the container, so they come with its entry
+# ("apt"), which the own-lanes job installs on Linux. crypto's constant-time lane runs its
+# programs under Valgrind's memcheck, and its driver reads MemorySanitizer's frames with
+# llvm-symbolizer-18, which llvm-18 installs; clang-18 brings MemorySanitizer's runtime.
+OWN_LANE_PACKAGES: dict[tuple[str, str], tuple[str, ...]] = {
+    ('crypto', 'constant-time'): ('valgrind', 'llvm-18')}
 
 # MSVC's lanes build 64-bit programs, embed their manifest with the linker and abbreviate b2's
 # paths against Windows's MAX_PATH, as xstate-cpp's green Windows jobs did. b2 abbreviates each
@@ -625,7 +635,8 @@ def own_lane_entry(own: OwnLane) -> dict[str, object]:
     """The own lane as an entry of the own-lanes matrix: its library, its lane and its
     directories; its target and its id when it names one; and, for every entry, its kind, the name
     of its job, the image, the setup and the compilers of the lane it shares, and whether its
-    library needs a library webcpp does not build, which the job reads from here alone."""
+    library needs a library webcpp does not build, and the packages it needs from apt
+    (OWN_LANE_PACKAGES), which the job reads from here alone."""
     base = own_lane_profile(own)
     entry: dict[str, object] = {'library': own.library, 'lane': own.lane,
                                 'directories': list(own.directories)}
@@ -638,7 +649,8 @@ def own_lane_entry(own: OwnLane) -> dict[str, object]:
     node = base.node or own.kind == 'original'
     entry.update(kind=own.kind, name=own.name, os=base.os, wasm=base.wasm, emsdk=base.emsdk,
                  node=node, cc=base.cc, cxx=base.cxx, external=needs_external(own.library),
-                 chrome=(own.library, own.lane) in CHROME_LANES)
+                 chrome=(own.library, own.lane) in CHROME_LANES,
+                 apt=list(OWN_LANE_PACKAGES.get((own.library, own.lane), ())))
     return entry
 
 

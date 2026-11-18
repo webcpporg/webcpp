@@ -335,6 +335,15 @@ jobs:
         with:
           product: ${{ (matrix.library == 'beast' || matrix.library == 'cobalt') && 'chrome' || 'chrome-headless-shell' }}
 
+      # The packages the lane needs from apt (its entry's apt, tools/ci/matrix.py's
+      # OWN_LANE_PACKAGES): crypto's constant-time lane has Valgrind and llvm-18. The lane runs on
+      # the runner, never in the container, so they are installed here.
+      - name: Install the lane's packages
+        if: runner.os == 'Linux' && join(matrix.apt, ' ') != ''
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends ${{ join(matrix.apt, ' ') }}
+
       - name: Build the native Beast interoperability peer
         if: matrix.library == 'beast' && (matrix.lane == 'browser' || matrix.lane == 'browser-node')
         shell: bash
