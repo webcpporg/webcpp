@@ -1,0 +1,9 @@
+# Copyright (c) 2026 WebCpp.org
+#
+# Distributed under the Boost Software License, Version 1.0. (See
+# accompanying file LICENSE_1_0.txt or copy at
+# https://www.boost.org/LICENSE_1_0.txt)
+
+# tag::jamfile[]
+exe app : app.cpp /webcpp/crypto//crypto /webcpp/crypto//secretbox_xchacha20poly1305-default ;
+# end::jamfile[]
