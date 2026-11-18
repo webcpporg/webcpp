@@ -29,11 +29,14 @@ at the same path on every target, wasmtime being given it on WASI; and webcpp.sa
 when its sources built with a library and without it give byte-identical programs, the same name in
 two directories, linked with the same flags, the linker's removal of unused sections included, with
 exceptions on or off, and fails naming both files and their sizes when the library's code is
-called. Each case builds a scratch
-superproject with the fixture library demo. Run with the names of some cases to run only those."""
+called; and webcpp.program-sizes sizes webcpp.link's programs against a baseline from release
+builds alone, whatever variant is asked for, and refuses a program it cannot size on each of its
+targets. Each case builds a scratch superproject with the fixture library demo. Run with the
+names of some cases to run only those."""
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -757,6 +760,82 @@ def test_programs_of_records_link_and_drive(root):
         'run reads native emscripten',
         'run-fail fails native emscripten',
     ], result.stdout
+
+
+SIZED = ('import webcpp ;\n'
+         '\n'
+         'webcpp.targets native wasip2 wasip3 ;\n'
+         'webcpp.link baseline : baseline.cpp ;\n'
+         'webcpp.link larger : larger.cpp ;\n'
+         'webcpp.run plain : plain.cpp ;\n'
+         'webcpp.link native_only : baseline.cpp : : native ;\n')
+
+SIZED_SOURCES = {
+    'baseline.cpp': '#include <cstdio>\nint main() { std::puts("baseline"); }\n',
+    'larger.cpp': ('#include <cstdio>\n#include <string>\n'
+                   'int main(int argc, char**) {\n'
+                   '    std::string text(static_cast<std::size_t>(argc) * 40, \'x\');\n'
+                   '    std::printf("%s %zu\\n", text.c_str(), std::hash<std::string>{}(text));\n'
+                   '}\n'),
+    'plain.cpp': PLAIN_SOURCE,
+}
+
+
+def test_program_sizes_are_those_of_release_builds(root):
+    # webcpp.program-sizes sizes the programs webcpp.link declares against a baseline, on each
+    # target of its table, from release builds alone: asked for a debug build, it still builds
+    # its programs, its JSON and its table at variant=release. Natively the executable is
+    # stripped; on WASI the .wasm is read. Its lane is listed once per target.
+    harness.add_library(root, 'sized', SIZED
+                        + 'webcpp.program-sizes sized : baseline : larger ;\n'
+                        + 'webcpp.lane sizes : sized.sizes.md : native wasip2 ;\n',
+                        SIZED_SOURCES)
+    result = harness.run_b2(root, '-d0', 'declared-lanes')
+    harness.expect(result, True)
+    assert 'sized sizes libs/sized/test native programs\n' in result.stdout, result.stdout
+    for target, request in (('native', ()), ('wasip2', WASIP2)):
+        result = harness.run_b2(root, '-a', f'--build-dir=bin/{target}', *request,
+                                'variant=debug', 'libs/sized/test//sizes')
+        harness.expect(result, True, '| larger |')
+        found = sorted((root / f'bin/{target}').rglob('sized.sizes.json'))
+        tables = sorted((root / f'bin/{target}').rglob('sized.sizes.md'))
+        assert len(found) == 1 and len(tables) == 1, (found, tables)
+        assert 'release' in found[0].parts and 'debug' not in found[0].parts, found
+        sized = json.loads(found[0].read_text())
+        assert (sized['variant'], sized['target'], sized['baseline']) == (
+            'release', target, 'baseline'), sized
+        rows = {row['program']: row for row in sized['programs']}
+        assert sorted(rows) == ['baseline', 'larger'], rows
+        kind = 'executable' if target == 'native' else 'wasm'
+        assert rows['larger']['file'] == kind and rows['larger']['over_baseline'] > 0, rows
+        assert rows['baseline']['over_baseline'] == 0, rows
+        assert tables[0].read_text().startswith(f'Linked programs on {target}, '), tables
+        programs = [p for p in (root / f'bin/{target}').rglob('larger-program*')
+                    if p.suffix in ('', '.wasm')]
+        assert programs and all('release' in p.parts for p in programs), programs
+
+
+def test_program_sizes_refuse_what_they_cannot_size(root):
+    # Each program is one webcpp.link declares before the table, built on every target of the
+    # table: b2 would skip a make one of whose sources it skips, silently.
+    for line, message in (
+        ('webcpp.program-sizes sized : baseline : plain ;\n',
+         'webcpp.program-sizes sized in libs/sized/test/Jamfile: plain is not a program '
+         'webcpp.link declares before it in its Jamfile'),
+        ('webcpp.program-sizes sized : baseline : native_only ;\n',
+         'webcpp.program-sizes sized in libs/sized/test/Jamfile: native_only is not built for '
+         'wasip2 wasip3'),
+        ('webcpp.program-sizes sized : baseline : larger : wasm ;\n',
+         'webcpp.program-sizes sized in libs/sized/test/Jamfile: wasm is not a target'),
+    ):
+        shutil.rmtree(root / 'libs/sized', ignore_errors=True)
+        harness.add_library(root, 'sized', SIZED + line, SIZED_SOURCES)
+        harness.expect(harness.run_b2(root, '-d0', 'declared-lanes'), False, message)
+    shutil.rmtree(root / 'libs/sized')
+    harness.add_library(root, 'sized',
+                        SIZED + 'webcpp.program-sizes sized : baseline : native_only : native ;\n',
+                        SIZED_SOURCES)
+    harness.expect(harness.run_b2(root, '-d0', 'declared-lanes'), True)
 
 
 def test_example_mismatch_fails_naming_the_program(root):
@@ -1538,6 +1617,8 @@ CASES = [
     test_the_pair_is_found_by_its_directory_on_every_path_separator,
     test_a_pair_built_without_exceptions_links_the_handler_and_compares_equal,
     test_a_shared_library_is_compared_as_a_static_one,
+    test_program_sizes_are_those_of_release_builds,
+    test_program_sizes_refuse_what_they_cannot_size,
 ]
 
 
