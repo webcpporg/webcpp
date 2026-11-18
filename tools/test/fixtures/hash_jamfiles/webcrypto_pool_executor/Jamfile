@@ -1,0 +1,8 @@
+# Copyright (c) 2026 WebCpp.org
+#
+# Distributed under the Boost Software License, Version 1.0. (See
+# accompanying file LICENSE_1_0.txt or copy at
+# https://www.boost.org/LICENSE_1_0.txt)
+
+# backends::webcrypto named with a thread_pool's executor, built for Emscripten.
+exe app : app.cpp /webcpp/hash//hash /webcpp/asio//asio ;

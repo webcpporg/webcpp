@@ -318,6 +318,10 @@ functions, and scattering a backend's constant-time statements.
 tests read at run time on every target.
 * Added /third_party//blake2_vectors, BLAKE2's test vectors at ed1974e (a shallow submodule), and
 /third_party//sodium_vectors, libsodium's test outputs, which webcpp::hash's tests read at run time.
+* Changed tools/test/hash_jamfiles_test.py to copy libs/asio into its scratch superproject, so that
+the messages of webcpp::hash's asynchronous family are built on Emscripten too.
+* Changed tools/hash/doc_tables.py to render a backend of webcpp::hash's asynchronous family
+alone, backends::webcrypto, with the note "asynchronous family only" in every table.
 
 [#webcpp-0-1-0-compilers-tested]
 == Compilers tested

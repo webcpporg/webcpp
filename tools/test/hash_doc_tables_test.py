@@ -15,7 +15,8 @@ the capability table, or describes one it does not have, fails, and so does a us
 example is not there, and so does a function of the capability table without a default. Every
 function's default is the capability table's, `hash2` for HKDF whatever the measurements say. A
 family's tag (spec 2.15) names a default of the order hash2, xkcp, blake3, sodium, or none, and
-one whose cell comes in a later increment is said so; a partial cell says what it refuses.
+one whose cell comes in a later increment is said so; a partial cell says what it refuses. A
+backend of the asynchronous family alone (backends::webcrypto) is named so in every table.
 Without doc/measurements.json the tables say so, carry no measured column and render no
 measurements.adoc; with it (a fixture in its shape) they carry the throughput and the size, and
 measurements.adoc renders it as the dated reference that decides nothing; a hand edit of the
@@ -278,6 +279,35 @@ def test_each_backend_s_constant_time_sources_are_together(scratch: Path) -> Non
     expect(listed == sorted(listed, key=lambda b: order.index(b[2:])), '\n'.join(listed))
 
 
+def test_an_asynchronous_backend_is_said(scratch: Path) -> None:
+    # backends::webcrypto serves the asynchronous family alone (its "asynchronous_only" field):
+    # every table names it with that note, and a synchronous call never names it.
+    library = scratch_library(scratch)
+    files = write_ok(library)
+    backends = files['backends.adoc']
+    expect('| webcrypto\n| the JavaScript runtime' in backends, backends)
+    expect('| asynchronous family only (async.hpp)' in backends, backends)
+    expect('| every function of its cells' in backends, backends)
+    expect('| hkdf\n| webcrypto (asynchronous family only)' in backends, backends)
+    hkdf = files['generated/backends-hkdf.adoc']
+    expect('| `webcrypto` (asynchronous family only)' in hkdf, hkdf)
+    expect('`bearssl`, `openssl`, `sodium` only where the call names it' in hkdf, hkdf)
+    expect('`webcrypto` serves the asynchronous family alone, on Emscripten, where the type of '
+           'its asynchronous call names it (<<hash-async-webcrypto>>).' in hkdf, hkdf)
+    digests = files['generated/backends-md5-sha1-sha2.adoc']
+    expect('`webcrypto` serves the asynchronous family alone' in digests, digests)
+    expect('webcrypto, asynchronous family only (/webcpp/asio//asio; emscripten)'
+           in files['llms.txt'], 'llms.txt does not say webcrypto is asynchronous only')
+    expect('backends::webcrypto, the browser\'s WebCrypto, serves that form alone'
+           in files['llms.txt'], 'llms.txt does not name the asynchronous form')
+    table = json.loads((library / 'doc/capabilities.json').read_text(encoding='utf-8'))
+    for backend in table['backends']:
+        backend.pop('asynchronous_only', None)
+    (library / 'doc/capabilities.json').write_text(json.dumps(table), encoding='utf-8')
+    plain = write_ok(library)['backends.adoc']
+    expect('asynchronous family only' not in plain, 'a note without its field')
+
+
 def test_without_measurements_the_tables_say_so(scratch: Path) -> None:
     library = scratch_library(scratch)
     files = write_ok(library)
@@ -398,6 +428,7 @@ CASES: list[Callable[[Path], None]] = [
     test_a_later_default_and_a_partial_cell_are_said,
     test_a_default_names_only_its_functions_backends,
     test_each_backend_s_constant_time_sources_are_together,
+    test_an_asynchronous_backend_is_said,
     test_without_measurements_the_tables_say_so,
     test_with_measurements_the_tables_carry_them,
     test_a_hand_edit_of_the_measurements_fails,

@@ -9099,7 +9099,7 @@ summary.
   `organization/openspec/changes/site-increments-4-5/specs/site/spec.md`
   (proposals).
 
-### hash (hashing and key derivation over Boost.Hash2 and C backends; wrapper; accepted 2026-11-14, increments 1, 2, 3 and 5 built, not merged)
+### hash (hashing and key derivation over Boost.Hash2 and C backends; wrapper; accepted 2026-11-14, increments 1, 2, 3, 5 and 7 built, not merged)
 
 webcpp::hash is one entry point for hashing and key derivation in a C++20
 program on every target webcpp has, a wrapper (`"port-of": null`). Increment 1
@@ -9124,11 +9124,15 @@ increment 5 gives them BearSSL's MD5, SHA-1, SHA-2, TLS 1.0's MD5-SHA1, SHAKE
 and HMAC, each reached only by naming `backends::bearssl`. The C libraries are
 built by `third_party/Jamfile` (`xkcp`, `blake3`, `sodium`, `bearssl`, each with
 a canary), their own suites by the `c-suites` lane (`test/c_suites`), the
-examples are in `example/` and the documentation in `doc/`. Every function is
-synchronous, reports failure as a `boost::system::result`, takes its data as
-`std::span` and allocates nothing in webcpp's own code. Its repository,
-`webcpporg/hash`, is still to be created by the owner (gates G1, G2 and G4); the
-proposal, with the specification, the design and the plan, is in
+examples are in `example/` and the documentation in `doc/`. Every function
+reports failure as a `boost::system::result`, takes its data as `std::span` and
+allocates nothing in webcpp's own code; increment 7 adds an asynchronous family
+in `async.hpp` over webcpp::asio (any completion token, Cobalt's `use_op`
+included): the password hashes and PBKDF2 on a thread pool where the build has
+threads, the digests, HMAC and HKDF through a post, and `backends::webcrypto`,
+the browser's WebCrypto on Emscripten, which only that family takes. Its
+repository, `webcpporg/hash`, is still to be created by the owner (gates G1, G2
+and G4); the proposal, with the specification, the design and the plan, is in
 `libraries/hash/openspec/changes/genesis/` (proposals).
 
 - **Two constructions of webcpp's own, over an audited primitive each, and no
@@ -9142,14 +9146,14 @@ proposal, with the specification, the design and the plan, is in
   Source: `libraries/hash/openspec/changes/genesis/reference/spec.md` section
   1.3 (proposals).
 - **The key derivation functions and the families have backends, as
-  webcpp::crypto's algorithms do, and a backend that lacks a function or a
-  tag refuses at compile time.** `backends::hash2`, `xkcp`, `blake3`,
-  `sodium`, `bearssl` and `openssl`; the default is one stated rule, the same
-  on every target and fixed (designs D33 and D34): the first of `hash2`,
-  `xkcp`, `blake3` and `sodium` that has the algorithm whole, else the first
-  of them with a partial cell, else none (the call names its backend);
-  `bearssl`, `openssl`, `botan` and `webcrypto` are never a default. No
-  measurement decides it.
+  webcpp::crypto's algorithms do, and a backend that lacks a function or a tag
+  refuses at compile time.** `backends::hash2`, `xkcp`, `blake3`, `sodium`,
+  `bearssl` and `openssl`, and `webcrypto` for the asynchronous family alone;
+  the default is one stated rule, the same on every target and fixed (designs
+  D33 and D34): the first of `hash2`, `xkcp`, `blake3` and `sodium` that has the
+  algorithm whole, else the first of them with a partial cell, else none (the
+  call names its backend); `bearssl`, `openssl`, `botan` and `webcrypto` are
+  never a default. No measurement decides it.
   Source: `libraries/hash/openspec/changes/genesis/reference/spec.md` section
   1.4 (proposals).
 - **The C libraries of hash (`xkcp`, `blake3`, `sodium`) are built file by
@@ -9163,12 +9167,13 @@ proposal, with the specification, the design and the plan, is in
 - **Seven increments, each usable alone.** The first, built, is Hash2 by alias,
   `keccak_256`, `blake3`, HKDF, PBKDF2, Argon2id, scrypt, the default backend
   and the measured table; the second, built, is the families and libsodium's
-  whole surface; the third, built, is XKCP's whole surface through the
-  families; the fifth, built, is BearSSL's MD5, SHA-1, SHA-2, TLS 1.0's
-  MD5-SHA1 and SHAKE through `digest_of` and `hasher`, and its HMAC through
-  `mac`, each reached only by naming `backends::bearssl`; the others widen
-  the other backends' surface (OpenSSL's, Botan's) and add the browser
-  backend over WebCrypto through a parallel asynchronous family.
+  whole surface; the third, built, is XKCP's whole surface through the families;
+  the fifth, built, is BearSSL's MD5, SHA-1, SHA-2, TLS 1.0's MD5-SHA1 and SHAKE
+  through `digest_of` and `hasher`, and its HMAC through `mac`, each reached
+  only by naming `backends::bearssl`; the seventh, built, adds the browser
+  backend over WebCrypto through a parallel asynchronous family, whose cells
+  `doc/capabilities.json` marks asynchronous only; the others widen the other
+  backends' surface (OpenSSL's, Botan's).
   Source: `libraries/hash/openspec/changes/genesis/reference/spec.md` section
   1.5 (proposals).
 
