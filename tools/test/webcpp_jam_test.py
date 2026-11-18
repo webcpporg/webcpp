@@ -14,8 +14,9 @@ is built without RTTI; an example is compared with its expected
 output, its standard input its .input file or nothing; every public header compiles alone, each call
 of webcpp.headers-alone taking the headers its globs match, with requirements and targets of its
 own, and a header two calls take or a glob that matches none refused; a compile-diagnostic test
-passes only on the error it states, fails on a directive clang's -verify drops (a header it names
-that cannot be located), and is skipped on a toolset that is not clang;
+passes only on the error it states, with `alone` fails on any other error, fails on a directive
+clang's -verify drops (a header it names that cannot be located), and is skipped on a toolset that
+is not clang;
 `b2 declared-targets` lists what each library declares; a lane of a library's own is listed once per
 target it runs on, which must be one its Jamfile declares, with its kind, whether it runs the
 original's language; what it names leaves the ordinary lanes, a build of it for another target stops
@@ -377,6 +378,50 @@ def test_compile_diagnostic_fails_on_a_directive_clang_drops(root):
                     "if __name__ == '__main__':\n",
                     "if __name__ == '__main__':\n    sys.exit('the check changed')\n")
     harness.expect(harness.run_b2(root, *kept), False, 'the check changed')
+
+
+def test_compile_diagnostic_alone_fails_on_any_other_error(root):
+    # With `alone`, the errors a test states are its compile's only ones: a refusal that must be
+    # the first and only error fails its test when another error follows it, which the rule's
+    # tolerance of a header's cascade of errors would otherwise hide. An expected note is still
+    # tolerated, as is a note that comes with the stated error. Another word than `alone` is
+    # refused.
+    guard = '#error "the guard says no"\n'
+    stated = ('// expected-error@guard.hpp:* {{the guard says no}}\n'
+              '#include "guard.hpp"\n'
+              'int main() { return 0; }\n')
+    harness.add_library(
+        root, 'alone',
+        'import webcpp ;\n'
+        '\n'
+        'webcpp.targets native wasip2 ;\n'
+        '\n'
+        'webcpp.compile-diagnostic only : only.cpp : : : alone ;\n'
+        'webcpp.compile-diagnostic noted : noted.cpp : : : alone ;\n'
+        'webcpp.compile-diagnostic followed : followed.cpp : : : alone ;\n'
+        'webcpp.compile-diagnostic tolerated : followed.cpp ;\n',
+        {'guard.hpp': guard, 'only.cpp': stated,
+         'noted.cpp': ('template <typename T> void needs_int(T) requires(sizeof(T) == 4) {}\n'
+                       'void call() {\n'
+                       '    // expected-error@+1 {{no matching function}}\n'
+                       '    needs_int(1.0);\n'
+                       '}\n'),
+         # The stated error, then another.
+         'followed.cpp': stated.replace('return 0;', 'return undeclared;')})
+    result = harness.run_b2(root, *(f'libs/alone/test//{name}'
+                                    for name in ('only', 'noted', 'tolerated')))
+    harness.expect(result, True)
+    assert passed(result) == {'only', 'noted', 'tolerated'}, (passed(result),
+                                                               result.stdout[-4000:])
+    for arguments in ((), WASIP2):
+        result = harness.run_b2(root, *arguments, 'libs/alone/test//followed')
+        harness.expect(result, False, 'seen but not expected', 'undeclared')
+        assert not passed(result), result.stdout[-4000:]
+    (root / 'libs/alone/test/Jamfile').write_text(
+        'import webcpp ;\n\nwebcpp.compile-diagnostic only : only.cpp : : : first ;\n')
+    result = harness.run_b2(root, 'libs/alone/test')
+    harness.expect(result, False, 'webcpp.compile-diagnostic only: first is not alone')
+    assert 'libs/alone/test/Jamfile:' in result.stdout, result.stdout[-4000:]
 
 
 def test_filter_maps_each_toolset_to_its_target(root):
@@ -1455,6 +1500,7 @@ CASES = [
     test_a_compile_finds_the_test_support,
     test_compile_diagnostic_passes_only_on_its_diagnostic,
     test_compile_diagnostic_fails_on_a_directive_clang_drops,
+    test_compile_diagnostic_alone_fails_on_any_other_error,
     test_filter_maps_each_toolset_to_its_target,
     test_undeclared_jamfile_is_native_only,
     test_emscripten_builds_only_what_declares_it,

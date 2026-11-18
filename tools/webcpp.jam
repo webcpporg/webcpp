@@ -13,7 +13,8 @@
 #     webcpp.run-fail name : sources + : requirements * : targets * ;
 #     webcpp.compile name : sources + : requirements * : targets * ;
 #     webcpp.compile-fail name : sources + : requirements * : targets * ;
-#     webcpp.compile-diagnostic name : sources + : requirements * : targets * ;
+#     webcpp.compile-diagnostic name : sources + : requirements * : targets *
+#       : alone ? ;
 #     webcpp.boost-test name : sources + : requirements * ;
 #     webcpp.example source : requirements * : targets * ;
 #     webcpp.headers-alone library : include-root : only * : requirements *
@@ -669,11 +670,24 @@ rule compile-fail ( name : sources + : requirements * : targets * )
 # b2's clang (native clang, clang-wasip2, clang-wasip3), the test is
 # skipped, as a program is for a target it does not declare, rather than
 # refused, which would turn red every lane of gcc or msvc for a declaration
-# that holds; the report shows it there as not built.
-rule compile-diagnostic ( name : sources + : requirements * : targets * )
+# that holds; the report shows it there as not built. With `alone` last, the
+# stated errors are the compile's only ones (-verify-ignore-unexpected=note):
+# a refusal meant to be the first and only error fails its test when any
+# other error follows it.
+rule compile-diagnostic ( name : sources + : requirements * : targets * : alone ? )
 {
+    local ignored = error,note ;
+    if $(alone)
+    {
+        if $(alone) != alone
+        {
+            errors.user-error "webcpp.compile-diagnostic $(name): $(alone) is not alone, the"
+                "only word its fifth argument takes" ;
+        }
+        ignored = note ;
+    }
     webcpp-compile-diagnostic.compile-diagnostic $(name) : $(sources)
-      : $(requirements) <cxxflags>"-Xclang -verify -Xclang -verify-ignore-unexpected=error,note"
+      : $(requirements) <cxxflags>"-Xclang -verify -Xclang -verify-ignore-unexpected=$(ignored)"
         <conditional>@webcpp%clang-only [ program compile-diagnostic : $(name) : $(targets) ]
         $(.node-test) ;
 }
