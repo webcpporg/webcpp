@@ -327,8 +327,9 @@ the messages of webcpp::hash's asynchronous family are built on Emscripten too.
 * Changed tools/hash/doc_tables.py to render a backend of webcpp::hash's asynchronous family
 alone, backends::webcrypto, with the note "asynchronous family only" in every table.
 * Changed tools/hash/doc_tables.py to derive llms.txt's default backends from the capability
-table, to give each backend's constant-time sources one bullet, and to refuse a default without
-its cell or only the asynchronous family takes, and a tag outside its namespace's chapter.
+table and to give each backend's constant-time sources one bullet.
+* Changed tools/hash/doc_tables.py to refuse a default without its cell or of the asynchronous
+family alone, and a tag outside its namespace's chapter.
 
 [#webcpp-0-1-0-compilers-tested]
 == Compilers tested

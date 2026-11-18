@@ -329,7 +329,8 @@ def listed(names: list[str]) -> str:
 
 def spelled_targets(data: Data, backend: str) -> str:
     """A backend's targets as the guide's prose spells them, as "native and Emscripten"."""
-    return listed([TARGET_NAMES.get(t, t) for t in data.backends[backend]['targets']])
+    return listed([TARGET_NAMES[t] if t in TARGET_NAMES else t
+                   for t in data.backends[backend]['targets']])
 
 
 def source_bullets(lead: str, sources: list[str]) -> list[str]:
