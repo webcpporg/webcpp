@@ -13,7 +13,8 @@
 #     webcpp.run-fail name : sources + : requirements * : targets * ;
 #     webcpp.compile name : sources + : requirements * : targets * ;
 #     webcpp.compile-fail name : sources + : requirements * : targets * ;
-#     webcpp.compile-diagnostic name : sources + : requirements * : targets * ;
+#     webcpp.compile-diagnostic name : sources + : requirements * : targets *
+#       : alone ? ;
 #     webcpp.boost-test name : sources + : requirements * ;
 #     webcpp.example source : requirements * : targets * ;
 #     webcpp.headers-alone library : include-root : only * : requirements *
@@ -28,6 +29,11 @@
 #
 #     webcpp.variants name : sources + : requirements * ;
 #     webcpp.size-table name : variants + ;
+#
+# the rule of the sizes of programs webcpp.link declares, on any target,
+# against a baseline among them, from release builds:
+#
+#     webcpp.program-sizes name : baseline : programs + : targets * ;
 #
 # the rule with which any test or example Jamfile of a library declares one
 # of its own lanes, which `b2 declared-lanes` lists, once per target it
@@ -117,6 +123,10 @@ feature.feature webcpp-lane : : free incidental ;
 # The program a manifest of webcpp.variants is of, <directory>/<name>, which
 # variants-request reads.
 feature.feature webcpp-variants : : free incidental ;
+
+# The table of webcpp.program-sizes a make is of, <directory>/<name>, which
+# write-program-sizes reads.
+feature.feature webcpp-program-sizes : : free incidental ;
 
 # webcpp-require-external=on: a library webcpp does not build that is not
 # found stops the build (external-found), as the CI asks, rather than leave
@@ -365,6 +375,11 @@ local rule program ( kind : names + : targets * )
     targets ?= $(.targets.$(jamfile)) ;
     targets ?= native ;
     .programs.$(jamfile) = true ;
+    for local name in $(names)
+    {
+        .kind-of.$(jamfile).$(name) = $(kind) ;
+        .built-on.$(jamfile).$(name) = $(targets) ;
+    }
     local library = [ library-of ] ;
     .declared += "$(library) $(targets)" ;
     .recorded.$(library) += "$(kind) $(names) $(targets:J= )" ;
@@ -634,6 +649,100 @@ actions write-size-table bind MANIFESTS
     "$(PYTHON)" "$(SCRIPT)" table --variant "$(VARIANT)" --out "$(<)" "$(MANIFESTS)"
 }
 
+# The sizes of the programs webcpp.link declares in this Jamfile under the
+# names programs, against the program baseline, on targets, else on the
+# Jamfile's: the explicit <name>.sizes.json (tools/variants/variants.py's
+# programs: per program and file, its raw and gzip -9n bytes and their excess
+# over the baseline's; natively the executable stripped, on WebAssembly the
+# .wasm, and on emscripten its .js too) and the explicit <name>.sizes.md, its
+# Markdown table, which the build prints and the CI keeps from an own lane's
+# job (.github/workflows/library.yml, the artifact sizes-<lane>). Published
+# sizes are those of release builds alone: both require <variant>release,
+# which the programs inherit whatever variant the command asks for, and
+# variants.py refuses a table of any other variant. b2 skips a make whole,
+# and silently, when one of its sources is skipped on a target, so each
+# program must be built on every target of the table, or the declaration
+# stops, naming it.
+rule program-sizes ( name : baseline : programs + : targets * )
+{
+    local found = [ where ] ;
+    local jamfile = [ jamfile ] ;
+    local shown = "webcpp.program-sizes $(name) in $(found[4])" ;
+    check $(shown) : $(targets) ;
+    targets ?= $(.targets.$(jamfile)) ;
+    targets ?= native ;
+    local names = [ sequence.unique $(baseline) $(programs) ] ;
+    for local program in $(names)
+    {
+        if $(.kind-of.$(jamfile).$(program)) != link
+        {
+            errors.user-error "$(shown): $(program) is not a program webcpp.link declares"
+                "before it in its Jamfile" ;
+        }
+        local missing = [ set.difference $(targets) : $(.built-on.$(jamfile).$(program)) ] ;
+        if $(missing)
+        {
+            errors.user-error "$(shown): $(program) is not built for $(missing:J= ), which"
+                "would skip the table there without a word: give the table the targets"
+                "$(.built-on.$(jamfile).$(program):J= ) at most, or build $(program) for"
+                "$(missing:J= )" ;
+        }
+    }
+    local key = $(found[3])/$(name) ;
+    .program-sizes-baseline.$(key) = $(baseline) ;
+    .program-sizes-names.$(key) = $(names) ;
+    local only = <variant>release <webcpp-targets>$(targets) <conditional>@webcpp%filter ;
+    make $(name).sizes.json : $(names)-program : @webcpp%write-program-sizes
+      : $(only) <webcpp-program-sizes>$(key) ;
+    make $(name).sizes.md : $(name).sizes.json : @webcpp%write-program-table : $(only) ;
+    $(found[1]).mark-target-as-explicit $(name).sizes.json $(name).sizes.md ;
+}
+
+rule write-program-sizes ( targets * : sources * : properties * )
+{
+    PYTHON on $(targets) = $(.python) ;
+    SCRIPT on $(targets) = $(.variants-script) ;
+    local key = [ feature.get-values <webcpp-program-sizes> : $(properties) ] ;
+    BASELINE on $(targets) = $(.program-sizes-baseline.$(key)) ;
+    NAMES on $(targets) = $(.program-sizes-names.$(key)) ;
+    VARIANT on $(targets) = [ feature.get-values <variant> : $(properties) ] ;
+    TARGET on $(targets) = [ webcpp-target.target-of $(properties) ] ;
+    local toolset = [ feature.get-values <toolset> : $(properties) ] ;
+    local version = [ feature.get-values <toolset-$(toolset):version> : $(properties) ] ;
+    if $(version)
+    {
+        toolset = $(toolset)-$(version[1]) ;
+    }
+    TOOLSET on $(targets) = $(toolset) ;
+}
+
+actions write-program-sizes
+{
+    "$(PYTHON)" "$(SCRIPT)" programs --variant "$(VARIANT)" --target "$(TARGET)" --toolset "$(TOOLSET)" --baseline "$(BASELINE)" --names $(NAMES) --out "$(<)" -- "$(>)"
+}
+
+rule write-program-table ( targets * : sources * : properties * )
+{
+    PYTHON on $(targets) = $(.python) ;
+    SCRIPT on $(targets) = $(.variants-script) ;
+    # A project's libraries can append source objects to this make target.
+    # Only the sizes are the table's input.
+    local sizes ;
+    for local source in $(sources)
+    {
+        if $(source:S) = .json
+        {
+            sizes += $(source) ;
+        }
+    }
+    SIZES on $(targets) = $(sizes) ;
+}
+
+actions write-program-table bind SIZES
+{
+    "$(PYTHON)" "$(SCRIPT)" programs-table --out "$(<)" "$(SIZES)"
+}
+
 # A test that passes when sources compile, which builds no program.
 rule compile ( name : sources + : requirements * : targets * )
 {
@@ -669,11 +778,24 @@ rule compile-fail ( name : sources + : requirements * : targets * )
 # b2's clang (native clang, clang-wasip2, clang-wasip3), the test is
 # skipped, as a program is for a target it does not declare, rather than
 # refused, which would turn red every lane of gcc or msvc for a declaration
-# that holds; the report shows it there as not built.
-rule compile-diagnostic ( name : sources + : requirements * : targets * )
+# that holds; the report shows it there as not built. With `alone` last, the
+# stated errors are the compile's only ones (-verify-ignore-unexpected=note):
+# a refusal meant to be the first and only error fails its test when any
+# other error follows it.
+rule compile-diagnostic ( name : sources + : requirements * : targets * : alone ? )
 {
+    local ignored = error,note ;
+    if $(alone)
+    {
+        if $(alone) != alone
+        {
+            errors.user-error "webcpp.compile-diagnostic $(name): $(alone) is not alone, the"
+                "only word its fifth argument takes" ;
+        }
+        ignored = note ;
+    }
     webcpp-compile-diagnostic.compile-diagnostic $(name) : $(sources)
-      : $(requirements) <cxxflags>"-Xclang -verify -Xclang -verify-ignore-unexpected=error,note"
+      : $(requirements) <cxxflags>"-Xclang -verify -Xclang -verify-ignore-unexpected=$(ignored)"
         <conditional>@webcpp%clang-only [ program compile-diagnostic : $(name) : $(targets) ]
         $(.node-test) ;
 }

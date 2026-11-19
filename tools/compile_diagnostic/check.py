@@ -8,15 +8,16 @@
 """Fails a webcpp.compile-diagnostic test whose -verify directives clang dropped. Usage:
 check.py --database FILE --output FILE
 
-The test's compile ran clang's -verify with -verify-ignore-unexpected=error, which tolerates the
-cascade of errors that follows a header's #error, and also hides the errors -verify itself reports
-on a directive it cannot read: a header it names that cannot be located, a text whose `}}` is not
-on its line. -verify then drops that directive, and the test passes on nothing. FILE, the
-compilation database entry clang wrote for that compile (-MJ), gives its exact command, which this
-runs again with -fsyntax-only and clang's diagnostic log, which records every diagnostic, those
--verify ignores included. An error located in a comment, a // or a /* */ one over several lines,
-after an `expected-<kind>` of that comment, is one of -verify's own: each is printed, and the
-check fails. So does a run that reports no error at all, which no test of the rule can mean.
+The test's compile ran clang's -verify with -verify-ignore-unexpected=error (unless the test is
+`alone`), which tolerates the cascade of errors that follows a header's #error, and also hides the
+errors -verify itself reports on a directive it cannot read: a header it names that cannot be
+located, a text whose `}}` is not on its line. -verify then drops that directive, and the test
+passes on nothing. FILE, the compilation database entry clang wrote for that compile (-MJ), gives
+its exact command, which this runs again with -fsyntax-only and clang's diagnostic log, which
+records every diagnostic, those -verify ignores included. An error located in a comment, a // or a
+/* */ one over several lines, after an `expected-<kind>` of that comment, is one of -verify's own:
+each is printed, and the check fails. So does a run that reports no error at all, which no test of
+the rule can mean.
 Otherwise it writes --output."""
 
 from __future__ import annotations

@@ -11,6 +11,7 @@ Usage: matrix.py plan [--library NAME] [--user-config FILE]
        matrix.py own-lanes [--library NAME] [--user-config FILE]
        matrix.py declares TARGET [--library NAME] [--user-config FILE]
        matrix.py external [--library NAME]
+       matrix.py lint-packages
        matrix.py lane LANE [--user-config FILE] [--out-dir DIR] [-- B2-ARGUMENT ...]
        matrix.py own-lane OWN-LANE [--user-config FILE] [--out-dir DIR] [-- B2-ARGUMENT ...]
        matrix.py register ID [ID ...] [--user-config FILE]
@@ -39,10 +40,12 @@ whose original runs with the CI's Node, and for one whose shared lane has Node, 
 lane's, which runs its programs; a served lane on wasip2 or wasip3 has none; "cc" and "cxx", the
 compilers of the lane it shares; "external", as a lane's; and "chrome", true for a lane of
 CHROME_LANES, whose driver meets a browser, which its job gives the pinned chrome-headless-shell as
-CHROME. One that names no target runs as `b2 -a toolset=clang-18 D//N ...`, whose exit status is its
-verdict: it writes no XML, so it is no column of the report. One that names targets is an entry per
-target T, which adds "platform": T and the "id" <T>.<L>.<N> (wasip2.wasi.http), and shares T's own
-lane, or the oracle's Clang 18 for native. It runs as that lane runs, with --dump-tests and
+CHROME; and "apt", the packages of OWN_LANE_PACKAGES for its library, lane and target, which its
+job installs on Linux, [] for every other. One that names no target runs as
+`b2 -a toolset=clang-18 D//N ...`, whose exit status is its verdict: it writes no XML, so it is
+no column of the report. One that names targets is an entry per target T, which adds
+"platform": T and the "id" <T>.<L>.<N> (wasip2.wasi.http), and shares T's own lane, or the
+oracle's Clang 18 for native. It runs as that lane runs, with --dump-tests and
 --out-xml, and its XML, <id>.xml, is a column of the report under its id, which
 tools/report/report.py checks against the toolset it was built with and the library whose tests it
 lists. A target the CI has no lane to set up an own lane on fails the listing by name: an own lane
@@ -60,6 +63,9 @@ build.jam or Jamfiles use (/webcpp/<name>), at any depth, is; else false. Withou
 says whether any library of libs/ does. The plan job writes the first as external, on which the
 docs job installs those libraries, a page parsing its library's headers and those it uses, and the
 second as lint-external, on which the lint job, which analyses every library, installs them.
+
+lint-packages prints, on one line, sorted, every package of OWN_LANE_PACKAGES once: the lint job
+installs them, since the lint analyses every own lane's programs natively and needs their headers.
 
 lane runs one lane, LANE being one entry of that matrix as JSON: it registers the lane's toolset
 in the user-config.jam (unless it is there already), then runs the lane command the Jamroot
@@ -185,6 +191,17 @@ CHROME_LANES = {('asio', 'browser'), ('asio', 'browser-workers'),
                 ('cobalt', 'browser-network-counterparts'),
                 ('document', 'js'), ('trystero', 'interop'),
                 ('webrtc', 'browser'), ('webrtc', 'interop')}
+
+# The packages an own lane needs from the runner's apt, by (library, lane, target): an own lane
+# runs on its runner, never in the container, so they come with its entry ("apt"), which the
+# own-lanes job installs on Linux. crypto's constant-time lane runs its native programs under
+# Valgrind's memcheck (valgrind, with valgrind/memcheck.h) and under MemorySanitizer, whose
+# runtime and sanitizer/ headers are libclang-rt-18-dev's, and its driver reads
+# MemorySanitizer's frames with llvm-symbolizer-18, which llvm-18 installs; on wasip2 it runs
+# dudect alone, which needs none. The lint, which analyses those programs natively, installs
+# every package of the table (lint-packages).
+OWN_LANE_PACKAGES: dict[tuple[str, str, str], tuple[str, ...]] = {
+    ('crypto', 'constant-time', 'native'): ('valgrind', 'llvm-18', 'libclang-rt-18-dev')}
 
 # MSVC's lanes build 64-bit programs, embed their manifest with the linker and abbreviate b2's
 # paths against Windows's MAX_PATH, as xstate-cpp's green Windows jobs did. b2 abbreviates each
@@ -625,7 +642,8 @@ def own_lane_entry(own: OwnLane) -> dict[str, object]:
     """The own lane as an entry of the own-lanes matrix: its library, its lane and its
     directories; its target and its id when it names one; and, for every entry, its kind, the name
     of its job, the image, the setup and the compilers of the lane it shares, and whether its
-    library needs a library webcpp does not build, which the job reads from here alone."""
+    library needs a library webcpp does not build, and the packages it needs from apt
+    (OWN_LANE_PACKAGES), which the job reads from here alone."""
     base = own_lane_profile(own)
     entry: dict[str, object] = {'library': own.library, 'lane': own.lane,
                                 'directories': list(own.directories)}
@@ -638,8 +656,15 @@ def own_lane_entry(own: OwnLane) -> dict[str, object]:
     node = base.node or own.kind == 'original'
     entry.update(kind=own.kind, name=own.name, os=base.os, wasm=base.wasm, emsdk=base.emsdk,
                  node=node, cc=base.cc, cxx=base.cxx, external=needs_external(own.library),
-                 chrome=(own.library, own.lane) in CHROME_LANES)
+                 chrome=(own.library, own.lane) in CHROME_LANES,
+                 apt=list(OWN_LANE_PACKAGES.get((own.library, own.lane, own.target or ''),
+                                                ())))
     return entry
+
+
+def lint_packages() -> list[str]:
+    """Every package of OWN_LANE_PACKAGES once, sorted."""
+    return sorted({package for packages in OWN_LANE_PACKAGES.values() for package in packages})
 
 
 def own_lanes(user_config: Path, library: str | None) -> list[OwnLane]:
@@ -967,6 +992,8 @@ def main(arguments: list[str]) -> int:
         'external', help='print true when some library needs a library webcpp does not build')
     externals.add_argument('--library', help='the library the CI runs for, which must exist')
 
+    commands.add_parser('lint-packages',
+                        help="print the apt packages the own lanes' programs need, for the lint")
     running = commands.add_parser(
         'lane', help='run one lane of the matrix',
         epilog='After --, more arguments for b2, such as --build-dir=bin/lane-gcc-15.')
@@ -1013,6 +1040,9 @@ def main(arguments: list[str]) -> int:
             return 0
         if options.command == 'external':
             print('true' if has_external(options.library) else 'false')
+            return 0
+        if options.command == 'lint-packages':
+            print(' '.join(lint_packages()))
             return 0
         if options.command == 'own-lanes':
             listed = [own_lane_entry(own)

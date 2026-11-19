@@ -7,9 +7,10 @@
 # The test type of webcpp.compile-diagnostic, which tools/webcpp.jam offers:
 # the object compiled with clang's -verify, which succeeds only when every
 # error its directives state appears, then a check that clang read every
-# directive (check.py). -verify ignores the errors it does not expect, so
-# that a header's #error may be followed by what the rest of the header then
-# fails on; among them are the errors it reports on a directive it cannot
+# directive (check.py). -verify ignores the errors it does not expect
+# (unless the test is `alone`, see tools/webcpp.jam), so that a header's
+# #error may be followed by what the rest of the header then fails on; among
+# them are the errors it reports on a directive it cannot
 # read, a header it names that cannot be located or a text whose `}}` is not
 # on its line, and it drops that directive. The object's compile writes its
 # compilation database entry (-MJ), whose exact command check.py runs again

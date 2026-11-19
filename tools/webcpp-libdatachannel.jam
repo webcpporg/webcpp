@@ -13,11 +13,13 @@ import project ;
 import property-set ;
 import targets ;
 import toolset ;
+import type ;
 import virtual-target ;
 import webcpp-lint-headers ;
 import webcpp-third-party ;
 
 feature.feature webcpp-libdatachannel-openssl : : free incidental ;
+type.register WEBCPP_LIBDATACHANNEL_RECORD ;
 
 class libdatachannel-target : basic-target
 {
@@ -150,6 +152,13 @@ class libdatachannel-target : basic-target
             $(archive).set-path $(directory) ;
             archives += [ virtual-target.register $(archive) ] ;
         }
+        # The build record, which build.py publishes last, is what makes the
+        # configuration complete: one whose archives an interrupted build
+        # published without it is built again.
+        local record = [ new file-target build.json exact
+            : WEBCPP_LIBDATACHANNEL_RECORD : $(self.project) : $(action) ] ;
+        $(record).set-path $(directory) ;
+        headers += [ virtual-target.register $(record) ] ;
         if $(os) = windows && [ $(properties).get <debug-symbols> ] = "on"
             && [ $(properties).get <debug-store> ] = database
         {

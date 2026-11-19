@@ -334,6 +334,8 @@ table and to give each backend's constant-time sources one bullet.
 family alone, and a tag outside its namespace's chapter.
 * Fixed tools/hash/doc_tables.py calling backends::openssl argon2id's and scrypt's second
 template argument: each sentence reads the Backend's position from the header declaring the template.
+* Fixed an interrupted OpenSSL or libdatachannel build leaving a configuration later builds took as
+complete: its build record is published last, and one without it is built again.
 
 [#webcpp-0-1-0-compilers-tested]
 == Compilers tested

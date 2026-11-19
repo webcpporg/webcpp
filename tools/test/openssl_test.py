@@ -200,6 +200,39 @@ def test_a_built_configuration_is_kept_and_selected(root: Path) -> None:
     assert '**passed**' not in result.stdout, result.stdout
 
 
+def test_an_interrupted_configuration_is_built_again(root: Path) -> None:
+    # A configuration is complete when its build record is: the archives and headers an
+    # interrupted build published before it, without the record, are built again, b2 -a or
+    # not, and a complete configuration is kept. Planted files stand for the outputs.
+    (root / 'Jamroot').write_text(
+        'import webcpp-openssl ;\n'
+        'project : build-dir bin ;\n'
+        f'webcpp-openssl.declare "{root.as_posix()}" : ssl.h configuration.h\n'
+        '  : tools/openssl/build.py ;\n'
+        'exe consumer : uses_openssl.cpp openssl ;\n')
+    (root / 'uses_openssl.cpp').write_text(SOURCE)
+    request = ('consumer', 'toolset=clang', 'variant=release', 'threading=single')
+    env = {'BOOST_BUILD_PATH': str(root / 'tools')}
+    planned = harness.run_b2(root, '-n', *request, env_extra=env)
+    harness.expect(planned, True, 'webcpp-openssl.build')
+    directory = root / re.findall(r'^webcpp-openssl\.build (.+[/\\])libssl\.a$',
+                                  planned.stdout, re.M)[0]
+    for name in ('libssl.a', 'libcrypto.a', 'include/openssl/ssl.h',
+                 'include/openssl/configuration.h'):
+        (directory / name).parent.mkdir(parents=True, exist_ok=True)
+        (directory / name).write_text('published before the interruption\n')
+    for flags in ((), ('-a',)):
+        planned = harness.run_b2(root, '-n', *flags, *request, env_extra=env)
+        harness.expect(planned, True)
+        assert re.search(r'^webcpp-openssl\.build ', planned.stdout, re.M), planned.stdout
+        assert 'webcpp-openssl.generate-headers' not in planned.stdout, planned.stdout
+    (directory / 'build.json').write_text('{}\n')
+    for flags in ((), ('-a',)):
+        planned = harness.run_b2(root, '-n', *flags, *request, env_extra=env)
+        harness.expect(planned, True)
+        assert 'webcpp-openssl.' not in planned.stdout, planned.stdout
+
+
 def test_wasip2_source_dependency(root: Path) -> None:
     jam = JAM.replace('import webcpp ;', 'import webcpp ;\nwebcpp.targets wasip2 ;')
     harness.add_library(root, 'openssl_user', jam, {'uses_openssl.cpp': SOURCE})
@@ -521,6 +554,7 @@ CASES = [test_native_upstream_suite_checks_the_consumed_archives,
          test_upstream_failure_prevents_archive_publication,
          test_native_source_dependency, test_one_c_configuration_is_built_once,
          test_a_built_configuration_is_kept_and_selected,
+         test_an_interrupted_configuration_is_built_again,
          test_wasip2_source_dependency,
          test_symlinked_compiler_without_c_sibling,
          test_msvc_build_commands_preserve_the_consumers_configuration,

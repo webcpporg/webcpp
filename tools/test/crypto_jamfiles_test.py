@@ -30,7 +30,7 @@ NOT_YET: dict[str, str] = {}
 
 
 def main(argv: list[str]) -> int:
-    return user_jamfiles.main('crypto_jamfiles', CASES, ('config', 'crypto'), NOT_YET, argv)
+    return user_jamfiles.main('crypto_jamfiles', CASES, ('config', 'crypto', 'hash'), NOT_YET, argv)
 
 
 if __name__ == '__main__':

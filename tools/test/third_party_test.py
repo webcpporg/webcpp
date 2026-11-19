@@ -20,11 +20,11 @@ emscripten. XKCP, pinned, is built from its file of Keccak-p[1600] and its high-
 webcpp::hash's adapter and canary, and an XKCP or a libs/hash that is not checked out stops it,
 naming the command.
 libsodium, pinned, is built file by file with the defines its own configure finds on each target and
-webcpp::hash's canary, its version.h copied into the build directory and its checkout left as it
-was. BLAKE3's C implementation, pinned, is built file by file with webcpp::hash's canary: natively
-with the intrinsics files of the machine's instruction sets, each with its own flag, and on
-WebAssembly with the portable code alone. BLAKE2's test vectors are pinned. Run with the names of
-some cases to run only those."""
+webcpp::hash's canary, and webcpp::crypto's when libs/crypto is checked out, its version.h copied
+into the build directory and its checkout left as it was. BLAKE3's C implementation, pinned, is
+built file by file with webcpp::hash's canary: natively with the intrinsics files of the machine's
+instruction sets, each with its own flag, and on WebAssembly with the portable code alone. BLAKE2's
+test vectors are pinned. Run with the names of some cases to run only those."""
 
 from __future__ import annotations
 
@@ -95,6 +95,12 @@ BLAKE2 = 'third_party/libs/blake2'
 # /third_party//blake2_vectors).
 BLAKE2_COMMIT = 'ed1974ea83433eba7b2d95c5dcd9ac33cb847913'
 
+ED25519_SPECCHECK = 'third_party/libs/ed25519-speccheck'
+
+# The commit novifinancial/ed25519-speccheck is pinned at: the twelve Ed25519 edge cases of
+# "Taming the many EdDSAs", its cases.json (libs/crypto/test/ed25519_speccheck_test.cpp).
+ED25519_SPECCHECK_COMMIT = '65519336fda78a3d016e947df6d82848aca0c9da'
+
 SECP256K1 = 'third_party/libs/secp256k1'
 
 # libsecp256k1 v0.8.0, the commit it is pinned at.
@@ -147,6 +153,9 @@ SODIUM_COMMIT = '77e1ce5d6dee871c49ef211222ba18ef0c486bda'
 # The canary /third_party//sodium defines when its defines are the ones third_party/Jamfile derives
 # from libsodium's configure.
 SODIUM_CANARY = ('webcpp_hash_sodium_77e1ce5_configured__add_third_party_sodium_to_your_link')
+
+# webcpp::crypto's canary on the same target: its configuration is portable under the same defines.
+SODIUM_CRYPTO_CANARY = 'webcpp_crypto_sodium_77e1ce5_portable__add_third_party_sodium_to_your_link'
 
 # The defines of every target: webcpp's three, then those libsodium's configure finds on every
 # target and its C files read.
@@ -318,6 +327,12 @@ def test_bips_is_pinned(_: Path) -> None:
     assert listed.stdout.split()[:2] == ['160000', BIPS_COMMIT], listed.stdout
 
 
+def test_ed25519_speccheck_is_pinned(_: Path) -> None:
+    listed = subprocess.run(['git', '-C', str(harness.ROOT), 'ls-files', '-s', ED25519_SPECCHECK],
+                            capture_output=True, text=True, check=True)
+    assert listed.stdout.split()[:2] == ['160000', ED25519_SPECCHECK_COMMIT], listed.stdout
+
+
 def test_bearssl_is_pinned(_: Path) -> None:
     listed = subprocess.run(['git', '-C', str(harness.ROOT), 'ls-files', '-s', BEARSSL],
                             capture_output=True, text=True, check=True)
@@ -430,6 +445,19 @@ def test_a_suite_not_checked_out_is_refused(root: Path) -> None:
     harness.expect(result, False, 'third_party/libs/JSON-Schema-Test-Suite is not checked out',
                    'git submodule update --init third_party/libs/JSON-Schema-Test-Suite')
     # A build that needs no suite never looks for it.
+    harness.expect(harness.run_b2(root, 'libs/demo/test//pass'), True)
+
+
+def test_ed25519_speccheck_not_checked_out_is_refused(root: Path) -> None:
+    harness.third_party_of_its_own(root, 'ed25519-speccheck', checked_out=False)
+    harness.add_library(root, 'speccheck_reader', (
+        'import webcpp ;\n\nwebcpp.run reads_cases : reads_cases.cpp\n'
+        '  : <library>/webcpp/third_party//ed25519-speccheck ;\n'),
+        {'reads_cases.cpp': 'int main() { return 0; }\n'})
+    result = harness.run_b2(root, 'libs/speccheck_reader/test')
+    harness.expect(result, False, 'third_party/libs/ed25519-speccheck is not checked out',
+                   'git submodule update --init third_party/libs/ed25519-speccheck')
+    # A build that needs no cases never looks for them.
     harness.expect(harness.run_b2(root, 'libs/demo/test//pass'), True)
 
 
@@ -592,6 +620,25 @@ def test_sodium_is_built_file_by_file(root: Path) -> None:
     symbols = subprocess.run(['nm', str(archive[0])], capture_output=True, text=True, check=True)
     prefix = '_' if sys.platform == 'darwin' else ''
     assert f'{prefix}{SODIUM_CANARY}' in symbols.stdout.split(), symbols.stdout[-2000:]
+
+
+def test_sodium_carries_cryptos_canary_too(root: Path) -> None:
+    # With libs/crypto beside libs/hash, libsodium gains webcpp::crypto's canary, compiled with
+    # libsodium's defines: one more file, a second symbol, and the define its header asks for.
+    harness.copy_integration_libraries(root, 'config', 'crypto', 'hash')
+    result = harness.run_b2(root, '-a', '-d+2', 'third_party//sodium')
+    harness.expect(result, True)
+    lines = compiled_sodium(result)
+    # The 141 C files of libsodium's src/libsodium and the canaries of webcpp::hash and crypto.
+    assert len(lines) == 143, (len(lines), result.stdout[-4000:])
+    expect_sodium_defines(lines, None)
+    archive = sorted((root / 'bin').rglob('libsodium.a'))
+    assert len(archive) == 1, archive
+    symbols = subprocess.run(['nm', str(archive[0])], capture_output=True, text=True, check=True)
+    prefix = '_' if sys.platform == 'darwin' else ''
+    names = symbols.stdout.split()
+    assert f'{prefix}{SODIUM_CANARY}' in names, symbols.stdout[-2000:]
+    assert f'{prefix}{SODIUM_CRYPTO_CANARY}' in names, symbols.stdout[-2000:]
 
 
 def test_sodium_defines_on_each_webassembly_target(root: Path) -> None:
@@ -832,7 +879,9 @@ CASES = [
     test_the_suite_reaches_a_test_on_wasi,
     test_a_changed_suite_file_runs_the_test_again,
     test_a_suite_not_checked_out_is_refused,
+    test_ed25519_speccheck_not_checked_out_is_refused,
     test_bips_is_pinned,
+    test_ed25519_speccheck_is_pinned,
     test_bearssl_is_pinned,
     test_bearssl_is_built_file_by_file,
     test_bearssl_without_hash_has_cryptos_canary_alone,
@@ -853,6 +902,7 @@ CASES = [
     test_hash_not_checked_out_is_refused,
     test_sodium_is_pinned,
     test_sodium_is_built_file_by_file,
+    test_sodium_carries_cryptos_canary_too,
     test_sodium_defines_on_each_webassembly_target,
     test_sodium_test_config_reaches_the_private_headers,
     test_sodium_msvc_inline_reaches_c_alone,

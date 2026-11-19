@@ -5,6 +5,5 @@
 # https://www.boost.org/LICENSE_1_0.txt)
 
 # tag::jamfile[]
-exe app : app.cpp /webcpp/crypto//crypto /webcpp/crypto//openssl /third_party//bearssl
-  : <define>WEBCPP_CRYPTO_DEFAULT_BACKEND_BEARSSL ;
+exe app : app.cpp /webcpp/crypto//crypto /third_party//sodium ;
 # end::jamfile[]

@@ -14,8 +14,9 @@ is built without RTTI; an example is compared with its expected
 output, its standard input its .input file or nothing; every public header compiles alone, each call
 of webcpp.headers-alone taking the headers its globs match, with requirements and targets of its
 own, and a header two calls take or a glob that matches none refused; a compile-diagnostic test
-passes only on the error it states, fails on a directive clang's -verify drops (a header it names
-that cannot be located), and is skipped on a toolset that is not clang;
+passes only on the error it states, with `alone` fails on any other error, fails on a directive
+clang's -verify drops (a header it names that cannot be located), and is skipped on a toolset that
+is not clang;
 `b2 declared-targets` lists what each library declares; a lane of a library's own is listed once per
 target it runs on, which must be one its Jamfile declares, with its kind, whether it runs the
 original's language; what it names leaves the ordinary lanes, a build of it for another target stops
@@ -28,11 +29,14 @@ at the same path on every target, wasmtime being given it on WASI; and webcpp.sa
 when its sources built with a library and without it give byte-identical programs, the same name in
 two directories, linked with the same flags, the linker's removal of unused sections included, with
 exceptions on or off, and fails naming both files and their sizes when the library's code is
-called. Each case builds a scratch
-superproject with the fixture library demo. Run with the names of some cases to run only those."""
+called; and webcpp.program-sizes sizes webcpp.link's programs against a baseline from release
+builds alone, whatever variant is asked for, and refuses a program it cannot size on each of its
+targets. Each case builds a scratch superproject with the fixture library demo. Run with the
+names of some cases to run only those."""
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -379,6 +383,50 @@ def test_compile_diagnostic_fails_on_a_directive_clang_drops(root):
     harness.expect(harness.run_b2(root, *kept), False, 'the check changed')
 
 
+def test_compile_diagnostic_alone_fails_on_any_other_error(root):
+    # With `alone`, the errors a test states are its compile's only ones: a refusal that must be
+    # the first and only error fails its test when another error follows it, which the rule's
+    # tolerance of a header's cascade of errors would otherwise hide. An expected note is still
+    # tolerated, as is a note that comes with the stated error. Another word than `alone` is
+    # refused.
+    guard = '#error "the guard says no"\n'
+    stated = ('// expected-error@guard.hpp:* {{the guard says no}}\n'
+              '#include "guard.hpp"\n'
+              'int main() { return 0; }\n')
+    harness.add_library(
+        root, 'alone',
+        'import webcpp ;\n'
+        '\n'
+        'webcpp.targets native wasip2 ;\n'
+        '\n'
+        'webcpp.compile-diagnostic only : only.cpp : : : alone ;\n'
+        'webcpp.compile-diagnostic noted : noted.cpp : : : alone ;\n'
+        'webcpp.compile-diagnostic followed : followed.cpp : : : alone ;\n'
+        'webcpp.compile-diagnostic tolerated : followed.cpp ;\n',
+        {'guard.hpp': guard, 'only.cpp': stated,
+         'noted.cpp': ('template <typename T> void needs_int(T) requires(sizeof(T) == 4) {}\n'
+                       'void call() {\n'
+                       '    // expected-error@+1 {{no matching function}}\n'
+                       '    needs_int(1.0);\n'
+                       '}\n'),
+         # The stated error, then another.
+         'followed.cpp': stated.replace('return 0;', 'return undeclared;')})
+    result = harness.run_b2(root, *(f'libs/alone/test//{name}'
+                                    for name in ('only', 'noted', 'tolerated')))
+    harness.expect(result, True)
+    assert passed(result) == {'only', 'noted', 'tolerated'}, (passed(result),
+                                                               result.stdout[-4000:])
+    for arguments in ((), WASIP2):
+        result = harness.run_b2(root, *arguments, 'libs/alone/test//followed')
+        harness.expect(result, False, 'seen but not expected', 'undeclared')
+        assert not passed(result), result.stdout[-4000:]
+    (root / 'libs/alone/test/Jamfile').write_text(
+        'import webcpp ;\n\nwebcpp.compile-diagnostic only : only.cpp : : : first ;\n')
+    result = harness.run_b2(root, 'libs/alone/test')
+    harness.expect(result, False, 'webcpp.compile-diagnostic only: first is not alone')
+    assert 'libs/alone/test/Jamfile:' in result.stdout, result.stdout[-4000:]
+
+
 def test_filter_maps_each_toolset_to_its_target(root):
     # webcpp.filter called directly, with a toolset's properties and a program's targets: it
     # returns <build>no when the toolset builds for none of them. Only clang's version names a
@@ -712,6 +760,82 @@ def test_programs_of_records_link_and_drive(root):
         'run reads native emscripten',
         'run-fail fails native emscripten',
     ], result.stdout
+
+
+SIZED = ('import webcpp ;\n'
+         '\n'
+         'webcpp.targets native wasip2 wasip3 ;\n'
+         'webcpp.link baseline : baseline.cpp ;\n'
+         'webcpp.link larger : larger.cpp ;\n'
+         'webcpp.run plain : plain.cpp ;\n'
+         'webcpp.link native_only : baseline.cpp : : native ;\n')
+
+SIZED_SOURCES = {
+    'baseline.cpp': '#include <cstdio>\nint main() { std::puts("baseline"); }\n',
+    'larger.cpp': ('#include <cstdio>\n#include <string>\n'
+                   'int main(int argc, char**) {\n'
+                   '    std::string text(static_cast<std::size_t>(argc) * 40, \'x\');\n'
+                   '    std::printf("%s %zu\\n", text.c_str(), std::hash<std::string>{}(text));\n'
+                   '}\n'),
+    'plain.cpp': PLAIN_SOURCE,
+}
+
+
+def test_program_sizes_are_those_of_release_builds(root):
+    # webcpp.program-sizes sizes the programs webcpp.link declares against a baseline, on each
+    # target of its table, from release builds alone: asked for a debug build, it still builds
+    # its programs, its JSON and its table at variant=release. Natively the executable is
+    # stripped; on WASI the .wasm is read. Its lane is listed once per target.
+    harness.add_library(root, 'sized', SIZED
+                        + 'webcpp.program-sizes sized : baseline : larger ;\n'
+                        + 'webcpp.lane sizes : sized.sizes.md : native wasip2 ;\n',
+                        SIZED_SOURCES)
+    result = harness.run_b2(root, '-d0', 'declared-lanes')
+    harness.expect(result, True)
+    assert 'sized sizes libs/sized/test native programs\n' in result.stdout, result.stdout
+    for target, request in (('native', ()), ('wasip2', WASIP2)):
+        result = harness.run_b2(root, '-a', f'--build-dir=bin/{target}', *request,
+                                'variant=debug', 'libs/sized/test//sizes')
+        harness.expect(result, True, '| larger |')
+        found = sorted((root / f'bin/{target}').rglob('sized.sizes.json'))
+        tables = sorted((root / f'bin/{target}').rglob('sized.sizes.md'))
+        assert len(found) == 1 and len(tables) == 1, (found, tables)
+        assert 'release' in found[0].parts and 'debug' not in found[0].parts, found
+        sized = json.loads(found[0].read_text())
+        assert (sized['variant'], sized['target'], sized['baseline']) == (
+            'release', target, 'baseline'), sized
+        rows = {row['program']: row for row in sized['programs']}
+        assert sorted(rows) == ['baseline', 'larger'], rows
+        kind = 'executable' if target == 'native' else 'wasm'
+        assert rows['larger']['file'] == kind and rows['larger']['over_baseline'] > 0, rows
+        assert rows['baseline']['over_baseline'] == 0, rows
+        assert tables[0].read_text().startswith(f'Linked programs on {target} ('), tables
+        programs = [p for p in (root / f'bin/{target}').rglob('larger-program*')
+                    if p.suffix in ('', '.wasm')]
+        assert programs and all('release' in p.parts for p in programs), programs
+
+
+def test_program_sizes_refuse_what_they_cannot_size(root):
+    # Each program is one webcpp.link declares before the table, built on every target of the
+    # table: b2 would skip a make one of whose sources it skips, silently.
+    for line, message in (
+        ('webcpp.program-sizes sized : baseline : plain ;\n',
+         'webcpp.program-sizes sized in libs/sized/test/Jamfile: plain is not a program '
+         'webcpp.link declares before it in its Jamfile'),
+        ('webcpp.program-sizes sized : baseline : native_only ;\n',
+         'webcpp.program-sizes sized in libs/sized/test/Jamfile: native_only is not built for '
+         'wasip2 wasip3'),
+        ('webcpp.program-sizes sized : baseline : larger : wasm ;\n',
+         'webcpp.program-sizes sized in libs/sized/test/Jamfile: wasm is not a target'),
+    ):
+        shutil.rmtree(root / 'libs/sized', ignore_errors=True)
+        harness.add_library(root, 'sized', SIZED + line, SIZED_SOURCES)
+        harness.expect(harness.run_b2(root, '-d0', 'declared-lanes'), False, message)
+    shutil.rmtree(root / 'libs/sized')
+    harness.add_library(root, 'sized',
+                        SIZED + 'webcpp.program-sizes sized : baseline : native_only : native ;\n',
+                        SIZED_SOURCES)
+    harness.expect(harness.run_b2(root, '-d0', 'declared-lanes'), True)
 
 
 def test_example_mismatch_fails_naming_the_program(root):
@@ -1455,6 +1579,7 @@ CASES = [
     test_a_compile_finds_the_test_support,
     test_compile_diagnostic_passes_only_on_its_diagnostic,
     test_compile_diagnostic_fails_on_a_directive_clang_drops,
+    test_compile_diagnostic_alone_fails_on_any_other_error,
     test_filter_maps_each_toolset_to_its_target,
     test_undeclared_jamfile_is_native_only,
     test_emscripten_builds_only_what_declares_it,
@@ -1492,6 +1617,8 @@ CASES = [
     test_the_pair_is_found_by_its_directory_on_every_path_separator,
     test_a_pair_built_without_exceptions_links_the_handler_and_compares_equal,
     test_a_shared_library_is_compared_as_a_static_one,
+    test_program_sizes_are_those_of_release_builds,
+    test_program_sizes_refuse_what_they_cannot_size,
 ]
 
 

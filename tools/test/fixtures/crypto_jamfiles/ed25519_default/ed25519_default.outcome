@@ -1,0 +1,20 @@
+# Copyright (c) 2026 WebCpp.org
+#
+# Distributed under the Boost Software License, Version 1.0. (See
+# accompanying file LICENSE_1_0.txt or copy at
+# https://www.boost.org/LICENSE_1_0.txt)
+
+[all]
+targets: native wasip2 wasip3 emscripten
+build: succeeds
+run: app
+# tag::output[]
+[native]
+ed25519 ok backend=sodium
+[wasip2]
+ed25519 ok backend=sodium
+[wasip3]
+ed25519 ok backend=sodium
+[emscripten]
+ed25519 ok backend=sodium
+# end::output[]

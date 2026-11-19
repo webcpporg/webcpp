@@ -311,17 +311,17 @@ def test_own_lanes_of_every_library_and_of_one(root):
               'kind': 'programs', 'name': 'Own lane (alpha, browser)', 'os': 'ubuntu-24.04',
               'wasm': False, 'emsdk': False, 'node': False,
               'cc': 'clang-18', 'cxx': 'clang++-18', 'external': False,
-              'chrome': False},
+              'chrome': False, 'apt': []},
              {'library': 'alpha', 'lane': 'http', 'directories': ['libs/alpha/test'],
               'kind': 'programs', 'name': 'Own lane (alpha, http)', 'os': 'ubuntu-24.04',
               'wasm': False, 'emsdk': False, 'node': False,
               'cc': 'clang-18', 'cxx': 'clang++-18', 'external': False,
-              'chrome': False}]
+              'chrome': False, 'apt': []}]
     beta = [{'library': 'beta', 'lane': 'oracle', 'directories': ['libs/beta/test/oracle'],
              'kind': 'original', 'name': 'Own lane (beta, oracle)', 'os': 'ubuntu-24.04',
              'wasm': False, 'emsdk': False, 'node': True,
              'cc': 'clang-18', 'cxx': 'clang++-18', 'external': False,
-             'chrome': False}]
+             'chrome': False, 'apt': []}]
     assert own_lanes(root) == alpha + beta
     assert own_lanes(root, '--library', 'beta') == beta
     assert own_lanes(root, '--library', 'demo') == []
@@ -377,30 +377,30 @@ def test_own_lanes_on_targets(root):
               'name': 'Own lane (alpha, http, native)', 'os': 'ubuntu-24.04', 'wasm': False,
               'emsdk': False, 'node': False,
               'cc': 'clang-18', 'cxx': 'clang++-18', 'external': False,
-              'chrome': False},
+              'chrome': False, 'apt': []},
              {'library': 'alpha', 'lane': 'http',
               'directories': ['libs/alpha/example', 'libs/alpha/test'], 'platform': 'wasip2',
               'id': 'wasip2.alpha.http', 'kind': 'programs', 'name': 'Own lane (alpha, http, '
               'wasip2)', 'os': 'ubuntu-24.04', 'wasm': True, 'emsdk': False, 'node': False,
               'cc': '', 'cxx': '', 'external': False,
-              'chrome': False},
+              'chrome': False, 'apt': []},
              {'library': 'alpha', 'lane': 'http', 'directories': ['libs/alpha/test'],
               'platform': 'wasip3', 'id': 'wasip3.alpha.http', 'kind': 'programs',
               'name': 'Own lane (alpha, http, wasip3)', 'os': 'ubuntu-24.04', 'wasm': True,
               'emsdk': False, 'node': False, 'cc': '', 'cxx': '', 'external': False,
-              'chrome': False}]
+              'chrome': False, 'apt': []}]
     beta = {'library': 'beta', 'lane': 'oracle', 'directories': ['libs/beta/test/oracle'],
             'kind': 'original', 'name': 'Own lane (beta, oracle)', 'os': 'ubuntu-24.04',
             'wasm': False, 'emsdk': False, 'node': True,
             'cc': 'clang-18', 'cxx': 'clang++-18', 'external': False,
-            'chrome': False}
+            'chrome': False, 'apt': []}
     assert own_lanes(root) == [*alpha, beta]
     assert own_lanes(root, '--library', 'alpha') == alpha
     assert run(root, 'own-lanes', '--library', 'beta').stdout == (
         '{"include":[{"library":"beta","lane":"oracle","directories":["libs/beta/test/oracle"],'
         '"kind":"original","name":"Own lane (beta, oracle)","os":"ubuntu-24.04","wasm":false,'
         '"emsdk":false,"node":true,"cc":"clang-18","cxx":"clang++-18","external":false,'
-        '"chrome":false}]}\n')
+        '"chrome":false,"apt":[]}]}\n')
     # Each entry is read back as the lane it is, and runs in each of its directories.
     for entry in alpha:
         own = matrix.parsed_own_lane(json.dumps(entry))
@@ -423,18 +423,18 @@ def test_own_lanes_on_targets(root):
               'platform': 'emscripten', 'id': 'emscripten.gamma.browser', 'kind': 'programs',
               'name': 'Own lane (gamma, browser, emscripten)', 'os': 'ubuntu-24.04',
               'wasm': False, 'emsdk': True, 'node': True, 'cc': '', 'cxx': '', 'external': False,
-              'chrome': False},
+              'chrome': False, 'apt': []},
              {'library': 'gamma', 'lane': 'driver', 'directories': ['libs/gamma/test'],
               'platform': 'emscripten', 'id': 'emscripten.gamma.driver', 'kind': 'original',
               'name': 'Own lane (gamma, driver, emscripten)', 'os': 'ubuntu-24.04',
               'wasm': False, 'emsdk': True, 'node': True, 'cc': '', 'cxx': '', 'external': False,
-              'chrome': False},
+              'chrome': False, 'apt': []},
              {'library': 'gamma', 'lane': 'driver', 'directories': ['libs/gamma/test'],
               'platform': 'native', 'id': 'native.gamma.driver', 'kind': 'original',
               'name': 'Own lane (gamma, driver, native)', 'os': 'ubuntu-24.04', 'wasm': False,
               'emsdk': False, 'node': True,
               'cc': 'clang-18', 'cxx': 'clang++-18', 'external': False,
-              'chrome': False}]
+              'chrome': False, 'apt': []}]
     assert own_lanes(root) == [*alpha, beta, *gamma]
     assert own_lanes(root, '--library', 'gamma') == gamma
     for entry in gamma:
@@ -1330,6 +1330,70 @@ def test_a_browser_lane_has_the_pinned_chrome(root):
     assert set(re.findall(r'\d+\.\d+\.\d+\.\d+', action)) == {pinned.group(1)}, action
 
 
+APT_RETRIES = '-o Acquire::Retries=5'
+
+
+def test_an_own_lane_installs_its_packages(root):
+    # An own lane runs on its runner, never in the container, so the packages it needs come with
+    # its entry, by library, lane and target: crypto's constant-time lane natively has Valgrind,
+    # llvm-18 (llvm-symbolizer-18, which reads MemorySanitizer's frames) and libclang-rt-18-dev
+    # (clang-18's MemorySanitizer runtime and its sanitizer/ headers); on wasip2, where it runs
+    # dudect alone, none; every other own lane none. The own-lanes job installs them with apt on
+    # Linux, only where the list is not empty, before the lane runs.
+    packages = ('valgrind', 'llvm-18', 'libclang-rt-18-dev')
+    assert matrix.OWN_LANE_PACKAGES == {('crypto', 'constant-time', 'native'): packages}
+    boost_only(root)
+    oracle_library(root, 'beta')
+    harness.add_library(root, 'crypto',
+                        'import webcpp ;\n'
+                        'webcpp.targets native wasip2 ;\n'
+                        'webcpp.run plain : plain.cpp ;\n'
+                        'webcpp.lane constant-time : plain : native wasip2 ;\n',
+                        {'plain.cpp': 'int main() {}\n'})
+    assert {entry.get('id', entry['lane']): entry['apt'] for entry in own_lanes(root)} == {
+        'oracle': [], 'native.crypto.constant-time': list(packages),
+        'wasip2.crypto.constant-time': []}, own_lanes(root)
+    steps = job_steps(workflow_jobs()['own-lanes'])
+    installs = [step for step in steps if 'matrix.apt' in step]
+    assert len(installs) == 1, installs
+    assert "if: runner.os == 'Linux' && join(matrix.apt, ' ') != ''\n" in installs[0], installs
+    assert ("install --yes --no-install-recommends ${{ join(matrix.apt, ' ') }}"
+            in installs[0]), installs
+    assert steps.index(installs[0]) < next(index for index, step in enumerate(steps)
+                                           if 'matrix.py own-lane' in step), steps
+
+
+def test_the_lint_installs_the_own_lanes_packages(root):
+    # The lint analyses every own lane's programs, natively with clang-18 on Linux, so it needs
+    # their headers: lint-packages prints every package of OWN_LANE_PACKAGES once, sorted, the
+    # one source, and the lint job installs them before the lint runs.
+    result = run(root, 'lint-packages')
+    assert result.returncode == 0, (result.returncode, result.stderr)
+    assert result.stdout == 'libclang-rt-18-dev llvm-18 valgrind\n', result.stdout
+    steps = job_steps(workflow_jobs()['lint'])
+    installs = [step for step in steps if '$(python3 tools/ci/matrix.py lint-packages)' in step]
+    assert len(installs) == 1, installs
+    assert 'install --yes --no-install-recommends' in installs[0], installs
+    assert steps.index(installs[0]) < next(index for index, step in enumerate(steps)
+                                           if 'tools/lint/lint.sh' in step), steps
+
+
+def test_every_apt_get_of_the_workflow_retries(_):
+    # A runner's apt mirror answers some requests with a transient error, as the container's
+    # snapshot does (test_container_apt_get_retries_transient_failures): every apt-get of
+    # library.yml retries a failed download, and its update fails rather than go on with
+    # partial lists.
+    workflow = (matrix.ROOT / '.github/workflows/library.yml').read_text()
+    code = ''.join(line for line in workflow.splitlines(keepends=True)
+                   if not line.lstrip().startswith('#'))
+    calls = re.findall(r'apt-get[^\n]*', code)
+    assert len(calls) == 4, calls
+    for call in calls:
+        assert APT_RETRIES in call, call
+        if re.search(r'\bupdate\b', call):
+            assert '-o APT::Update::Error-Mode=any' in call, call
+
+
 def test_host_tls_fixture_is_isolated_to_its_own_lane(root):
     steps = job_steps(workflow_jobs()['own-lanes'])
     fixture = [step for step in steps if 'WASI HTTPS host fixture' in step]
@@ -1565,6 +1629,9 @@ CASES = [
     test_asio_browser_lane_receives_chrome,
     test_cobalt_browser_lanes_receive_chrome_and_all_profiles,
     test_a_browser_lane_has_the_pinned_chrome,
+    test_an_own_lane_installs_its_packages,
+    test_the_lint_installs_the_own_lanes_packages,
+    test_every_apt_get_of_the_workflow_retries,
     test_host_tls_fixture_is_isolated_to_its_own_lane,
     test_browser_contract_lanes_build_a_native_beast_peer,
     test_container_apt_get_retries_transient_failures,

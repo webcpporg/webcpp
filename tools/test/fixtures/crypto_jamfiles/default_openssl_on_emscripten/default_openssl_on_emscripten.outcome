@@ -10,5 +10,5 @@
 targets: emscripten
 build: fails
 # tag::messages[]
-contains: webcpp::crypto: WEBCPP_CRYPTO_DEFAULT_BACKEND_OPENSSL selects OpenSSL, which is not built for Emscripten. Remove that define, or make it WEBCPP_CRYPTO_DEFAULT_BACKEND_BEARSSL.
+contains: webcpp::crypto: WEBCPP_CRYPTO_DEFAULT_BACKEND_OPENSSL no longer chooses a default. Write the backend in the type where the program wants it, as in ciphers::gcm<ciphers::aes256<backends::openssl>>.
 # end::messages[]

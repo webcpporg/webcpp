@@ -1070,6 +1070,30 @@ def test_clang_tidy_reads_boost_unordered_on_every_host(root):
     expect_clean(lint(root))
 
 
+def test_clang_tidy_reads_the_host_compiler_s_sanitizer_headers(root):
+    # A native program that marks memory for MemorySanitizer includes the host compiler's
+    # sanitizer/ interface headers, which wasi-sdk's clang-tidy does not ship (crypto's
+    # constant-time lane): the lint finds them in the host compiler's own resource directory,
+    # after its own headers, and the program analyses clean.
+    resource = subprocess.run(['clang++', '-print-resource-dir'], capture_output=True, text=True,
+                              check=True).stdout.strip()
+    assert (Path(resource) / 'include/sanitizer/msan_interface.h').is_file(), resource
+    prepare(root)
+    write(root, 'libs/demo/test/marks.cpp',
+          '// Copyright (c) 2026 WebCpp.org\n//\n'
+          '// Distributed under the Boost Software License, Version 1.0. (See\n'
+          '// accompanying file LICENSE_1_0.txt or copy at\n'
+          '// https://www.boost.org/LICENSE_1_0.txt)\n\n'
+          '#include <sanitizer/msan_interface.h>\n\n'
+          '#include <array>\n\n'
+          'int main() {\n'
+          '    std::array<int, 1> value{};\n'
+          '    __msan_unpoison(value.data(), sizeof value);\n'
+          '    return value[0];\n}\n')
+    append(root, 'libs/demo/test/Jamfile', 'webcpp.run marks : marks.cpp : : native ;\n')
+    expect_clean(lint(root))
+
+
 def test_a_compiled_boost_library_s_sources_are_not_analysed(root):
     # Boost.URL's sources, which /webcpp//boost_url compiles from Boost's tree outside the tree
     # the lint reads (.local/boost-source, or a CI runner's prefix), are Boost's: the database
@@ -2884,6 +2908,7 @@ CASES = [
     test_clang_tidy_reads_a_program_of_javascript_exceptions,
     test_a_dependency_s_warnings_are_not_ours,
     test_clang_tidy_reads_boost_unordered_on_every_host,
+    test_clang_tidy_reads_the_host_compiler_s_sanitizer_headers,
     test_a_compiled_boost_library_s_sources_are_not_analysed,
     test_clang_tidy_uses_shipped_cobalt_sources_on_a_clean_tree,
     test_clang_tidy_refuses_a_throw_on_each_target_without_exceptions,

@@ -963,12 +963,13 @@ update --init third_party/libs/<name>`; a build that needs none never looks.
 | `blake3_vectors` | BLAKE3's official vectors, `test_vectors/test_vectors.json` of the submodule `third_party/libs/blake3` at `f3149ec`, test data: hash's tests read it at run time under the directory its define `WEBCPP_TEST_BLAKE3_VECTORS` gives, on every target (wasmtime is given it, `webcpp.data`), and run again when it changes | CC0-1.0, Apache-2.0, or Apache-2.0 with LLVM exception |
 | `ca_certificates` | Dated Mozilla/curl CA data snapshot under `third_party/ca_certificates`, verified against its manifest and embedded by a build-generated header; updated explicitly by `tools/ca_certificates/update.py` | MPL-2.0 |
 | `ctaes` | `src/crypto/ctaes` of `bitcoin/bitcoin` v31.1 at `9be056a` (commit `9be056a8a72b624dae9623b2f7bded92c2a21c91`), the submodule `third_party/libs/bitcoin`, shallow; `third_party/Jamfile` compiles its `ctaes.c` alone, with webcpp::crypto's canary, on every target (`WEBCPP_CRYPTO_HAS_CTAES=1`); the tree's `src/secp256k1/` subtree is never on an include path and no glob over `third_party/libs` reaches it | MIT |
+| `ed25519-speccheck` | `novifinancial/ed25519-speccheck` at `65519336` (2021-02-26), shallow, test data: crypto's tests read the twelve Ed25519 edge cases of "Taming the many EdDSAs", its `cases.json`, at run time under the directory its define `WEBCPP_TEST_ED25519_SPECCHECK` gives, on every target (wasmtime is given it, `webcpp.data`), and run again when it changes | Apache-2.0 |
 | `json-schema-test-suite` | the JSON Schema Test Suite at `5b0ee16` (2026-09-21), test data: a test that names it reads the suite at run time from the directory its define `WEBCPP_TEST_JSON_SCHEMA_TEST_SUITE` gives, on every target (wasmtime is given it, `webcpp.data`), and runs again when a file of the suite changes | MIT |
 | `libdatachannel` | libdatachannel 0.24.6 at `6b1e2e620f1e37f0eafeee702eaea0043cb305fd`, with pinned libjuice, libsrtp, plog and usrsctp sources; static native archives built by upstream CMake through B2 against the same source-built OpenSSL | MPL-2.0 and the nested dependencies' own licences |
 | `nativejson-benchmark` | Milo Yip's nativejson-benchmark at `478d572` (2022-10-28), test data: document's benchmarks (`libs/document/bench`) read its `data/canada.json`, `data/citm_catalog.json` and `data/twitter.json` at run time under the directory its define `WEBCPP_TEST_NATIVEJSON_BENCHMARK` gives, on every target (wasmtime is given it, `webcpp.data`), and run again when one of them changes; its own submodules are never checked out | MIT |
 | `openssl` | OpenSSL 3.5.9 at `45e844fa2a14ec92d146bd8f5778ac130b6625fb`; static libssl/libcrypto and matching generated headers, built by upstream Configure/Make through B2 for native Clang/GCC/MSVC, WASIp2 single and WASIp3 single/cooperative | Apache-2.0 |
 | `secp256k1` | libsecp256k1 v0.8.0 at `6e2c8bc`; a static library built file by file by `third_party/Jamfile` (`src/secp256k1.c` and its two precomputed tables, every module on) with webcpp::crypto's canary, on every target; its tables by `webcpp-secp256k1-tables` (`auto`: small on Emscripten, large elsewhere); `WEBCPP_CRYPTO_HAS_SECP256K1=1` | MIT |
-| `sodium` | libsodium 1.0.22 at `77e1ce5`, the submodule `third_party/libs/libsodium`; a static library built file by file by `third_party/Jamfile` (every `.c` of `src/libsodium/`, no assembly, the defines libsodium's configure finds on each target, upstream's `builds/msvc/version.h` copied into the build directory) with webcpp::hash's canary, on every target; `WEBCPP_HASH_HAS_SODIUM=1`; `sodium-test-config` gives a program its private headers and test defines; shared with webcpp::crypto | ISC |
+| `sodium` | libsodium 1.0.22 at `77e1ce5`, the submodule `third_party/libs/libsodium`; a static library built file by file by `third_party/Jamfile` (every `.c` of `src/libsodium/`, no assembly, the defines libsodium's configure finds on each target, upstream's `builds/msvc/version.h` copied into the build directory) with webcpp::hash's canary and webcpp::crypto's (`libs/crypto/src/canary_sodium.c`, configuration `portable`), on every target; `WEBCPP_HASH_HAS_SODIUM=1` and `WEBCPP_CRYPTO_HAS_SODIUM=1`; `sodium-test-config` gives a program its private headers and test defines; shared with webcpp::crypto | ISC |
 | `sodium_vectors` | libsodium's own tests' expected outputs, `test/default/*.exp` of the submodule `third_party/libs/libsodium` at `77e1ce5`, test data: hash's tests read `generichash3.exp`, `kdf.exp`, `pwhash_argon2i.exp`, `shorthash.exp` and `siphashx24.exp` at run time under the directory its define `WEBCPP_TEST_SODIUM_VECTORS` gives, on every target (wasmtime is given it, `webcpp.data`), and run again when it changes | ISC |
 | `wycheproof` | C2SP's Wycheproof at `12fd3aaf` (2026-10-06), shallow, test data: crypto's tests read its `testvectors_v1/` at run time under the directory its define `WEBCPP_TEST_WYCHEPROOF` gives, on every target (wasmtime is given it, `webcpp.data`), and run again when one of its files changes | Apache-2.0 |
 | `xkcp` | XKCP (the Keccak team's code package) at `d20c8fc` (2026-11-10, no release tags); `third_party/Jamfile` compiles its `KeccakP-1600-opt64.c` (Keccak-p[1600], the generic64 profile) and the high-level files over it, `KeccakSponge.c`, `KeccakHash.c` (FIPS 202), `SP800-185.c`, `TurboSHAKE.c` and `KangarooTwelve.c` (serial: no times-N permutation), with webcpp::hash's adapter, `config.h` (`XKCP_has_KeccakP1600`, `_Sponge_Keccak`, `_TurboSHAKE`, `_FIPS202`, `_SP800_185`, `_KangarooTwelve`) and canary, on every target; `WEBCPP_HASH_HAS_XKCP=1` | CC0; `brg_endian.h` under Brian Gladman's terms |
@@ -7173,20 +7174,26 @@ and not built is in chapter 17.
 
 **Default backend.**
 
-- **The AEADs' default backend is BearSSL on Emscripten, wasip2 and wasip3,
-  OpenSSL natively when it is linked, BearSSL natively otherwise, and a
-  program picks BearSSL with `<define>WEBCPP_CRYPTO_DEFAULT_BACKEND_BEARSSL`;
-  on MSVC the default follows the same rule.** OpenSSL's assembly uses the
-  CPU's AES and carry-less multiplication instructions on x86-64 and ARMv8,
-  and BearSSL has them on x86 only; on WebAssembly BearSSL is constant time
-  where the `no-asm` OpenSSL is not (the owner's decision 2 of 2026-11-14).
-  Speed and size are not measured until the deferred lanes (chapter 17).
-  Source: `include/webcpp/crypto/config.hpp` (libs/crypto); the plan's
-  revision of 2026-11-14 (proposals, `reference/plan.md`).
-- **The page warns that natively without OpenSSL a server on ARM runs
-  BearSSL's portable code, and names `/webcpp/crypto//openssl`; it states no
-  factor.** BearSSL has no ARMv8 AES or PMULL code; the slowdown on the
-  source-built OpenSSL is not measured.
+- **Each family has one default backend per target, chosen by the target
+  alone for a stated reason, whatever the program links; no define changes it,
+  and a program names any other backend in the type.** AES-GCM's is OpenSSL
+  natively, on MSVC too, and BearSSL on Emscripten, wasip2 and wasip3:
+  OpenSSL's assembly uses the CPU's AES and carry-less multiplication
+  instructions on x86-64 and ARMv8, and BearSSL has them on x86 only; on
+  WebAssembly BearSSL is constant time where the `no-asm` OpenSSL is not. A
+  program that uses a default it does not link stops where it calls it, with
+  the Jamfile line and the type that names another backend; version 0.1's
+  `WEBCPP_CRYPTO_DEFAULT_BACKEND_BEARSSL` and `_OPENSSL` stop the build with the
+  type to write. Measurements are references and decide no default.
+  Source: `doc/tables/crypto.json` and the generated
+  `include/webcpp/crypto/detail/defaults.hpp` (libs/crypto); design D32 and the
+  owner's answers Q1 to Q4 of 2026-11-17 (proposals, `foundation/design.md`,
+  `reference/roadmap.md`).
+- **The page warns that a native program that names BearSSL runs BearSSL's
+  portable code on an ARM server, where the default, OpenSSL, uses ARMv8's AES;
+  the examples use the default and link it on every target with
+  `/webcpp/crypto//gcm-default`; it states no factor.** BearSSL has no ARMv8
+  AES or PMULL code; the slowdown on the source-built OpenSSL is not measured.
   Source: `doc/aead.adoc` (libs/crypto).
 
 **Randomness and memory.**
@@ -7357,8 +7364,8 @@ and not built is in chapter 17.
 - **The user's Jamfiles are the fixtures `tools/test/fixtures/crypto_jamfiles/<case>/`,
   each with its `<case>.outcome` (targets, build, what runs print, what each
   linker prints), built on a scratch superproject: `web`, `server`,
-  `both_bearssl_default`, `block`, `encrypt_and_sign`, `openssl_linked`,
-  `sign`, `sign_small`, and the stops (canaries, OpenSSL on Emscripten); a
+  `both_bearssl_named`, `gcm_default`, `block`, `encrypt_and_sign`,
+  `openssl_linked`, `sign`, `sign_small`, and the stops (canaries, OpenSSL on Emscripten); a
   `same-as:` line keeps a copied program equal to its original, and the page
   includes each Jamfile and outcome by tag.** A user's Jamfile is what an
   agent copies, so each one shown is built and run as it is shown.
@@ -8082,8 +8089,12 @@ The closure record distinguishes the baseline CI from validation of later change
   configuration, `<name>-config-<hash>.selected` in its own variant directory,
   which is written when the configuration changes, to a new one or back to one
   built earlier, so the consumer is built again. Removing a configuration's
-  directory builds it again. A checkout that differs from its pin stops b2
-  before any build, by the library's own `check_checkout`.
+  directory builds it again. The build record, `build.json` (OpenSSL's and
+  libdatachannel's), is one of its outputs, published last and whole after
+  its build removed the earlier one and its archives: a directory an
+  interrupted build left without it is built again. A checkout that differs
+  from its pin stops b2 before any build, by the library's own
+  `check_checkout`.
   Source: `tools/webcpp-third-party.jam`, `tools/third_party_build.py`
   (superproject).
 - **A dated curl export of Mozilla's root certificates (2026-09-25, 121 CAs)
@@ -8559,37 +8570,87 @@ each with its decisions as decided. While a proposal is open, its own
 change that builds it moves its decisions into chapter 14 or 15. Their
 conflicts with chapters 1 to 13 are in chapter 19.
 
-### crypto, after 0.1 (accepted 2026-10-11; increments 1 and 2 built in 0.1.0 and the memory option built after 0.1, chapter 15)
+### crypto, after 0.1 (genesis accepted 2026-10-11, foundation accepted 2026-11-14; the foundation's increment 1 built on its branch, not merged)
 
-The plan (`reference/plan.md`, revised on 2026-11-14) built version 0.1 from
-its increments 1 and 2, and OpenSSL's memory option after it; the owner
-deferred the rest, kept as written and re-read before it runs. What is built
-is in chapter 15; what follows is decided and not built.
+The genesis's plan (`reference/plan.md`, revised on 2026-11-14) built version
+0.1 from its increments 1 and 2, and OpenSSL's memory option after it. The
+foundation (`libraries/crypto/openspec/changes/foundation`) takes the work
+on: twelve increments, version 0.2 onward, and the genesis's increments 4 and
+5 (ChaCha20-Poly1305, Botan) with them; trystero's migration is dropped.
+Its rules are webcpp::hash's: one default backend per family and target with
+its reason stated, no profile and no per-family override (design D32), tables
+of size and speed only from release builds, and primitives only (D24). What
+is built is in chapter 15; what follows is decided and not built, except
+increment 1, whose state is first.
 
-**Constant time (plan Task 20).**
+**The foundation's increment 1 (plan Tasks 1 to 16).**
+
+- **Built on the branch `crypto/foundation-1` of the library and the
+  superproject, awaiting the owner's merge: libsodium's backend, the families
+  on it, the capability table, the fixed defaults, the three own lanes and
+  the page.** `backends::sodium` on `/third_party//sodium`, shared with
+  webcpp::hash, with crypto's canary; `curves::ed25519` (strict verification
+  over the twelve edge cases, Ed25519ph, the conversion, RFC 8410's formats and
+  PEM), `curves::x25519` and `kx_keypair`, `ciphers::aead` with
+  `chacha20_poly1305` (also on BearSSL and OpenSSL), its original form and
+  `xchacha20_poly1305`, `ciphers::secretbox`, `hybrid::box` and `sealed_box`,
+  and `secret<N>` with the errors 15 to 20. `supports_v` and
+  `default_backend_t` read the capability table, which `doc/tables/generate.py`
+  writes from `crypto.json` and the tests the Jamfiles declare (it replaced
+  `capabilities.py` and `measure.py`); the own lanes are `c-suites` (the
+  backends' own suites), `sizes` (at `variant=release`, on every target) and
+  `constant-time`. Throughput is measured by hand and dated, and decides
+  nothing.
+  Source: `libraries/crypto/openspec/changes/foundation/reference/plan.md`
+  Tasks 2 to 16 and its revision of 2026-11-17 (proposals);
+  `libs/crypto/AGENTS.md`.
+- **One finding is open: X25519's constant time on wasip2.** dudect measures
+  `agree` under wasmtime above its threshold (|t| 13 to 260 against 10), where
+  the native builds pass; no secret branch was found in the WebAssembly or in
+  wasmtime's code. The cause is measured: Apple silicon's DIT (data-independent
+  timing), which wasmtime does not set; with DIT set in wasmtime's main thread,
+  an experiment and not the lane, the case reads |t| 1.5 to 2.1. The native
+  dudect programs set DIT themselves; the WebAssembly cannot. The page's
+  constant-time table and `crypto.json` record it as an open finding, not a
+  pass, and the lane prints its value without judging it. Valgrind,
+  MemorySanitizer and dudect are not run on wasip3 or Emscripten, which the
+  page says, as it says that OpenSSL's `open` is left out of memcheck.
+  Source: `libs/crypto/doc/generated/constant-time.adoc`,
+  `doc/tables/crypto.json` (libs/crypto).
+- **What is not built is in the other increments: libsecp256k1's remaining
+  modules (2), BearSSL's (3), the browser backend and the asynchronous family
+  (4), libsodium completed (5), blst (6), Botan as a submodule (7), OpenSSL's
+  remaining algorithms (8), KZG, BN254, Shamir and HPKE (9 to 12).** The
+  merges, the CI's run and the proposals' status are the owner's.
+  Source: `libraries/crypto/openspec/changes/foundation/reference/roadmap.md`
+  (proposals).
+
+**Constant time (increment 1, Task 14; built on the branch).**
 
 - **Constant time is checked deterministically on Linux x86-64 and arm64
   (Valgrind memcheck and MemorySanitizer, each harness failing on a planted
   leak, and libsecp256k1's `ctime_tests`), and statistically by dudect's
-  method natively and under wasmtime, through the seam
-  `WEBCPP_CRYPTO_DETAIL_DECLASSIFY`, empty in 0.1.** `equal` compiles in the
-  user's translation unit, so it is checked at -O2 and -Os; under wasmtime the
+  method natively and under wasmtime on wasip2, through the seam
+  `WEBCPP_CRYPTO_DETAIL_DECLASSIFY`.** `equal` compiles in the user's
+  translation unit, so it is checked at -O2 and -Os; under wasmtime the
   engine's compiler decides whether BearSSL's `bmul64` stays constant time.
-  The page's "measured" columns say "not measured yet" until then.
+  The page's per-target cells are generated from the lane's own entries, and
+  a target the lane does not run says "not measured yet".
   Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  sections 3.2 and 8.3 (proposals).
+  sections 3.2 and 8.3 (proposals); `test/constant_time/Jamfile` (libs/crypto).
 
-**Sizes and throughput (plan Task 22).**
+**Sizes and throughput (increment 1, Task 11'; built on the branch).**
 
-- **Sizes are measured at b2's `speed` and `space` on every target, and
-  throughput by webcpp's own program on ubuntu-24.04, ubuntu-24.04-arm and
-  macos-15, in the own lanes `sizes` and `throughput` (`runners.yml`); the
-  page's size and speed cells and the defaults' speed reasons come from
-  them.** b2 has no -O2 that reaches the libraries a program names
-  (departures C16 and C17, for the owner). Until then a moved pin updates no
-  size table (chapter 19).
-  Source: `libraries/crypto/openspec/changes/genesis/reference/plan.md`
-  "Departures for the owner (O5)" (proposals).
+- **Sizes are measured at `variant=release` on every target by the own lane
+  `sizes`, through `webcpp.size-table`; throughput by webcpp's own program
+  (`bench/collect.py`, which refuses a build that is not a release) on the
+  developer's machine, dated; neither decides a default.** b2 has no -O2 that
+  reaches the libraries a program names, so the tables are dated references;
+  the ubuntu-24.04, ubuntu-24.04-arm and macos-15 runs wait for the owner
+  (`throughput` in `runners.yml` is not built). A moved pin updates no size
+  table (chapter 19).
+  Source: `libraries/crypto/openspec/changes/foundation/design.md` D32 and
+  `reference/plan.md` Task 11' (proposals).
 
 **The browser lane (plan Task 23).**
 
@@ -8618,13 +8679,14 @@ is in chapter 15; what follows is decided and not built.
   Source: `libraries/crypto/openspec/changes/genesis/reference/plan.md` C11
   (proposals).
 
-**ChaCha20-Poly1305 (increment 4).**
+**ChaCha20-Poly1305 (built in increment 1, Task 8b, on the branch; the genesis's increment 4).**
 
 - **`ciphers::chacha20_poly1305` on BearSSL and OpenSSL is one shot only,
   with an IV of exactly 12 bytes, refuses a message over 2^38 - 64 bytes with
   `message_too_long`, and where BearSSL leaves the tag check to its caller the
-  backend compares with `equal` and zeroes `data` on a mismatch; the traits
-  `chacha_state` and `chacha_engine` join the four of 0.1.** BearSSL's
+  backend compares with `equal` and zeroes `data` on a mismatch; it is a
+  family of the one-shot template `ciphers::aead<Family, Backend>`, not
+  new traits.** BearSSL's
   ChaCha20-Poly1305 is one function over the whole message; 12 bytes and the
   limit are RFC 8439's.
   Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`

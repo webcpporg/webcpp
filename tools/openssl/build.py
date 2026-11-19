@@ -143,8 +143,12 @@ def main() -> None:
                            'WASI uses the separately declared TLS integration tests')
     source, output = args.source.resolve(), args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
-    for name in ('build.json', 'upstream-tests.json'):
-        (output / name).unlink(missing_ok=True)
+    if not args.headers_only:
+        # B2 keeps a configuration's outputs once they exist, and builds it again only when one
+        # is missing (tools/webcpp-openssl.jam): the build record, published last, is what makes
+        # it complete. Remove it first, with what an earlier, interrupted build published.
+        for name in ('build.json', 'upstream-tests.json', *archive_names(args.platform)):
+            (output / name).unlink(missing_ok=True)
     pin = json.loads((HERE / 'pin.json').read_text())
     check_checkout(source, pin)
     # Verify the source before probing or invoking any configured build tool.
@@ -307,7 +311,7 @@ def build_source(args: argparse.Namespace, output: Path, pin: dict, scratch: Pat
         # generated headers and archives, without the unrelated exporters.
         copy_headers(scratch / 'source', build, install / 'include/openssl', windows)
         (install / 'lib').mkdir()
-        for name in ('libssl.lib', 'libcrypto.lib'):
+        for name in archive_names(args.platform):
             shutil.copyfile(build / name, install / 'lib' / name)
         symbols = build / 'ossl_static.pdb'
         if symbols.is_file():
@@ -320,7 +324,7 @@ def build_source(args: argparse.Namespace, output: Path, pin: dict, scratch: Pat
     # Publish any changed headers atomically before making archives available.
     shutil.copytree(install / 'include', output / 'include', dirs_exist_ok=True,
                     copy_function=publish_header)
-    names = ('libssl.lib', 'libcrypto.lib') if windows else ('libssl.a', 'libcrypto.a')
+    names = archive_names(args.platform)
     for name in names:
         staged = output / (name + '.new')
         shutil.copyfile(install / 'lib' / name, staged)
@@ -328,14 +332,30 @@ def build_source(args: argparse.Namespace, output: Path, pin: dict, scratch: Pat
     record['seconds'] = time.monotonic() - started
     record['sha256'] = {name: hashlib.sha256((output / name).read_bytes()).hexdigest()
                         for name in names}
-    (output / 'build.json').write_text(json.dumps(record, indent=2) + '\n')
     if suite:
         suite.update(pin=pin['commit'], configure=record['configure'], sha256=record['sha256'])
-        (output / 'upstream-tests.json').write_text(json.dumps(suite, indent=2) + '\n')
+        publish_record(suite, output / 'upstream-tests.json')
+    # The last output: a configuration with it is complete, and kept.
+    publish_record(record, output / 'build.json')
+    if suite:
         print(f'OpenSSL upstream suite passed: {suite["files"]} recipes, '
               f'{suite["tests"]} tests', flush=True)
     print(f'OpenSSL {pin["version"]}: {args.platform}/{args.threading} built from source '
           f'in {record["seconds"]:.1f}s', flush=True)
+
+
+def archive_names(platform: str) -> tuple[str, str]:
+    """The archives a build publishes for platform."""
+    if platform == 'windows':
+        return ('libssl.lib', 'libcrypto.lib')
+    return ('libssl.a', 'libcrypto.a')
+
+
+def publish_record(record: dict, destination: Path) -> None:
+    """Publish record as JSON at destination whole: an interruption leaves none, never part."""
+    staged = destination.with_name(destination.name + '.new')
+    staged.write_text(json.dumps(record, indent=2) + '\n')
+    staged.replace(destination)
 
 
 def copy_headers(source: Path, build: Path, output: Path, windows: bool) -> list[Path]:

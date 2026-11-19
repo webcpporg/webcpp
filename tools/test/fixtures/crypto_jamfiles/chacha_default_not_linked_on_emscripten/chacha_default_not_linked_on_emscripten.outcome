@@ -1,0 +1,18 @@
+# Copyright (c) 2026 WebCpp.org
+#
+# Distributed under the Boost Software License, Version 1.0. (See
+# accompanying file LICENSE_1_0.txt or copy at
+# https://www.boost.org/LICENSE_1_0.txt)
+
+# The compiler's line of the refusal starts with the header's path on the machine, so the message is
+# a contains: line. wasip2 and wasip3 have the same message in a compile-diagnostic
+# (test/messages/chacha_default_not_linked); compile-diagnostic is clang's and skips Emscripten, so
+# this fixture is the Emscripten one.
+[all]
+targets: emscripten
+build: fails
+# tag::messages[]
+contains: webcpp::crypto: ChaCha20-Poly1305's default backend on this target is libsodium, which is not linked. Add /webcpp/crypto//chacha20_poly1305-default, the default's library on every target, to the program's Jamfile, as in: exe app : app.cpp /webcpp/crypto//crypto /webcpp/crypto//chacha20_poly1305-default ; or name another backend in the type, as in ciphers::chacha20_poly1305<backends::bearssl>. The backends that have it: sodium (native, wasip2, wasip3, emscripten), bearssl (native, wasip2, wasip3, emscripten), openssl (native, wasip2, wasip3). (without b2: define WEBCPP_CRYPTO_HAS_SODIUM=1 and link libsodium built with webcpp's src/canary_sodium.c)
+contains: webcpp::crypto: original ChaCha20-Poly1305's default backend on this target is libsodium, which is not linked, and the one backend that has it there. Add /webcpp/crypto//chacha20_poly1305_original-default, the default's library on every target, to the program's Jamfile, as in: exe app : app.cpp /webcpp/crypto//crypto /webcpp/crypto//chacha20_poly1305_original-default ; (without b2: define WEBCPP_CRYPTO_HAS_SODIUM=1 and link libsodium built with webcpp's src/canary_sodium.c)
+contains: webcpp::crypto: XChaCha20-Poly1305's default backend on this target is libsodium, which is not linked, and the one backend that has it there. Add /webcpp/crypto//xchacha20_poly1305-default, the default's library on every target, to the program's Jamfile, as in: exe app : app.cpp /webcpp/crypto//crypto /webcpp/crypto//xchacha20_poly1305-default ; (without b2: define WEBCPP_CRYPTO_HAS_SODIUM=1 and link libsodium built with webcpp's src/canary_sodium.c)
+# end::messages[]
