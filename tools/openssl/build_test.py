@@ -222,7 +222,7 @@ class WindowsBuildTest(unittest.TestCase):
         (self.source / 'ms').mkdir()
         (self.source / 'ms/applink.c').write_bytes(data)
         (self.root / 'msvc.conf').write_text('# configuration fixture\n')
-        self.pin = {'version': 'fixture', 'source_date_epoch': 1700000000,
+        self.pin = {'version': 'fixture', 'commit': 'fixture', 'source_date_epoch': 1700000000,
                     'omitted_submodules': {}, 'executable_files': [],
                     'source_sha256': inventory_digest([
                         (name, '100644', hashlib.sha256(data).hexdigest())
@@ -320,6 +320,66 @@ class WindowsBuildTest(unittest.TestCase):
                 build.main()
         for name in ('libssl.lib', 'libcrypto.lib', 'build.json', 'upstream-tests.json'):
             self.assertFalse((output / name).exists(), name)
+
+    def build(self, output: Path, fail: str = '') -> list[str]:
+        """Runs main with --test over stand-in commands, the one named fail raising, and
+        returns the names it published, in order."""
+        def command(command: list[str], *, cwd: Path, env: dict, log: Path,
+                    timeout: float = 600) -> None:
+            log.write_text('completed\n')
+            if command[-1] == fail:
+                raise RuntimeError('interrupted ' + fail)
+            if command[-1] == 'build_libs':
+                (cwd / 'include/openssl').mkdir(parents=True)
+                (cwd / 'include/openssl/configuration.h').write_text('matching headers\n')
+                (cwd / 'libssl.lib').write_bytes(b'ssl')
+                (cwd / 'libcrypto.lib').write_bytes(b'crypto')
+
+        published = []
+        replace = Path.replace
+
+        def publish(path: Path, target: Path) -> Path:
+            published.append(Path(target).name)
+            return replace(path, target)
+
+        args = ['build.py', '--source', str(self.source), '--output', str(output),
+                '--platform', 'windows', '--threading', 'multi', '--cc', str(self.compiler),
+                '--test']
+        with patch.object(build, 'HERE', self.root), patch.object(sys, 'argv', args), \
+                patch.object(build, 'run', side_effect=command), \
+                patch.object(build, 'windows_target', return_value='VC-WIN64A'), \
+                patch.object(build, 'windows_perl', return_value='native-perl.exe'), \
+                patch.object(build, 'suite_result',
+                             return_value={'result': 'passed', 'files': 1, 'tests': 1}), \
+                patch.object(Path, 'replace', publish):
+            build.main()
+        return published
+
+    def test_an_interrupted_build_leaves_no_outputs_of_an_earlier_one(self) -> None:
+        # B2 keeps a configuration's outputs once they exist (tools/webcpp-openssl.jam): an
+        # interrupted build must not leave the archives of an earlier interrupted one, whose
+        # build record it removed, for a later build to take as complete.
+        output = self.root / 'interrupted'
+        output.mkdir()
+        for name in ('libssl.lib', 'libcrypto.lib', 'build.json', 'upstream-tests.json'):
+            (output / name).write_text('published by an interrupted build\n')
+        with self.assertRaisesRegex(RuntimeError, 'interrupted build_libs'):
+            self.build(output, fail='build_libs')
+        for name in ('libssl.lib', 'libcrypto.lib', 'build.json', 'upstream-tests.json'):
+            self.assertFalse((output / name).exists(), name)
+
+    def test_the_build_record_is_published_whole_and_last(self) -> None:
+        # The build record is what makes a configuration complete: B2 builds one without it
+        # again, so it is the last output published, replaced whole, never written in place.
+        output = self.root / 'complete'
+        published = self.build(output)
+        self.assertEqual(published[-1], 'build.json', published)
+        self.assertEqual([name for name in published if name not in ('configuration.h',
+                                                                       'applink.c')],
+                         ['libssl.lib', 'libcrypto.lib', 'upstream-tests.json', 'build.json'])
+        self.assertEqual(json.loads((output / 'build.json').read_text())['sha256'],
+                         json.loads((output / 'upstream-tests.json').read_text())['sha256'])
+        self.assertEqual([path.name for path in output.glob('*.new')], [])
 
     def test_windows_target_uses_the_configured_compilers_architecture(self) -> None:
         for output, target in (('WEBCPP_OPENSSL_X86', 'VC-WIN32'),

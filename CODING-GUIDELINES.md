@@ -8089,7 +8089,10 @@ The closure record distinguishes the baseline CI from validation of later change
   configuration, `<name>-config-<hash>.selected` in its own variant directory,
   which is written when the configuration changes, to a new one or back to one
   built earlier, so the consumer is built again. Removing a configuration's
-  directory builds it again. A checkout that differs from its pin stops b2
+  directory builds it again. OpenSSL's build record, `build.json`, is one of
+  its outputs, published last and whole after its build removed the earlier
+  one and its archives: a directory an interrupted build left without it is
+  built again. A checkout that differs from its pin stops b2
   before any build, by the library's own `check_checkout`.
   Source: `tools/webcpp-third-party.jam`, `tools/third_party_build.py`
   (superproject).
