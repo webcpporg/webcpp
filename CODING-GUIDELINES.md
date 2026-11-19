@@ -8566,37 +8566,84 @@ each with its decisions as decided. While a proposal is open, its own
 change that builds it moves its decisions into chapter 14 or 15. Their
 conflicts with chapters 1 to 13 are in chapter 19.
 
-### crypto, after 0.1 (accepted 2026-10-11; increments 1 and 2 built in 0.1.0 and the memory option built after 0.1, chapter 15)
+### crypto, after 0.1 (genesis accepted 2026-10-11, foundation accepted 2026-11-14; the foundation's increment 1 built on its branch, not merged)
 
-The plan (`reference/plan.md`, revised on 2026-11-14) built version 0.1 from
-its increments 1 and 2, and OpenSSL's memory option after it; the owner
-deferred the rest, kept as written and re-read before it runs. What is built
-is in chapter 15; what follows is decided and not built.
+The genesis's plan (`reference/plan.md`, revised on 2026-11-14) built version
+0.1 from its increments 1 and 2, and OpenSSL's memory option after it. The
+foundation (`libraries/crypto/openspec/changes/foundation`) takes the work
+on: twelve increments, version 0.2 onward, and the genesis's increments 4 and
+5 (ChaCha20-Poly1305, Botan) with them; trystero's migration is dropped.
+Its rules are webcpp::hash's: one default backend per family and target with
+its reason stated, no profile and no per-family override (design D32), tables
+of size and speed only from release builds, and primitives only (D24). What
+is built is in chapter 15; what follows is decided and not built, except
+increment 1, whose state is first.
 
-**Constant time (plan Task 20).**
+**The foundation's increment 1 (plan Tasks 1 to 16).**
+
+- **Built on the branch `crypto/foundation-1` of the library and the
+  superproject, awaiting the owner's merge: libsodium's backend, the families
+  on it, the capability table, the fixed defaults, the three own lanes and
+  the page.** `backends::sodium` on `/third_party//sodium`, shared with
+  webcpp::hash, with crypto's canary; `curves::ed25519` (strict verification
+  over the twelve edge cases, Ed25519ph, the conversion, RFC 8410's formats and
+  PEM), `curves::x25519` and `kx_keypair`, `ciphers::aead` with
+  `chacha20_poly1305` (also on BearSSL and OpenSSL), its original form and
+  `xchacha20_poly1305`, `ciphers::secretbox`, `hybrid::box` and `sealed_box`,
+  and `secret<N>` with the errors 15 to 20. `supports_v` and
+  `default_backend_t` read the capability table, which `doc/tables/generate.py`
+  writes from `crypto.json` and the tests the Jamfiles declare (it replaced
+  `capabilities.py` and `measure.py`); the own lanes are `c-suites` (the
+  backends' own suites), `sizes` (at `variant=release`, on every target) and
+  `constant-time`. Throughput is measured by hand and dated, and decides
+  nothing.
+  Source: `libraries/crypto/openspec/changes/foundation/reference/plan.md`
+  Tasks 2 to 16 and its revision of 2026-11-17 (proposals);
+  `libs/crypto/AGENTS.md`.
+- **One finding is open: X25519's constant time on wasip2.** dudect measures
+  `agree` under wasmtime above its threshold (|t| 13 to 32 against 10), where
+  the native builds pass; no secret branch was found in the WebAssembly or in
+  wasmtime's code and the cause is unknown. The page's constant-time table
+  and `crypto.json` record it as an open finding, not a pass, and the lane
+  prints its value without judging it. Valgrind, MemorySanitizer and dudect
+  are not run on wasip3 or Emscripten, which the page says, as it says that
+  OpenSSL's `open` is left out of memcheck.
+  Source: `libs/crypto/doc/generated/constant-time.adoc`,
+  `doc/tables/crypto.json` (libs/crypto).
+- **What is not built is in the other increments: libsecp256k1's remaining
+  modules (2), BearSSL's (3), the browser backend and the asynchronous family
+  (4), libsodium completed (5), blst (6), Botan as a submodule (7), OpenSSL's
+  remaining algorithms (8), KZG, BN254, Shamir and HPKE (9 to 12).** The
+  merges, the CI's run and the proposals' status are the owner's.
+  Source: `libraries/crypto/openspec/changes/foundation/reference/roadmap.md`
+  (proposals).
+
+**Constant time (increment 1, Task 14; built on the branch).**
 
 - **Constant time is checked deterministically on Linux x86-64 and arm64
   (Valgrind memcheck and MemorySanitizer, each harness failing on a planted
   leak, and libsecp256k1's `ctime_tests`), and statistically by dudect's
-  method natively and under wasmtime, through the seam
-  `WEBCPP_CRYPTO_DETAIL_DECLASSIFY`, empty in 0.1.** `equal` compiles in the
-  user's translation unit, so it is checked at -O2 and -Os; under wasmtime the
+  method natively and under wasmtime on wasip2, through the seam
+  `WEBCPP_CRYPTO_DETAIL_DECLASSIFY`.** `equal` compiles in the user's
+  translation unit, so it is checked at -O2 and -Os; under wasmtime the
   engine's compiler decides whether BearSSL's `bmul64` stays constant time.
-  The page's "measured" columns say "not measured yet" until then.
+  The page's per-target cells are generated from the lane's own entries, and
+  a target the lane does not run says "not measured yet".
   Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
-  sections 3.2 and 8.3 (proposals).
+  sections 3.2 and 8.3 (proposals); `test/constant_time/Jamfile` (libs/crypto).
 
-**Sizes and throughput (plan Task 22).**
+**Sizes and throughput (increment 1, Task 11'; built on the branch).**
 
-- **Sizes are measured at b2's `speed` and `space` on every target, and
-  throughput by webcpp's own program on ubuntu-24.04, ubuntu-24.04-arm and
-  macos-15, in the own lanes `sizes` and `throughput` (`runners.yml`); the
-  page's size and speed cells and the defaults' speed reasons come from
-  them.** b2 has no -O2 that reaches the libraries a program names
-  (departures C16 and C17, for the owner). Until then a moved pin updates no
-  size table (chapter 19).
-  Source: `libraries/crypto/openspec/changes/genesis/reference/plan.md`
-  "Departures for the owner (O5)" (proposals).
+- **Sizes are measured at `variant=release` on every target by the own lane
+  `sizes`, through `webcpp.size-table`; throughput by webcpp's own program
+  (`bench/collect.py`, which refuses a build that is not a release) on the
+  developer's machine, dated; neither decides a default.** b2 has no -O2 that
+  reaches the libraries a program names, so the tables are dated references;
+  the ubuntu-24.04, ubuntu-24.04-arm and macos-15 runs wait for the owner
+  (`throughput` in `runners.yml` is not built). A moved pin updates no size
+  table (chapter 19).
+  Source: `libraries/crypto/openspec/changes/foundation/design.md` D32 and
+  `reference/plan.md` Task 11' (proposals).
 
 **The browser lane (plan Task 23).**
 
@@ -8625,13 +8672,14 @@ is in chapter 15; what follows is decided and not built.
   Source: `libraries/crypto/openspec/changes/genesis/reference/plan.md` C11
   (proposals).
 
-**ChaCha20-Poly1305 (increment 4).**
+**ChaCha20-Poly1305 (built in increment 1, Task 8b, on the branch; the genesis's increment 4).**
 
 - **`ciphers::chacha20_poly1305` on BearSSL and OpenSSL is one shot only,
   with an IV of exactly 12 bytes, refuses a message over 2^38 - 64 bytes with
   `message_too_long`, and where BearSSL leaves the tag check to its caller the
-  backend compares with `equal` and zeroes `data` on a mismatch; the traits
-  `chacha_state` and `chacha_engine` join the four of 0.1.** BearSSL's
+  backend compares with `equal` and zeroes `data` on a mismatch; it is a
+  family of the one-shot template `ciphers::aead<Family, Backend>`, not
+  new traits.** BearSSL's
   ChaCha20-Poly1305 is one function over the whole message; 12 bytes and the
   limit are RFC 8439's.
   Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
