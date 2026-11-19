@@ -285,8 +285,9 @@ could not read and dropped, such as one naming a header that does not exist.
 * Added ctaes, Bitcoin Core's constant-time AES at v31.1, built from source as
 /third_party//ctaes, and the fixtures of the user's Jamfiles of webcpp::crypto's block cipher
 and signing programs.
-* Added XKCP's Keccak-p[1600], built from source with webcpp::hash's adapter as
-`/third_party//xkcp`.
+* Added XKCP's Keccak-p[1600] and its sponge, FIPS 202, SP 800-185, TurboSHAKE and
+KangarooTwelve files, built from source with webcpp::hash's adapter as `/third_party//xkcp`, its
+test vectors as `/third_party//xkcp_vectors`.
 * Added libsodium 1.0.22, built from source as /third_party//sodium with the defines
 its own configure finds on each target, and /third_party//sodium-test-config for a
 program that compiles against its private headers.
@@ -311,6 +312,28 @@ webcpp::hash's and webcpp::crypto's OpenSSL, when libs/hash is checked out.
 llms.txt from its capability table and measurements, and checks them when its page is built.
 * Changed tools/hash/doc_tables.py to give each chapter two comparison tables, each under the
 eight columns from which a table scrolls.
+* Changed tools/hash/doc_tables.py to render webcpp::hash's family tags (digest_of, hasher, mac,
+argon2): a default of hash2, xkcp, blake3 or sodium, or none, and what a partial cell refuses.
+* Fixed tools/hash/doc_tables.py naming, beside a default, backends of functions that do not
+share it, calling a tag without a default a type, and scattering constant-time statements.
+* Fixed tools/hash/doc_tables.py's llms.txt calling backends::sodium the only backend of
+argon2id and scrypt, which backends::openssl has too.
+* Changed tools/hash/doc_tables.py to render a function without a default backend, as kbkdf,
+sskdf and x963kdf on backends::openssl alone, and to refuse one a backend of the order has.
+* Added /third_party//openssl_evp_data, OpenSSL's EVP test files at the pin, which webcpp::hash's
+tests read at run time on every target.
+* Added /third_party//blake2_vectors, BLAKE2's test vectors at ed1974e (a shallow submodule), and
+/third_party//sodium_vectors, libsodium's test outputs, which webcpp::hash's tests read at run time.
+* Changed tools/test/hash_jamfiles_test.py to copy libs/asio into its scratch superproject, so that
+the messages of webcpp::hash's asynchronous family are built on Emscripten too.
+* Changed tools/hash/doc_tables.py to render a backend of webcpp::hash's asynchronous family
+alone, backends::webcrypto, with the note "asynchronous family only" in every table.
+* Changed tools/hash/doc_tables.py to derive llms.txt's default backends from the capability
+table and to give each backend's constant-time sources one bullet.
+* Changed tools/hash/doc_tables.py to refuse a default without its cell or of the asynchronous
+family alone, and a tag outside its namespace's chapter.
+* Fixed tools/hash/doc_tables.py calling backends::openssl argon2id's and scrypt's second
+template argument: each sentence reads the Backend's position from the header declaring the template.
 
 [#webcpp-0-1-0-compilers-tested]
 == Compilers tested

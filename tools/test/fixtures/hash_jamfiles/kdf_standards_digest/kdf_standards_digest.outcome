@@ -1,0 +1,14 @@
+# Copyright (c) 2026 WebCpp.org
+#
+# Distributed under the Boost Software License, Version 1.0. (See
+# accompanying file LICENSE_1_0.txt or copy at
+# https://www.boost.org/LICENSE_1_0.txt)
+
+# The compiler's line starts with the header's path on the machine, so each
+# message is a contains: line. Natively and on WASI the same texts are
+# test/messages/kdf_standards_digest, a compile-diagnostic.
+[all]
+targets: emscripten
+build: fails
+contains: webcpp::hash: sskdf takes a digest of SP 800-56C: digests::sha1, digests::sha2_224, sha2_256, sha2_384, sha2_512, sha2_512_224, sha2_512_256, sha3_224, sha3_256, sha3_384 or sha3_512.
+contains: webcpp::hash: x963kdf takes a hash function of SEC 1 v2, section 3.5: digests::sha1, digests::sha2_224, sha2_256, sha2_384 or sha2_512.

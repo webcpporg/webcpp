@@ -1,0 +1,15 @@
+# Copyright (c) 2026 WebCpp.org
+#
+# Distributed under the Boost Software License, Version 1.0. (See
+# accompanying file LICENSE_1_0.txt or copy at
+# https://www.boost.org/LICENSE_1_0.txt)
+
+# The compiler's line starts with the header's path on the machine, so each
+# message is a contains: line. Natively and on WASI the same texts are
+# test/messages/kdf_standards_on_hash2, a compile-diagnostic.
+[all]
+targets: emscripten
+build: fails
+contains: webcpp::hash: kdfs::kbkdf_hmac is not in this backend. Name one of: backends::openssl.
+contains: webcpp::hash: kdfs::sskdf is not in this backend. Name one of: backends::openssl.
+contains: webcpp::hash: kdfs::x963kdf is not in this backend. Name one of: backends::openssl.
