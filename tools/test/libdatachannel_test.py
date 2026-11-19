@@ -142,6 +142,49 @@ def provider_header_plan(root: Path, properties: list[str]) -> None:
             assert not list((root / 'bin').rglob(artifact)), artifact
 
 
+def test_an_interrupted_configuration_is_built_again(root: Path) -> None:
+    # A configuration is complete when its build record is: the archives and headers an
+    # interrupted build published before it, without the record, are built again, b2 -a or
+    # not, and a complete configuration is kept. Planted files stand for the outputs, OpenSSL's
+    # complete.
+    (root / 'Jamroot').write_text(
+        'import webcpp-openssl ;\nimport webcpp-libdatachannel ;\n'
+        'project : build-dir bin ;\n'
+        f'webcpp-openssl.declare "{root.as_posix()}" : ssl.h configuration.h\n'
+        '  : tools/openssl/build.py ;\n'
+        f'webcpp-libdatachannel.declare "{root.as_posix()}" : datachannel.hpp\n'
+        '  : tools/libdatachannel/build.py ;\n'
+        'exe consumer : provider.cpp libdatachannel openssl ;\n')
+    (root / 'provider.cpp').write_text(SOURCE)
+    request = ('consumer', 'toolset=clang', 'variant=release', 'threading=multi')
+    env = {'BOOST_BUILD_PATH': str(root / 'tools')}
+    planned = harness.run_b2(root, '-n', *request, env_extra=env)
+    harness.expect(planned, True, 'webcpp-openssl.build', 'webcpp-libdatachannel.build')
+    openssl = root / re.findall(r'^webcpp-openssl\.build (.+[/\\])libssl\.a$',
+                                planned.stdout, re.M)[0]
+    datachannel = root / re.findall(
+        r'^webcpp-libdatachannel\.build (.+[/\\])libdatachannel\.a$', planned.stdout, re.M)[0]
+    for name in ('libssl.a', 'libcrypto.a', 'build.json', 'include/openssl/ssl.h',
+                 'include/openssl/configuration.h'):
+        (openssl / name).parent.mkdir(parents=True, exist_ok=True)
+        (openssl / name).write_text('a complete OpenSSL configuration\n')
+    for name in ('libdatachannel.a', 'libjuice.a', 'libusrsctp.a', 'libsrtp2.a',
+                 'include/rtc/datachannel.hpp'):
+        (datachannel / name).parent.mkdir(parents=True, exist_ok=True)
+        (datachannel / name).write_text('published before the interruption\n')
+    for flags in ((), ('-a',)):
+        planned = harness.run_b2(root, '-n', *flags, *request, env_extra=env)
+        harness.expect(planned, True)
+        assert re.search(r'^webcpp-libdatachannel\.build ', planned.stdout, re.M), planned.stdout
+        assert 'webcpp-libdatachannel.prepare-headers' not in planned.stdout, planned.stdout
+        assert 'webcpp-openssl.' not in planned.stdout, planned.stdout
+    (datachannel / 'build.json').write_text('{}\n')
+    for flags in ((), ('-a',)):
+        planned = harness.run_b2(root, '-n', *flags, *request, env_extra=env)
+        harness.expect(planned, True)
+        assert 'webcpp-libdatachannel.' not in planned.stdout, planned.stdout
+
+
 def test_headers_only_do_not_build_upstream_proof(root: Path) -> None:
     provider_header_plan(root, ['toolset=clang', 'threading=multi', 'webcpp-openssl-tests=on'])
 
@@ -195,6 +238,7 @@ def test_msvc_runtime_and_custom_cpp_flags_reach_both_dependencies(root: Path) -
 
 
 CASES = [test_one_native_provider_in_a_path_with_spaces,
+         test_an_interrupted_configuration_is_built_again,
          test_headers_only_do_not_build_upstream_proof,
          test_headers_only_do_not_build_msvc_symbols,
          test_msvc_runtime_and_custom_cpp_flags_reach_both_dependencies,

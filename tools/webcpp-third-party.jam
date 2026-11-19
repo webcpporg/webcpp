@@ -15,10 +15,10 @@
 # command: its outputs are NOUPDATE, built when missing and never again, b2 -a
 # included, which the CI's lanes run, and a directory the CI restores from its
 # cache is used as it is. A build publishes its completion marker last
-# (OpenSSL's build.json), an output too, so that a directory an interrupted
-# build left without it is built again. Consumers whose properties differ
-# only in what the command leaves out, as exception-handling for OpenSSL's C,
-# share one build.
+# (build.json, OpenSSL's and libdatachannel's), an output too, so that a
+# directory an interrupted build left without it is built again. Consumers
+# whose properties differ only in what the command leaves out, as
+# exception-handling for OpenSSL's C, share one build.
 #
 # A consumer depends on <name>-config-<hash>.selected in its own variant
 # directory, which tools/third_party_build.py select writes when the consumer's

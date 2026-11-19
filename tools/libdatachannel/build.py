@@ -67,6 +67,11 @@ def build(args: argparse.Namespace) -> None:
     windows = args.platform == 'windows'
     ssl = provider(openssl, windows)
     output.mkdir(parents=True, exist_ok=True)
+    # B2 keeps a configuration's outputs once they exist, and builds it again only when one is
+    # missing (tools/webcpp-libdatachannel.jam): the build record, published last, is what makes
+    # it complete. Remove it first, with the archives an earlier, interrupted build published.
+    for name in ('build.json', *archive_names(windows)):
+        (output / name).unlink(missing_ok=True)
     driver = shutil.which(args.cxx)
     if driver is None:
         raise RuntimeError(f'configured C++ compiler is missing: {args.cxx}')
@@ -141,8 +146,7 @@ def build(args: argparse.Namespace) -> None:
         # Each static archive remains separate. OpenSSL is never inserted in
         # these archives, so B2 gives the final link one ssl/crypto pair.
         archives = {}
-        for library in ('datachannel', 'juice', 'usrsctp', 'srtp2'):
-            name = library + '.lib' if windows else 'lib' + library + '.a'
+        for name in archive_names(windows):
             matches = list((scratch / 'build').rglob(name))
             if len(matches) != 1:
                 raise RuntimeError(f'expected one built {name}, found {matches}')
@@ -157,9 +161,18 @@ def build(args: argparse.Namespace) -> None:
                   'openssl_sha256': ssl['sha256'], 'seconds': time.monotonic() - started,
                   'sha256': {name: hashlib.sha256((output / name).read_bytes()).hexdigest()
                              for name in archives}}
-        (output / 'build.json').write_text(json.dumps(record, indent=2) + '\n')
+        # The last output: a configuration with it is complete, and kept.
+        staged = output / 'build.json.new'
+        staged.write_text(json.dumps(record, indent=2) + '\n')
+        staged.replace(output / 'build.json')
         print(f'libdatachannel {pin["version"]}: static provider built in '
               f'{record["seconds"]:.1f}s', flush=True)
+
+
+def archive_names(windows: bool) -> tuple[str, ...]:
+    """The four static archives a build publishes, in link order."""
+    return tuple(library + '.lib' if windows else 'lib' + library + '.a'
+                 for library in ('datachannel', 'juice', 'usrsctp', 'srtp2'))
 
 
 def main() -> None:
