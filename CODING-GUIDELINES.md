@@ -8601,13 +8601,16 @@ increment 1, whose state is first.
   Tasks 2 to 16 and its revision of 2026-11-17 (proposals);
   `libs/crypto/AGENTS.md`.
 - **One finding is open: X25519's constant time on wasip2.** dudect measures
-  `agree` under wasmtime above its threshold (|t| 13 to 32 against 10), where
+  `agree` under wasmtime above its threshold (|t| 13 to 260 against 10), where
   the native builds pass; no secret branch was found in the WebAssembly or in
-  wasmtime's code and the cause is unknown. The page's constant-time table
-  and `crypto.json` record it as an open finding, not a pass, and the lane
-  prints its value without judging it. Valgrind, MemorySanitizer and dudect
-  are not run on wasip3 or Emscripten, which the page says, as it says that
-  OpenSSL's `open` is left out of memcheck.
+  wasmtime's code. The cause is measured: Apple silicon's DIT (data-independent
+  timing), which wasmtime does not set; with DIT set in wasmtime's main thread,
+  an experiment and not the lane, the case reads |t| 1.5 to 2.1. The native
+  dudect programs set DIT themselves; the WebAssembly cannot. The page's
+  constant-time table and `crypto.json` record it as an open finding, not a
+  pass, and the lane prints its value without judging it. Valgrind,
+  MemorySanitizer and dudect are not run on wasip3 or Emscripten, which the
+  page says, as it says that OpenSSL's `open` is left out of memcheck.
   Source: `libs/crypto/doc/generated/constant-time.adoc`,
   `doc/tables/crypto.json` (libs/crypto).
 - **What is not built is in the other increments: libsecp256k1's remaining
