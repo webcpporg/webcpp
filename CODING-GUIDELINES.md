@@ -6267,15 +6267,21 @@ makes a room read, through webcpp::beast's bounded handshake layer.
   Source:
   `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/reference/spec.md`
   (proposals).
-- **Adoption follows Trystero: the first connection registered wins, a second
-  one to the same peer is closed and the room bound to the first, a stale one
-  is ended before its replacement, and crossed connections are both lost and
-  met anew.** Matching Trystero's rule keeps a C++ and a Trystero JS side
+- **Adoption follows Trystero's rule and the peer's choice: the first
+  connection registered wins and the room is bound to it, a second one to the
+  same peer is held unused until the peer shows which it keeps, a stale one is
+  ended before its replacement, and a crossed pair settles on the connection
+  the peer keeps.** Matching Trystero's rule keeps a C++ and a Trystero JS side
   agreeing; ending the stale one first fixes the plan's silent replacement, in
-  which a late close erased the new entry.
-  Source:
-  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/design.md`
-  (proposals).
+  which a late close erased the new entry. Closing the second at once, as
+  Trystero does, closed in a crossed pair the connection a page kept as it
+  began sending on it: libdatachannel ends an association with a stream reset
+  and a SHUTDOWN, its ABORT a moment later, Chrome failed the page's sends in
+  between, and Trystero JS logged a peer error (measured: 6 of 46 crossed pairs in 1,800
+  two-room meetings, none of 56 once the second is held). A peer that holds
+  its second too, as trystero does, sends on neither, so the higher id gives
+  way: it takes its second once the peer sends on it.
+  Source: `include/webcpp/trystero/detail/app_impl.hpp` (libs/trystero).
 - **A room binds a connected peer only after that peer advertised the room's
   token itself on that connection.** An announcement or a signal forged in its
   name must not bind an innocent peer; in Trystero JS it binds the peer by
