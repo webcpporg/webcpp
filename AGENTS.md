@@ -122,6 +122,8 @@ webcpp/
     webcpp.jam        the Jamfile API (chapter 4): webcpp.targets, webcpp.run, ...
     target.jam        the targets, and the target a toolset builds for, which webcpp.jam and
                       component.jam both read
+    webcpp-mkdir.jam  the action that makes a directory of the build on Windows, which
+                      webcpp.jam loads: as idempotent as b2's mkdir -p elsewhere (chapter 6)
     throw_exception.cpp  what Boost calls in place of a throw, in a user's build without
                       exceptions
     boost_json.cpp    Boost.JSON's definitions, built as /webcpp//boost_json
@@ -2181,6 +2183,17 @@ Each of these was measured; each has cost time.
   program with that value.
 - **A checkout path that holds a space** builds: every path b2 hands to an
   action is quoted, and the tests of the build run in such a path.
+- **b2 makes a directory once per spelling of it,** relative or absolute
+  (`common.MkDir`), and a build names some by both: `bin/third_party`, a
+  configuration's own directory absolute and a consumer's selection
+  relative, and a library's test directory under `bin/libs`, the oracle's
+  `node-modules.stamp` absolute. Under `-j` the two actions run at once.
+  b2's action on Windows, `if not exist "d" mkdir "d"`, then fails when the
+  other one makes the directory between its test and its mkdir, and every
+  target under it is skipped (CI run 44690351573, `...failed common.mkdir
+  bin\third_party...`); `mkdir -p`, elsewhere, does not.
+  `tools/webcpp-mkdir.jam` makes Windows's action succeed whenever the
+  directory is there after it, and `tools/test/mkdir_test.py` checks it.
 - **A target named `release-<word>` is no target.** b2 reads it as the
   variant `release` with a subfeature and stops before it builds anything
   (`"release-check" is not a known value of feature <variant>`); `debug-`

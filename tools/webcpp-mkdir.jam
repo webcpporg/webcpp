@@ -1,0 +1,37 @@
+# Copyright (c) 2026 WebCpp.org
+#
+# Distributed under the Boost Software License, Version 1.0. (See
+# accompanying file LICENSE_1_0.txt or copy at
+# https://www.boost.org/LICENSE_1_0.txt)
+#
+# The action that makes a directory of the build on Windows, as idempotent
+# as `mkdir -p`, b2's own on every other system. b2 makes each directory of
+# a target's path once per spelling of it (common.MkDir), and a build names
+# some of its directories by two: bin/third_party, relative, for a
+# consumer's selection of a configuration, and absolute for the
+# configuration's own directory (tools/webcpp-third-party.jam); a
+# library's test directory under bin/libs, relative for its programs, and
+# absolute for the oracle's node-modules.stamp (tools/oracle/oracle.jam).
+# The two actions are independent, so b2 -j runs them at once, and b2's
+# action on Windows, `if not exist "d" mkdir "d"`, fails when the other one
+# makes the directory between its test and its mkdir; the targets under it
+# are then skipped (CI run 44690351573, the asio lane openssl-upstream on
+# MSVC 14.5: `...failed common.mkdir bin\third_party...`, and the two
+# upstream suites not run). Here a mkdir that finds the directory made in
+# the meantime is a success, and the action fails only when no directory is
+# there after it. tools/webcpp.jam loads this module, so every build that
+# imports webcpp has it.
+import common ;
+import os ;
+
+if [ os.name ] = NT
+{
+    module common
+    {
+        actions quietly mkdir
+        {
+            if not exist "$(<)\" mkdir "$(<)"
+            if exist "$(<)\" (exit /b 0) else (exit /b 1)
+        }
+    }
+}
