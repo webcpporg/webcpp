@@ -51,6 +51,13 @@ if os.name != 'nt':
 def save():
     with open(record + '.tmp', 'w') as file:
         json.dump(recorded, file)
+    # On Windows a reader that has the record open makes the replace fail for that moment.
+    for _ in range(500):
+        try:
+            os.replace(record + '.tmp', record)
+            return
+        except PermissionError:
+            time.sleep(0.01)
     os.replace(record + '.tmp', record)
 
 
@@ -143,7 +150,12 @@ class Run:
         deadline = time.monotonic() + seconds
         while time.monotonic() < deadline:
             if self.record.is_file():
-                record = json.loads(self.record.read_text())
+                try:
+                    record = json.loads(self.record.read_text())
+                except PermissionError:
+                    # Windows: the stand-in is replacing the record at this moment.
+                    time.sleep(0.05)
+                    continue
                 if holds(record):
                     return record
             time.sleep(0.05)
