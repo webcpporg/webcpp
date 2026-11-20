@@ -13,10 +13,11 @@ into one matrix, input it cannot read or report truthfully refused before anythi
 lane whose name says another target than its toolset builds for, among them), a failure outside
 every test, output that b2's XML cannot hold, and a served component's test that passes and one
 whose transcript differs, a run failure, and a library's own lane on a target, named after the
-target and the library, which its column and its failures show and which it must hold true; an
-emscripten lane, its link-only program a link test, and a driven test whose driver fails, a run
-failure. One case uses lanes.py and pages.py alone, and one reads a link that MSVC's lane records
-under the program's .pdb; one checks that no sample names the machine's
+target and the library, which its column and its failures show and which it must hold true, and
+one that builds a size table alone, which is not empty; an emscripten lane, its link-only
+program a link test, and a driven test whose driver fails, a run failure. One case uses lanes.py
+and pages.py alone, and one reads a link that MSVC's lane records under the program's .pdb; one
+checks that no sample names the machine's
 temporary directory, and one that none holds what Emscripten says of its cache; a last one records
 every sample afresh, untrimmed, and checks that the report reads it as it reads the committed one.
 Every page written is checked to be self-contained, to link only to the report's own pages, to the
@@ -354,12 +355,13 @@ def test_empty_lane_exits_1_naming_it(root: Path) -> None:
     out = root / 'alone'
     result = report(out, ('wasip2', sample('wasip2-empty')))
     assert result.returncode == 1, outcome(result)
-    assert 'wasip2: the lane built no test and no example' in result.stderr, outcome(result)
+    empty = 'wasip2: the lane built no test, no example and no size table'
+    assert empty in result.stderr, outcome(result)
     check_pages(out)
     out = root / 'beside'
     result = report(out, ('native', sample('native-pass')), ('wasip2', sample('wasip2-empty')))
     assert result.returncode == 1, outcome(result)
-    named = 'report: wasip2: the lane built no test and no example'
+    named = f'report: {empty}'
     assert result.stderr.splitlines() == [named], outcome(result)
     index = matrix(out / 'index.html')
     assert index.names() == ['Library', 'native', 'wasip2'], index.names()
@@ -377,7 +379,7 @@ def test_empty_lane_exits_1_naming_it(root: Path) -> None:
     assert index.verdict('nativeonly', 'wasip2') == 'n/a'
     # Every page names the empty lane: a library's page, too.
     for page in ('index.html', 'demo.html', 'nativeonly.html'):
-        assert 'wasip2: the lane built no test and no example' in Page(out / page).text, page
+        assert empty in Page(out / page).text, page
     nativeonly = matrix(out / 'nativeonly.html')
     assert nativeonly.rows() == {'works'}, nativeonly.rows()
     assert nativeonly.verdict('works', 'wasip2') == 'n/a'
@@ -595,8 +597,8 @@ def test_a_lane_is_what_its_name_says(root: Path) -> None:
     # fails as empty.
     result = report(root / 'out-empty', ('clang-darwin-wasip2', sample('wasip2-empty')))
     assert result.returncode == 1, outcome(result)
-    assert 'clang-darwin-wasip2: the lane built no test and no example' in result.stderr, (
-        outcome(result))
+    assert ('clang-darwin-wasip2: the lane built no test, no example and no size table'
+            in result.stderr), outcome(result)
 
 
 def test_an_own_lane_is_named_after_its_target_and_library(root: Path) -> None:
@@ -655,6 +657,34 @@ def test_an_own_lane_is_named_after_its_target_and_library(root: Path) -> None:
     assert result.returncode == 2, outcome(result)
     assert 'name it clang-darwin-wasip2, after the directory b2 builds its toolset in' in (
         result.stderr), outcome(result)
+
+
+def test_an_own_lane_that_builds_a_size_table_built_something(root: Path) -> None:
+    # An own lane may build size tables alone (webcpp.program-sizes, crypto's sizes): no test and
+    # no example, its programs not tests, and the table what it built. --dump-tests still lists
+    # the library's tests, none of which the lane built; neither the lane nor its library is
+    # empty.
+    own = 'native.sized.sizes'
+    out = root / 'report'
+    result = report(out, (own, sample('native-sizes')))
+    assert result.returncode == 0, outcome(result)
+    assert result.stderr == '', outcome(result)
+    index = matrix(out / 'index.html')
+    assert 'empty' not in index.columns[1].classes, index.columns
+    assert index.verdict('sized', own) == 'n/a'
+    check_pages(out)
+    lane = lanes.read_lane(own, sample('native-sizes'))
+    assert lane.built(), lane
+    assert lane.unbuilt() == [], lane.unbuilt()
+    assert lane.tables == {'sized': ['bin/libs/sized/test/clang-darwin-21/release/'
+                                     'cxxstd-20-iso/sized.sizes.md']}, lane.tables
+    assert lanes.exit_status([lane]) == 0
+    # A lane that built neither is still empty, and says so with the table among what it
+    # did not build.
+    result = report(root / 'empty', ('wasip2', sample('wasip2-empty')))
+    assert result.returncode == 1, outcome(result)
+    assert result.stderr.splitlines() == [
+        'report: wasip2: the lane built no test, no example and no size table'], outcome(result)
 
 
 def test_a_failure_outside_every_test_fails_the_lane(root: Path) -> None:
@@ -1004,6 +1034,7 @@ CASES = [
     test_unreadable_xml_exits_2,
     test_a_lane_is_what_its_name_says,
     test_an_own_lane_is_named_after_its_target_and_library,
+    test_an_own_lane_that_builds_a_size_table_built_something,
     test_a_failure_outside_every_test_fails_the_lane,
     test_an_action_in_a_tests_own_directory_is_the_tests,
     test_output_cdata_cannot_hold_is_shown,
