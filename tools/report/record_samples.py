@@ -115,6 +115,22 @@ def plant_native_only(root: Path) -> None:
                         {'works.cpp': 'int main() { return 0; }\n'})
 
 
+def plant_sized(root: Path) -> None:
+    """Adds the library sized, whose own lane sizes builds a size table of two programs, as
+    crypto's does (libs/crypto/test/sizes/Jamfile): the table, no test and no example."""
+    harness.add_library(root, 'sized',
+                        'import webcpp ;\n'
+                        '\n'
+                        'webcpp.targets native ;\n'
+                        '\n'
+                        'webcpp.link baseline : baseline.cpp ;\n'
+                        'webcpp.link answer : answer.cpp ;\n'
+                        'webcpp.program-sizes sized : baseline : answer ;\n'
+                        'webcpp.lane sizes : sized.sizes.md : native ;\n',
+                        {'baseline.cpp': 'int main() { return 0; }\n',
+                         'answer.cpp': '#include <cstdio>\n\nint main() { std::puts("42"); }\n'})
+
+
 def plant_broken_boost_json(root: Path) -> None:
     """Breaks tools/boost_json.cpp, Boost.JSON's definitions, which every program that parses JSON
     links."""
@@ -174,6 +190,8 @@ SAMPLES_BY_NAME = {
     # A dependency outside every test fails: Boost.JSON's definitions, which parses_json links.
     'wasip2-dependency': Sample(WASIP2, ('libs/demo/test//parses_json',),
                                 plant_broken_boost_json),
+    # An own lane that builds a size table alone: its programs, and no test and no example.
+    'native-sizes': Sample(NATIVE, ('libs/sized/test//sizes',), plant_sized),
     # A failure whose output b2 writes into CDATA unescaped.
     'native-odd-output': Sample(NATIVE, ('libs/odd/test//prints',), plant_odd_output),
     # component_demo's tests on wasip2, its served component among them: all pass.

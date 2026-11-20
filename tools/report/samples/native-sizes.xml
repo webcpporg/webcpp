@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="utf-8"?> 
+<build format="1.0" version="5.5.3"> 
+  <directory><![CDATA[$TMPDIR/webcpp run 0pbimt6r/webcpp scratch w4uikupm]]></directory> 
+  <command><![CDATA["b2" "--user-config=$TMPDIR/webcpp run 0pbimt6r/webcpp scratch w4uikupm/.local/user-config.jam" "-a" "--dump-tests" "--out-xml=native-sizes.xml" "toolset=clang" "libs/sized/test//sizes"]]></command> 
+  <targets> 
+    <target> 
+      <name><![CDATA[.//boost_version.o]]></name> 
+      <dependencies> 
+        <dependency><![CDATA[.//tools/test/boost_version.cpp]]></dependency> 
+      </dependencies> 
+      <path><![CDATA[bin/clang-darwin-21/release/cxxstd-20-iso]]></path> 
+      <jam-target><![CDATA[<pbin/clang-darwin-21/release/cxxstd-20-iso>boost_version.o]]></jam-target> 
+    </target> 
+    <target> 
+      <name><![CDATA[libs/sized/test//answer.o]]></name> 
+      <dependencies> 
+        <dependency><![CDATA[libs/sized/test//answer.cpp]]></dependency> 
+      </dependencies> 
+      <path><![CDATA[bin/libs/sized/test/clang-darwin-21/release/cxxstd-20-iso]]></path> 
+      <jam-target><![CDATA[<pbin/libs/sized/test/clang-darwin-21/release/cxxstd-20-iso>answer.o]]></jam-target> 
+    </target> 
+    <target> 
+      <name><![CDATA[libs/sized/test//answer-program]]></name> 
+      <dependencies> 
+        <dependency><![CDATA[libs/sized/test//answer.o]]></dependency> 
+      </dependencies> 
+      <path><![CDATA[bin/libs/sized/test/clang-darwin-21/release/cxxstd-20-iso]]></path> 
+      <jam-target><![CDATA[<pbin/libs/sized/test/clang-darwin-21/release/cxxstd-20-iso>answer-program]]></jam-target> 
+    </target> 
+    <target> 
+      <name><![CDATA[libs/sized/test//baseline.o]]></name> 
+      <dependencies> 
+        <dependency><![CDATA[libs/sized/test//baseline.cpp]]></dependency> 
+      </dependencies> 
+      <path><![CDATA[bin/libs/sized/test/clang-darwin-21/release/cxxstd-20-iso]]></path> 
+      <jam-target><![CDATA[<pbin/libs/sized/test/clang-darwin-21/release/cxxstd-20-iso>baseline.o]]></jam-target> 
+    </target> 
+    <target> 
+      <name><![CDATA[libs/sized/test//baseline-program]]></name> 
+      <dependencies> 
+        <dependency><![CDATA[libs/sized/test//baseline.o]]></dependency> 
+      </dependencies> 
+      <path><![CDATA[bin/libs/sized/test/clang-darwin-21/release/cxxstd-20-iso]]></path> 
+      <jam-target><![CDATA[<pbin/libs/sized/test/clang-darwin-21/release/cxxstd-20-iso>baseline-program]]></jam-target> 
+    </target> 
+    <target> 
+      <name><![CDATA[libs/sized/test//sized.sizes.json]]></name> 
+      <dependencies> 
+        <dependency><![CDATA[libs/sized/test//answer-program]]></dependency> 
+        <dependency><![CDATA[libs/sized/test//baseline-program]]></dependency> 
+      </dependencies> 
+      <path><![CDATA[bin/libs/sized/test/clang-darwin-21/release/cxxstd-20-iso]]></path> 
+      <jam-target><![CDATA[<pbin/libs/sized/test/clang-darwin-21/release/cxxstd-20-iso>sized.sizes.json]]></jam-target> 
+    </target> 
+    <target> 
+      <name><![CDATA[libs/sized/test//sized.sizes.md]]></name> 
+      <dependencies> 
+        <dependency><![CDATA[libs/sized/test//sized.sizes.json]]></dependency> 
+      </dependencies> 
+      <path><![CDATA[bin/libs/sized/test/clang-darwin-21/release/cxxstd-20-iso]]></path> 
+      <jam-target><![CDATA[<pbin/libs/sized/test/clang-darwin-21/release/cxxstd-20-iso>sized.sizes.md]]></jam-target> 
+    </target> 
+  </targets> 
+  <test type="LINK" name="sized/baseline"> 
+    <target><![CDATA[libs/sized/test//baseline.test]]></target> 
+    <source><![CDATA[libs/sized/test/baseline.cpp]]></source> 
+  </test> 
+  <test type="LINK" name="sized/answer"> 
+    <target><![CDATA[libs/sized/test//answer.test]]></target> 
+    <source><![CDATA[libs/sized/test/answer.cpp]]></source> 
+  </test> 
+  <action status="0" start="2026-11-20 07:45:50.992096000 +0000" end="2026-11-20 07:45:51.037544000 +0000" user="0.010033" system="0.020962"> 
+    <name><![CDATA[clang-darwin%clang-darwin.compile.c++]]></name> 
+    <jam-target><![CDATA[<pbin/libs/sized/test/clang-darwin-21/release/cxxstd-20-iso>baseline.o]]></jam-target> 
+    <path><![CDATA[bin/libs/sized/test/clang-darwin-21/release/cxxstd-20-iso/baseline.o]]></path> 
+    <command><![CDATA[
+    "clang++"   -std=c++20 -fPIC -O3 -Wall -Wextra -Werror -Wno-inline --system-header-prefix="boost/" -DBOOST_ALL_NO_LIB -DNDEBUG   -I"/opt/homebrew/opt/boost/include"  -c -o "bin/libs/sized/test/clang-darwin-21/release/cxxstd-20-iso/baseline.o" "libs/sized/test/baseline.cpp"
+]]></command> 
+  </action> 
+  <action status="0" start="2026-11-20 07:45:50.991233000 +0000" end="2026-11-20 07:45:51.039033000 +0000" user="0.013521" system="0.018576"> 
+    <name><![CDATA[clang-darwin%clang-darwin.compile.c++]]></name> 
+    <jam-target><![CDATA[<pbin/libs/sized/test/clang-darwin-21/release/cxxstd-20-iso>answer.o]]></jam-target> 
+    <path><![CDATA[bin/libs/sized/test/clang-darwin-21/release/cxxstd-20-iso/answer.o]]></path> 
+    <command><![CDATA[
+    "clang++"   -std=c++20 -fPIC -O3 -Wall -Wextra -Werror -Wno-inline --system-header-prefix="boost/" -DBOOST_ALL_NO_LIB -DNDEBUG   -I"/opt/homebrew/opt/boost/include"  -c -o "bin/libs/sized/test/clang-darwin-21/release/cxxstd-20-iso/answer.o" "libs/sized/test/answer.cpp"
+]]></command> 
+  </action> 
+  <action status="0" start="2026-11-20 07:45:51.038012000 +0000" end="2026-11-20 07:45:51.137435000 +0000" user="0.031223" system="0.046191"> 
+    <name><![CDATA[clang-darwin%clang-darwin.link]]></name> 
+    <jam-target><![CDATA[<pbin/libs/sized/test/clang-darwin-21/release/cxxstd-20-iso>baseline-program]]></jam-target> 
+    <path><![CDATA[bin/libs/sized/test/clang-darwin-21/release/cxxstd-20-iso/baseline-program]]></path> 
+    <command><![CDATA[
+    "clang++"    -o "bin/libs/sized/test/clang-darwin-21/release/cxxstd-20-iso/baseline-program"  "bin/libs/sized/test/clang-darwin-21/release/cxxstd-20-iso/baseline.o"       -fPIC -std=c++20 
+]]></command> 
+  </action> 
+  <action status="0" start="2026-11-20 07:45:51.039418000 +0000" end="2026-11-20 07:45:51.137840000 +0000" user="0.033567" system="0.046887"> 
+    <name><![CDATA[clang-darwin%clang-darwin.link]]></name> 
+    <jam-target><![CDATA[<pbin/libs/sized/test/clang-darwin-21/release/cxxstd-20-iso>answer-program]]></jam-target> 
+    <path><![CDATA[bin/libs/sized/test/clang-darwin-21/release/cxxstd-20-iso/answer-program]]></path> 
+    <command><![CDATA[
+    "clang++"    -o "bin/libs/sized/test/clang-darwin-21/release/cxxstd-20-iso/answer-program"  "bin/libs/sized/test/clang-darwin-21/release/cxxstd-20-iso/answer.o"       -fPIC -std=c++20 
+]]></command> 
+  </action> 
+  <action status="0" start="2026-11-20 07:45:51.138006000 +0000" end="2026-11-20 07:45:51.218757000 +0000" user="0.038552" system="0.027295"> 
+    <name><![CDATA[webcpp%write-program-sizes]]></name> 
+    <jam-target><![CDATA[<pbin/libs/sized/test/clang-darwin-21/release/cxxstd-20-iso>sized.sizes.json]]></jam-target> 
+    <path><![CDATA[bin/libs/sized/test/clang-darwin-21/release/cxxstd-20-iso/sized.sizes.json]]></path> 
+    <command><![CDATA[
+    "python3" "$TMPDIR/webcpp run 0pbimt6r/webcpp scratch w4uikupm/tools/variants/variants.py" programs --variant "release" --target "native" --toolset "clang-21" --baseline "baseline" --names answer baseline --out "bin/libs/sized/test/clang-darwin-21/release/cxxstd-20-iso/sized.sizes.json" -- "bin/libs/sized/test/clang-darwin-21/release/cxxstd-20-iso/answer-program" "bin/libs/sized/test/clang-darwin-21/release/cxxstd-20-iso/baseline-program"
+]]></command> 
+  </action> 
+  <action status="0" start="2026-11-20 07:45:51.219171000 +0000" end="2026-11-20 07:45:51.269664000 +0000" user="0.030069" system="0.012682"> 
+    <name><![CDATA[webcpp%write-program-table]]></name> 
+    <jam-target><![CDATA[<pbin/libs/sized/test/clang-darwin-21/release/cxxstd-20-iso>sized.sizes.md]]></jam-target> 
+    <path><![CDATA[bin/libs/sized/test/clang-darwin-21/release/cxxstd-20-iso/sized.sizes.md]]></path> 
+    <command><![CDATA[
+    "python3" "$TMPDIR/webcpp run 0pbimt6r/webcpp scratch w4uikupm/tools/variants/variants.py" programs-table --out "bin/libs/sized/test/clang-darwin-21/release/cxxstd-20-iso/sized.sizes.md" "bin/libs/sized/test/clang-darwin-21/release/cxxstd-20-iso/sized.sizes.json"
+]]></command> 
+    <output><![CDATA[Linked programs on native (Mach-O), built with clang-21 at variant=release on 2026-11-20, against the baseline baseline.
+
+| program | file | bytes | gzip -9n | over baseline | gzip -9n over baseline |
+| --- | --- | ---: | ---: | ---: | ---: |
+| answer | executable | 33,440 | 945 | 16,608 | 259 |
+| baseline | executable | 16,832 | 686 | 0 | 0 |
+]]></output> 
+  </action> 
+</build>

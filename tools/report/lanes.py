@@ -15,7 +15,8 @@ compares. A lane is one toolset: the directory b2 names after it, in which every
 lane is built. A lane is named after the target that toolset builds for (native, emscripten,
 wasip2, wasip3), or after that directory (clang-darwin-21, gcc-15). A library's own lane on a
 target, which webcpp.lane declares, is named <target>.<library>.<lane> (wasip2.wasi.http): its
-toolset builds for that target, and it lists the tests of that library alone.
+toolset builds for that target, and it lists the tests of that library alone. An own lane may
+build size tables alone (<name>.sizes.md, webcpp.program-sizes), which count as what it built.
 
 The paths in a file are those of the machine that ran the lane, a CI runner as often as not, and
 are never opened: they are matched as text, a backslash read as a slash.
@@ -58,7 +59,11 @@ SUCCEEDED = {'compile': 'compiled', 'link': 'linked', 'run': 'ran'}
 # the CI knows (tools/ci/matrix.py): spelled here alone.
 TARGETS = ('native', 'emscripten', 'wasip2', 'wasip3')
 
-EMPTY = 'the lane built no test and no example'
+EMPTY = 'the lane built no test, no example and no size table'
+
+# The file of a size table, which webcpp.size-table and webcpp.program-sizes write
+# (tools/webcpp.jam) and an own lane may build alone, as crypto's sizes does: <name>.sizes.md.
+SIZE_TABLE = '.sizes.md'
 
 # What a lane that built something says of a library none of whose programs it built.
 UNBUILT = 'the lane built none of its tests and examples'
@@ -166,22 +171,27 @@ class Lane:
     rows: dict[str, Row] = field(default_factory=dict)
     # The actions that failed and built no file of a test or an example.
     outside: list[Action] = field(default_factory=list)
+    # The size tables the lane wrote, by library: the file of each, as b2 records it.
+    tables: dict[str, list[str]] = field(default_factory=dict)
 
     def built(self) -> bool:
-        """Whether the lane built a test or an example. An example counts: a library may declare
-        a target for its examples alone, and the lane then tests what it declares."""
-        return any(row.builds for row in self.rows.values())
+        """Whether the lane built a test, an example or a size table. An example counts: a
+        library may declare a target for its examples alone, and the lane then tests what it
+        declares. A size table counts: an own lane may build size tables alone, whose programs
+        are no tests, and a failure to build one is an action outside every test."""
+        return any(row.builds for row in self.rows.values()) or bool(self.tables)
 
     def unbuilt(self) -> list[str]:
-        """The libraries whose tests and examples the lane lists and none of which it built,
-        sorted; none when the lane built nothing at all, which is a failure of its own. The CI
+        """The libraries whose tests and examples the lane lists and none of which it built, nor
+        a size table of theirs, sorted; none when the lane built nothing at all, which is a
+        failure of its own. The CI
         puts in a lane only the libraries that declare its target, so such a library is a fault
         that a grey column would hide: a plan gone wrong, or a local lane that names a library
         which does not declare the lane's target."""
         if not self.built():
             return []
         listed = {row.library for row in self.rows.values()}
-        built = {row.library for row in self.rows.values() if row.builds}
+        built = {row.library for row in self.rows.values() if row.builds} | set(self.tables)
         return sorted(listed - built)
 
 
@@ -340,6 +350,8 @@ def read_lane(name: str, path: Path) -> Lane:
     # example, its <name>.output, in <location>/<toolset>/...
     toolsets: set[str] = set()
     owners: dict[str, list[Build]] = {}
+    # The file of each size table b2 generated, and its library.
+    tables: dict[str, str] = {}
     # A test's own directory, <location>/<target>.test/<toolset>/..., holds nothing of another
     # test: an action b2 records under a file there that no target needs is the test's, as MSVC's
     # link, which writes the program and its .pdb at once and is recorded under the .pdb.
@@ -356,6 +368,9 @@ def read_lane(name: str, path: Path) -> Lane:
             raise InputError(f'{path}: b2 built {target}, which no <test> lists: run b2 with '
                              '--dump-tests')
         else:
+            library = IN_LIBRARY.fullmatch(under_root(directory, location))
+            if file.endswith(SIZE_TABLE) and library is not None:
+                tables[posixpath.join(built_in, file)] = library.group(1)
             continue
         if toolset is None:
             raise InputError(f'{path}: {built_in}, where b2 built {target}, names no toolset')
@@ -412,6 +427,8 @@ def read_lane(name: str, path: Path) -> Lane:
             build.actions.append(action)
         if not builds and action.status != 0:
             lane.outside.append(action)
+        if action.status == 0 and action.path in tables:
+            lane.tables.setdefault(tables[action.path], []).append(action.path)
 
     for found in lane.rows.values():
         expects = found.type[:-len('-fail')] if found.type.endswith('-fail') else None
