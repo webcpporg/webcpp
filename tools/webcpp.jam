@@ -235,6 +235,10 @@ modules.load webcpp-target : target.jam : [ path.native $(.tools) ] ;
 import webcpp-target ;
 .known = [ webcpp-target.known ] ;
 
+# The action that makes a directory of the build on Windows, idempotent as
+# `mkdir -p` is elsewhere (tools/webcpp-mkdir.jam).
+modules.load webcpp-mkdir : webcpp-mkdir.jam : [ path.native $(.tools) ] ;
+
 # The documentation's rules, loaded as the module webcpp-doc: b2 has a
 # module named doc of its own, the one of --help, which an import of
 # tools/doc/doc would find in its place.
