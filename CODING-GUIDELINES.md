@@ -8683,6 +8683,27 @@ increments 1 and 2, whose state is first.
   a target the lane does not run says "not measured yet".
   Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
   sections 3.2 and 8.3 (proposals); `test/constant_time/Jamfile` (libs/crypto).
+- **dudect's two classes differ in the secret's bytes alone, and a runner
+  GitHub hosts prints dudect's |t| without judging it (ruling of
+  2026-11-20).** The CI's first x86-64 runs failed `equal` at |t| 21 to 25
+  and once ChaCha20-Poly1305's seal at 10.7. No secret branch or index was in
+  clang 18's x86-64 code of either, and memcheck passed on it; the cause was
+  the harness: its preparation copied class 0's input from the fixed array and
+  class 1's from bytes just drawn, still in the store buffer, and the measured
+  call inherited the difference whatever it computed (|t| 31 to 56 on `equal`
+  on an Intel Xeon 6975P-C, 28 to 85 on the seal on AMD EPYC 9V45 and 9V74,
+  up to 117 on a measured call that does nothing with every processor busy).
+  `choose` now reads both and writes the secret with the same instructions
+  for either class: 23 runs of 24 then stayed below 4.4 on three processors,
+  idle and busy, and one read 69.8, on both seeds, on a case below 4.4
+  everywhere else. A hosted runner is a virtual machine shared with other
+  tenants whose processor changes from run to run, so a verdict there would
+  pass or fail with the machine drawn: there the lane prints dudect's |t| and
+  judges memcheck, MemorySanitizer and `dudect_planted`; dudect is judged on
+  a machine of one's own. A rerun is never the answer to a red dudect: it
+  is a leak to fix or a measurement to explain.
+  Source: `libs/crypto/test/constant_time/dudect.hpp` (`choose`, `judged`)
+  and `doc/backends.adoc` (libs/crypto).
 
 **Sizes and throughput (increment 1, Task 11'; merged).**
 
