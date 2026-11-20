@@ -8570,7 +8570,7 @@ each with its decisions as decided. While a proposal is open, its own
 change that builds it moves its decisions into chapter 14 or 15. Their
 conflicts with chapters 1 to 13 are in chapter 19.
 
-### crypto, after 0.1 (genesis accepted 2026-10-11, foundation accepted 2026-11-14; the foundation's increment 1 built on its branch, not merged)
+### crypto, after 0.1 (genesis accepted 2026-10-11, foundation accepted 2026-11-14; the foundation's increment 1 merged, its increment 2 built on its branch, not merged)
 
 The genesis's plan (`reference/plan.md`, revised on 2026-11-14) built version
 0.1 from its increments 1 and 2, and OpenSSL's memory option after it. The
@@ -8581,17 +8581,17 @@ Its rules are webcpp::hash's: one default backend per family and target with
 its reason stated, no profile and no per-family override (design D32), tables
 of size and speed only from release builds, and primitives only (D24). What
 is built is in chapter 15; what follows is decided and not built, except
-increment 1, whose state is first.
+increments 1 and 2, whose state is first.
 
-**The foundation's increment 1 (plan Tasks 1 to 16).**
+**The foundation's increment 1 (plan Tasks 1 to 16; merged).**
 
-- **Built on the branch `crypto/foundation-1` of the library and the
-  superproject, awaiting the owner's merge: libsodium's backend, the families
-  on it, the capability table, the fixed defaults, the three own lanes and
-  the page.** `backends::sodium` on `/third_party//sodium`, shared with
-  webcpp::hash, with crypto's canary; `curves::ed25519` (strict verification
-  over the twelve edge cases, Ed25519ph, the conversion, RFC 8410's formats and
-  PEM), `curves::x25519` and `kx_keypair`, `ciphers::aead` with
+- **Merged on 2026-11-19 from the branch `crypto/foundation-1` of the library
+  (`dae9e84`) and of the superproject (`485c5e0`): libsodium's backend, the
+  families on it, the capability table, the fixed defaults, the three own
+  lanes and the page.** `backends::sodium` on `/third_party//sodium`, shared
+  with webcpp::hash, with crypto's canary; `curves::ed25519` (strict
+  verification over the twelve edge cases, Ed25519ph, the conversion, RFC 8410's
+  formats and PEM), `curves::x25519` and `kx_keypair`, `ciphers::aead` with
   `chacha20_poly1305` (also on BearSSL and OpenSSL), its original form and
   `xchacha20_poly1305`, `ciphers::secretbox`, `hybrid::box` and `sealed_box`,
   and `secret<N>` with the errors 15 to 20. `supports_v` and
@@ -8617,15 +8617,60 @@ increment 1, whose state is first.
   page says, as it says that OpenSSL's `open` is left out of memcheck.
   Source: `libs/crypto/doc/generated/constant-time.adoc`,
   `doc/tables/crypto.json` (libs/crypto).
-- **What is not built is in the other increments: libsecp256k1's remaining
-  modules (2), BearSSL's (3), the browser backend and the asynchronous family
-  (4), libsodium completed (5), blst (6), Botan as a submodule (7), OpenSSL's
-  remaining algorithms (8), KZG, BN254, Shamir and HPKE (9 to 12).** The
+- **What is not built is in the other increments: BearSSL's remaining
+  modules (3), the browser backend and the asynchronous family (4), libsodium
+  completed (5), blst (6), Botan as a submodule (7), OpenSSL's remaining
+  algorithms (8), KZG, BN254, Shamir and HPKE (9 to 12).** Increment 2's
   merges, the CI's run and the proposals' status are the owner's.
   Source: `libraries/crypto/openspec/changes/foundation/reference/roadmap.md`
   (proposals).
 
-**Constant time (increment 1, Task 14; built on the branch).**
+**The foundation's increment 2 (plan Tasks 2.1 to 2.7; built on its branch).**
+
+- **Built on the branch `crypto/secp256k1-modules` of the library and the
+  superproject, on increment 1's merged trees, awaiting the owner's merge:
+  libsecp256k1's remaining modules.** ECDH in three forms (`ecdh` returning a
+  `secret<32>`, `ecdh_x`, `ecdh_point`), recoverable signatures
+  (`sign_recoverable` of the key pair and `recover`), the tweaks, negation and
+  combination of whole keys (`curves/secp256k1/tweak.hpp`), keys in SPKI,
+  PKCS#8 and PEM (`formats.hpp`), BIP 324's ElligatorSwift (`ellswift.hpp`),
+  BIP 327's MuSig2 (`musig.hpp`) and BIP 352's silent payments
+  (`silent_payments.hpp`); the last three are families of their own, each with
+  its own default alias and its own refusal of a backend other than
+  libsecp256k1. Two examples teach MuSig2 across a network (every public part
+  as bytes, each partial signature checked before it is added) and under a
+  Taproot key (the key tweaked before any nonce).
+  Source: `libraries/crypto/openspec/changes/foundation/reference/plan.md`
+  Tasks 2.1 to 2.7 and their "As built" notes (proposals);
+  `libs/crypto/doc/secp256k1.adoc`.
+- **Where libsecp256k1 would abort on a bad argument, webcpp refuses first,
+  and the caller lends the workspace.** libsecp256k1 checks counts, a used
+  nonce and an id with `ARG_CHECK`, whose callback aborts; the functions
+  return `invalid_input_size` or another error before it is reached. A
+  function that needs scratch space (`pubkey_combine`, the MuSig2 aggregates)
+  takes a `workspace` the caller sizes with `combine_workspace_size` or
+  `workspace_size`, and wipes it on every return, a refusal's included, so no
+  function allocates. A silent payments label lookup returns exactly
+  `std::optional<std::span<std::uint8_t const, 32>>` into bytes it owns:
+  libsecp256k1 reads them after the lookup returns, so a result by value, a
+  convertible one included, is refused at compile time.
+  Source: `libs/crypto/include/webcpp/crypto/curves/secp256k1/tweak.hpp`,
+  `musig.hpp` and `silent_payments.hpp`.
+- **Constant time and sizes extend to the modules.** Memcheck and
+  MemorySanitizer check libsecp256k1's own `ctime_tests.c` and webcpp's code
+  around each module (the key pair's making, its signatures and tweak, the
+  three ECDH forms, the key tweaks, PKCS#8, ElligatorSwift's `create` and
+  `xdh`, MuSig2's `nonce_gen` and `partial_sign`, the silent payments'
+  `create_outputs`, `create_label` and `scan_outputs`, each workspace's wipe
+  included), written once in `test/constant_time/paths.hpp`; dudect times
+  `ecdh_x` natively and on wasip2, in a program of its own, so that
+  libsecp256k1 stays off BearSSL's. The Linux x86-64 run of the lane is the
+  CI's. The sizes lane measures `ecdh_x`, `recover`, ElligatorSwift's
+  exchange, a two-signer MuSig2 signature and a silent payments output, all
+  from release builds through `webcpp.program-sizes`.
+  Source: `libs/crypto/test/constant_time/Jamfile` and `test/sizes/Jamfile`.
+
+**Constant time (increment 1, Task 14; merged).**
 
 - **Constant time is checked deterministically on Linux x86-64 and arm64
   (Valgrind memcheck and MemorySanitizer, each harness failing on a planted
@@ -8639,10 +8684,10 @@ increment 1, whose state is first.
   Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
   sections 3.2 and 8.3 (proposals); `test/constant_time/Jamfile` (libs/crypto).
 
-**Sizes and throughput (increment 1, Task 11'; built on the branch).**
+**Sizes and throughput (increment 1, Task 11'; merged).**
 
 - **Sizes are measured at `variant=release` on every target by the own lane
-  `sizes`, through `webcpp.size-table`; throughput by webcpp's own program
+  `sizes`, through `webcpp.program-sizes`; throughput by webcpp's own program
   (`bench/collect.py`, which refuses a build that is not a release) on the
   developer's machine, dated; neither decides a default.** b2 has no -O2 that
   reaches the libraries a program names, so the tables are dated references;
@@ -8679,7 +8724,7 @@ increment 1, whose state is first.
   Source: `libraries/crypto/openspec/changes/genesis/reference/plan.md` C11
   (proposals).
 
-**ChaCha20-Poly1305 (built in increment 1, Task 8b, on the branch; the genesis's increment 4).**
+**ChaCha20-Poly1305 (built in increment 1, Task 8b, merged; the genesis's increment 4).**
 
 - **`ciphers::chacha20_poly1305` on BearSSL and OpenSSL is one shot only,
   with an IV of exactly 12 bytes, refuses a message over 2^38 - 64 bytes with
