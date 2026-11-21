@@ -255,14 +255,16 @@ rule crypto-checked-out ( properties * )
 .c-library = $(.c-sections) <conditional>@crypto-checked-out
     <include>$(CRYPTO)/include ;
 
-# BearSSL (MIT), from webcpp's unmodified mirror webcpporg/bearssl. Every .c
-# of src/, the POWER8 ones too, which off POWER compile to the stubs other
-# files call. One source of entropy, getentropy, with RDRAND and /dev/urandom
-# off (libs/crypto's random_device reads the same source): wasi-libc and
-# Emscripten declare getentropy only under _DEFAULT_SOURCE, and macOS only in
-# <sys/random.h>, which src/rand/sysrng.c does not include. On Windows
-# BearSSL's only seeder is CryptGenRandom, not the system's BCryptGenRandom,
-# so every seeder is off there and BearSSL has none.
+# BearSSL (MIT), from webcpp's fork webcpporg/bearssl, branch webcpp: upstream
+# 7bea48e with one commit, ECDSA's nonce decoded at its full length so that
+# signing does not branch on its bit length (CODING-GUIDELINES chapter 5,
+# rule 1). Every .c of src/, the POWER8 ones too, which off POWER compile to
+# the stubs other files call. One source of entropy, getentropy, with RDRAND
+# and /dev/urandom off (libs/crypto's random_device reads the same source):
+# wasi-libc and Emscripten declare getentropy only under _DEFAULT_SOURCE, and
+# macOS only in <sys/random.h>, which src/rand/sysrng.c does not include. On
+# Windows BearSSL's only seeder is CryptGenRandom, not the system's
+# BCryptGenRandom, so every seeder is off there and BearSSL has none.
 path-constant BEARSSL : libs/bearssl ;
 
 rule bearssl-checked-out ( properties * )
