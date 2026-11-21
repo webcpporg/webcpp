@@ -310,7 +310,9 @@ jobs:
     needs: plan
     if: needs.plan.outputs.has-own-lanes == 'true'
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    # crypto's constant-time lane is followed by dudect's judge, whose reruns of a case under
+    # wasmtime may last up to 1800 s each: 120 minutes there, 60 elsewhere.
+    timeout-minutes: ${{ (matrix.library == 'crypto' && matrix.lane == 'constant-time') && 120 || 60 }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.own-lanes) }}
@@ -425,7 +427,7 @@ jobs:
       # The launcher's bound is the lane's, so a run of the judge's own lasts at most that, and
       # the judge's subprocess timeout (2400 s) lies beyond it.
       - name: Judge dudect
-        if: always() && matrix.library == 'crypto' && matrix.lane == 'constant-time'
+        if: ${{ !cancelled() && matrix.library == 'crypto' && matrix.lane == 'constant-time' }}
         env:
           WEBCPP_WASIP2_TEST_TIMEOUT: ${{ (matrix.library == 'crypto' && matrix.lane == 'constant-time') && '1800' || '600' }}
           TARGET: ${{ matrix.platform }}
