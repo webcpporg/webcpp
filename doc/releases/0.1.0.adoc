@@ -338,6 +338,8 @@ template argument: each sentence reads the Backend's position from the header de
 complete: its build record is published last, and one without it is built again.
 * Added /third_party//botan, Botan 3.14.1 configured by upstream and compiled by b2, natively and on
 Emscripten.
+* Added /third_party//botan_vectors, Botan's own test data at its pin, which webcpp::hash's tests read
+at run time.
 
 [#webcpp-0-1-0-compilers-tested]
 == Compilers tested

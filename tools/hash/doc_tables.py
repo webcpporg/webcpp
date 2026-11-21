@@ -414,14 +414,34 @@ def asynchronous_only(data: Data, backend: str) -> bool:
     return bool(data.backends[backend].get('asynchronous_only'))
 
 
+EXCEPTIONS_ONLY = 'with exceptions only'
+
+
+def exceptions_only(data: Data, backend: str) -> bool:
+    """Whether a build without exceptions cannot have the backend (backends::botan)."""
+    return bool(data.backends[backend].get('exceptions_only'))
+
+
+def backend_notes(data: Data, backend: str) -> list[str]:
+    """What a backend's name is followed by: that only the asynchronous family takes it, that only
+    a build with exceptions has it."""
+    notes = []
+    if asynchronous_only(data, backend):
+        notes.append(ASYNCHRONOUS_ONLY)
+    if exceptions_only(data, backend):
+        notes.append(EXCEPTIONS_ONLY)
+    return notes
+
+
 def llms_note(data: Data, backend: str) -> str:
     """backend_note in llms.txt's form, after a comma."""
-    return f', {ASYNCHRONOUS_ONLY}' if asynchronous_only(data, backend) else ''
+    return ''.join(f', {note}' for note in backend_notes(data, backend))
 
 
 def backend_note(data: Data, backend: str) -> str:
-    """What follows a backend's name in a table: that only the asynchronous family takes it."""
-    return f' ({ASYNCHRONOUS_ONLY})' if asynchronous_only(data, backend) else ''
+    """What follows a backend's name in a table: that only the asynchronous family takes it, or
+    that only a build with exceptions has it."""
+    return ''.join(f' ({note})' for note in backend_notes(data, backend))
 
 
 def partial_text(held: dict) -> str:
@@ -687,6 +707,8 @@ def backends_chapter(data: Data) -> str:
     for b in table['backends']:
         called = (f'{ASYNCHRONOUS_ONLY} (async.hpp)' if b.get('asynchronous_only')
                   else 'every function of its cells')
+        if b.get('exceptions_only'):
+            called += f', {EXCEPTIONS_ONLY}'
         lines += ['', f'| {b["name"]}', f'| {b["library"]}', f'| {b["licence"]}',
                   f'| `{b["jamfile"]}`', f'| {", ".join(b["targets"])}', f'| {called}']
     lines += ['|===', '']

@@ -477,7 +477,12 @@ def test_each_backend_s_constant_time_sources_are_together(scratch: Path) -> Non
     order = [b['name'] for b in json.loads(
         (library / 'doc/capabilities.json').read_text(encoding='utf-8'))['backends']]
     expect(listed == sorted(listed, key=lambda b: order.index(b[2:])), '\n'.join(listed))
-    expect(len(listed) == len(set(listed)), '\n'.join(listed))
+    # A backend whose cells state two values (botan: "no" for Streebog and Whirlpool, "not
+    # stated" elsewhere) has one bullet for each.
+    stated = [line.split('.')[0] for line in
+              chapter.split("What each backend's upstream states, and where:")[1].splitlines()
+              if line.startswith('* ')]
+    expect(len(stated) == len(set(stated)), '\n'.join(stated))
     expect('* openssl: not stated.\n** ' in chapter, 'openssl\'s sources are not under it')
     for name, text in files.items():
         if not name.startswith('generated/backends-'):
@@ -515,6 +520,27 @@ def test_an_asynchronous_backend_is_said(scratch: Path) -> None:
     (library / 'doc/capabilities.json').write_text(json.dumps(table), encoding='utf-8')
     plain = write_ok(library)['backends.adoc']
     expect('asynchronous family only' not in plain, 'a note without its field')
+
+
+def test_an_exceptions_only_backend_is_said(scratch: Path) -> None:
+    # backends::botan has no cell in a build without exceptions (its "exceptions_only" field):
+    # every table and llms.txt name it with "with exceptions only", and without the field nothing
+    # does.
+    library = scratch_library(scratch)
+    files = write_ok(library)
+    backends = files['backends.adoc']
+    expect('| botan\n| Botan 3.14.1' in backends, backends)
+    expect('| every function of its cells, with exceptions only' in backends, backends)
+    expect('| digests::whirlpool\n| botan (with exceptions only)' in backends, backends)
+    expect('botan, with exceptions only (/third_party//botan; ' in files['llms.txt'],
+           'llms.txt does not say botan is with exceptions only')
+    table = json.loads((library / 'doc/capabilities.json').read_text(encoding='utf-8'))
+    for backend in table['backends']:
+        backend.pop('exceptions_only', None)
+    (library / 'doc/capabilities.json').write_text(json.dumps(table), encoding='utf-8')
+    plain = write_ok(library)
+    expect('with exceptions only' not in plain['backends.adoc'], 'a note without its field')
+    expect('with exceptions only' not in plain['llms.txt'], 'a note without its field')
 
 
 def test_without_measurements_the_tables_say_so(scratch: Path) -> None:
@@ -647,6 +673,7 @@ CASES: list[Callable[[Path], None]] = [
     test_a_function_without_a_backend_of_the_order_has_no_default,
     test_each_backend_s_constant_time_sources_are_together,
     test_an_asynchronous_backend_is_said,
+    test_an_exceptions_only_backend_is_said,
     test_without_measurements_the_tables_say_so,
     test_with_measurements_the_tables_carry_them,
     test_a_hand_edit_of_the_measurements_fails,

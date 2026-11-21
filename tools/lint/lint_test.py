@@ -2545,7 +2545,8 @@ HASH_CANARY = (CPP + '\n#ifndef WEBCPP_HASH_DETAIL_CANARY_H\n#define WEBCPP_HASH
                '#define WEBCPP_HASH_XKCP_COMMIT {xkcp}\n#endif\n'
                '#define WEBCPP_HASH_SODIUM_COMMIT {sodium}\n'
                '#define WEBCPP_HASH_BLAKE3_COMMIT {blake3}\n'
-               '#define WEBCPP_HASH_BEARSSL_COMMIT {bearssl}\n#endif\n')
+               '#define WEBCPP_HASH_BEARSSL_COMMIT {bearssl}\n'
+               '#define WEBCPP_HASH_BOTAN_COMMIT {botan}\n#endif\n')
 HASH_CANARY_HEADER = 'libs/hash/include/webcpp/hash/detail/canary.h'
 
 
@@ -2605,26 +2606,36 @@ def test_canary_pins(root):
         f'{CANARY_HEADER}: a pin is not of the form #define WEBCPP_CRYPTO_<NAME>_COMMIT <7 hex>: '
         '#define WEBCPP_CRYPTO_CTAES_COMMIT 123456'])
     # hash's detail/canary.h is read beside crypto's: sodium's submodule is libsodium, xkcp's,
-    # blake3's and bearssl's are their own names; a wrong pin fails at the header, naming both.
+    # blake3's, bearssl's and botan's are their own names; a wrong pin fails at the header, naming
+    # both.
     write(root, CANARY_HEADER, CANARY.format(bearssl='1234567', ctaes='1234567'))
     xkcp = 'aaaaaaa' + '0' * 33
     libsodium = 'bbbbbbb' + '0' * 33
     blake3 = 'ccccccc' + '0' * 33
+    botan = 'ddddddd' + '0' * 33
+    record_submodule(root, 'botan', botan)
     record_submodule(root, 'xkcp', xkcp)
     record_submodule(root, 'libsodium', libsodium)
     record_submodule(root, 'blake3', blake3)
     write(root, HASH_CANARY_HEADER,
           HASH_CANARY.format(xkcp='aaaaaaa', sodium='bbbbbbb', blake3='ccccccc',
-                             bearssl='1234567'))
+                             bearssl='1234567', botan='ddddddd'))
     commit_recorded(root, 'Hash canaries at the recorded commits')
     expect_clean(lint(root))
     write(root, HASH_CANARY_HEADER,
           HASH_CANARY.format(xkcp='aaaaaaa', sodium='bbbbbba', blake3='ccccccc',
-                             bearssl='1234567'))
+                             bearssl='1234567', botan='ddddddd'))
     commit_recorded(root, 'A wrong hash pin')
     expect_alone(lint(root), 'canary pins', [
         f'{HASH_CANARY_HEADER}: sodium is pinned at bbbbbba and '
         'third_party/libs/libsodium is at bbbbbbb'])
+    write(root, HASH_CANARY_HEADER,
+          HASH_CANARY.format(xkcp='aaaaaaa', sodium='bbbbbbb', blake3='ccccccc',
+                             bearssl='1234567', botan='dddddde'))
+    commit_recorded(root, 'A wrong Botan pin')
+    expect_alone(lint(root), 'canary pins', [
+        f'{HASH_CANARY_HEADER}: botan is pinned at dddddde and '
+        'third_party/libs/botan is at ddddddd'])
 
 
 def test_pyright(root):

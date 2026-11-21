@@ -113,8 +113,14 @@ rule declare ( root : inputs * : requirements * : usage-requirements * )
     local project = [ project.current ] ;
     targets.create-metatarget botan-target : $(project) : botan
         : : $(own) $(requirements) : : $(usage) $(usage-requirements) ;
+    # Botan's own test program reads its data directory (--data-dir) from the
+    # host: on Emscripten node gives it the host's file system, and the
+    # program's status is main's.
+    local test-own =
+        <toolset>emscripten:<linkflags>-sNODERAWFS=1
+        <toolset>emscripten:<linkflags>-sEXIT_RUNTIME=1 ;
     targets.create-metatarget botan-test-target : $(project) : botan_test
-        : botan : $(own) : ;
+        : botan : $(own) $(test-own) : ;
 }
 
 # The values of the command line of tools/botan/configure.py for properties,

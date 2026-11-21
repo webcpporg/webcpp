@@ -997,6 +997,60 @@ def test_botan_is_built_object_by_object(root: Path) -> None:
     expect_botan_checkout_unchanged()
 
 
+def botan_hash_canary() -> str:
+    prefix = '_' if sys.platform == 'darwin' else ''
+    return f'{prefix}webcpp_hash_botan_01af88c_configured__add_third_party_botan_to_your_link'
+
+
+def test_botan_carries_hashs_canary(root: Path) -> None:
+    # With libs/hash checked out, /third_party//botan compiles webcpp::hash's canary with Botan's
+    # own properties (its configured build.h: configured), beside the 208 sources, and gives a
+    # program WEBCPP_HASH_HAS_BOTAN.
+    harness.copy_integration_libraries(root, 'config', 'hash')
+    add_botan_user(root)
+    result = harness.run_b2(root, '-a', '-d+2', 'libs/botan_user/test')
+    harness.expect(result, True)
+    assert len(botan_compiles(result)) == BOTAN_SOURCES, result.stdout[-4000:]
+    canary = [line for line in result.stdout.splitlines()
+              if 'canary_botan.cpp' in line and ' -c ' in line]
+    assert len(canary) == 1, canary
+    assert '-DBOTAN_IS_BEING_BUILT' in canary[0], canary[0]
+    user = [line for line in result.stdout.splitlines()
+            if 'hashes_abc.cpp' in line and ' -c ' in line]
+    assert len(user) == 1 and '-DWEBCPP_HASH_HAS_BOTAN=1' in user[0], user
+    archive = sorted((root / 'bin').rglob('libbotan.a'))
+    assert len(archive) == 1, archive
+    symbols = subprocess.run(['nm', str(archive[0])], capture_output=True, text=True, check=True)
+    assert botan_hash_canary() in symbols.stdout.split(), symbols.stdout[-2000:]
+    expect_botan_checkout_unchanged()
+
+
+def test_botan_without_hash_has_no_canary(root: Path) -> None:
+    # A checkout without libs/hash builds Botan as before: its 208 sources, no canary, no define.
+    add_botan_user(root)
+    result = harness.run_b2(root, '-n', '-a', '-d+2', 'libs/botan_user/test')
+    harness.expect(result, True)
+    assert len(botan_compiles(result)) == BOTAN_SOURCES, result.stdout[-4000:]
+    assert 'canary_botan' not in result.stdout, result.stdout[-4000:]
+    assert 'WEBCPP_HASH_HAS_BOTAN' not in result.stdout, result.stdout[-4000:]
+
+
+def test_botan_vectors_target(root: Path) -> None:
+    # /third_party//botan_vectors gives a program Botan's src/tests/data at the pin, by its
+    # define, and the files webcpp::hash reads are there.
+    harness.add_library(root, 'botan_data', (
+        'import webcpp ;\n\n'
+        'webcpp.targets native ;\n\n'
+        'webcpp.run reads : reads.cpp : <library>/third_party//botan_vectors ;\n'),
+        {'reads.cpp': '#include <fstream>\n\nint main() {\n'
+                      '    std::ifstream in(WEBCPP_TEST_BOTAN_VECTORS "/hash/whirlpool.vec");\n'
+                      '    std::ifstream skein(WEBCPP_TEST_BOTAN_VECTORS "/hash/skein.vec");\n'
+                      '    return in && skein ? 0 : 1;\n}\n'})
+    result = harness.run_b2(root, '-a', 'libs/botan_data/test')
+    harness.expect(result, True)
+    assert '**passed**' in result.stdout, result.stdout[-4000:]
+
+
 def test_botan_runs_natively(root: Path) -> None:
     add_botan_user(root)
     result = harness.run_b2(root, '-a', 'libs/botan_user/test')
@@ -1134,6 +1188,9 @@ CASES = [
     test_hash_not_checked_out_stops_blake3,
     test_botan_is_pinned,
     test_botan_is_built_object_by_object,
+    test_botan_carries_hashs_canary,
+    test_botan_without_hash_has_no_canary,
+    test_botan_vectors_target,
     test_botan_runs_natively,
     test_botan_runs_on_emscripten,
     test_botan_configuration_is_shared,
