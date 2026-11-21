@@ -7124,6 +7124,54 @@ and not built is in chapter 17.
   Source: `libraries/crypto/openspec/changes/genesis/design.md` (proposals);
   `test/secp256k1_xonly_tweak_test.cpp` (libs/crypto).
 
+**P-256 (the foundation's increment 3, its first part; built on the branch
+`crypto/p256`, not merged).**
+
+- **`curves::p256` is a family of its own, on BearSSL, its one backend and
+  default on all four targets; OpenSSL and Botan join in their increments.**
+  A key pair made from its 32-byte scalar (`make`, refused before BearSSL when
+  0 or not below n, by a constant-time check whose verdict alone is public) or
+  drawn (`generate`), its public point computed once; a `public_key` validated
+  once where it arrives, SEC 1's uncompressed point or its two coordinates;
+  ECDSA over a SHA-256 digest with RFC 6979's nonce, raw (WebCrypto's form)
+  and strict DER; ECDH's raw x, as WebCrypto's `deriveBits` gives it. BearSSL
+  allocates nothing; natively it runs `br_ec_p256_m62` where BearSSL has a
+  128-bit product, on WebAssembly `br_ec_p256_m31` always. BearSSL's own
+  stack frames keep what they compute from the scalar, which webcpp cannot
+  wipe; the page says so.
+  Source: `libraries/crypto/openspec/changes/foundation/design.md` D36
+  (proposals); `include/webcpp/crypto/curves/p256.hpp` and
+  `backends/bearssl.hpp` (libs/crypto).
+- **The key formats are fixed layouts: SPKI of 91 bytes (RFC 5480, the
+  uncompressed point) and PKCS#8 of 138 bytes (version 0, RFC 5915's
+  ECPrivateKey version 1 without parameters and with the public key); a
+  decoder accepts exactly what the encoder writes, the point checked against
+  the scalar.** The bytes OpenSSL's and BearSSL's encoders and node's
+  WebCrypto write, checked by the oracles; anything else is
+  `invalid_encoding`.
+  Source: `include/webcpp/crypto/curves/p256/formats.hpp` (libs/crypto).
+- **Low S is two primitives, not a mode: `sign_ecdsa` returns S as computed
+  and `verify_ecdsa` accepts both forms, as FIPS 186-5 and WebCrypto do;
+  `normalize_ecdsa` gives the low form and `check_low_s` refuses the high
+  one, neither calling a backend.** A protocol that requires low S
+  (Trystero's handshakes) applies them; the protocol itself is
+  webcpp::trystero's (D24), which the guide's section on signed handshakes
+  shows with an example. Their verdict is marked public for the constant-time
+  checkers, a signature being public once made.
+  Source: `include/webcpp/crypto/curves/p256.hpp`, `doc/p2p.adoc`
+  (libs/crypto).
+- **Constant time, sizes and throughput cover the family.** memcheck and
+  MemorySanitizer run the key pair's making, signing with its low-S
+  normalization and check, `ecdh_x` and `decode_pkcs8` (`paths.hpp`), each
+  checker failing on a planted early exit in a copy of the scalar check;
+  BearSSL's own branches on its signing's verdicts are listed for memcheck in
+  `bearssl_verdicts.supp`. dudect times `sign_ecdsa` and `ecdh_x` against the
+  scalar natively and on wasip2. The sizes lane measures signing,
+  verification and `ecdh_x`, and the throughput page the same three, from
+  release builds.
+  Source: `libs/crypto/test/constant_time/Jamfile`, `test/sizes/Jamfile`,
+  `bench/throughput.cpp`.
+
 **Errors and exceptions.**
 
 - **Every operation that can fail returns `boost::system::result<T>` or
@@ -8706,6 +8754,25 @@ increments 1 and 2, whose state is first.
   exchange, a two-signer MuSig2 signature and a silent payments output, all
   from release builds through `webcpp.program-sizes`.
   Source: `libs/crypto/test/constant_time/Jamfile` and `test/sizes/Jamfile`.
+
+**The foundation's increment 3 (plan Tasks 3.1 to 3.11; its P-256 part,
+Tasks 3.1 to 3.6, built on its branch, not merged).**
+
+- **P-256 on BearSSL is built on the branch `crypto/p256` of the library and
+  the superproject, for webcpp::trystero's port of Trystero 0.27.0 (design
+  D36): the family, its formats, its oracles (OpenSSL natively and on WASI,
+  node's WebCrypto on Emscripten), its constant-time paths, sizes and
+  throughput, and the guide's signed handshakes.** Chapter 15 holds what is
+  built. NIST's ACVP vectors wait for the `acvp` submodule of Task 3.8, and
+  the WebCrypto oracle runs in node, Chrome with the browser lane's increment.
+  Source: `libraries/crypto/openspec/changes/foundation/reference/plan.md`
+  Tasks 3.1 to 3.6 (proposals).
+- **The rest of increment 3 is outlined, each task written in full when
+  P-256 has merged: P-384 and P-521 on the same engine (3.7), X25519 on
+  BearSSL and the `acvp` submodule (3.8), AES-CTR, AES-CBC, AES-CCM and
+  AES-EAX on BearSSL (3.9), RSA (3.10), and the increment's close (3.11).**
+  Source: `libraries/crypto/openspec/changes/foundation/reference/plan.md`
+  Tasks 3.7 to 3.11 (proposals).
 
 **Constant time (increment 1, Task 14; merged).**
 
