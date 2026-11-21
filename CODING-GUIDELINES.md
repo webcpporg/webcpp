@@ -7134,7 +7134,7 @@ and not built is in chapter 17.
   `test/secp256k1_xonly_tweak_test.cpp` (libs/crypto).
 
 **P-256 (the foundation's increment 3, its first part; built on the branch
-`crypto/p256`, not merged).**
+`crypto/p256`, merged 2026-11-21).**
 
 - **`curves::p256` is a family of its own, on BearSSL, its one backend and
   default on all four targets; OpenSSL and Botan join in their increments.**
@@ -8775,7 +8775,7 @@ increments 1 and 2, whose state is first.
   Source: `libs/crypto/test/constant_time/Jamfile` and `test/sizes/Jamfile`.
 
 **The foundation's increment 3 (plan Tasks 3.1 to 3.11; its P-256 part,
-Tasks 3.1 to 3.6, built on its branch, not merged).**
+Tasks 3.1 to 3.6, built on its branch, merged 2026-11-21).**
 
 - **P-256 on BearSSL is built on the branch `crypto/p256` of the library and
   the superproject, for webcpp::trystero's port of Trystero 0.27.0 (design
