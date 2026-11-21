@@ -7004,6 +7004,24 @@ and not built is in chapter 17.
   contents being read.** Hash2's `digest<N>::operator==` is `memcmp`; a size
   is public.
   Source: `include/webcpp/crypto/equal.hpp` (libs/crypto).
+- **Every public function that runs a backend's cryptographic code, and
+  `equal`, holds `detail::timing_guard` as its first statement: on 64-bit ARM
+  under macOS, iOS, Linux and Android, where the CPU has FEAT_DIT, it sets
+  PSTATE.DIT for the call (`msr s3_3_c4_c2_5`, then `isb`) and returns the
+  thread's DIT as it found it, after an error and an exception too; on x86,
+  WebAssembly and Windows on ARM64 it is empty. A later increment's public
+  function that calls a backend holds one too and joins its backend's
+  coverage test, which checks through the seam
+  `WEBCPP_CRYPTO_DETAIL_TIMING_ENTERED` that each call entered its own
+  guard.** None of the C libraries sets DIT, which Apple requires of
+  constant-time code, and without it libsodium's X25519 was measured not
+  constant time on Apple silicon; a program does nothing. The guard's cost is
+  measured from a release build by `bench/collect.py --timing` and published
+  beside the throughput, and the constant-time lane sets no DIT of its own: it
+  measures what a program gets.
+  Source: `libraries/crypto/openspec/changes/data-independent-timing/design.md`
+  D1 to D7 (proposals); `include/webcpp/crypto/detail/timing.hpp`,
+  `test/timing_coverage_<backend>_test.cpp` (libs/crypto).
 - **`<windows.h>` is reached only through `detail/windows.hpp`, which defines
   `NOMINMAX` and `WIN32_LEAN_AND_MEAN` only when absent and undefines only
   what it defined, and every header writes `(max)()`, `(min)()` and
@@ -8616,7 +8634,8 @@ increments 1 and 2, whose state is first.
   wasmtime's code. The cause is measured: Apple silicon's DIT (data-independent
   timing), which wasmtime does not set; with DIT set in wasmtime's main thread,
   an experiment and not the lane, the case reads |t| 1.5 to 2.1. The native
-  dudect programs set DIT themselves; the WebAssembly cannot. The page's
+  dudect programs no longer set DIT: the library sets it in each call on
+  64-bit ARM (chapter 15); the WebAssembly cannot set it. The page's
   constant-time table and `crypto.json` record it as an open finding, not a
   pass, and the lane prints its value without judging it. Valgrind,
   MemorySanitizer and dudect are not run on wasip3 or Emscripten, which the
