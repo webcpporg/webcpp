@@ -104,13 +104,17 @@ BOTAN_RECORDS = (
     'counted=1\n'
     'record operation=argon2id tag=kdfs::argon2id backend=botan target=native call=2 new=5 c=8 '
     'counted=1\n'
+    'record operation=scrypt tag=kdfs::scrypt backend=botan target=native call=1 new=3 c=0 '
+    'counted=0\n'
+    'record operation=scrypt tag=kdfs::scrypt backend=botan target=native call=2 new=3 c=0 '
+    'counted=0\n'
 )
 
 
 def test_botan_s_records_give_one_row_per_operation(scratch: Path) -> None:
     """backends::botan's records, one per call of each tag, become one row per operation and
-    target: the range over its tags, and a steady call's counts where they differ; Botan's
-    argon2id is not libsodium's."""
+    target: the range over its tags, and a steady call's counts where they differ; a record whose
+    C library is not counted (MSVC's) says so; Botan's argon2id is not libsodium's."""
     base = (scratch / 'bin/libs/hash/bench/allocation_botan_release.test/clang-darwin-21/release'
             / 'cxxstd-20-iso')
     base.mkdir(parents=True)
@@ -123,7 +127,9 @@ def test_botan_s_records_give_one_row_per_operation(scratch: Path) -> None:
                 "(operator new's included), over its 2 algorithms; the same in a steady call",
                 '| `argon2id` | `botan` | native | 6 | Botan: 9 C library calls (operator '
                 "new's included), of kdfs::argon2id; a steady call: 5 operator new, 8 C library "
-                'calls'):
+                'calls',
+                '| `scrypt` | `botan` | native | 3 | Botan: C library not counted, of '
+                'kdfs::scrypt; the same in a steady call'):
         if row not in table:
             raise AssertionError(f'{row!r} is not in the table:\n{table}')
     if '| `argon2id` | `sodium`' in table:

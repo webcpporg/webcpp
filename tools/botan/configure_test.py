@@ -7,10 +7,11 @@
 """Checks tools/botan/configure.py over the real checkout, third_party/libs/botan: each target of
 /third_party//botan configures, with the same sources everywhere and the modules of modules.txt
 loaded, none that seeds a generator from the system; a complete configuration is never made again,
-an interrupted one is; runs that make one configuration at once all succeed; an unknown module is
-refused, naming it; the compiler settings of the environment change nothing, and neither does
-a git repository around the configuration's directory. Run as
-`python3 tools/botan/configure_test.py`."""
+an interrupted one is; runs that make one configuration at once all succeed; a configuration's
+directory has the mode a new directory gets; an unknown module, and one that seeds a generator from
+the system, is refused, naming it; the compiler settings of the environment change nothing, and
+neither does a git repository around the configuration's directory. Run as `python3
+tools/botan/configure_test.py`."""
 from __future__ import annotations
 
 import json
@@ -18,6 +19,7 @@ import os
 import re
 from pathlib import Path
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -179,6 +181,26 @@ class ConfigureTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stdout)
         self.assertIn('no_such_module', result.stdout)
         self.assertFalse(output.exists())
+
+    def test_a_system_generator_is_refused(self) -> None:
+        modules = self.scratch / 'system.txt'
+        modules.write_text('sha2_32 system_rng  # seeds from the system, which no build may\n')
+        output = self.scratch / 'system'
+        result = configure(output, TARGETS['linux-gcc-x86_64'], modules)
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn('seed a generator from the system are loaded: system_rng', result.stdout)
+        self.assertFalse(output.exists())
+        self.assertEqual(sorted(self.scratch.glob('system.partial-*')), [])
+
+    @unittest.skipIf(os.name == 'nt', 'Windows keeps no POSIX mode')
+    def test_the_configuration_has_a_directory_s_usual_mode(self) -> None:
+        # A private temporary directory is made 0700; renamed into place, the configuration
+        # would be unreadable to another user, as a lane in a container may run.
+        mask = os.umask(0)
+        os.umask(mask)
+        for name in TARGETS:
+            mode = stat.S_IMODE((self.scratch / name).stat().st_mode)
+            self.assertEqual(oct(mode), oct(0o777 & ~mask), name)
 
     def test_the_compiler_settings_of_the_environment_change_nothing(self) -> None:
         output = self.scratch / 'environment'

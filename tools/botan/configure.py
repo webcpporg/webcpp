@@ -16,7 +16,12 @@ headers under build/include and build/build_config.json; nothing is written into
 run writes into a sibling of its own, DIRECTORY.partial-<random>, and renames it into place once
 complete, so that an interrupted run leaves no half configuration, and runs that need the same
 configuration at once (two b2 processes) never undo each other: the first rename wins, the others
-discard theirs and use it. A partial no run has touched for an hour is removed.
+discard theirs and use it. A partial no run has touched for an hour is removed. The configuration
+gets the mode the umask gives a new directory. Upstream records the directory it configured into,
+the partial's name, in a comment of target_info.h and in build/build_config.json,
+build/compile_commands.json, build/botan.doxy and build.ninja; after the rename those name a
+directory that no longer exists, and nothing reads them: b2 takes the sources from
+webcpp-configure.json, and the comment changes no object.
 
 It then prints one line per source, `lib <path>` for the library's and `test <path>` for its test
 program's, each path relative to CHECKOUT with forward slashes, sorted. b2 compiles each as an
@@ -99,6 +104,14 @@ def relative_sources(checkout: Path, sources: list[str]) -> list[str]:
     return sorted(relative)
 
 
+def current_umask() -> int:
+    """The process's umask, which reading changes: set back at once (this helper has one
+    thread)."""
+    mask = os.umask(0)
+    os.umask(mask)
+    return mask
+
+
 def remove_stale_partials(output: Path) -> None:
     """Removes, best-effort, the partial configurations of output that no run is writing: those
     untouched for STALE_SECONDS, left by an interrupted run."""
@@ -135,6 +148,9 @@ def run_upstream(checkout: Path, modules: list[str], output: Path,
     remove_stale_partials(output)
     partial = Path(tempfile.mkdtemp(dir=output.parent, prefix=f'{output.name}.partial-'))
     try:
+        # mkdtemp makes the partial 0700, which the rename would keep: the configuration gets the
+        # mode of any directory the build makes, readable by another user (a lane in a container).
+        os.chmod(partial, 0o777 & ~current_umask())
         record = configure_partial(checkout, modules, partial, output, target)
         (partial / RECORD).write_text(json.dumps(record, indent=1) + '\n')
         return install(partial, output)

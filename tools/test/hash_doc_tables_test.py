@@ -231,6 +231,13 @@ def test_a_function_without_a_backend_of_the_order_has_no_default(scratch: Path)
     expect('the function kbkdf has no default, though hash2' in done.stderr, done.stderr)
 
 
+def family_row(table: dict, name: str) -> dict:
+    for algorithm in table['algorithms']:
+        for function in algorithm['functions']:
+            if function['name'] == name:
+                return function
+    raise AssertionError(f'no row {name}')
+
 
 def test_a_function_s_default_is_of_the_order(scratch: Path) -> None:
     """No measurement or backend outside the order decides a function's default (designs D33 and
@@ -247,13 +254,6 @@ def test_a_function_s_default_is_of_the_order(scratch: Path) -> None:
     expect('the function bcrypt has the default botan, which is not one of hash2, xkcp, blake3, '
            'sodium' in done.stderr, done.stderr)
     expect('the function kbkdf has the default openssl' in done.stderr, done.stderr)
-
-def family_row(table: dict, name: str) -> dict:
-    for algorithm in table['algorithms']:
-        for function in algorithm['functions']:
-            if function['name'] == name:
-                return function
-    raise AssertionError(f'no row {name}')
 
 
 def test_a_family_default_is_of_the_order_or_none(scratch: Path) -> None:
