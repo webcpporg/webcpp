@@ -311,7 +311,9 @@ jobs:
     if: needs.plan.outputs.has-own-lanes == 'true'
     runs-on: ${{ matrix.os }}
     # crypto's constant-time lane is followed by dudect's judge, whose reruns of a case under
-    # wasmtime may last up to 1800 s each: 120 minutes there, 60 elsewhere.
+    # wasmtime may last up to 1800 s each: 120 minutes there, 60 elsewhere. Several wasip2 cases each
+    # needing two reruns could exceed 120 minutes, which cancels the job (rare; the evidence is
+    # still in the log).
     timeout-minutes: ${{ (matrix.library == 'crypto' && matrix.lane == 'constant-time') && 120 || 60 }}
     strategy:
       fail-fast: false
@@ -429,7 +431,7 @@ jobs:
       - name: Judge dudect
         if: ${{ !cancelled() && matrix.library == 'crypto' && matrix.lane == 'constant-time' }}
         env:
-          WEBCPP_WASIP2_TEST_TIMEOUT: ${{ (matrix.library == 'crypto' && matrix.lane == 'constant-time') && '1800' || '600' }}
+          WEBCPP_WASIP2_TEST_TIMEOUT: '1800'
           TARGET: ${{ matrix.platform }}
           RERUN: ${{ runner.environment == 'github-hosted' && '--rerun' || '' }}
         shell: bash
