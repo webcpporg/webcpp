@@ -22,12 +22,14 @@ It then prints one line per source, `lib <path>` for the library's and `test <pa
 program's, each path relative to CHECKOUT with forward slashes, sorted. b2 compiles each as an
 object of its own (tools/webcpp-botan.jam).
 
-Upstream's configure.py is run with python3 -I, its working directory DIRECTORY's parent, and
+Upstream's configure.py is run with python3 -I, its working directory DIRECTORY's parent,
 without the environment variables it reads compiler settings from (CXX, CXXFLAGS, AR, AR_OPTIONS
-and LDFLAGS), so that a configuration is a function of the arguments alone: --disable-cc-tests
-keeps it from running a compiler. It refuses a configuration that loads a module seeding a
-generator from the system (system_rng, auto_rng and the entropy sources): webcpp's libraries take
-their randomness elsewhere.
+and LDFLAGS) and with a GIT_DIR that is no repository, so that a configuration is a function of
+the arguments alone: --disable-cc-tests keeps it from running a compiler, and its `git rev-parse
+HEAD` finds no repository around its working directory (the superproject's, in a build), whose
+commit would otherwise reach build/version_info.h, and through it Botan's version.cpp. It refuses
+a configuration that loads a module seeding a generator from the system (system_rng, auto_rng and
+the entropy sources): webcpp's libraries take their randomness elsewhere.
 
 Exit 0 on success; 1, with the reason on standard output, for a module upstream does not know, a
 failed configure.py (its last lines printed), a source outside CHECKOUT, or a refused module.
@@ -147,6 +149,9 @@ def configure_partial(checkout: Path, modules: list[str], partial: Path, output:
     the configuration, checked."""
     environment = {name: value for name, value in os.environ.items()
                    if name not in COMPILER_VARIABLES}
+    # Upstream asks git for its revision from its working directory, which in a build is inside
+    # the superproject: a GIT_DIR that is no repository leaves it "unknown", as in a release.
+    environment['GIT_DIR'] = str(partial / 'no-repository')
     result = subprocess.run(upstream_command(checkout, modules, partial, output, target),
                             cwd=partial.parent, env=environment, stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, text=True)

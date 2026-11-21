@@ -8,7 +8,8 @@
 /third_party//botan configures, with the same sources everywhere and the modules of modules.txt
 loaded, none that seeds a generator from the system; a complete configuration is never made again,
 an interrupted one is; runs that make one configuration at once all succeed; an unknown module is
-refused, naming it; the compiler settings of the environment change nothing. Run as
+refused, naming it; the compiler settings of the environment change nothing, and neither does
+a git repository around the configuration's directory. Run as
 `python3 tools/botan/configure_test.py`."""
 from __future__ import annotations
 
@@ -191,6 +192,26 @@ class ConfigureTest(unittest.TestCase):
             # target_info.h names the directory it was configured into, which differs.
             self.assertEqual(without_directory(output, header),
                              without_directory(reference, header), header)
+
+    def test_no_enclosing_repository_reaches_the_configuration(self) -> None:
+        # In a build the configuration directory is inside the superproject's checkout, whose
+        # commit upstream's configure.py would take as Botan's revision: a configuration made
+        # inside a repository, of a commit of its own, is the one made outside any.
+        repository = self.scratch / 'repository'
+        repository.mkdir()
+        git = ['git', '-C', str(repository), '-c', 'user.name=webcpp',
+               '-c', 'user.email=webcpp@example.invalid', '-c', 'commit.gpgsign=false']
+        subprocess.run(git[:3] + ['init', '-q'], check=True)
+        subprocess.run(git + ['commit', '-q', '--allow-empty', '-m', 'enclosing'], check=True)
+        output = repository / 'bin' / 'emscripten'
+        result = configure(output, TARGETS['emscripten'])
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertEqual(result.stdout, self.results['emscripten'].stdout)
+        reference = self.scratch / 'emscripten'
+        for header in ('version_info.h', 'build.h', 'target_info.h'):
+            text = without_directory(output, header)
+            self.assertNotIn('git:', text, header)
+            self.assertEqual(text, without_directory(reference, header), header)
 
 
 if __name__ == '__main__':
