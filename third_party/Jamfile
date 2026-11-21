@@ -979,7 +979,8 @@ explicit openssl_evp_data ;
 # Botan's own test data (BSD-2-Clause), src/tests/data of the submodule
 # third_party/libs/botan at the pin, read at run time from the directory
 # WEBCPP_TEST_BOTAN_VECTORS gives, on every target it is built for, never
-# copied: webcpp::hash reads hash/whirlpool.vec and hash/skein.vec, and its
+# copied: webcpp::hash reads hash/whirlpool.vec, hash/skein.vec,
+# passhash/bcrypt.vec, bcrypt_pbkdf.vec and kdf/sp800_108_ctr.vec, and its
 # c-suites lane runs Botan's own test program over the directory. Quoted as
 # wycheproof's define is.
 path-constant BOTAN_VECTORS : libs/botan/src/tests/data ;
@@ -998,7 +999,10 @@ alias botan_vectors : : <conditional>@botan-vectors-checked-out : :
     <define>"\"WEBCPP_TEST_BOTAN_VECTORS=\\\"$(.botan-vectors)\\\"\""
     [ webcpp.data $(BOTAN_VECTORS) ]
     <dependency>libs/botan/src/tests/data/hash/whirlpool.vec
-    <dependency>libs/botan/src/tests/data/hash/skein.vec ;
+    <dependency>libs/botan/src/tests/data/hash/skein.vec
+    <dependency>libs/botan/src/tests/data/passhash/bcrypt.vec
+    <dependency>libs/botan/src/tests/data/bcrypt_pbkdf.vec
+    <dependency>libs/botan/src/tests/data/kdf/sp800_108_ctr.vec ;
 explicit botan_vectors ;
 
 # BLAKE2's reference code package (CC0-1.0) at ed1974e, shallow, as test data
