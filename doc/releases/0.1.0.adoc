@@ -336,6 +336,8 @@ family alone, and a tag outside its namespace's chapter.
 template argument: each sentence reads the Backend's position from the header declaring the template.
 * Fixed an interrupted OpenSSL or libdatachannel build leaving a configuration later builds took as
 complete: its build record is published last, and one without it is built again.
+* Added /third_party//botan, Botan 3.14.1 configured by upstream and compiled by b2, natively and on
+Emscripten.
 
 [#webcpp-0-1-0-compilers-tested]
 == Compilers tested

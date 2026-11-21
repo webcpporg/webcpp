@@ -24,7 +24,12 @@ webcpp::hash's canary, and webcpp::crypto's when libs/crypto is checked out, its
 into the build directory and its checkout left as it was. BLAKE3's C implementation, pinned, is
 built file by file with webcpp::hash's canary: natively with the intrinsics files of the machine's
 instruction sets, each with its own flag, and on WebAssembly with the portable code alone. BLAKE2's
-test vectors are pinned. Run with the names of some cases to run only those."""
+test vectors are pinned. Botan, pinned, is configured by upstream's configure.py once per target,
+shared by the variants, and compiled by b2 one object per source, its checkout left as it was; a
+program hashes with it natively and on emscripten, and Botan's own test program passes its hash
+tests; a Botan not checked out, a WASI toolset and a build without exceptions each stop the build
+that needs it, with its message, and no other. Run with the names of some cases to run only
+those."""
 
 from __future__ import annotations
 
@@ -911,6 +916,174 @@ def test_hash_not_checked_out_stops_blake3(root: Path) -> None:
                    'git submodule update --init libs/hash')
 
 
+BOTAN = 'third_party/libs/botan'
+
+# Botan 3.14.1, the commit its tag names.
+BOTAN_COMMIT = '01af88c039fcfaedc418b1af4d6d3a139674e591'
+
+# The library's sources tools/botan/modules.txt configures, on every target.
+BOTAN_SOURCES = 208
+
+# A program that hashes "abc" with Botan, under the project's warnings.
+BOTAN_USER_SOURCE = r"""#include <botan/hash.h>
+#include <botan/hex.h>
+
+#include <iostream>
+
+int main() {
+    auto const hash = Botan::HashFunction::create_or_throw("SHA-256");
+    hash->update("abc");
+    std::cout << Botan::hex_encode(hash->final(), false) << "\n";
+    return 0;
+}
+"""
+
+# SHA-256 of "abc", FIPS 180-4's example.
+ABC_SHA256 = 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'
+
+
+def add_botan_user(root: Path, targets: str = 'native emscripten') -> None:
+    """Adds the library botan_user, whose one test hashes "abc" with /third_party//botan."""
+    harness.add_library(root, 'botan_user', (
+        'import webcpp ;\n\n'
+        f'webcpp.targets {targets} ;\n\n'
+        'webcpp.run hashes_abc : hashes_abc.cpp : <library>/third_party//botan ;\n'),
+        {'hashes_abc.cpp': BOTAN_USER_SOURCE})
+
+
+def botan_compiles(result: subprocess.CompletedProcess) -> list[str]:
+    """The compile lines of Botan's library sources b2 printed at -d+2."""
+    return [line for line in result.stdout.splitlines()
+            if '-DBOTAN_IS_BEING_BUILT' in line and ' -c ' in line
+            and '/src/lib/' in line]
+
+
+def expect_botan_checkout_unchanged() -> None:
+    status = subprocess.run(['git', '-C', str(harness.ROOT / BOTAN), 'status', '--porcelain'],
+                            capture_output=True, text=True, check=True)
+    assert status.stdout == '', status.stdout
+
+
+def botan_configurations(root: Path) -> list[Path]:
+    return sorted((root / 'bin/third_party/botan').glob('config-*[0-9a-f]'))
+
+
+def test_botan_is_pinned(_: Path) -> None:
+    listed = subprocess.run(['git', '-C', str(harness.ROOT), 'ls-files', '-s', BOTAN],
+                            capture_output=True, text=True, check=True)
+    assert listed.stdout.split()[:2] == ['160000', BOTAN_COMMIT], listed.stdout
+
+
+def test_botan_is_built_object_by_object(root: Path) -> None:
+    add_botan_user(root)
+    result = harness.run_b2(root, '-n', '-a', '-d+2', 'libs/botan_user/test')
+    harness.expect(result, True)
+    compiles = botan_compiles(result)
+    assert len(compiles) == BOTAN_SOURCES, (len(compiles), result.stdout[-4000:])
+    configurations = botan_configurations(root)
+    assert len(configurations) == 1, configurations
+    configuration = configurations[0].resolve().as_posix()
+    objects = set()
+    for line in compiles:
+        for directory in ('public', 'internal'):
+            assert f'{configuration}/build/include/{directory}' in line, (directory, line)
+        found = re.search(r' -o "?([^" ]+\.o)"?', line)
+        assert found is not None, line
+        objects.add(found.group(1))
+    assert len(objects) == BOTAN_SOURCES, len(objects)
+    archives = [line for line in result.stdout.splitlines()
+                if re.search(r'\bar\b|libtool', line) and 'libbotan' in line]
+    assert archives, result.stdout[-4000:]
+    expect_botan_checkout_unchanged()
+
+
+def test_botan_runs_natively(root: Path) -> None:
+    add_botan_user(root)
+    result = harness.run_b2(root, '-a', 'libs/botan_user/test')
+    harness.expect(result, True)
+    assert passed(result) == {'hashes_abc'}, (passed(result), result.stdout[-4000:])
+    assert output_of(root, 'hashes_abc.output').splitlines()[0] == ABC_SHA256
+    expect_botan_checkout_unchanged()
+
+
+def test_botan_runs_on_emscripten(root: Path) -> None:
+    harness.link_emsdk(root)
+    add_botan_user(root)
+    result = harness.run_b2(root, '-a', *EMSCRIPTEN, 'libs/botan_user/test')
+    harness.expect(result, True)
+    assert passed(result) == {'hashes_abc'}, (passed(result), result.stdout[-4000:])
+    assert output_of(root, 'hashes_abc.output').splitlines()[0] == ABC_SHA256
+
+
+def test_botan_configuration_is_shared(root: Path) -> None:
+    add_botan_user(root)
+    result = harness.run_b2(root, '-n', '-a', '-d+2', 'variant=debug,release',
+                            'libs/botan_user/test')
+    harness.expect(result, True)
+    assert len(botan_configurations(root)) == 1, botan_configurations(root)
+    compiles = botan_compiles(result)
+    objects = {found.group(1) for line in compiles
+               if (found := re.search(r' -o "?([^" ]+\.o)"?', line))}
+    assert len(compiles) == len(objects) == 2 * BOTAN_SOURCES, (len(compiles), len(objects))
+    for variant in ('debug', 'release'):
+        assert sum(f'/{variant}/' in path for path in objects) == BOTAN_SOURCES, variant
+
+
+def test_botan_not_checked_out_is_refused(root: Path) -> None:
+    harness.third_party_of_its_own(root, 'botan', checked_out=False)
+    result = harness.run_b2(root, 'third_party//botan')
+    harness.expect(result, False, 'third_party/libs/botan is not checked out: it holds no '
+                   'configure.py. Check it out with `git submodule update --init '
+                   'third_party/libs/botan`.')
+    # A build that needs no Botan never looks for it.
+    harness.expect(harness.run_b2(root, 'libs/demo/test//pass'), True)
+
+
+def expect_botan_refused_on_wasi(root: Path, request: tuple[str, ...], target: str) -> None:
+    add_botan_user(root, 'native wasip2 wasip3 emscripten')
+    result = harness.run_b2(root, *request, 'libs/botan_user/test')
+    harness.expect(result, False, '/third_party//botan is built natively and for Emscripten. '
+                   f'On clang-{target} it is not built yet: webcpp::crypto\'s increment 7 '
+                   'decides it. Remove /third_party//botan from this program\'s Jamfile, or '
+                   'build it natively or with toolset=emscripten.')
+    harness.expect(harness.run_b2(root, *request, 'libs/demo/test//pass'), True)
+
+
+def test_botan_on_wasip2_is_refused(root: Path) -> None:
+    expect_botan_refused_on_wasi(root, WASIP2, 'wasip2')
+
+
+def test_botan_on_wasip3_is_refused(root: Path) -> None:
+    expect_botan_refused_on_wasi(root, WASIP3, 'wasip3')
+
+
+def test_botan_without_exceptions_is_refused(root: Path) -> None:
+    result = harness.run_b2(root, 'exception-handling=off', 'third_party//botan')
+    harness.expect(result, False, '/third_party//botan needs exceptions: Botan reports its '
+                   'errors by throwing. Build this program with exception-handling=on, or '
+                   'remove /third_party//botan from its Jamfile.')
+    harness.expect(harness.run_b2(root, 'exception-handling=off', 'libs/demo/test//pass'), True)
+
+
+def test_botan_on_an_unknown_target_is_refused(root: Path) -> None:
+    result = harness.run_b2(root, 'target-os=freebsd', 'third_party//botan')
+    harness.expect(result, False, "/third_party//botan: Botan's configuration is known for clang "
+                   'and gcc on macOS and Linux, MSVC on Windows and Emscripten; this request is '
+                   'clang on freebsd.')
+
+
+def test_botan_test_program_runs(root: Path) -> None:
+    result = harness.run_b2(root, '-a', 'third_party//botan_test')
+    harness.expect(result, True)
+    programs = [path for path in (root / 'bin').rglob('botan_test')
+                if path.is_file() and os.access(path, os.X_OK)]
+    assert len(programs) == 1, programs
+    run = subprocess.run([str(programs[0]), f'--data-dir={harness.ROOT / BOTAN}/src/tests/data',
+                          'hash'], capture_output=True, text=True, timeout=harness.TIMEOUT)
+    assert run.returncode == 0, (run.stdout[-4000:], run.stderr[-4000:])
+    assert 'all tests ok' in run.stdout, run.stdout[-4000:]
+
+
 CASES = [
     test_the_suite_is_pinned,
     test_wycheproof_is_pinned,
@@ -959,6 +1132,17 @@ CASES = [
     test_blake3_on_emscripten_is_portable,
     test_blake3_not_checked_out_is_refused,
     test_hash_not_checked_out_stops_blake3,
+    test_botan_is_pinned,
+    test_botan_is_built_object_by_object,
+    test_botan_runs_natively,
+    test_botan_runs_on_emscripten,
+    test_botan_configuration_is_shared,
+    test_botan_not_checked_out_is_refused,
+    test_botan_on_wasip2_is_refused,
+    test_botan_on_wasip3_is_refused,
+    test_botan_without_exceptions_is_refused,
+    test_botan_on_an_unknown_target_is_refused,
+    test_botan_test_program_runs,
 ]
 
 

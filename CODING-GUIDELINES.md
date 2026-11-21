@@ -349,7 +349,8 @@ exactly its authors' and the program carries only what it calls.
    their instruction sets alone, each flagged for its own set; XKCP is built
    from the one file of Keccak-p[1600] and the five high-level files
    webcpp::hash's adapter calls, not from every file of its package;
-   libsodium is built without its `.S` files.
+   libsodium is built without its `.S` files. OpenSSL (rule 7) and Botan
+   (rule 13) choose their sources upstream.
 3. Every file is compiled with `-ffunction-sections -fdata-sections` (`/Gy
    /Gw` on MSVC); upstream's warnings are not webcpp's (`<warnings>off`); each
    define the library cannot work out for itself on a target sits beside the
@@ -391,6 +392,7 @@ exactly its authors' and the program carries only what it calls.
    WASIp3 single and cooperative profiles must agree with the consumer's
    threading choice. Keep explicit host entropy seeding and fail-closed tests.
    Other libraries with external dependencies still use `webcpp.external`.
+   Botan's configuration is upstream's too, its compilation b2's (rule 13).
 8. The webcpp library's `config.hpp` chooses the default backend from the
    target and the `HAS` defines, and refuses impossible combinations with
    `#error`. The backend is named after the C library (`backends::bearssl`),
@@ -407,6 +409,18 @@ exactly its authors' and the program carries only what it calls.
     the submodule's.
 12. Moving a pin is a change of its own: the submodule, the canary's commit,
     the tests on every target and the size table.
+13. Botan is configured by upstream and compiled by b2, as
+    `tools/webcpp-botan.jam` does: Botan's own `configure.py` chooses the
+    modules (`tools/botan/modules.txt`, one list for every webcpp library, each
+    module with who needs it) and writes `build.h` and the list of sources for
+    each target into the build directory, `bin/third_party/botan/config-<hash>`,
+    never into the checkout; b2 compiles each listed source as an object of its
+    own with the program's properties. This is rule 2's kind of exception, as
+    OpenSSL's rule 7 is: the selection is upstream's, the compilation b2's.
+    Never the amalgamation, never a patch, never a module that seeds a
+    generator from the system (`system_rng`, `auto_rng`), which the helper
+    refuses. A library adds its own canary and define to the target; the
+    provisioning carries none.
 
 ## 6. Exceptions and RTTI
 
@@ -961,6 +975,7 @@ update --init third_party/libs/<name>`; a build that needs none never looks.
 | `blake2_vectors` | BLAKE2's reference code package `BLAKE2/BLAKE2` at `ed1974e` (2023-02-12), the submodule `third_party/libs/blake2`, shallow, test data that nothing compiles: hash's tests read `testvectors/blake2b-kat.txt` and `testvectors/blake2-kat.json` at run time under the directory its define `WEBCPP_TEST_BLAKE2_VECTORS` gives, on every target (wasmtime is given it, `webcpp.data`), and run again when one of them changes | CC0-1.0 |
 | `blake3` | BLAKE3 1.8.7 at `f3149ec`; `third_party/Jamfile` compiles `c/blake3.c`, `blake3_dispatch.c` and `blake3_portable.c` on every target, the intrinsics files on their instruction sets alone (an exception to chapter 5 rule 2), with webcpp::hash's canary; `WEBCPP_HASH_HAS_BLAKE3=1` | CC0-1.0, Apache-2.0, or Apache-2.0 with LLVM exception |
 | `blake3_vectors` | BLAKE3's official vectors, `test_vectors/test_vectors.json` of the submodule `third_party/libs/blake3` at `f3149ec`, test data: hash's tests read it at run time under the directory its define `WEBCPP_TEST_BLAKE3_VECTORS` gives, on every target (wasmtime is given it, `webcpp.data`), and run again when it changes | CC0-1.0, Apache-2.0, or Apache-2.0 with LLVM exception |
+| `botan` | Botan 3.14.1 at `01af88c`, the submodule `third_party/libs/botan`; configured by upstream's `configure.py` per target (`--minimized-build`, the modules of `tools/botan/modules.txt`) into `bin/third_party/botan/config-<hash>`, its 208 library sources compiled by b2 one object each (chapter 5, rule 13), natively and on Emscripten, with exceptions; `botan_test`, Botan's own test program; no canary of its own (each library's is added by its block) | BSD-2-Clause |
 | `ca_certificates` | Dated Mozilla/curl CA data snapshot under `third_party/ca_certificates`, verified against its manifest and embedded by a build-generated header; updated explicitly by `tools/ca_certificates/update.py` | MPL-2.0 |
 | `ctaes` | `src/crypto/ctaes` of `bitcoin/bitcoin` v31.1 at `9be056a` (commit `9be056a8a72b624dae9623b2f7bded92c2a21c91`), the submodule `third_party/libs/bitcoin`, shallow; `third_party/Jamfile` compiles its `ctaes.c` alone, with webcpp::crypto's canary, on every target (`WEBCPP_CRYPTO_HAS_CTAES=1`); the tree's `src/secp256k1/` subtree is never on an include path and no glob over `third_party/libs` reaches it | MIT |
 | `ed25519-speccheck` | `novifinancial/ed25519-speccheck` at `65519336` (2021-02-26), shallow, test data: crypto's tests read the twelve Ed25519 edge cases of "Taming the many EdDSAs", its `cases.json`, at run time under the directory its define `WEBCPP_TEST_ED25519_SPECCHECK` gives, on every target (wasmtime is given it, `webcpp.data`), and run again when it changes | Apache-2.0 |

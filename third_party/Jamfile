@@ -196,6 +196,20 @@ webcpp-openssl.declare $(WEBCPP_ROOT)
       tools/openssl/msvc.conf tools/openssl/pin.json ;
 explicit openssl ;
 
+# Botan 3.14.1 (BSD-2-Clause), randombit/botan at 01af88c: upstream's
+# configure.py chooses the modules (tools/botan/modules.txt, webcpp::hash's and
+# webcpp::crypto's) and writes build.h and the list of sources for each target
+# into bin/third_party/botan/config-<hash>; b2 compiles each listed source as
+# an object of its own, with the consumer's properties, never the amalgamation
+# and never a patch (CODING-GUIDELINES.md chapter 5, rule 13). Natively and on
+# Emscripten, with exceptions; each library adds its own canary and define
+# below.
+import webcpp-botan ;
+webcpp-botan.declare $(WEBCPP_ROOT)
+    : tools/botan/configure.py tools/botan/source.py tools/botan/pin.json
+      tools/botan/modules.txt tools/webcpp-botan.jam ;
+explicit botan botan_test ;
+
 # libdatachannel and its pinned nested dependencies use upstream CMake, with
 # the exact OpenSSL archives above. Each archive reaches the program once. Its
 # configurations are named as OpenSSL's are, by the bytes of the inputs below,
