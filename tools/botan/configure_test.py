@@ -7,17 +7,20 @@
 """Checks tools/botan/configure.py over the real checkout, third_party/libs/botan: each target of
 /third_party//botan configures, with the same sources everywhere and the modules of modules.txt
 loaded, none that seeds a generator from the system; a complete configuration is never made again,
-an interrupted one is; an unknown module is refused, naming it; the compiler settings of the
-environment change nothing. Run as `python3 tools/botan/configure_test.py`."""
+an interrupted one is; runs that make one configuration at once all succeed; an unknown module is
+refused, naming it; the compiler settings of the environment change nothing. Run as
+`python3 tools/botan/configure_test.py`."""
 from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 HERE = Path(__file__).resolve().parent
@@ -69,7 +72,7 @@ def module_names() -> list[str]:
 def without_directory(directory: Path, header: str) -> str:
     """The text of directory's build/<header>, with directory's name (and its partial's) as DIR."""
     text = (directory / 'build' / header).read_text()
-    return text.replace(f'{directory}.partial', 'DIR').replace(str(directory), 'DIR')
+    return re.sub(re.escape(str(directory)) + r'(\.partial-\w+)?', 'DIR', text)
 
 
 def times(directory: Path) -> dict[str, int]:
@@ -132,14 +135,40 @@ class ConfigureTest(unittest.TestCase):
 
     def test_an_interrupted_configuration_is_made_again(self) -> None:
         output = self.scratch / 'interrupted'
-        partial = self.scratch / 'interrupted.partial'
-        partial.mkdir()
-        (partial / 'build.h').write_text('half\n')
+        # An interrupted run's partial, untouched for two hours, and a running one's, just made.
+        stale = self.scratch / 'interrupted.partial-stale'
+        running = self.scratch / 'interrupted.partial-running'
+        for partial in (stale, running):
+            partial.mkdir()
+            (partial / 'build.h').write_text('half\n')
+        hours_ago = time.time() - 7200
+        os.utime(stale, (hours_ago, hours_ago))
         result = configure(output, TARGETS['linux-gcc-x86_64'])
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertEqual(listed(result), listed(self.results['linux-gcc-x86_64']))
-        self.assertFalse(partial.exists())
+        self.assertFalse(stale.exists())
+        self.assertTrue(running.exists())
         self.assertTrue((output / 'webcpp-configure.json').is_file())
+
+    def test_concurrent_runs_of_one_configuration_all_succeed(self) -> None:
+        output = self.scratch / 'concurrent'
+        system, compiler, cpu = TARGETS['windows-msvc-x86_64']
+        command = [sys.executable, str(SCRIPT), '--source', str(CHECKOUT), '--modules',
+                   str(MODULES), '--output', str(output), '--os', system, '--cc', compiler,
+                   '--cpu', cpu]
+        # Three rounds of four runs at once, each round from no configuration.
+        for _ in range(3):
+            if output.exists():
+                shutil.rmtree(output)
+            runs = [subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                     text=True) for _ in range(4)]
+            outputs = [run.communicate()[0] for run in runs]
+            for run, text in zip(runs, outputs):
+                self.assertEqual(run.returncode, 0, text)
+                self.assertEqual(text, self.results['windows-msvc-x86_64'].stdout)
+            self.assertTrue((output / 'webcpp-configure.json').is_file())
+            self.assertTrue((output / 'build/build.h').is_file())
+            self.assertEqual(sorted(self.scratch.glob('concurrent.partial-*')), [])
 
     def test_an_unknown_module_is_refused(self) -> None:
         modules = self.scratch / 'unknown.txt'

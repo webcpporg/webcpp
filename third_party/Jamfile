@@ -202,8 +202,10 @@ explicit openssl ;
 # into bin/third_party/botan/config-<hash>; b2 compiles each listed source as
 # an object of its own, with the consumer's properties, never the amalgamation
 # and never a patch (CODING-GUIDELINES.md chapter 5, rule 13). Natively and on
-# Emscripten, with exceptions; each library adds its own canary and define
-# below.
+# Emscripten, with exceptions. A library adds its own canary and define
+# through webcpp-botan.declare's requirements and usage requirements here
+# (webcpp::hash's Task 42, webcpp::crypto's increment 7); the provisioning
+# carries none.
 import webcpp-botan ;
 webcpp-botan.declare $(WEBCPP_ROOT)
     : tools/botan/configure.py tools/botan/source.py tools/botan/pin.json
