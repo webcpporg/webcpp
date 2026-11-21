@@ -11,7 +11,9 @@ directory, b2's bench/<toolset>/<variant>/..., names another variant, or does no
 before anything runs or is written, the guard's `--timing` program as the throughput's; one at
 variant=release is taken (it gets as far as running); a cell whose operation is not the one
 doc/tables/crypto.json states for its family is refused; `--timing` alone stores the guard's cost
-beside the data's throughput, which it keeps, and the page renders it; and `--render-only` refuses
+beside the data's throughput, which it keeps, and the page renders it, with UTC's date; `--timing`
+without data is refused with a message; `--provisional` marks the data, numbers unchanged, and the
+page says the figures are provisional above both tables; and `--render-only` refuses
 data whose build, or whose guard's build, is not variant=release, before it writes the page, and
 renders the committed data as the committed page; and the page always states the load it was
 measured under, warning above half the cores. Run with the names of some cases to run only
@@ -19,6 +21,7 @@ those."""
 
 from __future__ import annotations
 
+import datetime
 import json
 import subprocess
 import sys
@@ -110,26 +113,66 @@ def test_a_timing_program_not_built_at_variant_release_is_refused(scratch: Path)
 
 
 def test_the_guard_is_measured_kept_beside_the_throughput_and_rendered(scratch: Path) -> None:
-    line = json.dumps({'dit': True, 'clear': 12.345, 'set': 0.678, 'iterations': 10000000,
-                       'runs': 5, 'target': 'native', 'compiler': 'clang'})
+    line = json.dumps({'dit': True, 'clear': 12.345, 'set': 0.678, 'clear_fastest': 11.25,
+                       'clear_slowest': 19.75, 'set_fastest': 0.25, 'set_slowest': 1.75,
+                       'iterations': 10000000, 'runs': 5, 'target': 'native',
+                       'compiler': 'clang'})
     exe = program(scratch, 'release', 'if [ "$1" = --measure ]; then '
                   f"echo '{line}'; else exit 3; fi\n", 'timing')
     data, page = scratch / 'data.json', scratch / 'page.adoc'
     committed = json.loads(DATA.read_text())
     data.write_text(json.dumps(committed))
+    before = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
     expect(run('--timing', exe, '--data', data, '--page', page), 0)
     written = json.loads(data.read_text())
     guard = written['timing_guard']
-    if (guard['clear_ns'], guard['set_ns'], guard['dit'], guard['build']) != (
-            12.345, 0.678, True, 'variant=release'):
+    stored = (guard['clear_ns'], guard['clear_fastest_ns'], guard['clear_slowest_ns'],
+              guard['set_ns'], guard['set_fastest_ns'], guard['set_slowest_ns'], guard['dit'],
+              guard['build'])
+    if stored != (12.345, 11.25, 19.75, 0.678, 0.25, 1.75, True, 'variant=release'):
         raise AssertionError(f'the guard was not stored as measured: {guard}')
+    # Every date is UTC's, as the constant-time lane's are (a day's edge decides it, so either of
+    # the dates around the run is taken only when the clock crossed midnight while it ran).
+    utc = {datetime.datetime.now(datetime.timezone.utc).date().isoformat()}
+    if guard['date'] not in utc | {before}:
+        raise AssertionError(f"the guard's date {guard['date']} is not UTC's {utc}")
     if written['cases'] != committed['cases'] or written['date'] != committed['date']:
         raise AssertionError('the throughput was not kept')
+    if 'provisional' in written:
+        raise AssertionError('a measurement without --provisional kept the mark')
     text = page.read_text()
-    for expected in ('[#crypto-performance-timing]', '| 12.3', '| 0.7',
+    for expected in ('[#crypto-performance-timing]', '<<crypto-backends-dit>>', '| 12.3',
+                     '| 11.2', '| 19.8', '| 0.7', '| 0.2', '| 1.8',
                      'The guard sets DIT on this machine', '10,000,000 guards'):
         if expected not in text:
             raise AssertionError(f'{expected!r} is not on the page:\n{text}')
+
+
+def test_timing_alone_without_data_is_refused_with_a_message(scratch: Path) -> None:
+    exe = program(scratch, 'release', FAILS, 'timing')
+    data, page = scratch / 'missing.json', scratch / 'page.adoc'
+    done = run('--timing', exe, '--data', data, '--page', page)
+    expect(done, 1, f'collect.py: {data} cannot be read')
+    if 'Traceback' in done.stderr or 'the stand-in ran' in done.stderr:
+        raise AssertionError(f'a traceback, or the program ran:\n{done.stderr}')
+    if data.exists() or page.exists():
+        raise AssertionError('a file was written')
+
+
+def test_provisional_marks_the_data_and_the_page_says_so(scratch: Path) -> None:
+    committed = json.loads(DATA.read_text())
+    committed.pop('provisional', None)
+    data, page = scratch / 'data.json', scratch / 'page.adoc'
+    data.write_text(json.dumps(committed))
+    expect(run('--render-only', '--data', data, '--page', page), 0)
+    if 'provisional' in page.read_text() or json.loads(data.read_text()) != committed:
+        raise AssertionError('render-only without --provisional marked something')
+    expect(run('--render-only', '--provisional', '--data', data, '--page', page), 0)
+    marked = json.loads(data.read_text())
+    if marked.pop('provisional', None) is not True or marked != committed:
+        raise AssertionError('--provisional did not mark the data alone, numbers unchanged')
+    if page.read_text().count('NOTE: these figures are provisional') != 2:
+        raise AssertionError(f'the page does not say it above both tables:\n{page.read_text()}')
 
 
 def test_render_only_refuses_data_not_built_at_variant_release(scratch: Path) -> None:
@@ -190,6 +233,8 @@ CASES: list[Callable[[Path], None]] = [
     test_an_operation_crypto_json_does_not_state_is_refused,
     test_a_timing_program_not_built_at_variant_release_is_refused,
     test_the_guard_is_measured_kept_beside_the_throughput_and_rendered,
+    test_timing_alone_without_data_is_refused_with_a_message,
+    test_provisional_marks_the_data_and_the_page_says_so,
     test_render_only_refuses_data_not_built_at_variant_release,
     test_the_page_states_the_load_and_warns_above_half_the_cores,
 ]
