@@ -45,8 +45,9 @@ EMSCRIPTEN = ('toolset=emscripten',)
 
 BEARSSL = 'third_party/libs/bearssl'
 
-# The commit BearSSL is pinned at, of the mirror webcpporg/bearssl.
-BEARSSL_COMMIT = '7bea48e5e850ab4cafbe68d3765cdaba13a86d6f'
+# The commit BearSSL is pinned at: webcpporg/bearssl's webcpp branch, upstream 7bea48e with one
+# fix (ECDSA decodes the RFC 6979 nonce at its full length).
+BEARSSL_COMMIT = '32381d6e787a32cbb7a687246349200d78b8ff7c'
 
 BITCOIN = 'third_party/libs/bitcoin'
 
@@ -403,8 +404,8 @@ def bearssl_compiles(root: Path, expected: int) -> str:
 
 def bearssl_canary(library: str) -> str:
     prefix = '_' if sys.platform == 'darwin' else ''
-    return (f'{prefix}webcpp_{library}_bearssl_7bea48e_getentropy__add_third_party_bearssl'
-            '_to_your_link')
+    return (f'{prefix}webcpp_{library}_bearssl_{BEARSSL_COMMIT[:7]}_getentropy'
+            '__add_third_party_bearssl_to_your_link')
 
 
 def test_bearssl_is_built_file_by_file(root: Path) -> None:
