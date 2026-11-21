@@ -6,7 +6,7 @@
 
 // Encrypts the FIPS-197 appendix C.3 block with AES-256 on the block cipher's default backend,
 // checks it, decrypts it again, and prints the backend that ran.
-#include <webcpp/crypto/ciphers/aes.hpp>
+#include <webcpp/crypto/ciphers/aes_block.hpp>
 
 #include <array>
 #include <cstddef>

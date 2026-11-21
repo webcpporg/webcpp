@@ -6,7 +6,7 @@
 
 // A program that uses the AES block cipher's default backend, which on WebAssembly is ctaes, and
 // links none.
-#include <webcpp/crypto/ciphers/aes.hpp>
+#include <webcpp/crypto/ciphers/aes_block.hpp>
 
 #include <array>
 #include <cstdint>
