@@ -340,7 +340,12 @@ exactly its authors' and the program carries only what it calls.
 1. The C library is a submodule under `third_party/libs/<name>`, pinned at a
    commit and never edited. When upstream is not on GitHub, an unmodified
    `webcpporg/<name>` mirror stands in (BearSSL's is `webcpporg/bearssl`),
-   refreshed only when the pin moves.
+   refreshed only when the pin moves. One exception, a security fix upstream
+   does not have yet: a branch `webcpp` of the mirror carries upstream's
+   commit and the fix, one commit each, pinned there and carried to each new
+   pin until upstream has it. BearSSL's has one, of 2026-11-21: ECDSA decodes
+   RFC 6979's nonce at its full length, so that signing does not branch on the
+   nonce's bit length (chapter 15, webcpp::crypto's P-256).
 2. `third_party/Jamfile` builds it from its own sources, file by file, as a
    static library, in the library's own C dialect, on every target and with
    every file: a file that does not apply to a target still compiles, to the
@@ -956,7 +961,7 @@ update --init third_party/libs/<name>`; a build that needs none never looks.
 
 | Target | What it is | Licence |
 | --- | --- | --- |
-| `bearssl` | BearSSL from webcpp's unmodified mirror `webcpporg/bearssl` at `7bea48e`; a static library built file by file by `third_party/Jamfile` with webcpp::crypto's and webcpp::hash's canaries (hash's when `libs/hash` is checked out), on every target; `WEBCPP_CRYPTO_HAS_BEARSSL=1`, and `WEBCPP_HASH_HAS_BEARSSL=1` with hash's canary | MIT |
+| `bearssl` | BearSSL from webcpp's mirror `webcpporg/bearssl` at `32381d6`, its branch `webcpp`: upstream's `7bea48e` and one fix, ECDSA's nonce decoded at its full length (chapter 5 rule 1); a static library built file by file by `third_party/Jamfile` with webcpp::crypto's and webcpp::hash's canaries (hash's when `libs/hash` is checked out), on every target; `WEBCPP_CRYPTO_HAS_BEARSSL=1`, and `WEBCPP_HASH_HAS_BEARSSL=1` with hash's canary | MIT |
 | `bips` | `bitcoin/bips` at `927b6de9`, shallow, test data: crypto's tests read BIP340's `bip-0340/test-vectors.csv` and BIP341's `bip-0341/wallet-test-vectors.json` at run time under the directory its define `WEBCPP_TEST_BIPS` gives, on every target (wasmtime is given it, `webcpp.data`), and run again when it changes | BSD-2-Clause, as BIP340's header states |
 | `blake2_vectors` | BLAKE2's reference code package `BLAKE2/BLAKE2` at `ed1974e` (2023-02-12), the submodule `third_party/libs/blake2`, shallow, test data that nothing compiles: hash's tests read `testvectors/blake2b-kat.txt` and `testvectors/blake2-kat.json` at run time under the directory its define `WEBCPP_TEST_BLAKE2_VECTORS` gives, on every target (wasmtime is given it, `webcpp.data`), and run again when one of them changes | CC0-1.0 |
 | `blake3` | BLAKE3 1.8.7 at `f3149ec`; `third_party/Jamfile` compiles `c/blake3.c`, `blake3_dispatch.c` and `blake3_portable.c` on every target, the intrinsics files on their instruction sets alone (an exception to chapter 5 rule 2), with webcpp::hash's canary; `WEBCPP_HASH_HAS_BLAKE3=1` | CC0-1.0, Apache-2.0, or Apache-2.0 with LLVM exception |
@@ -7168,9 +7173,18 @@ and not built is in chapter 17.
   `bearssl_verdicts.supp`. dudect times `sign_ecdsa` and `ecdh_x` against the
   scalar natively and on wasip2. The sizes lane measures signing,
   verification and `ecdh_x`, and the throughput page the same three, from
-  release builds.
+  release builds. The checkers ran on 2026-11-21 in an arm64 Linux container
+  (`linux-lint:arm64`, clang 18, Valgrind 3.22), the lane's CI command: both
+  found upstream BearSSL's signing branching on the RFC 6979 nonce's bit
+  length, `br_ecdsa_i31_bits2int` decoding it with its actual length and
+  `br_i31_rshift` looping by it (a Minerva-class leak), and nothing once
+  webcpp's BearSSL carried the fix, one commit setting the order's length
+  before the shift (chapter 5 rule 1); the planted programs failed and dudect
+  passed there too.
   Source: `libs/crypto/test/constant_time/Jamfile`, `test/sizes/Jamfile`,
-  `bench/throughput.cpp`.
+  `bench/throughput.cpp`, `doc/backends.adoc` (libs/crypto);
+  https://github.com/webcpporg/bearssl/commit/32381d6e787a32cbb7a687246349200d78b8ff7c
+  (the fix) and BearSSL's `src/ec/ecdsa_i31_bits.c` at `7bea48e` (upstream).
 
 **Errors and exceptions.**
 
@@ -7196,7 +7210,8 @@ and not built is in chapter 17.
   measured, a port is a new thing to review.
   Source: `libraries/crypto/openspec/changes/genesis/design.md` D1
   (proposals).
-- **BearSSL comes unmodified from webcpp's mirror `webcpporg/bearssl`; its
+- **BearSSL comes from webcpp's mirror `webcpporg/bearssl`, upstream's code
+  with one security fix on its branch `webcpp` (chapter 5 rule 1); its
   notice ships as `LICENSE-BEARSSL.txt`, and webcpp's canary lives in the
   library's `src/`. The backend names its code itself: the CTR class of
   AES-NI, then POWER8, then `aes_ct64`, and GHASH by PCLMUL, then POWER8,
