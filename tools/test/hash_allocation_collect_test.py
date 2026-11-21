@@ -10,8 +10,9 @@ into doc/measurements.allocation.json and renders doc/allocation.adoc, builds it
 release builds: an output of a program whose build directory, b2's
 bench/<name>.test/<toolset>/<variant>/..., names another variant (the lanes' test/ directories
 included), or does not say, is refused before anything is written; one at variant=release is
-taken and the data records the build and the toolset; `--render-only` and `--check` refuse data
-whose build is not variant=release. Run with the names of some cases to run only those."""
+taken and the data records the build and the toolset; backends::botan's records give one row per
+operation and target; `--render-only` and `--check` refuse data whose build is not
+variant=release. Run with the names of some cases to run only those."""
 
 from __future__ import annotations
 
@@ -89,6 +90,47 @@ def test_an_output_built_at_variant_release_is_collected(scratch: Path) -> None:
     expect(run('--check', '--data', data, '--page', page), 0)
 
 
+BOTAN_RECORDS = (
+    'record operation=counter c_counted=1\n'
+    'record operation=digest_of tag=digests::md5 backend=botan target=native call=1 new=1 c=2 '
+    'counted=1\n'
+    'record operation=digest_of tag=digests::md5 backend=botan target=native call=2 new=1 c=2 '
+    'counted=1\n'
+    'record operation=digest_of tag=digests::sm3 backend=botan target=native call=1 new=4 c=13 '
+    'counted=1\n'
+    'record operation=digest_of tag=digests::sm3 backend=botan target=native call=2 new=4 c=13 '
+    'counted=1\n'
+    'record operation=argon2id tag=kdfs::argon2id backend=botan target=native call=1 new=6 c=9 '
+    'counted=1\n'
+    'record operation=argon2id tag=kdfs::argon2id backend=botan target=native call=2 new=5 c=8 '
+    'counted=1\n'
+)
+
+
+def test_botan_s_records_give_one_row_per_operation(scratch: Path) -> None:
+    """backends::botan's records, one per call of each tag, become one row per operation and
+    target: the range over its tags, and a steady call's counts where they differ; Botan's
+    argon2id is not libsodium's."""
+    base = (scratch / 'bin/libs/hash/bench/allocation_botan_release.test/clang-darwin-21/release'
+            / 'cxxstd-20-iso')
+    base.mkdir(parents=True)
+    (base / 'allocation_botan_release.output').write_text(BOTAN_RECORDS)
+    data, page = scratch / 'data.json', scratch / 'page.adoc'
+    page.write_text(PAGE.read_text())
+    expect(run('--lane', f'native={scratch / "bin"}', '--data', data, '--page', page), 0)
+    table = page.read_text()
+    for row in ('| `digest_of` | `botan` | native | 1 to 4 | Botan: 2 to 13 C library calls '
+                "(operator new's included), over its 2 algorithms; the same in a steady call",
+                '| `argon2id` | `botan` | native | 6 | Botan: 9 C library calls (operator '
+                "new's included), of kdfs::argon2id; a steady call: 5 operator new, 8 C library "
+                'calls'):
+        if row not in table:
+            raise AssertionError(f'{row!r} is not in the table:\n{table}')
+    if '| `argon2id` | `sodium`' in table:
+        raise AssertionError(f"Botan's argon2id was rendered as libsodium's:\n{table}")
+    expect(run('--check', '--data', data, '--page', page), 0)
+
+
 def test_render_only_and_check_refuse_data_not_built_at_variant_release(scratch: Path) -> None:
     committed = json.loads(DATA.read_text())
     page = scratch / 'page.adoc'
@@ -117,6 +159,7 @@ def test_the_committed_data_is_from_release_builds_and_renders_the_page(scratch:
 CASES: list[Callable[[Path], None]] = [
     test_an_output_not_built_at_variant_release_is_refused,
     test_an_output_built_at_variant_release_is_collected,
+    test_botan_s_records_give_one_row_per_operation,
     test_render_only_and_check_refuse_data_not_built_at_variant_release,
     test_the_committed_data_is_from_release_builds_and_renders_the_page,
 ]

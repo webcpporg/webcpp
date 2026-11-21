@@ -9326,7 +9326,7 @@ summary.
   `organization/openspec/changes/site-increments-4-5/specs/site/spec.md`
   (proposals).
 
-### hash (hashing and key derivation over Boost.Hash2 and C backends; wrapper; accepted 2026-11-14, increments 1, 2, 3, 4, 5 and 7 built, not merged)
+### hash (hashing and key derivation over Boost.Hash2 and C backends; wrapper; accepted 2026-11-14, increments 1 to 7 built, not merged)
 
 webcpp::hash is one entry point for hashing and key derivation in a C++20
 program on every target webcpp has, a wrapper (`"port-of": null`). Increment 1
@@ -9355,10 +9355,18 @@ Argon2id with every parameter of RFC 9106; and the key derivations of
 standards (`kdf_standards.hpp`), SP 800-108's KBKDF, SP 800-56C's one-step KDF
 and ANSI X9.63's KDF, which have no default backend; increment 5 gives them
 BearSSL's MD5, SHA-1, SHA-2, TLS 1.0's MD5-SHA1, SHAKE and HMAC, each reached
-only by naming `backends::bearssl`. The C libraries are built by
+only by naming `backends::bearssl`; increment 6 gives them Botan 3.14.1's
+surface, each reached only by naming `backends::botan` (natively and on
+Emscripten, in a program built with exceptions): its digests, Streebog,
+Whirlpool and Skein-512 among them, its MACs, HKDF, PBKDF2, Argon2, scrypt and
+the key derivations of standards, and bcrypt and bcrypt_pbkdf
+(`bcrypt.hpp`), with their heavy forms `async_bcrypt`, `async_bcrypt_pbkdf`
+and `async_bcrypt_verify`. The C libraries are built by
 `third_party/Jamfile` (`xkcp`, `blake3`, `sodium`, `bearssl`, each with a
-canary), their own suites by the `c-suites` lane (`test/c_suites`), the
-examples are in `example/` and the documentation in `doc/`. Every function
+canary), Botan by `tools/webcpp-botan.jam` as `/third_party//botan` (hash's
+canary in `src/canary_botan.cpp`; designs D43 to D45), their own suites, and
+Botan's, by the `c-suites` lane (`test/c_suites`), the examples are in
+`example/` and the documentation in `doc/`. Every function
 reports failure as a `boost::system::result`, takes its data as `std::span` and
 allocates nothing in webcpp's own code; increment 7 adds an asynchronous family
 in `async.hpp` over webcpp::asio (any completion token, Cobalt's `use_op`
@@ -9406,10 +9414,14 @@ and G4); the proposal, with the specification, the design and the plan, is in
   derivations of standards, each reached only by naming `backends::openssl`;
   the fifth, built, is BearSSL's MD5, SHA-1, SHA-2, TLS 1.0's MD5-SHA1 and SHAKE
   through `digest_of` and `hasher`, and its HMAC through `mac`, each reached
-  only by naming `backends::bearssl`; the seventh, built, adds the browser
-  backend over WebCrypto through a parallel asynchronous family, whose cells
-  `doc/capabilities.json` marks asynchronous only; the sixth widens Botan's
-  surface. Across the built increments every tag that two backends or more
+  only by naming `backends::bearssl`; the sixth, built, is Botan's surface
+  through the families, the key derivations and bcrypt, each reached only by
+  naming `backends::botan`, which the stream provisions itself (design D43),
+  whose column is read at 3.14.1 (design D44) and which needs exceptions,
+  natively and on Emscripten, its lanes MSVC's included (design D45); the
+  seventh, built, adds the browser backend over WebCrypto through a parallel
+  asynchronous family, whose cells `doc/capabilities.json` marks asynchronous
+  only. Across the built increments every tag that two backends or more
   have is checked to give the same bytes on each pair of them, on random cases.
   Source: `libraries/hash/openspec/changes/genesis/reference/spec.md` section
   1.5 (proposals).

@@ -13,7 +13,8 @@ passes on what it wrote, and fails naming `python3 tools/hash/doc_tables.py --wr
 generated file was edited by hand, is missing or is left over. A guide that lacks a function of
 the capability table, or describes one it does not have, fails, and so does a use case whose
 example is not there, and so does a function of the capability table without a default that a
-backend of the order hash2, xkcp, blake3, sodium has (one that none has, as kbkdf, has none). Every
+backend of the order hash2, xkcp, blake3, sodium has (one that none has, as kbkdf, has none), or
+with a default outside that order (bcrypt given botan, kbkdf given openssl). Every
 function's default is the capability table's, `hash2` for HKDF whatever the measurements say. A
 family's tag (spec 2.15) names a default of the order hash2, xkcp, blake3, sodium, or none, and
 one without its cell fails; a partial cell says what it refuses. A tag of `digests` or `macs`
@@ -229,6 +230,23 @@ def test_a_function_without_a_backend_of_the_order_has_no_default(scratch: Path)
     expect(done.returncode == 1, 'a function of hash2 without a default was rendered')
     expect('the function kbkdf has no default, though hash2' in done.stderr, done.stderr)
 
+
+
+def test_a_function_s_default_is_of_the_order(scratch: Path) -> None:
+    """No measurement or backend outside the order decides a function's default (designs D33 and
+    D34): bcrypt, which botan alone has, keeps none; given botan as its default, or kbkdf given
+    openssl, each is refused, as a family's tag is."""
+    library = scratch_library(scratch)
+
+    def outside_the_order(table: dict) -> None:
+        family_row(table, 'bcrypt')['default'] = 'botan'
+        family_row(table, 'kbkdf')['default'] = 'openssl'
+    edit_capabilities(library, outside_the_order)
+    done = run(library, '--write')
+    expect(done.returncode == 1, 'a function default outside the order was rendered')
+    expect('the function bcrypt has the default botan, which is not one of hash2, xkcp, blake3, '
+           'sodium' in done.stderr, done.stderr)
+    expect('the function kbkdf has the default openssl' in done.stderr, done.stderr)
 
 def family_row(table: dict, name: str) -> dict:
     for algorithm in table['algorithms']:
@@ -672,6 +690,7 @@ CASES: list[Callable[[Path], None]] = [
     test_a_default_names_only_its_functions_backends,
     test_a_tag_without_a_default_is_not_said_a_type,
     test_a_function_without_a_backend_of_the_order_has_no_default,
+    test_a_function_s_default_is_of_the_order,
     test_each_backend_s_constant_time_sources_are_together,
     test_an_asynchronous_backend_is_said,
     test_an_exceptions_only_backend_is_said,
