@@ -343,9 +343,13 @@ exactly its authors' and the program carries only what it calls.
    refreshed only when the pin moves. One exception, a security fix upstream
    does not have yet: a branch `webcpp` of the mirror carries upstream's
    commit and the fix, one commit each, pinned there and carried to each new
-   pin until upstream has it. BearSSL's has one, of 2026-11-21: ECDSA decodes
-   RFC 6979's nonce at its full length, so that signing does not branch on the
-   nonce's bit length (chapter 15, webcpp::crypto's P-256).
+   pin until upstream has it. The fix is minimal, preserves every value the
+   library computes, and is reported upstream (an owner item). A library
+   whose upstream is not mirrored under webcpporg takes such a fix the same
+   way, in a `webcpporg/<name>` fork created for it, with the same `webcpp`
+   branch rule. BearSSL's has one, of 2026-11-21: ECDSA decodes RFC 6979's
+   nonce at its full length, so that signing does not branch on the nonce's
+   bit length (chapter 15, webcpp::crypto's P-256).
 2. `third_party/Jamfile` builds it from its own sources, file by file, as a
    static library, in the library's own C dialect, on every target and with
    every file: a file that does not apply to a target still compiles, to the
