@@ -7330,8 +7330,20 @@ and not built is in chapter 17.
   recognise.
   Source: `doc/memory.adoc`, `example/openssl_memory.cpp`,
   `test/openssl_memory/fail_init_test.cpp` (libs/crypto).
+- **A resource given to crypto fails by throwing, never by returning null:
+  `allocate` is declared never to return null (`returns_nonnull` in libc++
+  and libstdc++), so an optimiser removes any check of its result and a null
+  is written through in a release build; without exceptions a resource that
+  cannot allocate ends the process, as `std::pmr`'s own resources do.** The
+  adapter checks no result of `allocate` and turns what a resource throws
+  into OpenSSL's null only with exceptions.
+  Source: `doc/memory.adoc`, `include/webcpp/crypto/backends/openssl.hpp`
+  (libs/crypto).
 - **The option's programs are native, in `test/openssl_memory`, each declared
-  with exceptions and without by the rule `memory-run`: `adapter`;
+  with exceptions and without by the rule `memory-run`, except `fail_second`
+  and `fail_init`, which run with exceptions only, since a resource that cannot
+  allocate ends the process without them and OpenSSL sees no failure:
+  `adapter`;
   `everything`, `late`, `foreign`, `fresh_install`, `forgotten`, `replaced`,
   `second_install`, `fail_second`, `fail_init`, `fail_init_threads` (the
   same program on an OpenSSL built with threads) and `handshake`, which count
