@@ -7212,15 +7212,17 @@ and not built is in chapter 17.
   `bearssl_verdicts.supp`. dudect times `sign` and `agree` against the
   scalar natively and on wasip2. The sizes lane measures signing,
   verification and `agree`, and the throughput page the same three, from
-  release builds. The checkers ran on 2026-11-21 (the signing before its
-  low-S step; the rerun with it is pending) in an arm64 Linux container
-  (`linux-lint:arm64`, clang 18, Valgrind 3.22), the lane's CI command: both
-  found upstream BearSSL's signing branching on the RFC 6979 nonce's bit
-  length, `br_ecdsa_i31_bits2int` decoding it with its actual length and
-  `br_i31_rshift` looping by it (a Minerva-class leak), and nothing once
-  webcpp's BearSSL carried the fix, one commit setting the order's length
+  release builds. The checkers ran on 2026-11-21 and again on 2026-11-22 (the
+  rerun with the signing's low-S step found nothing under either) in an arm64
+  Linux container (`linux-lint:arm64`, clang 18, Valgrind 3.22), the lane's CI
+  command: both found upstream BearSSL's signing branching on the RFC 6979
+  nonce's bit length, `br_ecdsa_i31_bits2int` decoding it with its actual
+  length and `br_i31_rshift` looping by it (a Minerva-class leak), and nothing
+  once webcpp's BearSSL carried the fix, one commit setting the order's length
   before the shift (chapter 5 rule 1); the planted programs failed and dudect
-  passed there too.
+  passed there too: dudect judged P-256's signing with its low-S step (|t|
+  1.70 on Linux, 1.63 natively on an Apple M5 Max, release, one run each;
+  provisional, measured again in the final quiet pass).
   Source: `libs/crypto/test/constant_time/Jamfile`, `test/sizes/Jamfile`,
   `bench/throughput.cpp`, `doc/backends.adoc` (libs/crypto);
   https://github.com/webcpporg/bearssl/commit/32381d6e787a32cbb7a687246349200d78b8ff7c
