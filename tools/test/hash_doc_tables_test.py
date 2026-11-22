@@ -21,7 +21,11 @@ one without its cell fails; a partial cell says what it refuses. A tag of `diges
 sits in its namespace's chapter. A backend of the asynchronous family alone (backends::webcrypto)
 is named so in every table, with its targets as the guide spells them, and is never a default; a
 row of an unknown kind fails. Each backend's constant-time statements are one bullet. llms.txt's
-defaults are the capability table's, not a text written once.
+defaults are the capability table's, not a text written once. The data chapter's section on DIT
+lists every row of the keyed chapters (MACs, key derivation, password hashing) but a type, as a
+call names it, among the functions that set DIT, and their types among Boost.Hash2's aliases that
+do not, so that a row the table gains is said; it names the guard's measured cost only where
+performance.adoc is, and llms.txt points to it.
 Without doc/measurements.json the tables say so, carry no measured column and render no
 measurements.adoc; with it (a fixture in its shape) they carry the throughput and the size, and
 measurements.adoc renders it as the dated reference that decides nothing; a hand edit of the
@@ -512,6 +516,43 @@ def test_each_backend_s_constant_time_sources_are_together(scratch: Path) -> Non
         expect(len(bullets) == len(set(bullets)), f'{name}: {bullets}')
 
 
+def test_the_dit_section_follows_the_table(scratch: Path) -> None:
+    library = scratch_library(scratch)
+    files = write_ok(library)
+    chapter = files['backends.adoc']
+    section = chapter.split('[#hash-backends-dit]')[1].split('=== The default backends')[0]
+    sets, rest = section.split('The functions that do not:')
+    for named in ('`mac<macs::hmac<digests::sha2_256>>`', '`mac<macs::siphash_2_4>`', '`hkdf`',
+                  '`blake2b_subkey`', '`x963kdf`', '`argon2<kdfs::argon2id>`', '`bcrypt_pbkdf`',
+                  '`digest_of<digests::blake2b>`', 'the `blake3` class', '`bcrypt_verify`'):
+        expect(named in sets, f'{named} is not among the functions that set DIT:\n{sets}')
+    for named in ('`hmac_sha2_256`', '`siphash_64`', '`hmac`,'):
+        expect(named in rest and named not in sets, f'{named} is not among the aliases:\n{rest}')
+    expect('`mac<macs::hmac<D>>`' in rest, 'the aliases do not name the guarded call')
+    expect('<<hash-performance-timing>>' not in section, 'the cost named without its chapter')
+    expect('#hash-backends-dit)' in files['llms.txt'], 'llms.txt does not point to the section')
+    # A row the table gains in a keyed chapter is said: a function among those that set DIT, a
+    # type among the aliases; and the measured cost is named once its chapter is there.
+    table = json.loads((library / 'doc/capabilities.json').read_text(encoding='utf-8'))
+    macs = next(a for a in table['algorithms'] if a['chapter'] == 'macs')
+    tag = next(f for f in macs['functions'] if f['kind'] == 'mac')
+    alias = next(f for f in macs['functions'] if f['kind'] == 'type')
+    macs['functions'] += [{**tag, 'name': 'macs::fixture_mac'}, {**alias, 'name': 'fixture_alias'}]
+    (library / 'doc/capabilities.json').write_text(json.dumps(table), encoding='utf-8')
+    guide = json.loads((library / 'doc/guide.json').read_text(encoding='utf-8'))
+    guide['functions']['macs::fixture_mac'] = guide['functions'][tag['name']]
+    guide['functions']['fixture_alias'] = guide['functions'][alias['name']]
+    (library / 'doc/guide.json').write_text(json.dumps(guide), encoding='utf-8')
+    (library / 'doc/performance.adoc').write_text('x\n', encoding='utf-8')
+    section = write_ok(library)['backends.adoc'].split('[#hash-backends-dit]')[1]
+    sets, rest = section.split('The functions that do not:')
+    expect('`mac<macs::fixture_mac>`' in sets, f'a new MAC is not said:\n{sets}')
+    expect('`fixture_alias`' in rest.split('=== The default backends')[0],
+           f'a new alias is not said:\n{rest}')
+    expect('<<hash-performance-timing>>' in rest.split('=== The default backends')[0],
+           'the measured cost is not named')
+
+
 def test_an_asynchronous_backend_is_said(scratch: Path) -> None:
     # backends::webcrypto serves the asynchronous family alone (its "asynchronous_only" field):
     # every table names it with that note, and a synchronous call never names it.
@@ -692,6 +733,7 @@ CASES: list[Callable[[Path], None]] = [
     test_a_function_without_a_backend_of_the_order_has_no_default,
     test_a_function_s_default_is_of_the_order,
     test_each_backend_s_constant_time_sources_are_together,
+    test_the_dit_section_follows_the_table,
     test_an_asynchronous_backend_is_said,
     test_an_exceptions_only_backend_is_said,
     test_without_measurements_the_tables_say_so,
