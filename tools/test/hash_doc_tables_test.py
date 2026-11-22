@@ -526,6 +526,13 @@ def test_the_dit_section_follows_the_table(scratch: Path) -> None:
                   '`blake2b_subkey`', '`x963kdf`', '`argon2<kdfs::argon2id>`', '`bcrypt_pbkdf`',
                   '`digest_of<digests::blake2b>`', 'the `blake3` class', '`bcrypt_verify`'):
         expect(named in sets, f'{named} is not among the functions that set DIT:\n{sets}')
+    # bcrypt_verify always holds an engaged guard: it is a password function, never one keyed by
+    # its arguments, whose unkeyed calls hold a disengaged guard.
+    password = next(line for line in sets.splitlines() if line.startswith('* Password hashing:'))
+    by_arguments = next(line for line in sets.splitlines()
+                        if line.startswith('* Keyed by their arguments:'))
+    expect('`bcrypt`, `bcrypt_verify`' in password, f'bcrypt_verify is not after bcrypt:\n{sets}')
+    expect('bcrypt_verify' not in by_arguments, f'bcrypt_verify is said disengaged:\n{sets}')
     for named in ('`hmac_sha2_256`', '`siphash_64`', '`hmac`,'):
         expect(named in rest and named not in sets, f'{named} is not among the aliases:\n{rest}')
     expect('`mac<macs::hmac<D>>`' in rest, 'the aliases do not name the guarded call')

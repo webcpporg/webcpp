@@ -97,16 +97,17 @@ KEYED_CHAPTERS = {'macs': 'MACs', 'kdfs': 'Key derivation', 'password_hashing': 
 # How a call names a row of each kind: a tag through its family's template, a function by its
 # name.
 CALLED_AS = {'mac': 'mac<{}>', 'kdf': 'argon2<{}>', 'digest': 'digest_of<{}>'}
+# The functions a keyed row's cell also holds, which the table lists under that row: bcrypt's
+# verification, always keyed, listed after bcrypt.
+ALSO_KEYED = {'bcrypt': 'bcrypt_verify'}
 # The keyed calls of a row the keyed chapters do not hold, each with the row it is a call of: the
-# keyed modes of a digest (design D1, engaged by the arguments, D4) and bcrypt's verification,
-# which the table lists under bcrypt.
+# keyed modes of a digest (design D1), keyed by their arguments (D4).
 KEYED_CALLS = (
     ('digests::blake2b', '`digest_of<digests::blake2b>` and `hasher<digests::blake2b>` (`make`, '
      '`update`, `finish`) when the options carry a key'),
     ('blake3', 'the `blake3` class in its keyed, key-derivation and seeded keyed modes (a '
      'non-empty byte seed, a non-zero integer seed: BLAKE3\'s keyed hash): `keyed`, `derive_key`, '
      'those constructors, and `update`, `result`, `squeeze` and `reset` of such an object'),
-    ('bcrypt', '`bcrypt_verify`'),
 )
 APPLE_DIT = ('https://developer.apple.com/documentation/xcode/'
              'writing-arm64-code-for-apple-platforms'
@@ -677,8 +678,9 @@ def llms_txt(data: Data) -> str:
              'are what a domain library builds from these functions; the guide shows them as '
              'examples, never as this library\'s API.', '',
              'Timing: every MAC, key derivation and password hash, and BLAKE2b\'s and BLAKE3\'s '
-             'keyed modes, set 64-bit ARM\'s DIT (data-independent timing) around each call where '
-             'the CPU has it, on every backend, and leave the thread\'s DIT as they found it; '
+             'keyed modes, set DIT (data-independent timing) around each call on 64-bit ARM under '
+             'Apple\'s systems and Linux where the CPU has FEAT_DIT, on every synchronous backend, '
+             'and leave the thread\'s DIT as they found it; '
              'unkeyed digests and Boost.Hash2\'s hmac<H> by alias do not, so an HMAC with DIT is '
              f'mac<macs::hmac<D>>. [Section]({page}#hash-backends-dit)', '',
              f'- [The guide]({page}): every chapter, example and table',
@@ -736,6 +738,8 @@ def keyed_rows(data: Data) -> tuple[dict[str, list[str]], list[str]]:
             else:
                 called = CALLED_AS.get(function['kind'], '{}').format(function['name'])
                 keyed.setdefault(algorithm['chapter'], []).append(called)
+                if function['name'] in ALSO_KEYED:
+                    keyed[algorithm['chapter']].append(ALSO_KEYED[function['name']])
     return keyed, aliases
 
 
@@ -748,19 +752,20 @@ def dit_section(data: Data) -> list[str]:
         '64-bit ARM\'s DIT (data-independent timing) bit, PSTATE.DIT, makes the instructions Arm '
         'lists take a time independent of their data, and Apple requires it of constant-time code '
         f'({link("Apple, enable DIT for constant-time cryptographic operations", APPLE_DIT)}). '
-        'None of the libraries hash calls sets it, so hash does: every function that computes on '
-        'a key, a password or a key derivation\'s secret input runs its whole body inside '
-        '`detail::timing_guard`, on every backend, which on 64-bit ARM under macOS, iOS, Linux '
-        'and Android, where the CPU has FEAT_DIT (`hw.optional.arm.FEAT_DIT` on Apple\'s systems, '
-        '`HWCAP_DIT` on Linux), sets DIT for the call and returns with the thread\'s DIT as it '
-        'found it: clear when it was clear, set when the program set it itself (Apple\'s '
-        '`timingsafe_enable_if_supported`) or an outer call did. An error and an exception leave '
-        'it as found too, and DIT is a thread\'s own state, so a call never changes another '
-        'thread\'s. A program does nothing. Elsewhere the guard executes no instruction: on x86 '
-        'the counterpart, DOITM, is a register only the kernel writes; on WebAssembly the engine '
-        'decides; on Windows on ARM64 no documented way to ask whether the CPU has FEAT_DIT was '
-        'found, and DIT\'s instructions trap on a CPU without it.', '',
-        'The functions that set DIT, on every backend of their cells:', '']
+        'None of the libraries hash calls sets it, so hash does: every function that computes '
+        'on a key, a password or a key derivation\'s secret input runs its whole body inside '
+        '`detail::timing_guard`, on every synchronous backend, which on 64-bit ARM under '
+        'macOS, iOS, Linux and Android, where the CPU has FEAT_DIT (`hw.optional.arm.FEAT_DIT` '
+        'on Apple\'s systems, `HWCAP_DIT` on Linux), sets DIT for the call and returns with '
+        'the thread\'s DIT as it found it: clear when it was clear, set when the program set '
+        'it itself (Apple\'s `timingsafe_enable_if_supported`) or an outer call did. An error '
+        'and an exception leave it as found too, and DIT is a thread\'s own state, so a call '
+        'never changes another thread\'s. A program does nothing. Elsewhere the guard executes '
+        'no instruction: on x86 the counterpart, DOITM, is a register only the kernel writes; '
+        'on WebAssembly the engine decides; on Windows on ARM64 no documented way to ask '
+        'whether the CPU has FEAT_DIT was found, and DIT\'s instructions trap on a CPU without '
+        'it.', '',
+        'The functions that set DIT, on every synchronous backend of their cells:', '']
     for chapter, names in keyed.items():
         lines.append(f'* {KEYED_CHAPTERS[chapter]}: {listed([f"`{name}`" for name in names])}.')
     calls = [text for row, text in KEYED_CALLS if row in data.functions]

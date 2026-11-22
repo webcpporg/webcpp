@@ -10,13 +10,14 @@ renders doc/performance.adoc, builds its page only from release builds: a progra
 directory, b2's bench/<toolset>/<variant>/..., names another variant, or does not say, is refused
 before anything runs or is written, the guard's `--timing` program as the throughput's; one at
 variant=release is taken (it gets as far as running); `--timing` alone stores the guard's cost
-beside the data's throughput, which it keeps, with UTC's date, and the page renders it;
-`--provisional` marks the guard's figures and the page says so, a measurement without it clears
-the mark, and it is refused without `--timing`; `--timing` without data, a timing line that is not
-the form collect.py reads and a "timing_guard" that is not the form it writes are refused with a
-message, not a traceback, before anything is written; and `--render-only` refuses data whose
-build, or whose guard's build, is not variant=release, before it writes the page, and renders the
-committed data as the committed page. Run with the names of some cases to run only those."""
+beside the data's throughput, which it keeps, with UTC's date, and the page renders it; `--exe`
+alone keeps the data's guard, and replaces data it cannot keep, saying so, with UTC's date;
+`--provisional` marks the guard's figures and the page says so, a measurement without it clears the
+mark, and it is refused without `--timing`; `--timing` without data, a timing line that is not the
+form collect.py reads and a "timing_guard" that is not the form it writes are refused with a
+message, not a traceback, before anything is written; and `--render-only` refuses data whose build,
+or whose guard's build, is not variant=release, before it writes the page, and renders the committed
+data as the committed page. Run with the names of some cases to run only those."""
 
 from __future__ import annotations
 
@@ -142,6 +143,39 @@ def test_the_guard_is_measured_kept_beside_the_throughput_and_rendered(scratch: 
         raise AssertionError('the guard is not rendered after the throughput')
 
 
+def throughput_program(scratch: Path) -> Path:
+    """A stand-in of bench/pbkdf2_sha512 at variant=release with one variant, hash2, whose key is
+    right."""
+    line = json.dumps({'key_correct': True, 'median_ms': 900.0, 'runs_ms': [899.0, 901.0],
+                       'compiler': 'clang', 'iterations': 1000000})
+    return program(scratch, 'release', 'if [ "$1" = --list ]; then echo hash2; '
+                   f"else echo '{line}'; fi\n")
+
+
+def test_the_throughput_alone_keeps_the_guard_or_replaces_bad_data(scratch: Path) -> None:
+    data, page = scratch / 'data.json', scratch / 'page.adoc'
+    committed = json.loads(DATA.read_text())
+    data.write_text(json.dumps(committed))
+    exe = throughput_program(scratch)
+    utc = {datetime.datetime.now(datetime.timezone.utc).date().isoformat()}
+    expect(run('--exe', f'native={exe}', '--invocations', '1', '--data', data, '--page', page), 0)
+    written = json.loads(data.read_text())
+    if written['timing_guard'] != committed['timing_guard']:
+        raise AssertionError("a measurement of the throughput alone did not keep the guard")
+    utc.add(datetime.datetime.now(datetime.timezone.utc).date().isoformat())
+    if written['date'] not in utc or [c['median_ms'] for c in written['cases']] != [900.0]:
+        raise AssertionError(f'the throughput was not stored as measured, with UTC\'s date: '
+                             f'{written["date"]}, {written["cases"]}')
+    # Data it cannot keep, of another build or not JSON, is replaced, and the message says so.
+    for bad in (json.dumps({**committed, 'build': 'variant=debug'}), 'not json'):
+        data.write_text(bad)
+        done = run('--exe', f'native={exe}', '--invocations', '1', '--data', data, '--page',
+                   page)
+        expect(done, 0, 'the guard is not kept')
+        if 'timing_guard' in json.loads(data.read_text()) or 'Traceback' in done.stderr:
+            raise AssertionError(f'bad data was not replaced cleanly:\n{done.stderr}')
+
+
 def test_provisional_marks_the_guard_and_a_measurement_without_it_clears_it(
         scratch: Path) -> None:
     data, page = scratch / 'data.json', scratch / 'page.adoc'
@@ -240,6 +274,7 @@ CASES: list[Callable[[Path], None]] = [
     test_a_program_not_built_at_variant_release_is_refused,
     test_a_program_built_at_variant_release_is_measured,
     test_a_timing_program_not_built_at_variant_release_is_refused,
+    test_the_throughput_alone_keeps_the_guard_or_replaces_bad_data,
     test_the_guard_is_measured_kept_beside_the_throughput_and_rendered,
     test_provisional_marks_the_guard_and_a_measurement_without_it_clears_it,
     test_timing_alone_without_data_is_refused_with_a_message,
