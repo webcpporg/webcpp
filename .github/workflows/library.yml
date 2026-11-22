@@ -310,7 +310,11 @@ jobs:
     needs: plan
     if: needs.plan.outputs.has-own-lanes == 'true'
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    # crypto's constant-time lane is followed by dudect's judge, whose reruns of a case under
+    # wasmtime may last up to 1800 s each: 120 minutes there, 60 elsewhere. Several wasip2 cases each
+    # needing two reruns could exceed 120 minutes, which cancels the job (rare; the evidence is
+    # still in the log).
+    timeout-minutes: ${{ (matrix.library == 'crypto' && matrix.lane == 'constant-time') && 120 || 60 }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.own-lanes) }}
@@ -409,11 +413,33 @@ jobs:
           job: own-${{ matrix.id || matrix.name }}
 
       # It registers its toolset in .local/user-config.jam, prints its b2 command and runs it.
+      # crypto's constant-time lane on wasip2 runs dudect_sodium and dudect_secp256k1 under
+      # wasmtime for minutes, near or past the launcher's default bound of 600 s, so it gets 1800
+      # (run.sh rejects an empty value, so the fallback is the default).
       - name: Own lane
         id: lane
         env:
           LANE: ${{ toJSON(matrix) }}
+          WEBCPP_WASIP2_TEST_TIMEOUT: ${{ (matrix.library == 'crypto' && matrix.lane == 'constant-time') && '1800' || '600' }}
         run: python3 tools/ci/matrix.py own-lane "$LANE"
+
+      # crypto's constant-time lane: every dudect output printed, a warning for every |t| of 10
+      # or more, and on a runner GitHub hosts a case over 10 measured again in two fresh
+      # processes, failing when two of the three exceed 10 (libs/crypto's change api-gaps, D7).
+      # The launcher's bound is the lane's, so a run of the judge's own lasts at most that, and
+      # the judge's subprocess timeout (2400 s) lies beyond it.
+      - name: Judge dudect
+        if: ${{ !cancelled() && matrix.library == 'crypto' && matrix.lane == 'constant-time' }}
+        env:
+          WEBCPP_WASIP2_TEST_TIMEOUT: '1800'
+          TARGET: ${{ matrix.platform }}
+          RERUN: ${{ runner.environment == 'github-hosted' && '--rerun' || '' }}
+        shell: bash
+        run: |
+          # RERUN is empty off the hosted runners, so it is left unquoted to vanish.
+          # shellcheck disable=SC2086
+          python3 libs/crypto/test/constant_time/dudect_judge.py --bin bin \
+            --target "$TARGET" $RERUN --launcher tools/boost/asio-wasip2/run.sh
 
       - name: Save the third-party builds
         if: ${{ !cancelled() && !startsWith(matrix.lane, 'openssl-upstream') }}
