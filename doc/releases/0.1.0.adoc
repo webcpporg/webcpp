@@ -77,6 +77,7 @@ None.
 * Improved lint preparation by separating OpenSSL headers from archive builds and upstream tests.
 * Changed the CI's lint to twelve shards, which a slow runner no longer takes past its time limit.
 * Added the user's Jamfiles of webcpp::crypto, tested as fixtures of a test of the tools.
+* Added a judge to crypto's constant-time lane: dudect results warn at 10, and hosted runners fail on two of three.
 * Added same-as: to crypto's user Jamfiles test, which keeps copied programs identical.
 * Added not-contains: to crypto's user Jamfiles test, which shows the canary is a library's only link error.
 * Added tests of a missing /third_party// name, of the BIPs' pin and of Emscripten without a crypto backend.
