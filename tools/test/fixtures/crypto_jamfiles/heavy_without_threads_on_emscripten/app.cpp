@@ -7,20 +7,20 @@
 // A heavy operation's async_ variant called in a build for Emscripten without -pthread.
 #include <webcpp/crypto/detail/heavy.hpp>
 
-#include <utility>
+#include <boost/system/result.hpp>
 
 namespace {
 
-int slow(int value) noexcept {
+boost::system::result<int> slow(int value) noexcept {
     return value + 1;
 }
 
 template <class Executor, class CompletionToken>
-auto async_slow(Executor executor, int value, CompletionToken&& token) {
+auto async_slow(Executor const& work, int value, CompletionToken&& token) {
     WEBCPP_CRYPTO_DETAIL_REQUIRE_THREADS("async_slow", "slow");
-    return webcpp::crypto::detail::run_heavy(
-        std::move(executor), [value]() noexcept { return slow(value); },
-        std::forward<CompletionToken>(token));
+    return webcpp::crypto::detail::run_on_work(
+        work, []() noexcept { return boost::system::result<void>(); },
+        [value]() noexcept { return slow(value); }, token);
 }
 
 struct executor {};
@@ -31,5 +31,5 @@ struct token {};
 
 int main() {
     async_slow(executor{}, 41, token{});
-    return slow(0) == 1 ? 0 : 1;
+    return *slow(0) == 1 ? 0 : 1;
 }
