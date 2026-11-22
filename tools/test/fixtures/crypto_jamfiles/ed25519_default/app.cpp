@@ -9,6 +9,7 @@
 // it, and prints the backend that ran. The seed is the RFC's: a real program draws its own.
 #include <webcpp/crypto/curves/ed25519.hpp>
 #include <webcpp/crypto/equal.hpp>
+#include <webcpp/crypto/signing.hpp>
 
 #include <array>
 #include <cstdint>
@@ -16,6 +17,7 @@
 #include <span>
 
 int main() {
+    namespace crypto = webcpp::crypto;
     namespace ed25519 = webcpp::crypto::curves::ed25519;
     std::array<std::uint8_t, 32> const seed{
         0x9d, 0x61, 0xb1, 0x9d, 0xef, 0xfd, 0x5a, 0x60, 0xba, 0x84, 0x4a,
@@ -33,10 +35,10 @@ int main() {
     auto const key = ed25519::keypair::make(seed);
     bool ok = false;
     if (key) {
-        auto const signature = key->sign(message);
+        auto const signature = key->sign(crypto::eddsa, message);
         auto const public_key = key->public_key();
-        ok = signature && public_key && webcpp::crypto::equal(*signature, expected) &&
-             ed25519::verify(*public_key, message, *signature).has_value();
+        ok = signature && public_key && crypto::equal(*signature, expected) &&
+             crypto::verify(crypto::eddsa, *signature, message, *public_key).has_value();
     }
     auto const name = ed25519::keypair::backend_type::name;
     std::printf("ed25519 %s backend=%.*s\n", ok ? "ok" : "FAILED", static_cast<int>(name.size()),
