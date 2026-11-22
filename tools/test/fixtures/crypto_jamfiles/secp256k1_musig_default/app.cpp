@@ -31,13 +31,8 @@ namespace secp256k1 = webcpp::crypto::curves::secp256k1;
 namespace musig = webcpp::crypto::curves::secp256k1::musig;
 
 bool sign_and_verify(secp256k1::keypair const& first, secp256k1::keypair const& second) {
-    auto const first_encoding = first.public_key();
-    auto const second_encoding = second.public_key();
-    if (!first_encoding || !second_encoding) {
-        return false;
-    }
-    auto const first_key = secp256k1::parse_public_key(*first_encoding);
-    auto const second_key = secp256k1::parse_public_key(*second_encoding);
+    auto const first_key = first.public_key();
+    auto const second_key = second.public_key();
     if (!first_key || !second_key) {
         return false;
     }

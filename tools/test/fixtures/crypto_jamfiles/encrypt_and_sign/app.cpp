@@ -50,7 +50,7 @@ int main() {
     bool signed_ok = false;
     if (pair) {
         auto const signature = pair->sign(webcpp::crypto::schnorr, message, aux);
-        auto const public_key = pair->xonly_public_key();
+        auto const public_key = pair->public_key();
         signed_ok =
             signature && public_key &&
             webcpp::crypto::verify(webcpp::crypto::schnorr, *signature, message, *public_key);

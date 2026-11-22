@@ -23,7 +23,7 @@ int main() {
     bool ok = false;
     if (key) {
         auto const signature = key->sign(webcpp::crypto::schnorr, message, aux);
-        auto const public_key = key->xonly_public_key();
+        auto const public_key = key->public_key();
         ok = signature && public_key &&
              webcpp::crypto::verify(webcpp::crypto::schnorr, *signature, message, *public_key);
         message[0] ^= 1U;
