@@ -14,6 +14,6 @@
 int main() {
     std::array<std::uint8_t, 64> output{};
     namespace hash = webcpp::hash;
-    auto done = hash::mac<hash::macs::hmac<hash::digests::whirlpool>>(output, {}, {});
+    auto done = hash::mac<hash::macs::hmac<hash::digests::md5_sha1>>(output, {}, {});
     return done ? 0 : 1;
 }

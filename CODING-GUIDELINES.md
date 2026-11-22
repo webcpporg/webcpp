@@ -340,7 +340,16 @@ exactly its authors' and the program carries only what it calls.
 1. The C library is a submodule under `third_party/libs/<name>`, pinned at a
    commit and never edited. When upstream is not on GitHub, an unmodified
    `webcpporg/<name>` mirror stands in (BearSSL's is `webcpporg/bearssl`),
-   refreshed only when the pin moves.
+   refreshed only when the pin moves. One exception, a security fix upstream
+   does not have yet: a branch `webcpp` of the mirror carries upstream's
+   commit and the fix, one commit each, pinned there and carried to each new
+   pin until upstream has it. The fix is minimal, preserves every value the
+   library computes, and is reported upstream (an owner item). A library
+   whose upstream is not mirrored under webcpporg takes such a fix the same
+   way, in a `webcpporg/<name>` fork created for it, with the same `webcpp`
+   branch rule. BearSSL's has one, of 2026-11-21: ECDSA decodes RFC 6979's
+   nonce at its full length, so that signing does not branch on the nonce's
+   bit length (chapter 15, webcpp::crypto's P-256).
 2. `third_party/Jamfile` builds it from its own sources, file by file, as a
    static library, in the library's own C dialect, on every target and with
    every file: a file that does not apply to a target still compiles, to the
@@ -349,7 +358,9 @@ exactly its authors' and the program carries only what it calls.
    their instruction sets alone, each flagged for its own set; XKCP is built
    from the one file of Keccak-p[1600] and the five high-level files
    webcpp::hash's adapter calls, not from every file of its package;
-   libsodium is built without its `.S` files.
+   libsodium is built without its `.S` files. Two libraries are not built
+   file by file from webcpp's list at all: OpenSSL (rule 7) and Botan (rule
+   13), whose sources upstream selects.
 3. Every file is compiled with `-ffunction-sections -fdata-sections` (`/Gy
    /Gw` on MSVC); upstream's warnings are not webcpp's (`<warnings>off`); each
    define the library cannot work out for itself on a target sits beside the
@@ -391,6 +402,7 @@ exactly its authors' and the program carries only what it calls.
    WASIp3 single and cooperative profiles must agree with the consumer's
    threading choice. Keep explicit host entropy seeding and fail-closed tests.
    Other libraries with external dependencies still use `webcpp.external`.
+   Botan's configuration is upstream's too, its compilation b2's (rule 13).
 8. The webcpp library's `config.hpp` chooses the default backend from the
    target and the `HAS` defines, and refuses impossible combinations with
    `#error`. The backend is named after the C library (`backends::bearssl`),
@@ -407,6 +419,18 @@ exactly its authors' and the program carries only what it calls.
     the submodule's.
 12. Moving a pin is a change of its own: the submodule, the canary's commit,
     the tests on every target and the size table.
+13. Botan is configured by upstream and compiled by b2, as
+    `tools/webcpp-botan.jam` does: Botan's own `configure.py` chooses the
+    modules (`tools/botan/modules.txt`, one list for every webcpp library, each
+    module with who needs it) and writes `build.h` and the list of sources for
+    each target into the build directory, `bin/third_party/botan/config-<hash>`,
+    never into the checkout; b2 compiles each listed source as an object of its
+    own with the program's properties. This is rule 2's kind of exception, as
+    OpenSSL's rule 7 is: the selection is upstream's, the compilation b2's.
+    Never the amalgamation, never a patch, never a module that seeds a
+    generator from the system (`system_rng`, `auto_rng`), which the helper
+    refuses. A library adds its own canary and define to the target; the
+    provisioning carries none.
 
 ## 6. Exceptions and RTTI
 
@@ -956,11 +980,13 @@ update --init third_party/libs/<name>`; a build that needs none never looks.
 
 | Target | What it is | Licence |
 | --- | --- | --- |
-| `bearssl` | BearSSL from webcpp's unmodified mirror `webcpporg/bearssl` at `7bea48e`; a static library built file by file by `third_party/Jamfile` with webcpp::crypto's and webcpp::hash's canaries (hash's when `libs/hash` is checked out), on every target; `WEBCPP_CRYPTO_HAS_BEARSSL=1`, and `WEBCPP_HASH_HAS_BEARSSL=1` with hash's canary | MIT |
+| `bearssl` | BearSSL from webcpp's mirror `webcpporg/bearssl` at `32381d6`, its branch `webcpp`: upstream's `7bea48e` and one fix, ECDSA's nonce decoded at its full length (chapter 5 rule 1); a static library built file by file by `third_party/Jamfile` with webcpp::crypto's and webcpp::hash's canaries (hash's when `libs/hash` is checked out), on every target; `WEBCPP_CRYPTO_HAS_BEARSSL=1`, and `WEBCPP_HASH_HAS_BEARSSL=1` with hash's canary | MIT |
 | `bips` | `bitcoin/bips` at `927b6de9`, shallow, test data: crypto's tests read BIP340's `bip-0340/test-vectors.csv` and BIP341's `bip-0341/wallet-test-vectors.json` at run time under the directory its define `WEBCPP_TEST_BIPS` gives, on every target (wasmtime is given it, `webcpp.data`), and run again when it changes | BSD-2-Clause, as BIP340's header states |
 | `blake2_vectors` | BLAKE2's reference code package `BLAKE2/BLAKE2` at `ed1974e` (2023-02-12), the submodule `third_party/libs/blake2`, shallow, test data that nothing compiles: hash's tests read `testvectors/blake2b-kat.txt` and `testvectors/blake2-kat.json` at run time under the directory its define `WEBCPP_TEST_BLAKE2_VECTORS` gives, on every target (wasmtime is given it, `webcpp.data`), and run again when one of them changes | CC0-1.0 |
 | `blake3` | BLAKE3 1.8.7 at `f3149ec`; `third_party/Jamfile` compiles `c/blake3.c`, `blake3_dispatch.c` and `blake3_portable.c` on every target, the intrinsics files on their instruction sets alone (an exception to chapter 5 rule 2), with webcpp::hash's canary; `WEBCPP_HASH_HAS_BLAKE3=1` | CC0-1.0, Apache-2.0, or Apache-2.0 with LLVM exception |
 | `blake3_vectors` | BLAKE3's official vectors, `test_vectors/test_vectors.json` of the submodule `third_party/libs/blake3` at `f3149ec`, test data: hash's tests read it at run time under the directory its define `WEBCPP_TEST_BLAKE3_VECTORS` gives, on every target (wasmtime is given it, `webcpp.data`), and run again when it changes | CC0-1.0, Apache-2.0, or Apache-2.0 with LLVM exception |
+| `botan` | Botan 3.14.1 at `01af88c`, the submodule `third_party/libs/botan`; configured by upstream's `configure.py` per target (`--minimized-build`, the modules of `tools/botan/modules.txt`) into `bin/third_party/botan/config-<hash>`, the library sources its `configure.py` lists compiled by b2 one object each (chapter 5, rule 13), natively and on Emscripten, with exceptions; `botan_test`, Botan's own test program; webcpp::hash's canary (`src/canary_botan.cpp`, compiled with Botan's own properties and build.h, and `WEBCPP_HASH_HAS_BOTAN` in the usage requirements, when `libs/hash` is checked out); no canary of the provisioning's own | BSD-2-Clause |
+| `botan_vectors` | Botan's own test data, `src/tests/data` of the submodule `third_party/libs/botan` at `01af88c`, test data: hash's tests read `hash/whirlpool.vec`, `hash/skein.vec`, `passhash/bcrypt.vec`, `bcrypt_pbkdf.vec` and `kdf/sp800_108_ctr.vec` at run time under the directory its define `WEBCPP_TEST_BOTAN_VECTORS` gives, natively and on Emscripten (`webcpp.data`), and run again when they change | BSD-2-Clause |
 | `ca_certificates` | Dated Mozilla/curl CA data snapshot under `third_party/ca_certificates`, verified against its manifest and embedded by a build-generated header; updated explicitly by `tools/ca_certificates/update.py` | MPL-2.0 |
 | `ctaes` | `src/crypto/ctaes` of `bitcoin/bitcoin` v31.1 at `9be056a` (commit `9be056a8a72b624dae9623b2f7bded92c2a21c91`), the submodule `third_party/libs/bitcoin`, shallow; `third_party/Jamfile` compiles its `ctaes.c` alone, with webcpp::crypto's canary, on every target (`WEBCPP_CRYPTO_HAS_CTAES=1`); the tree's `src/secp256k1/` subtree is never on an include path and no glob over `third_party/libs` reaches it | MIT |
 | `ed25519-speccheck` | `novifinancial/ed25519-speccheck` at `65519336` (2021-02-26), shallow, test data: crypto's tests read the twelve Ed25519 edge cases of "Taming the many EdDSAs", its `cases.json`, at run time under the directory its define `WEBCPP_TEST_ED25519_SPECCHECK` gives, on every target (wasmtime is given it, `webcpp.data`), and run again when it changes | Apache-2.0 |
@@ -7091,6 +7117,24 @@ and not built is in chapter 17.
   contents being read.** Hash2's `digest<N>::operator==` is `memcmp`; a size
   is public.
   Source: `include/webcpp/crypto/equal.hpp` (libs/crypto).
+- **Every public function that runs a backend's cryptographic code, and
+  `equal`, holds `detail::timing_guard` as its first statement: on 64-bit ARM
+  under macOS, iOS, Linux and Android, where the CPU has FEAT_DIT, it sets
+  PSTATE.DIT for the call (`msr s3_3_c4_c2_5`, then `isb`) and returns the
+  thread's DIT as it found it, after an error and an exception too; on x86,
+  WebAssembly and Windows on ARM64 it is empty. A later increment's public
+  function that calls a backend holds one too and joins its backend's
+  coverage test, which checks through the seam
+  `WEBCPP_CRYPTO_DETAIL_TIMING_ENTERED` that each call entered its own
+  guard.** None of the C libraries sets DIT, which Apple requires of
+  constant-time code, and without it libsodium's X25519 was measured not
+  constant time on Apple silicon; a program does nothing. The guard's cost is
+  measured from a release build by `bench/collect.py --timing` and published
+  beside the throughput, and the constant-time lane sets no DIT of its own: it
+  measures what a program gets.
+  Source: `libraries/crypto/openspec/changes/data-independent-timing/design.md`
+  D1 to D7 (proposals); `include/webcpp/crypto/detail/timing.hpp`,
+  `test/timing_coverage_<backend>_test.cpp` (libs/crypto).
 - **`<windows.h>` is reached only through `detail/windows.hpp`, which defines
   `NOMINMAX` and `WIN32_LEAN_AND_MEAN` only when absent and undefines only
   what it defined, and every header writes `(max)()`, `(min)()` and
@@ -7193,6 +7237,63 @@ and not built is in chapter 17.
   Source: `libraries/crypto/openspec/changes/genesis/design.md` (proposals);
   `test/secp256k1_xonly_tweak_test.cpp` (libs/crypto).
 
+**P-256 (the foundation's increment 3, its first part; built on the branch
+`crypto/p256`, merged 2026-11-22).**
+
+- **`curves::p256` is a family of its own, on BearSSL, its one backend and
+  default on all four targets; OpenSSL and Botan join in their increments.**
+  A key pair made from its 32-byte scalar (`make`, refused before BearSSL when
+  0 or not below n, by a constant-time check whose verdict alone is public) or
+  drawn (`generate`), its public point computed once; a `public_key` validated
+  once where it arrives, SEC 1's uncompressed point or its two coordinates;
+  ECDSA over a SHA-256 digest with RFC 6979's nonce, raw (WebCrypto's form)
+  and strict DER; ECDH's raw x, as WebCrypto's `deriveBits` gives it. BearSSL
+  allocates nothing; natively it runs `br_ec_p256_m62` where BearSSL has a
+  128-bit product, on WebAssembly `br_ec_p256_m31` always. BearSSL's own
+  stack frames keep what they compute from the scalar, which webcpp cannot
+  wipe; the page says so.
+  Source: `libraries/crypto/openspec/changes/foundation/design.md` D36
+  (proposals); `include/webcpp/crypto/curves/p256.hpp` and
+  `backends/bearssl.hpp` (libs/crypto).
+- **The key formats are fixed layouts: SPKI of 91 bytes (RFC 5480, the
+  uncompressed point) and PKCS#8 of 138 bytes (version 0, RFC 5915's
+  ECPrivateKey version 1 without parameters and with the public key); a
+  decoder accepts exactly what the encoder writes, the point checked against
+  the scalar.** The bytes OpenSSL's and BearSSL's encoders and node's
+  WebCrypto write, checked by the oracles; anything else is
+  `invalid_encoding`.
+  Source: `include/webcpp/crypto/curves/p256/formats.hpp` (libs/crypto).
+- **Low S is two primitives, not a mode: `sign_ecdsa` returns S as computed
+  and `verify_ecdsa` accepts both forms, as FIPS 186-5 and WebCrypto do;
+  `normalize_ecdsa` gives the low form and `check_low_s` refuses the high
+  one, neither calling a backend.** A protocol that requires low S
+  (Trystero's handshakes) applies them; the protocol itself is
+  webcpp::trystero's (D24), which the guide's section on signed handshakes
+  shows with an example. Their verdict is marked public for the constant-time
+  checkers, a signature being public once made.
+  Source: `include/webcpp/crypto/curves/p256.hpp`, `doc/p2p.adoc`
+  (libs/crypto).
+- **Constant time, sizes and throughput cover the family.** memcheck and
+  MemorySanitizer run the key pair's making, signing with its low-S
+  normalization and check, `ecdh_x` and `decode_pkcs8` (`paths.hpp`), each
+  checker failing on a planted early exit in a copy of the scalar check;
+  BearSSL's own branches on its signing's verdicts are listed for memcheck in
+  `bearssl_verdicts.supp`. dudect times `sign_ecdsa` and `ecdh_x` against the
+  scalar natively and on wasip2. The sizes lane measures signing,
+  verification and `ecdh_x`, and the throughput page the same three, from
+  release builds. The checkers ran on 2026-11-21 in an arm64 Linux container
+  (`linux-lint:arm64`, clang 18, Valgrind 3.22), the lane's CI command: both
+  found upstream BearSSL's signing branching on the RFC 6979 nonce's bit
+  length, `br_ecdsa_i31_bits2int` decoding it with its actual length and
+  `br_i31_rshift` looping by it (a Minerva-class leak), and nothing once
+  webcpp's BearSSL carried the fix, one commit setting the order's length
+  before the shift (chapter 5 rule 1); the planted programs failed and dudect
+  passed there too.
+  Source: `libs/crypto/test/constant_time/Jamfile`, `test/sizes/Jamfile`,
+  `bench/throughput.cpp`, `doc/backends.adoc` (libs/crypto);
+  https://github.com/webcpporg/bearssl/commit/32381d6e787a32cbb7a687246349200d78b8ff7c
+  (the fix) and BearSSL's `src/ec/ecdsa_i31_bits.c` at `7bea48e` (upstream).
+
 **Errors and exceptions.**
 
 - **Every operation that can fail returns `boost::system::result<T>` or
@@ -7217,7 +7318,8 @@ and not built is in chapter 17.
   measured, a port is a new thing to review.
   Source: `libraries/crypto/openspec/changes/genesis/design.md` D1
   (proposals).
-- **BearSSL comes unmodified from webcpp's mirror `webcpporg/bearssl`; its
+- **BearSSL comes from webcpp's mirror `webcpporg/bearssl`, upstream's code
+  with one security fix on its branch `webcpp` (chapter 5 rule 1); its
   notice ships as `LICENSE-BEARSSL.txt`, and webcpp's canary lives in the
   library's `src/`. The backend names its code itself: the CTR class of
   AES-NI, then POWER8, then `aes_ct64`, and GHASH by PCLMUL, then POWER8,
@@ -7399,8 +7501,20 @@ and not built is in chapter 17.
   recognise.
   Source: `doc/memory.adoc`, `example/openssl_memory.cpp`,
   `test/openssl_memory/fail_init_test.cpp` (libs/crypto).
+- **A resource given to crypto fails by throwing, never by returning null:
+  `allocate` is declared never to return null (`returns_nonnull` in libc++
+  and libstdc++), so an optimiser removes any check of its result and a null
+  is written through in a release build; without exceptions a resource that
+  cannot allocate ends the process, as `std::pmr`'s own resources do.** The
+  adapter checks no result of `allocate` and turns what a resource throws
+  into OpenSSL's null only with exceptions.
+  Source: `doc/memory.adoc`, `include/webcpp/crypto/backends/openssl.hpp`
+  (libs/crypto).
 - **The option's programs are native, in `test/openssl_memory`, each declared
-  with exceptions and without by the rule `memory-run`: `adapter`;
+  with exceptions and without by the rule `memory-run`, except `fail_second`
+  and `fail_init`, which run with exceptions only, since a resource that cannot
+  allocate ends the process without them and OpenSSL sees no failure:
+  `adapter`;
   `everything`, `late`, `foreign`, `fresh_install`, `forgotten`, `replaced`,
   `second_install`, `fail_second`, `fail_init`, `fail_init_threads` (the
   same program on an OpenSSL built with threads) and `handshake`, which count
@@ -8706,7 +8820,8 @@ increments 1 and 2, whose state is first.
   wasmtime's code. The cause is measured: Apple silicon's DIT (data-independent
   timing), which wasmtime does not set; with DIT set in wasmtime's main thread,
   an experiment and not the lane, the case reads |t| 1.5 to 2.1. The native
-  dudect programs set DIT themselves; the WebAssembly cannot. The page's
+  dudect programs no longer set DIT: the library sets it in each call on
+  64-bit ARM (chapter 15); the WebAssembly cannot set it. The page's
   constant-time table and `crypto.json` record it as an open finding, not a
   pass, and the lane prints its value without judging it. Valgrind,
   MemorySanitizer and dudect are not run on wasip3 or Emscripten, which the
@@ -8765,6 +8880,25 @@ increments 1 and 2, whose state is first.
   exchange, a two-signer MuSig2 signature and a silent payments output, all
   from release builds through `webcpp.program-sizes`.
   Source: `libs/crypto/test/constant_time/Jamfile` and `test/sizes/Jamfile`.
+
+**The foundation's increment 3 (plan Tasks 3.1 to 3.11; its P-256 part,
+Tasks 3.1 to 3.6, built on its branch, merged 2026-11-22).**
+
+- **P-256 on BearSSL is built on the branch `crypto/p256` of the library and
+  the superproject, for webcpp::trystero's port of Trystero 0.27.0 (design
+  D36): the family, its formats, its oracles (OpenSSL natively and on WASI,
+  node's WebCrypto on Emscripten), its constant-time paths, sizes and
+  throughput, and the guide's signed handshakes.** Chapter 15 holds what is
+  built. NIST's ACVP vectors wait for the `acvp` submodule of Task 3.8, and
+  the WebCrypto oracle runs in node, Chrome with the browser lane's increment.
+  Source: `libraries/crypto/openspec/changes/foundation/reference/plan.md`
+  Tasks 3.1 to 3.6 (proposals).
+- **The rest of increment 3 is outlined, each task written in full when
+  P-256 has merged: P-384 and P-521 on the same engine (3.7), X25519 on
+  BearSSL and the `acvp` submodule (3.8), AES-CTR, AES-CBC, AES-CCM and
+  AES-EAX on BearSSL (3.9), RSA (3.10), and the increment's close (3.11).**
+  Source: `libraries/crypto/openspec/changes/foundation/reference/plan.md`
+  Tasks 3.7 to 3.11 (proposals).
 
 **Constant time (increment 1, Task 14; merged).**
 
@@ -9368,7 +9502,7 @@ summary.
   `organization/openspec/changes/site-increments-4-5/specs/site/spec.md`
   (proposals).
 
-### hash (hashing and key derivation over Boost.Hash2 and C backends; wrapper; accepted 2026-11-14, increments 1, 2, 3, 4, 5 and 7 built, not merged)
+### hash (hashing and key derivation over Boost.Hash2 and C backends; wrapper; accepted 2026-11-14, increments 1 to 7 built, not merged)
 
 webcpp::hash is one entry point for hashing and key derivation in a C++20
 program on every target webcpp has, a wrapper (`"port-of": null`). Increment 1
@@ -9397,10 +9531,18 @@ Argon2id with every parameter of RFC 9106; and the key derivations of
 standards (`kdf_standards.hpp`), SP 800-108's KBKDF, SP 800-56C's one-step KDF
 and ANSI X9.63's KDF, which have no default backend; increment 5 gives them
 BearSSL's MD5, SHA-1, SHA-2, TLS 1.0's MD5-SHA1, SHAKE and HMAC, each reached
-only by naming `backends::bearssl`. The C libraries are built by
+only by naming `backends::bearssl`; increment 6 gives them Botan 3.14.1's
+surface, each reached only by naming `backends::botan` (natively and on
+Emscripten, in a program built with exceptions): its digests, Streebog,
+Whirlpool and Skein-512 among them, its MACs, HKDF, PBKDF2, Argon2, scrypt and
+the key derivations of standards, and bcrypt and bcrypt_pbkdf
+(`bcrypt.hpp`), with their heavy forms `async_bcrypt`, `async_bcrypt_pbkdf`
+and `async_bcrypt_verify`. The C libraries are built by
 `third_party/Jamfile` (`xkcp`, `blake3`, `sodium`, `bearssl`, each with a
-canary), their own suites by the `c-suites` lane (`test/c_suites`), the
-examples are in `example/` and the documentation in `doc/`. Every function
+canary), Botan by `tools/webcpp-botan.jam` as `/third_party//botan` (hash's
+canary in `src/canary_botan.cpp`; designs D43 to D45), their own suites, and
+Botan's, by the `c-suites` lane (`test/c_suites`), the examples are in
+`example/` and the documentation in `doc/`. Every function
 reports failure as a `boost::system::result`, takes its data as `std::span` and
 allocates nothing in webcpp's own code; increment 7 adds an asynchronous family
 in `async.hpp` over webcpp::asio (any completion token, Cobalt's `use_op`
@@ -9448,10 +9590,14 @@ and G4); the proposal, with the specification, the design and the plan, is in
   derivations of standards, each reached only by naming `backends::openssl`;
   the fifth, built, is BearSSL's MD5, SHA-1, SHA-2, TLS 1.0's MD5-SHA1 and SHAKE
   through `digest_of` and `hasher`, and its HMAC through `mac`, each reached
-  only by naming `backends::bearssl`; the seventh, built, adds the browser
-  backend over WebCrypto through a parallel asynchronous family, whose cells
-  `doc/capabilities.json` marks asynchronous only; the sixth widens Botan's
-  surface. Across the built increments every tag that two backends or more
+  only by naming `backends::bearssl`; the sixth, built, is Botan's surface
+  through the families, the key derivations and bcrypt, each reached only by
+  naming `backends::botan`, which the stream provisions itself (design D43),
+  whose column is read at 3.14.1 (design D44) and which needs exceptions,
+  natively and on Emscripten, its lanes MSVC's included (design D45); the
+  seventh, built, adds the browser backend over WebCrypto through a parallel
+  asynchronous family, whose cells `doc/capabilities.json` marks asynchronous
+  only. Across the built increments every tag that two backends or more
   have is checked to give the same bytes on each pair of them, on random cases.
   Source: `libraries/hash/openspec/changes/genesis/reference/spec.md` section
   1.5 (proposals).

@@ -10,18 +10,18 @@ build: fails
 # tag::messages[]
 [native-darwin]
 contains: Undefined symbols for architecture
-contains: _webcpp_crypto_bearssl_7bea48e_sysrng__add_third_party_bearssl_to_your_link
+contains: _webcpp_crypto_bearssl_32381d6_sysrng__add_third_party_bearssl_to_your_link
 [native-linux]
-contains: webcpp_crypto_bearssl_7bea48e_sysrng__add_third_party_bearssl_to_your_link
-contains: undefined reference to `webcpp_crypto_bearssl_7bea48e_sysrng__add_third_party_bearssl_to_your_link'
+contains: webcpp_crypto_bearssl_32381d6_sysrng__add_third_party_bearssl_to_your_link
+contains: undefined reference to `webcpp_crypto_bearssl_32381d6_sysrng__add_third_party_bearssl_to_your_link'
 [wasip2]
 contains: wasm-ld: error:
-contains: undefined symbol: webcpp_crypto_bearssl_7bea48e_sysrng__add_third_party_bearssl_to_your_link
+contains: undefined symbol: webcpp_crypto_bearssl_32381d6_sysrng__add_third_party_bearssl_to_your_link
 [wasip3]
 contains: wasm-ld: error:
-contains: undefined symbol: webcpp_crypto_bearssl_7bea48e_sysrng__add_third_party_bearssl_to_your_link
+contains: undefined symbol: webcpp_crypto_bearssl_32381d6_sysrng__add_third_party_bearssl_to_your_link
 [emscripten]
 contains: wasm-ld: error:
-contains: undefined symbol: webcpp_crypto_bearssl_7bea48e_sysrng__add_third_party_bearssl_to_your_link
+contains: undefined symbol: webcpp_crypto_bearssl_32381d6_sysrng__add_third_party_bearssl_to_your_link
 contains: em++: error:
 # end::messages[]

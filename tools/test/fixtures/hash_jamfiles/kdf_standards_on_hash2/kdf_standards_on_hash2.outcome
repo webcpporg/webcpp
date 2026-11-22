@@ -10,6 +10,6 @@
 [all]
 targets: emscripten
 build: fails
-contains: webcpp::hash: kdfs::kbkdf_hmac is not in this backend. Name one of: backends::openssl.
-contains: webcpp::hash: kdfs::sskdf is not in this backend. Name one of: backends::openssl.
-contains: webcpp::hash: kdfs::x963kdf is not in this backend. Name one of: backends::openssl.
+contains: webcpp::hash: kdfs::kbkdf_hmac is not in this backend. Name one of: backends::openssl, backends::botan.
+contains: webcpp::hash: kdfs::sskdf is not in this backend. Name one of: backends::openssl, backends::botan.
+contains: webcpp::hash: kdfs::x963kdf is not in this backend. Name one of: backends::openssl, backends::botan.

@@ -10,4 +10,4 @@
 [all]
 targets: emscripten
 build: fails
-contains: webcpp::hash: kdfs::argon2d has no default backend. Name one of: backends::openssl.
+contains: webcpp::hash: kdfs::argon2d has no default backend. Name one of: backends::openssl, backends::botan.

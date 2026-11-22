@@ -1,0 +1,283 @@
+# Copyright (c) 2026 WebCpp.org
+#
+# Distributed under the Boost Software License, Version 1.0. (See
+# accompanying file LICENSE_1_0.txt or copy at
+# https://www.boost.org/LICENSE_1_0.txt)
+
+# Botan, configured by upstream and compiled by b2 (CODING-GUIDELINES.md
+# chapter 5, rule 13): /third_party//botan and its test program, botan_test.
+#
+# Botan's own configure.py chooses the modules (tools/botan/modules.txt) and
+# writes build.h, the configured headers and the list of sources of a target
+# into the directory of its configuration, bin/third_party/botan/config-<hash>,
+# named, as OpenSSL's is (tools/webcpp-third-party.jam), by the key of the
+# inputs declare is given and by the values of its command line: --os, --cc
+# and --cpu. tools/botan/configure.py runs it, at b2's generation, once per
+# configuration and b2 run, and does nothing for a directory that is
+# complete. b2 then compiles each listed source as an object of its own, in
+# the consumer's variant directory, with the consumer's properties (toolset,
+# variant, cxxstd, runtime, threading, exceptions): two consumers that differ
+# in them share one configuration and get two sets of objects. Nothing of
+# upstream's compile flags is used, except, on MSVC, the three language flags
+# that change no ABI. The configured headers exist before b2 scans a source.
+
+import configure ;
+import errors ;
+import feature ;
+import modules ;
+import path ;
+import project ;
+import targets ;
+import virtual-target ;
+import webcpp-target ;
+import webcpp-third-party ;
+
+class botan-target : basic-target
+{
+    import generators ;
+    import modules ;
+    import property-set ;
+
+    rule construct ( name : source-targets * : properties )
+    {
+        local configured = [ modules.call-in webcpp-botan : configuration
+            $(properties) : $(self.project) ] ;
+        local directory = $(configured[1]) ;
+        local sources = [ modules.call-in webcpp-botan : sources $(directory)
+            : lib : $(self.project) ] ;
+        local built = [ property-set.create [ $(properties).raw ]
+            <main-target-type>LIB
+            [ modules.call-in webcpp-botan : compile-properties $(directory) ] ] ;
+        local result = [ generators.construct $(self.project) $(name) : LIB
+            : $(built) : $(sources) $(source-targets) : true ] ;
+        if ! $(result)
+        {
+            return ;
+        }
+        return [ $(result[1]).add-raw [ modules.call-in webcpp-botan : usage
+            $(directory) : $(properties) ] ] $(result[2-]) ;
+    }
+}
+
+class botan-test-target : basic-target
+{
+    import generators ;
+    import modules ;
+    import property-set ;
+
+    rule construct ( name : source-targets * : properties )
+    {
+        local configured = [ modules.call-in webcpp-botan : configuration
+            $(properties) : $(self.project) ] ;
+        local directory = $(configured[1]) ;
+        local sources = [ modules.call-in webcpp-botan : sources $(directory)
+            : test : $(self.project) ] ;
+        local built = [ property-set.create [ $(properties).raw ]
+            <main-target-type>EXE
+            [ modules.call-in webcpp-botan : compile-properties $(directory) ] ] ;
+        return [ generators.construct $(self.project) $(name) : EXE : $(built)
+            : $(sources) $(source-targets) : true ] ;
+    }
+}
+
+# Declares botan and botan_test in the current project: the checkout of
+# third_party/libs/botan under root, configured per target and compiled object
+# by object, and Botan's own test program linked with it. inputs, relative to
+# root, are the files whose bytes make a configuration what it is, the key of
+# its directory. requirements and usage-requirements are added to the
+# library's own: a webcpp library's canary, as a conditional <source>, and its
+# define, as a conditional usage requirement. The provisioning carries none.
+rule declare ( root : inputs * : requirements * : usage-requirements * )
+{
+    .root = $(root) ;
+    .inputs = $(inputs) ;
+    local own =
+        <link>static <warnings>off <warnings-as-errors>off
+        # Every function and datum in a section of its own, as the C
+        # libraries of third_party/Jamfile are compiled, so that a program
+        # keeps only what it calls.
+        <toolset>clang:<cflags>"-ffunction-sections -fdata-sections"
+        <toolset>gcc:<cflags>"-ffunction-sections -fdata-sections"
+        <toolset>emscripten:<cflags>"-ffunction-sections -fdata-sections"
+        <toolset>msvc:<cflags>"/Gy /Gw"
+        # Upstream's MSVC language flags that change no ABI; /EHs and /GR
+        # are b2's exception-handling and rtti.
+        <toolset>msvc:<cxxflags>"/Zc:preprocessor /Zc:inline /bigobj" ;
+    # The linker's removal of unused sections, and, on Emscripten, a memory
+    # that grows: Argon2, scrypt and RSA outgrow the fixed 16 MiB.
+    local usage =
+        <target-os>darwin:<linkflags>-Wl,-dead_strip
+        <target-os>linux:<linkflags>-Wl,--gc-sections
+        <target-os>windows:<linkflags>"/OPT:REF"
+        <toolset>emscripten:<linkflags>-sALLOW_MEMORY_GROWTH=1 ;
+    local project = [ project.current ] ;
+    targets.create-metatarget botan-target : $(project) : botan
+        : : $(own) $(requirements) : : $(usage) $(usage-requirements) ;
+    # Botan's own test program reads its data directory (--data-dir) from the
+    # host: on Emscripten node gives it the host's file system, and the
+    # program's status is main's.
+    local test-own =
+        <toolset>emscripten:<linkflags>-sNODERAWFS=1
+        <toolset>emscripten:<linkflags>-sEXIT_RUNTIME=1 ;
+    targets.create-metatarget botan-test-target : $(project) : botan_test
+        : botan : $(own) $(test-own) : ;
+}
+
+# The values of the command line of tools/botan/configure.py for properties,
+# --os, --cc and --cpu, after the stops of a request Botan is not configured
+# for.
+rule command-values ( properties * )
+{
+    local checkout = $(.root)/third_party/libs/botan ;
+    if ! [ path.exists [ path.native $(checkout)/configure.py ] ]
+    {
+        errors.user-error "third_party/libs/botan is not checked out: it holds no"
+            "configure.py. Check it out with `git submodule update --init"
+            "third_party/libs/botan`." ;
+    }
+    local target = [ webcpp-target.target-of $(properties) ] ;
+    if $(target) in wasip2 wasip3
+    {
+        errors.user-error "/third_party//botan is built natively and for Emscripten. On"
+            "clang-$(target) it is not built yet: webcpp::crypto's increment 7 decides it."
+            "Remove /third_party//botan from this program's Jamfile, or build it natively"
+            "or with toolset=emscripten." ;
+    }
+    if [ feature.get-values <exception-handling> : $(properties) ] = off
+    {
+        errors.user-error "/third_party//botan needs exceptions: Botan reports its errors"
+            "by throwing. Build this program with exception-handling=on, or remove"
+            "/third_party//botan from its Jamfile." ;
+    }
+    if $(target) = emscripten
+    {
+        return emscripten emcc wasm ;
+    }
+    local toolset = [ feature.get-values <toolset> : $(properties) ] ;
+    local system = [ feature.get-values <target-os> : $(properties) ] ;
+    switch $(toolset:E=none)-$(system:E=none)
+    {
+        case clang-darwin : return macos clang [ architecture $(properties) ] ;
+        case clang-linux : return linux clang [ architecture $(properties) ] ;
+        case gcc-darwin : return macos gcc [ architecture $(properties) ] ;
+        case gcc-linux : return linux gcc [ architecture $(properties) ] ;
+        case msvc-windows : return windows msvc [ architecture $(properties) ] ;
+    }
+    errors.user-error "/third_party//botan: Botan's configuration is known for clang and"
+        "gcc on macOS and Linux, MSVC on Windows and Emscripten; this request is"
+        "$(toolset:E=no toolset) on $(system:E=no target-os)." ;
+}
+
+# The architecture a native build is for, as Botan's --cpu names it:
+# <architecture> with <address-model> when the request names both; else the
+# compiler is asked, through third_party/Jamfile's probes, which compile only
+# when the compiler's own macros say x86-64 (__x86_64__, _M_X64) or arm64
+# (__aarch64__, _M_ARM64), since b2 sets neither feature on a native toolset
+# unless the request does; else generic, Botan's portable code, which is what
+# every configuration compiles: --minimized-build loads no instruction-set
+# module.
+rule architecture ( properties * )
+{
+    local architecture = [ feature.get-values <architecture> : $(properties) ] ;
+    local model = [ feature.get-values <address-model> : $(properties) ] ;
+    if $(architecture) && $(model)
+    {
+        switch $(architecture)-$(model)
+        {
+            case x86-64 : return x86_64 ;
+            case arm-64 : return arm64 ;
+        }
+        return generic ;
+    }
+    if [ configure.builds /webcpp/third_party//blake3_probe_x86_64 : $(properties)
+        : "Botan's compiler targets x86-64" ]
+    {
+        return x86_64 ;
+    }
+    if [ configure.builds /webcpp/third_party//blake3_probe_arm64 : $(properties)
+        : "Botan's compiler targets arm64" ]
+    {
+        return arm64 ;
+    }
+    return generic ;
+}
+
+# The directory of the configuration of ps, a property set, in project, made
+# by tools/botan/configure.py unless it is complete, once per b2 run; its
+# sources are then those of sources.
+rule configuration ( ps : project )
+{
+    local values = [ command-values [ $(ps).raw ] ] ;
+    local key = [ webcpp-third-party.inputs-key $(.root) : botan
+        : third_party/libs/botan : $(.inputs) ] ;
+    local directory = [ webcpp-third-party.directory $(project) : botan
+        : $(key) --os=$(values[1]) --cc=$(values[2]) --cpu=$(values[3]) ] ;
+    if ! $(.configured.$(directory))
+    {
+        local script = [ path.native $(.root)/tools/botan/configure.py ] ;
+        local checkout = [ path.native $(.root)/third_party/libs/botan ] ;
+        local modules = [ path.native $(.root)/tools/botan/modules.txt ] ;
+        local output = [ path.native $(directory) ] ;
+        local command = python3 \"$(script)\" --source \"$(checkout)\"
+            --modules \"$(modules)\" --output \"$(output)\"
+            --os $(values[1]) --cc $(values[2]) --cpu $(values[3]) ;
+        local result = [ SHELL $(command:J=" ") : exit-status ] ;
+        if $(result[2]) != 0
+        {
+            errors.user-error "Botan's configuration for --os=$(values[1])"
+                "--cc=$(values[2]) --cpu=$(values[3]) failed:" $(result[1]) ;
+        }
+        for local line in [ SPLIT_BY_CHARACTERS $(result[1]) : "\r\n" ]
+        {
+            local kind = [ MATCH "^(lib|test) " : $(line) ] ;
+            .$(kind).$(directory) += [ MATCH "^[a-z]+ (.*)$" : $(line) ] ;
+        }
+        .configured.$(directory) = true ;
+    }
+    return $(directory) ;
+}
+
+# The virtual targets of the sources of kind, lib or test, of the
+# configuration in directory, files of the checkout, in project.
+rule sources ( directory : kind : project )
+{
+    local checkout = $(.root)/third_party/libs/botan ;
+    local result ;
+    for local source in $(.$(kind).$(directory))
+    {
+        result += [ virtual-target.from-file $(source) : $(checkout) : $(project) ] ;
+    }
+    return $(result) ;
+}
+
+# What compiles a source of Botan's in the configuration in directory:
+# upstream's define and its two include directories, the public and the
+# internal.
+rule compile-properties ( directory )
+{
+    return <define>BOTAN_IS_BEING_BUILT <include>$(directory)/build/include/public
+        <include>$(directory)/build/include/internal ;
+}
+
+# What a consumer of the configuration in directory gets: its public include
+# directory, whose headers are system ones, so that Botan's warnings are never
+# webcpp's. GCC takes a directory given both ways, -I and -isystem, for a
+# system one; clang and emcc keep the -I and mark the headers <botan/...>
+# names; MSVC searches /external:I directories as external, under
+# /external:W0. Each quoted as the Jamroot quotes Boost's, for a path that
+# holds a space.
+rule usage ( directory : ps )
+{
+    local public = $(directory)/build/include/public ;
+    local result = <include>$(public) ;
+    switch [ $(ps).get <toolset> ]
+    {
+        case gcc : result += <cxxflags>"-isystem\"$(public)\"" ;
+        case clang : result += <cxxflags>"--system-header-prefix=\"botan/\"" ;
+        case emscripten : result += <cxxflags>"--system-header-prefix=\"botan/\"" ;
+        case msvc :
+            local native = [ path.native $(public) ] ;
+            result += <cxxflags>"/external:I\"$(native)\"" <cxxflags>"/external:W0" ;
+    }
+    return $(result) ;
+}
