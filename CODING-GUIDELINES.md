@@ -7131,10 +7131,13 @@ and not built is in chapter 17.
   constant time on Apple silicon; a program does nothing. The guard's cost is
   measured from a release build by `bench/collect.py --timing` and published
   beside the throughput, and the constant-time lane sets no DIT of its own: it
-  measures what a program gets.
+  measures what a program gets. webcpp::hash's keyed functions hold hash's own
+  copy of the guard, a change to either copy is a change to both, and
+  `test/timing_hash_interop_test.cpp` runs the two together (chapter 17, hash).
   Source: `libraries/crypto/openspec/changes/data-independent-timing/design.md`
   D1 to D7 (proposals); `include/webcpp/crypto/detail/timing.hpp`,
-  `test/timing_coverage_<backend>_test.cpp` (libs/crypto).
+  `test/timing_coverage_<backend>_test.cpp`,
+  `test/timing_hash_interop_test.cpp` (libs/crypto).
 - **`<windows.h>` is reached only through `detail/windows.hpp`, which defines
   `NOMINMAX` and `WIN32_LEAN_AND_MEAN` only when absent and undefines only
   what it defined, and every header writes `(max)()`, `(min)()` and
@@ -9582,6 +9585,35 @@ and G4); the proposal, with the specification, the design and the plan, is in
   link's (`.gc`), each defined once.
   Source: `libraries/hash/openspec/changes/genesis/reference/spec.md` section
   5 (proposals).
+- **Every function that computes on a key, a password or a key derivation's
+  secret input holds `detail::timing_guard` as its first statement, on every
+  backend: `mac`, the key derivations, the password hashes (`bcrypt_verify`
+  included), and the keyed modes of BLAKE2b (`digest_of` and `hasher` when the
+  options carry a key) and of the `blake3` class, which construct it with
+  whether the call is keyed (a disengaged guard does nothing). Unkeyed digests
+  and Boost.Hash2's types by alias (`hmac<H>`, the `hmac_*` aliases,
+  `siphash_32`, `siphash_64`) hold none, and the asynchronous family's
+  initiating functions hold none: the synchronous function they call holds it
+  on the thread that computes.** A digest's input is not a secret by its
+  contract, a guard per `update` would cost every checksum for no secret, and
+  the same algorithm is also Boost.Hash2's type by alias, which hash cannot
+  guard (design D2); a guard inside an alias would need a wrapper type in
+  place of Boost.Hash2's own (design D3), so the documentation names
+  `mac<macs::hmac<D>>` instead. A coverage test per backend
+  (`test/timing_coverage_<backend>_test.cpp`) reads `doc/capabilities.json`
+  and fails when a keyed cell has no call, when a call's first guard is not
+  its own function's, or when an unkeyed function enters one: a new keyed
+  function or cell holds the guard and gets its call. The guard is a copy of
+  webcpp::crypto's (`include/webcpp/hash/detail/timing.hpp`; crypto depends on
+  hash, so hash cannot include crypto's), with the engaged flag added; a change
+  to either copy is made to both, and crypto's
+  `test/timing_hash_interop_test.cpp` runs the two nested in either order. Its
+  cost is measured from a release build by `bench/collect.py --timing` and
+  published in `doc/performance.adoc`.
+  Source: `libraries/hash/openspec/changes/data-independent-timing/design.md`
+  D1 to D9 (proposals); `include/webcpp/hash/detail/timing.hpp`,
+  `test/timing_coverage_<backend>_test.cpp` (libs/hash);
+  `test/timing_hash_interop_test.cpp` (libs/crypto).
 - **Seven increments, each usable alone.** The first, built, is Hash2 by alias,
   `keccak_256`, `blake3`, HKDF, PBKDF2, Argon2id, scrypt, the default backend
   and the measured table; the second, built, is the families and libsodium's

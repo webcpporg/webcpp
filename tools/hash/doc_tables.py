@@ -33,7 +33,9 @@ reference measured once, on 2026-11-16, that decides nothing: the default backen
 - generated/measured.adoc: the includes of the data chapters, backends.adoc and
   measurements.adoc (this tool), performance.adoc (bench/collect.py) and allocation.adoc
   (bench/allocation_collect.py), each one that is there;
-- backends.adoc: the capability table as the guide's data chapter shows it;
+- backends.adoc: the capability table as the guide's data chapter shows it, with which functions
+  set DIT around their calls and which do not (design D1 to D6 of the change
+  data-independent-timing), from the table's chapters and kinds;
 - measurements.adoc: measurements.json's tables, labelled as the dated reference they are;
 - llms.txt: the guide's index for language models, installed beside the page.
 
@@ -88,6 +90,28 @@ RATE_CHAPTERS = ('digests', 'macs', 'non-cryptographic')
 # function's default is of the same order (design D33).
 FAMILY_KINDS = ('digest', 'mac', 'kdf')
 FAMILY_DEFAULTS = ('hash2', 'xkcp', 'blake3', 'sodium')
+# The chapters whose functions compute on a key, a password or a secret input, and so set DIT
+# around each call: every row of them but a type, which is Boost.Hash2's by alias (the change
+# data-independent-timing, design D1 and D3). The coverage tests read the same rule from the table.
+KEYED_CHAPTERS = {'macs': 'MACs', 'kdfs': 'Key derivation', 'password_hashing': 'Password hashing'}
+# How a call names a row of each kind: a tag through its family's template, a function by its
+# name.
+CALLED_AS = {'mac': 'mac<{}>', 'kdf': 'argon2<{}>', 'digest': 'digest_of<{}>'}
+# The functions a keyed row's cell also holds, which the table lists under that row: bcrypt's
+# verification, always keyed, listed after bcrypt.
+ALSO_KEYED = {'bcrypt': 'bcrypt_verify'}
+# The keyed calls of a row the keyed chapters do not hold, each with the row it is a call of: the
+# keyed modes of a digest (design D1), keyed by their arguments (D4).
+KEYED_CALLS = (
+    ('digests::blake2b', '`digest_of<digests::blake2b>` and `hasher<digests::blake2b>` (`make`, '
+     '`update`, `finish`) when the options carry a key'),
+    ('blake3', 'the `blake3` class in its keyed, key-derivation and seeded keyed modes (a '
+     'non-empty byte seed, a non-zero integer seed: BLAKE3\'s keyed hash): `keyed`, `derive_key`, '
+     'those constructors, and `update`, `result`, `squeeze` and `reset` of such an object'),
+)
+APPLE_DIT = ('https://developer.apple.com/documentation/xcode/'
+             'writing-arm64-code-for-apple-platforms'
+             '#Enable-DIT-for-constant-time-cryptographic-operations')
 # The chapter each namespace's tags belong in: a tag of macs is listed with the MACs.
 NAMESPACE_CHAPTERS = {'digests::': 'digests', 'macs::': 'macs'}
 # The templates a family's tag is the first template argument of, by its kind, each declared in
@@ -653,6 +677,12 @@ def llms_txt(data: Data) -> str:
              'Primitives only: protocol steps (BIP39, hash160, EIP-55, Nostr ids, NIP-44) '
              'are what a domain library builds from these functions; the guide shows them as '
              'examples, never as this library\'s API.', '',
+             'Timing: every MAC, key derivation and password hash, and BLAKE2b\'s and BLAKE3\'s '
+             'keyed modes, set DIT (data-independent timing) around each call on 64-bit ARM under '
+             'Apple\'s systems and Linux where the CPU has FEAT_DIT, on every synchronous backend, '
+             'and leave the thread\'s DIT as they found it; '
+             'unkeyed digests and Boost.Hash2\'s hmac<H> by alias do not, so an HMAC with DIT is '
+             f'mac<macs::hmac<D>>. [Section]({page}#hash-backends-dit)', '',
              f'- [The guide]({page}): every chapter, example and table',
              f'- [Choose by use case]({page}#hash-choose): a decision table, need to '
              'function, backend and example', '']
@@ -692,6 +722,95 @@ def llms_txt(data: Data) -> str:
                  'throughput, a reference measured on 2026-11-16 that decides nothing')
     lines.append('')
     return '\n'.join(lines)
+
+
+def keyed_rows(data: Data) -> tuple[dict[str, list[str]], list[str]]:
+    """The rows that set DIT, by chapter, each as a call names it (a tag through its family), and
+    the types of the keyed chapters that do not (the aliases), in the table's order."""
+    keyed: dict[str, list[str]] = {}
+    aliases: list[str] = []
+    for algorithm in data.capabilities['algorithms']:
+        if algorithm['chapter'] not in KEYED_CHAPTERS:
+            continue
+        for function in algorithm['functions']:
+            if function['kind'] == 'type':
+                aliases.append(function['name'])
+            else:
+                called = CALLED_AS.get(function['kind'], '{}').format(function['name'])
+                keyed.setdefault(algorithm['chapter'], []).append(called)
+                if function['name'] in ALSO_KEYED:
+                    keyed[algorithm['chapter']].append(ALSO_KEYED[function['name']])
+    return keyed, aliases
+
+
+def dit_section(data: Data) -> list[str]:
+    """Which functions set DIT around their calls and which do not, and why: the keyed chapters'
+    rows from the table, the keyed calls of other rows, and the rest."""
+    keyed, aliases = keyed_rows(data)
+    lines = [
+        '[#hash-backends-dit]', '=== Data-independent timing (DIT)', '',
+        '64-bit ARM\'s DIT (data-independent timing) bit, PSTATE.DIT, makes the instructions Arm '
+        'lists take a time independent of their data, and Apple requires it of constant-time code '
+        f'({link("Apple, enable DIT for constant-time cryptographic operations", APPLE_DIT)}). '
+        'None of the libraries hash calls sets it, so hash does: every function that computes '
+        'on a key, a password or a key derivation\'s secret input runs its whole body inside '
+        '`detail::timing_guard`, on every synchronous backend, which on 64-bit ARM under '
+        'macOS, iOS, Linux and Android, where the CPU has FEAT_DIT (`hw.optional.arm.FEAT_DIT` '
+        'on Apple\'s systems, `HWCAP_DIT` on Linux), sets DIT for the call and returns with '
+        'the thread\'s DIT as it found it: clear when it was clear, set when the program set '
+        'it itself (Apple\'s `timingsafe_enable_if_supported`) or an outer call did. An error '
+        'and an exception leave it as found too, and DIT is a thread\'s own state, so a call '
+        'never changes another thread\'s. A program does nothing. Elsewhere the guard executes '
+        'no instruction: on x86 the counterpart, DOITM, is a register only the kernel writes; '
+        'on WebAssembly the engine decides; on Windows on ARM64 no documented way to ask '
+        'whether the CPU has FEAT_DIT was found, and DIT\'s instructions trap on a CPU without '
+        'it.', '',
+        'The functions that set DIT, on every synchronous backend of their cells:', '']
+    for chapter, names in keyed.items():
+        lines.append(f'* {KEYED_CHAPTERS[chapter]}: {listed([f"`{name}`" for name in names])}.')
+    calls = [text for row, text in KEYED_CALLS if row in data.functions]
+    if calls:
+        lines.append('* Keyed by their arguments: ' + '; '.join(calls) + '. Called without a '
+                     'key, they hold a disengaged guard, which reads its flag and does nothing '
+                     'else.')
+    lines += [
+        '', 'The functions that do not:', '',
+        '* Unkeyed digests and extendable-output functions, through `digest_of`, `hasher` and '
+        'the types of Boost.Hash2\'s form (`keccak_256`, `blake3` in its plain mode): their input '
+        'is not a secret by their contract (a program that derives from a secret uses a MAC or a '
+        'key derivation, which set DIT); they are the streaming case, where a guard per `update` '
+        'of every checksum would cost a real fraction of a short chunk for no secret; and the '
+        'same algorithm is also Boost.Hash2\'s own type by alias, which hash cannot guard, so '
+        'that guarding one spelling would make the protection depend on the spelling.']
+    if aliases:
+        lines.append(
+            '* Boost.Hash2\'s types by alias, ' + listed([f'`{name}`' for name in aliases]) +
+            ': they are Boost.Hash2\'s own classes, and a guard inside them would need a type of '
+            'hash\'s in place of the alias. An HMAC with DIT is `mac<macs::hmac<D>>`, which runs '
+            'the same Boost.Hash2 code on `backends::hash2` inside its guard, and a SipHash with '
+            'DIT is `mac<macs::siphash_2_4>`; a program that calls `hmac<H>` or `siphash_64` '
+            'directly sets DIT itself. HKDF and PBKDF2 on `backends::hash2` run '
+            'Boost.Hash2\'s `hmac` inside their own guard.')
+    lines += [
+        '* The initiating functions of `async.hpp`: they check sizes and post, and the '
+        'synchronous function they call sets DIT on the thread that computes, a thread of the '
+        'work executor\'s pool for a heavy function, the caller\'s for a cheap one '
+        '(<<hash-async>>). On `backends::webcrypto` the browser\'s JavaScript engine computes, '
+        'and nothing is added.', '',
+        'A coverage test per backend (`test/timing_coverage_<backend>_test.cpp`) reads this '
+        'table and fails when a keyed cell of its backend has no call, when a call enters no '
+        'guard, when the first guard it enters is not its own function\'s, or when it leaves DIT '
+        'otherwise than it found it, from a thread with DIT clear and from one that set it; it '
+        'checks that the unkeyed functions enter none. `test/timing_during_test.cpp` reads DIT '
+        'while HKDF, PBKDF2 and `mac` compute, through a hash that records it at each update, '
+        'on the calling thread and on an `async_pbkdf2` pool\'s. The guard '
+        'is hash\'s own copy of '
+        'webcpp::crypto\'s, which depends on hash: a change to one is a change to the other, and '
+        'crypto\'s test `timing_hash_interop_test` runs both nested, in either order.', '']
+    if (data.library / 'doc' / 'performance.adoc').is_file():
+        lines += ['What the guard adds to a call, measured from a release build, is in '
+                  '<<hash-performance-timing>>.', '']
+    return lines
 
 
 def chapter_header(title: str, anchor: str, sources: str) -> list[str]:
@@ -737,6 +856,7 @@ def backends_chapter(data: Data) -> str:
                               f'| {hmacs}',
                               f'| {c["constant_time"]["value"]}', f'| {targets}']
         lines += ['|===', '']
+    lines += dit_section(data)
     lines += ['=== The default backends', '',
               'The backend a call that names none uses, on every target, whatever the program '
               'links (<<hash-default-backend>>):', '',
