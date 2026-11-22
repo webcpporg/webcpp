@@ -358,7 +358,9 @@ exactly its authors' and the program carries only what it calls.
    their instruction sets alone, each flagged for its own set; XKCP is built
    from the one file of Keccak-p[1600] and the five high-level files
    webcpp::hash's adapter calls, not from every file of its package;
-   libsodium is built without its `.S` files.
+   libsodium is built without its `.S` files. Two libraries are not built
+   file by file from webcpp's list at all: OpenSSL (rule 7) and Botan (rule
+   13), whose sources upstream selects.
 3. Every file is compiled with `-ffunction-sections -fdata-sections` (`/Gy
    /Gw` on MSVC); upstream's warnings are not webcpp's (`<warnings>off`); each
    define the library cannot work out for itself on a target sits beside the
@@ -400,6 +402,7 @@ exactly its authors' and the program carries only what it calls.
    WASIp3 single and cooperative profiles must agree with the consumer's
    threading choice. Keep explicit host entropy seeding and fail-closed tests.
    Other libraries with external dependencies still use `webcpp.external`.
+   Botan's configuration is upstream's too, its compilation b2's (rule 13).
 8. The webcpp library's `config.hpp` chooses the default backend from the
    target and the `HAS` defines, and refuses impossible combinations with
    `#error`. The backend is named after the C library (`backends::bearssl`),
@@ -416,6 +419,18 @@ exactly its authors' and the program carries only what it calls.
     the submodule's.
 12. Moving a pin is a change of its own: the submodule, the canary's commit,
     the tests on every target and the size table.
+13. Botan is configured by upstream and compiled by b2, as
+    `tools/webcpp-botan.jam` does: Botan's own `configure.py` chooses the
+    modules (`tools/botan/modules.txt`, one list for every webcpp library, each
+    module with who needs it) and writes `build.h` and the list of sources for
+    each target into the build directory, `bin/third_party/botan/config-<hash>`,
+    never into the checkout; b2 compiles each listed source as an object of its
+    own with the program's properties. This is rule 2's kind of exception, as
+    OpenSSL's rule 7 is: the selection is upstream's, the compilation b2's.
+    Never the amalgamation, never a patch, never a module that seeds a
+    generator from the system (`system_rng`, `auto_rng`), which the helper
+    refuses. A library adds its own canary and define to the target; the
+    provisioning carries none.
 
 ## 6. Exceptions and RTTI
 
@@ -970,6 +985,8 @@ update --init third_party/libs/<name>`; a build that needs none never looks.
 | `blake2_vectors` | BLAKE2's reference code package `BLAKE2/BLAKE2` at `ed1974e` (2023-02-12), the submodule `third_party/libs/blake2`, shallow, test data that nothing compiles: hash's tests read `testvectors/blake2b-kat.txt` and `testvectors/blake2-kat.json` at run time under the directory its define `WEBCPP_TEST_BLAKE2_VECTORS` gives, on every target (wasmtime is given it, `webcpp.data`), and run again when one of them changes | CC0-1.0 |
 | `blake3` | BLAKE3 1.8.7 at `f3149ec`; `third_party/Jamfile` compiles `c/blake3.c`, `blake3_dispatch.c` and `blake3_portable.c` on every target, the intrinsics files on their instruction sets alone (an exception to chapter 5 rule 2), with webcpp::hash's canary; `WEBCPP_HASH_HAS_BLAKE3=1` | CC0-1.0, Apache-2.0, or Apache-2.0 with LLVM exception |
 | `blake3_vectors` | BLAKE3's official vectors, `test_vectors/test_vectors.json` of the submodule `third_party/libs/blake3` at `f3149ec`, test data: hash's tests read it at run time under the directory its define `WEBCPP_TEST_BLAKE3_VECTORS` gives, on every target (wasmtime is given it, `webcpp.data`), and run again when it changes | CC0-1.0, Apache-2.0, or Apache-2.0 with LLVM exception |
+| `botan` | Botan 3.14.1 at `01af88c`, the submodule `third_party/libs/botan`; configured by upstream's `configure.py` per target (`--minimized-build`, the modules of `tools/botan/modules.txt`) into `bin/third_party/botan/config-<hash>`, the library sources its `configure.py` lists compiled by b2 one object each (chapter 5, rule 13), natively and on Emscripten, with exceptions; `botan_test`, Botan's own test program; webcpp::hash's canary (`src/canary_botan.cpp`, compiled with Botan's own properties and build.h, and `WEBCPP_HASH_HAS_BOTAN` in the usage requirements, when `libs/hash` is checked out); no canary of the provisioning's own | BSD-2-Clause |
+| `botan_vectors` | Botan's own test data, `src/tests/data` of the submodule `third_party/libs/botan` at `01af88c`, test data: hash's tests read `hash/whirlpool.vec`, `hash/skein.vec`, `passhash/bcrypt.vec`, `bcrypt_pbkdf.vec` and `kdf/sp800_108_ctr.vec` at run time under the directory its define `WEBCPP_TEST_BOTAN_VECTORS` gives, natively and on Emscripten (`webcpp.data`), and run again when they change | BSD-2-Clause |
 | `ca_certificates` | Dated Mozilla/curl CA data snapshot under `third_party/ca_certificates`, verified against its manifest and embedded by a build-generated header; updated explicitly by `tools/ca_certificates/update.py` | MPL-2.0 |
 | `ctaes` | `src/crypto/ctaes` of `bitcoin/bitcoin` v31.1 at `9be056a` (commit `9be056a8a72b624dae9623b2f7bded92c2a21c91`), the submodule `third_party/libs/bitcoin`, shallow; `third_party/Jamfile` compiles its `ctaes.c` alone, with webcpp::crypto's canary, on every target (`WEBCPP_CRYPTO_HAS_CTAES=1`); the tree's `src/secp256k1/` subtree is never on an include path and no glob over `third_party/libs` reaches it | MIT |
 | `ed25519-speccheck` | `novifinancial/ed25519-speccheck` at `65519336` (2021-02-26), shallow, test data: crypto's tests read the twelve Ed25519 edge cases of "Taming the many EdDSAs", its `cases.json`, at run time under the directory its define `WEBCPP_TEST_ED25519_SPECCHECK` gives, on every target (wasmtime is given it, `webcpp.data`), and run again when it changes | Apache-2.0 |
@@ -9395,7 +9412,7 @@ summary.
   `organization/openspec/changes/site-increments-4-5/specs/site/spec.md`
   (proposals).
 
-### hash (hashing and key derivation over Boost.Hash2 and C backends; wrapper; accepted 2026-11-14, increments 1, 2, 3, 4, 5 and 7 built, not merged)
+### hash (hashing and key derivation over Boost.Hash2 and C backends; wrapper; accepted 2026-11-14, increments 1 to 7 built, not merged)
 
 webcpp::hash is one entry point for hashing and key derivation in a C++20
 program on every target webcpp has, a wrapper (`"port-of": null`). Increment 1
@@ -9424,10 +9441,18 @@ Argon2id with every parameter of RFC 9106; and the key derivations of
 standards (`kdf_standards.hpp`), SP 800-108's KBKDF, SP 800-56C's one-step KDF
 and ANSI X9.63's KDF, which have no default backend; increment 5 gives them
 BearSSL's MD5, SHA-1, SHA-2, TLS 1.0's MD5-SHA1, SHAKE and HMAC, each reached
-only by naming `backends::bearssl`. The C libraries are built by
+only by naming `backends::bearssl`; increment 6 gives them Botan 3.14.1's
+surface, each reached only by naming `backends::botan` (natively and on
+Emscripten, in a program built with exceptions): its digests, Streebog,
+Whirlpool and Skein-512 among them, its MACs, HKDF, PBKDF2, Argon2, scrypt and
+the key derivations of standards, and bcrypt and bcrypt_pbkdf
+(`bcrypt.hpp`), with their heavy forms `async_bcrypt`, `async_bcrypt_pbkdf`
+and `async_bcrypt_verify`. The C libraries are built by
 `third_party/Jamfile` (`xkcp`, `blake3`, `sodium`, `bearssl`, each with a
-canary), their own suites by the `c-suites` lane (`test/c_suites`), the
-examples are in `example/` and the documentation in `doc/`. Every function
+canary), Botan by `tools/webcpp-botan.jam` as `/third_party//botan` (hash's
+canary in `src/canary_botan.cpp`; designs D43 to D45), their own suites, and
+Botan's, by the `c-suites` lane (`test/c_suites`), the examples are in
+`example/` and the documentation in `doc/`. Every function
 reports failure as a `boost::system::result`, takes its data as `std::span` and
 allocates nothing in webcpp's own code; increment 7 adds an asynchronous family
 in `async.hpp` over webcpp::asio (any completion token, Cobalt's `use_op`
@@ -9475,10 +9500,14 @@ and G4); the proposal, with the specification, the design and the plan, is in
   derivations of standards, each reached only by naming `backends::openssl`;
   the fifth, built, is BearSSL's MD5, SHA-1, SHA-2, TLS 1.0's MD5-SHA1 and SHAKE
   through `digest_of` and `hasher`, and its HMAC through `mac`, each reached
-  only by naming `backends::bearssl`; the seventh, built, adds the browser
-  backend over WebCrypto through a parallel asynchronous family, whose cells
-  `doc/capabilities.json` marks asynchronous only; the sixth widens Botan's
-  surface. Across the built increments every tag that two backends or more
+  only by naming `backends::bearssl`; the sixth, built, is Botan's surface
+  through the families, the key derivations and bcrypt, each reached only by
+  naming `backends::botan`, which the stream provisions itself (design D43),
+  whose column is read at 3.14.1 (design D44) and which needs exceptions,
+  natively and on Emscripten, its lanes MSVC's included (design D45); the
+  seventh, built, adds the browser backend over WebCrypto through a parallel
+  asynchronous family, whose cells `doc/capabilities.json` marks asynchronous
+  only. Across the built increments every tag that two backends or more
   have is checked to give the same bytes on each pair of them, on random cases.
   Source: `libraries/hash/openspec/changes/genesis/reference/spec.md` section
   1.5 (proposals).

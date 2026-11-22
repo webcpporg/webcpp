@@ -31,6 +31,7 @@ import tools/webcpp-lint-headers ;
 import tools/webcpp-openssl ;
 import tools/webcpp-libdatachannel ;
 import tools/webcpp-ca-certificates ;
+import tools/webcpp-botan ;
 
 # A shell with CPATH (Homebrew sets it) puts its headers before the
 # configured Boost, and the compiler would use them without a word.

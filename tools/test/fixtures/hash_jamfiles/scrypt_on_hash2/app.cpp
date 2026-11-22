@@ -4,8 +4,8 @@
 // accompanying file LICENSE_1_0.txt or copy at
 // https://www.boost.org/LICENSE_1_0.txt)
 
-// scrypt on another backend than backends::sodium and backends::openssl stops with spec section
-// 3.3's text.
+// scrypt on another backend than backends::sodium, backends::openssl and backends::botan stops
+// with spec section 3.3's text.
 
 #include <webcpp/hash/backends/hash2.hpp>
 #include <webcpp/hash/scrypt.hpp>

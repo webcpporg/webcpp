@@ -93,3 +93,6 @@
 	path = third_party/libs/ed25519-speccheck
 	url = https://github.com/novifinancial/ed25519-speccheck.git
 	shallow = true
+[submodule "third_party/libs/botan"]
+	path = third_party/libs/botan
+	url = https://github.com/randombit/botan.git

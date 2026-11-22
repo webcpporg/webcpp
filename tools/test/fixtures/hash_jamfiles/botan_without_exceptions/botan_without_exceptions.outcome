@@ -1,0 +1,13 @@
+# Copyright (c) 2026 WebCpp.org
+#
+# Distributed under the Boost Software License, Version 1.0. (See
+# accompanying file LICENSE_1_0.txt or copy at
+# https://www.boost.org/LICENSE_1_0.txt)
+
+# The compiler's line starts with the header's path on the machine, so the
+# message is a contains: line. Natively the same text is
+# test/messages/botan_without_exceptions, a compile-diagnostic.
+[all]
+targets: emscripten
+build: fails
+contains: webcpp::hash: backends::botan needs exceptions: Botan reports its errors by throwing, and its header declares nothing without them. Build with exception-handling=on, or name another backend.

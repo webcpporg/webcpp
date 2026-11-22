@@ -42,14 +42,14 @@ reference measured once, on 2026-11-16, that decides nothing: the default backen
 missing, or is left over; the doc build runs it (doc/Jamfile). It also fails when guide.json
 lacks a public name of the capability table, names one it does not have, or a use case names
 an example that example/ does not hold; when a function of the capability table names a
-default that is not among its backends, or none (null) though a backend of the order hash2,
-xkcp, blake3, sodium has it; when a family's tag (kind digest, mac or kdf) names a default
-outside that order (design D34; null for a tag with none) or one without its cell; when any
-default is a backend that only the asynchronous family takes, a type has a default, or a row
-has an unknown kind; when a tag of digests or macs sits outside its namespace's chapter; when
-the header a row names declares no template of it (or of its family) with a Backend parameter;
-and
-when measurements.json's digest does not match its content (a hand edit of the reference).
+default that is not among its backends or outside the order hash2, xkcp, blake3, sodium
+(design D33), or none (null) though a backend of that order has it; when a family's tag (kind
+digest, mac or kdf) names a default outside that order (design D34; null for a tag with none)
+or one without its cell; when any default is a backend that only the asynchronous family takes,
+a type has a default, or a row has an unknown kind; when a tag of digests or macs sits outside
+its namespace's chapter; when the header a row names declares no template of it (or of its
+family) with a Backend parameter; and when measurements.json's digest does not match its
+content (a hand edit of the reference).
 Nothing in the output depends on the time or the machine, so the files change only with their
 data.
 """
@@ -84,7 +84,8 @@ TARGETS = ('native', 'wasip2', 'wasip3', 'emscripten')
 # The chapters whose throughput is a rate over 1 MiB (the measured table's workloads).
 RATE_CHAPTERS = ('digests', 'macs', 'non-cryptographic')
 # The kinds of a family's tag (spec 2.15), and the backends that may be its default, in their order
-# (design D34): the first that has the tag; never bearssl, openssl, botan or webcrypto.
+# (design D34): the first that has the tag; never bearssl, openssl, botan or webcrypto. A
+# function's default is of the same order (design D33).
 FAMILY_KINDS = ('digest', 'mac', 'kdf')
 FAMILY_DEFAULTS = ('hash2', 'xkcp', 'blake3', 'sodium')
 # The chapter each namespace's tags belong in: a tag of macs is listed with the MACs.
@@ -177,8 +178,9 @@ class Data:
 
     def check_defaults(self) -> None:
         """A function (a template with a Backend parameter) names its default, a backend that
-        has it, or none (null) exactly when no backend of the order hash2, xkcp, blake3, sodium
-        has it (design D34, as kbkdf); a family's tag names one of the order that has its cell,
+        has it, of the order hash2, xkcp, blake3, sodium (designs D33 and D34: never bearssl,
+        openssl or botan), or none (null) exactly when no backend of the order has it (as kbkdf
+        and bcrypt); a family's tag names one of the order that has its cell,
         or none (null): every default has its engine (ruling R84); no default is a backend only
         the asynchronous family takes (design D35); a type has none."""
         faults = []
@@ -197,6 +199,9 @@ class Data:
             elif kind == 'function' and default is None and ordered:
                 faults.append(f'doc/capabilities.json: the function {name} has no default, '
                               f'though {ordered[0]}, a backend of the order, has it')
+            elif kind == 'function' and default is not None and default not in FAMILY_DEFAULTS:
+                faults.append(f'doc/capabilities.json: the function {name} has the default '
+                              f'{default}, which is not one of {", ".join(FAMILY_DEFAULTS)}')
             elif kind == 'function' and default is not None and \
                     default not in function['backends']:
                 faults.append(f'doc/capabilities.json: the function {name} has no default '
@@ -414,14 +419,34 @@ def asynchronous_only(data: Data, backend: str) -> bool:
     return bool(data.backends[backend].get('asynchronous_only'))
 
 
+EXCEPTIONS_ONLY = 'with exceptions only'
+
+
+def exceptions_only(data: Data, backend: str) -> bool:
+    """Whether a build without exceptions cannot have the backend (backends::botan)."""
+    return bool(data.backends[backend].get('exceptions_only'))
+
+
+def backend_notes(data: Data, backend: str) -> list[str]:
+    """What a backend's name is followed by: that only the asynchronous family takes it, that only
+    a build with exceptions has it."""
+    notes = []
+    if asynchronous_only(data, backend):
+        notes.append(ASYNCHRONOUS_ONLY)
+    if exceptions_only(data, backend):
+        notes.append(EXCEPTIONS_ONLY)
+    return notes
+
+
 def llms_note(data: Data, backend: str) -> str:
     """backend_note in llms.txt's form, after a comma."""
-    return f', {ASYNCHRONOUS_ONLY}' if asynchronous_only(data, backend) else ''
+    return ''.join(f', {note}' for note in backend_notes(data, backend))
 
 
 def backend_note(data: Data, backend: str) -> str:
-    """What follows a backend's name in a table: that only the asynchronous family takes it."""
-    return f' ({ASYNCHRONOUS_ONLY})' if asynchronous_only(data, backend) else ''
+    """What follows a backend's name in a table: that only the asynchronous family takes it, or
+    that only a build with exceptions has it."""
+    return ''.join(f' ({note})' for note in backend_notes(data, backend))
 
 
 def partial_text(held: dict) -> str:
@@ -687,6 +712,8 @@ def backends_chapter(data: Data) -> str:
     for b in table['backends']:
         called = (f'{ASYNCHRONOUS_ONLY} (async.hpp)' if b.get('asynchronous_only')
                   else 'every function of its cells')
+        if b.get('exceptions_only'):
+            called += f', {EXCEPTIONS_ONLY}'
         lines += ['', f'| {b["name"]}', f'| {b["library"]}', f'| {b["licence"]}',
                   f'| `{b["jamfile"]}`', f'| {", ".join(b["targets"])}', f'| {called}']
     lines += ['|===', '']
