@@ -7212,7 +7212,8 @@ and not built is in chapter 17.
   `bearssl_verdicts.supp`. dudect times `sign` and `agree` against the
   scalar natively and on wasip2. The sizes lane measures signing,
   verification and `agree`, and the throughput page the same three, from
-  release builds. The checkers ran on 2026-11-21 in an arm64 Linux container
+  release builds. The checkers ran on 2026-11-21 (the signing before its
+  low-S step; the rerun with it is pending) in an arm64 Linux container
   (`linux-lint:arm64`, clang 18, Valgrind 3.22), the lane's CI command: both
   found upstream BearSSL's signing branching on the RFC 6979 nonce's bit
   length, `br_ecdsa_i31_bits2int` decoding it with its actual length and
