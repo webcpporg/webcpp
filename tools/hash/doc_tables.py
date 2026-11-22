@@ -787,8 +787,9 @@ def dit_section(data: Data) -> list[str]:
             '* Boost.Hash2\'s types by alias, ' + listed([f'`{name}`' for name in aliases]) +
             ': they are Boost.Hash2\'s own classes, and a guard inside them would need a type of '
             'hash\'s in place of the alias. An HMAC with DIT is `mac<macs::hmac<D>>`, which runs '
-            'the same Boost.Hash2 code on `backends::hash2` inside its guard; a program that '
-            'calls `hmac<H>` directly sets DIT itself. HKDF and PBKDF2 on `backends::hash2` run '
+            'the same Boost.Hash2 code on `backends::hash2` inside its guard, and a SipHash with '
+            'DIT is `mac<macs::siphash_2_4>`; a program that calls `hmac<H>` or `siphash_64` '
+            'directly sets DIT itself. HKDF and PBKDF2 on `backends::hash2` run '
             'Boost.Hash2\'s `hmac` inside their own guard.')
     lines += [
         '* The initiating functions of `async.hpp`: they check sizes and post, and the '
@@ -799,7 +800,10 @@ def dit_section(data: Data) -> list[str]:
         'A coverage test per backend (`test/timing_coverage_<backend>_test.cpp`) reads this '
         'table and fails when a keyed cell of its backend has no call, when a call enters no '
         'guard, when the first guard it enters is not its own function\'s, or when it leaves DIT '
-        'otherwise than it found it; it checks that the unkeyed functions enter none. The guard '
+        'otherwise than it found it, from a thread with DIT clear and from one that set it; it '
+        'checks that the unkeyed functions enter none. `test/timing_during_test.cpp` reads DIT '
+        'while HKDF, PBKDF2 and `mac` compute, through a hash that records it at each update, '
+        'on the calling thread and on an `async_pbkdf2` pool\'s. The guard '
         'is hash\'s own copy of '
         'webcpp::crypto\'s, which depends on hash: a change to one is a change to the other, and '
         'crypto\'s test `timing_hash_interop_test` runs both nested, in either order.', '']

@@ -536,6 +536,7 @@ def test_the_dit_section_follows_the_table(scratch: Path) -> None:
     for named in ('`hmac_sha2_256`', '`siphash_64`', '`hmac`,'):
         expect(named in rest and named not in sets, f'{named} is not among the aliases:\n{rest}')
     expect('`mac<macs::hmac<D>>`' in rest, 'the aliases do not name the guarded call')
+    expect('`mac<macs::siphash_2_4>`' in rest, 'the SipHash aliases do not name the guarded call')
     expect('<<hash-performance-timing>>' not in section, 'the cost named without its chapter')
     expect('#hash-backends-dit)' in files['llms.txt'], 'llms.txt does not point to the section')
     # A row the table gains in a keyed chapter is said: a function among those that set DIT, a
