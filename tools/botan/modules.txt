@@ -1,0 +1,31 @@
+# The modules of Botan 3.14.1 that /third_party//botan configures with
+# --minimized-build (tools/botan/configure.py, CODING-GUIDELINES.md chapter 5,
+# rule 13): one list for every webcpp library, each module with who needs it
+# and why. A # starts a comment; the names are those of
+# `configure.py --list-modules`, public ones only (an internal module, such as
+# cshake_xof or xmd, is loaded by a module that needs it).
+#
+# webcpp::hash (design D42's list, corrected at 3.14.1):
+md5 sha1 sha2_32 sha2_64        # digests::md5 to sha2_512_256, and their HMACs; D42 left them out
+sha3 shake shake_xof keccak     # SHA-3, SHAKE of any length (shake_xof, missing from D42), Keccak
+blake2 blake2s blake2mac        # BLAKE2b of 1 to 64 bytes and keyed, BLAKE2s-256
+rmd160 sm3 streebog whirlpool skein
+hmac kmac siphash               # kmac pulls the internal cshake_xof, which D42 named
+hkdf pbkdf2 scrypt argon2 bcrypt bcrypt_pbkdf
+sp800_108                       # kbkdf, SP800-108-Counter
+sp800_56a                       # sskdf, SP800-56A(<hash>): SP 800-56C's one-step KDF
+kdf2                            # x963kdf, KDF2(<hash>): ANSI X9.63's construction
+# webcpp::crypto (its design D2's Botan row, its spec's SPKI, PKCS#8 and PEM, hash-to-curve, HPKE):
+ed25519 ed448 x25519 x448
+ecdsa ecdh rfc6979              # rfc6979: deterministic ECDSA nonces, as crypto's ECDSA family has
+pcurves_secp256r1 pcurves_secp384r1 pcurves_secp521r1
+pcurves_brainpool256r1 pcurves_brainpool384r1 pcurves_brainpool512r1
+rsa emsa_pssr emsa_pkcs1 eme_oaep
+ml_kem ml_dsa slh_dsa_sha2 slh_dsa_shake
+aes gcm siv gcm_siv ccm ocb eax nist_keywrap cmac
+chacha20poly1305                # ChaCha20-Poly1305 and XChaCha20-Poly1305 (a 24-byte nonce)
+camellia aria sm4 serpent twofish
+bls12_381                       # only for the internal xmd that ec_group's RFC 9380 hash-to-curve
+                                # on the P-curves needs; crypto never exposes BLS12-381 (blst's)
+hpke
+pubkey pem                      # SPKI (x509_key.h), PKCS#8 (pkcs8.h) and PEM

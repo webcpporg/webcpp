@@ -271,6 +271,11 @@ Jamroot is its build configuration, and `libs/<name>` is its repository.
   third_party/libs/bips third_party/libs/ed25519-speccheck`, and
   `third_party/libs/openssl` for its OpenSSL backend (below); b2 builds every
   backend from its sources;
+- for Botan (`/third_party//botan`, webcpp::hash's `backends::botan` and
+  later webcpp::crypto's): nothing installed, with the pinned submodule
+  initialised (`git submodule update --init third_party/libs/botan`); b2 runs
+  Botan's own `configure.py` with Python 3 once per target and compiles its
+  sources; native and Emscripten, with exceptions;
 - for native Trystero: CMake and Make (nmake on Windows), and the pinned
   `third_party/libs/libdatachannel` checkout with its required nested sources.
   Initialize it, and the libsecp256k1 every room links, with `git submodule
