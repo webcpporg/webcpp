@@ -1,0 +1,16 @@
+# Copyright (c) 2026 WebCpp.org
+#
+# Distributed under the Boost Software License, Version 1.0. (See
+# accompanying file LICENSE_1_0.txt or copy at
+# https://www.boost.org/LICENSE_1_0.txt)
+
+# /third_party//botan is built natively and for Emscripten alone (plan Task
+# 40b): on WASI the build stops with the target's text.
+[all]
+targets: wasip2 wasip3
+build: fails
+same-as: botan/app.cpp app.cpp
+[wasip2]
+contains: /third_party//botan is built natively and for Emscripten. On clang-wasip2 it is not built yet
+[wasip3]
+contains: /third_party//botan is built natively and for Emscripten. On clang-wasip3 it is not built yet

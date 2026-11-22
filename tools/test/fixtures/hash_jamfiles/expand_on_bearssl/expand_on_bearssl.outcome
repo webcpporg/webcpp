@@ -10,4 +10,4 @@
 [all]
 targets: emscripten
 build: fails
-contains: webcpp::hash: hkdf_extract and hkdf_expand are not in backends::bearssl, whose HKDF does both steps together: call hkdf, or name backends::hash2, backends::sodium or backends::openssl.
+contains: webcpp::hash: hkdf_extract and hkdf_expand are not in backends::bearssl, whose HKDF does both steps together: call hkdf, or name backends::hash2, backends::sodium, backends::openssl or backends::botan.

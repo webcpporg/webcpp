@@ -1,0 +1,20 @@
+# Copyright (c) 2026 WebCpp.org
+#
+# Distributed under the Boost Software License, Version 1.0. (See
+# accompanying file LICENSE_1_0.txt or copy at
+# https://www.boost.org/LICENSE_1_0.txt)
+
+[all]
+targets: native emscripten
+build: fails
+same-as: canary_botan_missing/app.cpp app.cpp
+[native-darwin]
+contains: Undefined symbols for architecture
+contains: _webcpp_hash_botan_0000000_configured__add_third_party_botan_to_your_link
+[native-linux]
+contains: webcpp_hash_botan_0000000_configured__add_third_party_botan_to_your_link
+contains: undefined reference to `webcpp_hash_botan_0000000_configured__add_third_party_botan_to_your_link'
+[emscripten]
+contains: wasm-ld: error:
+contains: undefined symbol: webcpp_hash_botan_0000000_configured__add_third_party_botan_to_your_link
+contains: em++: error:

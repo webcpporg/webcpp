@@ -337,6 +337,12 @@ family alone, and a tag outside its namespace's chapter.
 template argument: each sentence reads the Backend's position from the header declaring the template.
 * Fixed an interrupted OpenSSL or libdatachannel build leaving a configuration later builds took as
 complete: its build record is published last, and one without it is built again.
+* Added /third_party//botan, Botan 3.14.1 configured by upstream and compiled by b2, natively and on
+Emscripten.
+* Added /third_party//botan_vectors, Botan's own test data at its pin, which webcpp::hash's tests read
+at run time.
+* Changed tools/hash/doc_tables.py to mark backends::botan "with exceptions only" in every table, and
+to refuse a function's default outside hash2, xkcp, blake3 and sodium.
 
 [#webcpp-0-1-0-compilers-tested]
 == Compilers tested

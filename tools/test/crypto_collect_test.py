@@ -10,7 +10,10 @@ renders doc/performance.adoc, builds its page only from release builds: a progra
 directory, b2's bench/<toolset>/<variant>/..., names another variant, or does not say, is refused
 before anything runs or is written, the guard's `--timing` program as the throughput's; one at
 variant=release is taken (it gets as far as running); a cell whose operation is not the one
-doc/tables/crypto.json states for its family is refused; `--timing` alone stores the guard's cost
+doc/tables/crypto.json states for its family is refused; a further operation the program lists
+after its family and backend is measured by that name, stated as the family's "sized_operations"
+entry and rendered after the family's fixed operation, and one crypto.json does not state is
+refused; `--timing` alone stores the guard's cost
 beside the data's throughput, which it keeps, and the page renders it, with UTC's date; `--timing`
 without data is refused with a message; `--provisional` marks each part, the throughput and the
 guard, on its own, numbers unchanged, a measurement clears only the mark of the part it measured,
@@ -98,6 +101,42 @@ def test_an_operation_crypto_json_does_not_state_is_refused(scratch: Path) -> No
            "'agreement of a secret key and a public key'")
     if data.exists() or page.exists():
         raise AssertionError('a file was written')
+
+
+def test_a_further_operation_is_measured_by_its_name(scratch: Path) -> None:
+    def line(operation: str, median: float) -> str:
+        return json.dumps({'family': 'p256', 'backend': 'bearssl', 'operation': operation,
+                           'target': 'native', 'compiler': 'clang', 'repetitions': 1,
+                           'runs_us': [median], 'median_us': median})
+    fixed = line('ECDSA signature of a 32-byte SHA-256 digest', 20.0)
+    further = line("x coordinate of the ECDH shared point with a peer's public key", 40.0)
+    # The stand-in answers the further operation only when it is named after the backend; its
+    # lines are files, since the operation's text holds a quote.
+    (scratch / 'fixed.json').write_text(fixed + '\n')
+    (scratch / 'further.json').write_text(further + '\n')
+    exe = program(scratch, 'release',
+                  'if [ "$1" = --list ]; then printf "p256 bearssl ecdh_x\\np256 bearssl\\n"; '
+                  f'elif [ "$3" = ecdh_x ]; then cat "{scratch}/further.json"; '
+                  f'elif [ "$3" = --runs ]; then cat "{scratch}/fixed.json"; else exit 3; fi\n')
+    data, page = scratch / 'data.json', scratch / 'page.adoc'
+    done = run('--exe', f'native={exe}', '--invocations', '1', '--data', data, '--page', page)
+    expect(done, 0)
+    measured = {case['operation']: case['median_us']
+                for case in json.loads(data.read_text())['cases']}
+    if measured != {'ECDSA signature of a 32-byte SHA-256 digest': 20.0,
+                    "x coordinate of the ECDH shared point with a peer's public key": 40.0}:
+        raise AssertionError(f'measured {measured}')
+    text = page.read_text()
+    first = text.index('| P-256: ECDSA signature of a 32-byte SHA-256 digest')
+    second = text.index("| P-256: x coordinate of the ECDH shared point with a peer's public key")
+    if first > second:
+        raise AssertionError('the further operation is rendered before the fixed one')
+    unknown = program(scratch / 'unknown', 'release',
+                      'if [ "$1" = --list ]; then echo "p256 bearssl recover"; else exit 3; fi\n')
+    done = run('--exe', f'native={unknown}', '--invocations', '1', '--data',
+               scratch / 'other.json', '--page', scratch / 'other.adoc')
+    expect(done, 1, "native lists p256 bearssl recover, and crypto.json's family p256 has no "
+           'sized operation recover')
 
 
 def test_a_timing_program_not_built_at_variant_release_is_refused(scratch: Path) -> None:
@@ -382,6 +421,7 @@ CASES: list[Callable[[Path], None]] = [
     test_a_program_not_built_at_variant_release_is_refused,
     test_a_program_built_at_variant_release_is_measured,
     test_an_operation_crypto_json_does_not_state_is_refused,
+    test_a_further_operation_is_measured_by_its_name,
     test_a_timing_program_not_built_at_variant_release_is_refused,
     test_the_guard_is_measured_kept_beside_the_throughput_and_rendered,
     test_the_throughput_measured_alone_keeps_the_guards_mark,

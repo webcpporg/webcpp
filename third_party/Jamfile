@@ -196,6 +196,25 @@ webcpp-openssl.declare $(WEBCPP_ROOT)
       tools/openssl/msvc.conf tools/openssl/pin.json ;
 explicit openssl ;
 
+# Botan 3.14.1 (BSD-2-Clause), randombit/botan at 01af88c: upstream's
+# configure.py chooses the modules (tools/botan/modules.txt, webcpp::hash's and
+# webcpp::crypto's) and writes build.h and the list of sources for each target
+# into bin/third_party/botan/config-<hash>; b2 compiles each listed source as
+# an object of its own, with the consumer's properties, never the amalgamation
+# and never a patch (CODING-GUIDELINES.md chapter 5, rule 13). Natively and on
+# Emscripten, with exceptions. A library adds its own canary and define
+# through webcpp-botan.declare's requirements and usage requirements here,
+# as webcpp::hash's do (botan-hash-canary and botan-hash-usage, after the C
+# libraries of webcpp::hash below; webcpp::crypto's join at its increment 7);
+# the provisioning carries none.
+import webcpp-botan ;
+webcpp-botan.declare $(WEBCPP_ROOT)
+    : tools/botan/configure.py tools/botan/source.py tools/botan/pin.json
+      tools/botan/modules.txt tools/webcpp-botan.jam
+    : <conditional>@botan-hash-canary
+    : <conditional>@botan-hash-usage ;
+explicit botan botan_test ;
+
 # libdatachannel and its pinned nested dependencies use upstream CMake, with
 # the exact OpenSSL archives above. Each archive reaches the program once. Its
 # configurations are named as OpenSSL's are, by the bytes of the inputs below,
@@ -255,14 +274,16 @@ rule crypto-checked-out ( properties * )
 .c-library = $(.c-sections) <conditional>@crypto-checked-out
     <include>$(CRYPTO)/include ;
 
-# BearSSL (MIT), from webcpp's unmodified mirror webcpporg/bearssl. Every .c
-# of src/, the POWER8 ones too, which off POWER compile to the stubs other
-# files call. One source of entropy, getentropy, with RDRAND and /dev/urandom
-# off (libs/crypto's random_device reads the same source): wasi-libc and
-# Emscripten declare getentropy only under _DEFAULT_SOURCE, and macOS only in
-# <sys/random.h>, which src/rand/sysrng.c does not include. On Windows
-# BearSSL's only seeder is CryptGenRandom, not the system's BCryptGenRandom,
-# so every seeder is off there and BearSSL has none.
+# BearSSL (MIT), from webcpp's fork webcpporg/bearssl, branch webcpp: upstream
+# 7bea48e with one commit, ECDSA's nonce decoded at its full length so that
+# signing does not branch on its bit length (CODING-GUIDELINES chapter 5,
+# rule 1). Every .c of src/, the POWER8 ones too, which off POWER compile to
+# the stubs other files call. One source of entropy, getentropy, with RDRAND
+# and /dev/urandom off (libs/crypto's random_device reads the same source):
+# wasi-libc and Emscripten declare getentropy only under _DEFAULT_SOURCE, and
+# macOS only in <sys/random.h>, which src/rand/sysrng.c does not include. On
+# Windows BearSSL's only seeder is CryptGenRandom, not the system's
+# BCryptGenRandom, so every seeder is off there and BearSSL has none.
 path-constant BEARSSL : libs/bearssl ;
 
 rule bearssl-checked-out ( properties * )
@@ -434,6 +455,27 @@ rule bearssl-hash-usage ( properties * )
     if [ path.exists [ path.native $(HASH)/src/canary_bearssl.c ] ]
     {
         return <define>WEBCPP_HASH_HAS_BEARSSL=1 ;
+    }
+}
+
+# Botan, /third_party//botan above, carries webcpp::hash's canary as BearSSL
+# does: src/canary_botan.cpp, a source of the library, compiled with Botan's
+# own properties and its configured build.h, which the library gains only when
+# libs/hash holds it, so that a checkout without libs/hash builds Botan as
+# before; WEBCPP_HASH_HAS_BOTAN then joins the usage requirements.
+rule botan-hash-canary ( properties * )
+{
+    if [ path.exists [ path.native $(HASH)/src/canary_botan.cpp ] ]
+    {
+        return <source>$(HASH)/src/canary_botan.cpp <include>$(HASH)/include ;
+    }
+}
+
+rule botan-hash-usage ( properties * )
+{
+    if [ path.exists [ path.native $(HASH)/src/canary_botan.cpp ] ]
+    {
+        return <define>WEBCPP_HASH_HAS_BOTAN=1 ;
     }
 }
 
@@ -935,6 +977,35 @@ alias openssl_evp_data : : <conditional>@openssl-evp-data-checked-out : :
     <dependency>libs/openssl/test/recipes/30-test_evp_data/evpmac_siphash.txt
     <dependency>libs/openssl/test/recipes/30-test_evp_data/evpmd_sha.txt ;
 explicit openssl_evp_data ;
+
+# Botan's own test data (BSD-2-Clause), src/tests/data of the submodule
+# third_party/libs/botan at the pin, read at run time from the directory
+# WEBCPP_TEST_BOTAN_VECTORS gives, on every target it is built for, never
+# copied: webcpp::hash reads hash/whirlpool.vec, hash/skein.vec,
+# passhash/bcrypt.vec, bcrypt_pbkdf.vec and kdf/sp800_108_ctr.vec, and its
+# c-suites lane runs Botan's own test program over the directory. Quoted as
+# wycheproof's define is.
+path-constant BOTAN_VECTORS : libs/botan/src/tests/data ;
+
+rule botan-vectors-checked-out ( properties * )
+{
+    if ! [ path.exists [ path.native $(BOTAN_VECTORS)/hash/whirlpool.vec ] ]
+    {
+        errors.user-error "third_party/libs/botan is not checked out. Check it out with"
+            "`git submodule update --init third_party/libs/botan`." ;
+    }
+}
+
+.botan-vectors = [ regex.replace $(BOTAN_VECTORS) "\\\\" "/" ] ;
+alias botan_vectors : : <conditional>@botan-vectors-checked-out : :
+    <define>"\"WEBCPP_TEST_BOTAN_VECTORS=\\\"$(.botan-vectors)\\\"\""
+    [ webcpp.data $(BOTAN_VECTORS) ]
+    <dependency>libs/botan/src/tests/data/hash/whirlpool.vec
+    <dependency>libs/botan/src/tests/data/hash/skein.vec
+    <dependency>libs/botan/src/tests/data/passhash/bcrypt.vec
+    <dependency>libs/botan/src/tests/data/bcrypt_pbkdf.vec
+    <dependency>libs/botan/src/tests/data/kdf/sp800_108_ctr.vec ;
+explicit botan_vectors ;
 
 # BLAKE2's reference code package (CC0-1.0) at ed1974e, shallow, as test data
 # that nothing compiles: webcpp::hash reads testvectors/blake2b-kat.txt (the

@@ -10,31 +10,31 @@ build: fails
 # tag::messages[]
 [native-darwin]
 contains: Undefined symbols for architecture
-contains: _webcpp_crypto_bearssl_7bea48e_getentropy__add_third_party_bearssl_to_your_link
+contains: _webcpp_crypto_bearssl_32381d6_getentropy__add_third_party_bearssl_to_your_link
 [native-linux]
-contains: webcpp_crypto_bearssl_7bea48e_getentropy__add_third_party_bearssl_to_your_link
-contains: undefined reference to `webcpp_crypto_bearssl_7bea48e_getentropy__add_third_party_bearssl_to_your_link'
+contains: webcpp_crypto_bearssl_32381d6_getentropy__add_third_party_bearssl_to_your_link
+contains: undefined reference to `webcpp_crypto_bearssl_32381d6_getentropy__add_third_party_bearssl_to_your_link'
 [wasip2]
 contains: wasm-ld: error:
-contains: undefined symbol: webcpp_crypto_bearssl_7bea48e_getentropy__add_third_party_bearssl_to_your_link
+contains: undefined symbol: webcpp_crypto_bearssl_32381d6_getentropy__add_third_party_bearssl_to_your_link
 [wasip3]
 contains: wasm-ld: error:
-contains: undefined symbol: webcpp_crypto_bearssl_7bea48e_getentropy__add_third_party_bearssl_to_your_link
+contains: undefined symbol: webcpp_crypto_bearssl_32381d6_getentropy__add_third_party_bearssl_to_your_link
 [emscripten]
 contains: wasm-ld: error:
-contains: undefined symbol: webcpp_crypto_bearssl_7bea48e_getentropy__add_third_party_bearssl_to_your_link
+contains: undefined symbol: webcpp_crypto_bearssl_32381d6_getentropy__add_third_party_bearssl_to_your_link
 contains: em++: error:
 # end::messages[]
 
 # The canary is the only link error (spec section 4.3): no line names an undefined symbol or
 # reference that is not it. Each linker's own words for one.
 [native-darwin]
-not-contains: ", referenced from: unless webcpp_crypto_bearssl_7bea48e_getentropy__add_third_party_bearssl_to_your_link
+not-contains: ", referenced from: unless webcpp_crypto_bearssl_32381d6_getentropy__add_third_party_bearssl_to_your_link
 [native-linux]
-not-contains: undefined reference unless webcpp_crypto_bearssl_7bea48e_getentropy__add_third_party_bearssl_to_your_link
+not-contains: undefined reference unless webcpp_crypto_bearssl_32381d6_getentropy__add_third_party_bearssl_to_your_link
 [wasip2]
-not-contains: undefined symbol unless webcpp_crypto_bearssl_7bea48e_getentropy__add_third_party_bearssl_to_your_link
+not-contains: undefined symbol unless webcpp_crypto_bearssl_32381d6_getentropy__add_third_party_bearssl_to_your_link
 [wasip3]
-not-contains: undefined symbol unless webcpp_crypto_bearssl_7bea48e_getentropy__add_third_party_bearssl_to_your_link
+not-contains: undefined symbol unless webcpp_crypto_bearssl_32381d6_getentropy__add_third_party_bearssl_to_your_link
 [emscripten]
-not-contains: undefined symbol unless webcpp_crypto_bearssl_7bea48e_getentropy__add_third_party_bearssl_to_your_link
+not-contains: undefined symbol unless webcpp_crypto_bearssl_32381d6_getentropy__add_third_party_bearssl_to_your_link
