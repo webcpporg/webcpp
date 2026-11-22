@@ -9,6 +9,7 @@
 // and prints the backend that ran. The secret key is the vector's: a real program draws its own.
 #include <webcpp/crypto/curves/secp256k1.hpp>
 #include <webcpp/crypto/equal.hpp>
+#include <webcpp/crypto/signing.hpp>
 
 #include <array>
 #include <cstdint>
@@ -30,10 +31,10 @@ int main() {
     auto const key = secp256k1::keypair::make(secret);
     bool ok = false;
     if (key) {
-        auto const signature = key->sign_schnorr(message, aux);
+        auto const signature = key->sign(webcpp::crypto::schnorr, message, aux);
         auto const public_key = key->xonly_public_key();
         ok = signature && public_key && webcpp::crypto::equal(*signature, expected) &&
-             secp256k1::verify_schnorr(*signature, message, *public_key);
+             webcpp::crypto::verify(webcpp::crypto::schnorr, *signature, message, *public_key);
     }
     auto const name = secp256k1::keypair::backend_type::name;
     std::printf("schnorr %s backend=%.*s\n", ok ? "ok" : "FAILED", static_cast<int>(name.size()),

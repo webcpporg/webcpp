@@ -10,6 +10,7 @@
 #include <webcpp/crypto/ciphers/aes256_gcm.hpp>
 #include <webcpp/crypto/curves/secp256k1.hpp>
 #include <webcpp/crypto/equal.hpp>
+#include <webcpp/crypto/signing.hpp>
 
 #include <array>
 #include <cstdint>
@@ -48,12 +49,14 @@ int main() {
     auto pair = secp256k1::keypair::make(secret);
     bool signed_ok = false;
     if (pair) {
-        auto const signature = pair->sign_schnorr(message, aux);
+        auto const signature = pair->sign(webcpp::crypto::schnorr, message, aux);
         auto const public_key = pair->xonly_public_key();
         signed_ok =
-            signature && public_key && secp256k1::verify_schnorr(*signature, message, *public_key);
+            signature && public_key &&
+            webcpp::crypto::verify(webcpp::crypto::schnorr, *signature, message, *public_key);
         message[0] ^= 1U;
-        signed_ok = signed_ok && !secp256k1::verify_schnorr(*signature, message, *public_key);
+        signed_ok = signed_ok && !webcpp::crypto::verify(webcpp::crypto::schnorr, *signature,
+                                                         message, *public_key);
     }
     std::printf("schnorr %s\n", signed_ok ? "ok" : "FAILED");
     return sealed && opened && signed_ok ? 0 : 1;

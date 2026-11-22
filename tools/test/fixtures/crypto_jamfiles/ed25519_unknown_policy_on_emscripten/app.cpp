@@ -23,8 +23,8 @@ struct lenient {};
 int main() {
     std::array<std::uint8_t, 32> const public_key{};
     std::array<std::uint8_t, 64> const signature{};
-    return webcpp::crypto::verify<lenient>(webcpp::crypto::eddsa, signature,
-                                           std::span<std::uint8_t const>{}, public_key)
+    return webcpp::crypto::verify(webcpp::crypto::eddsa, signature, std::span<std::uint8_t const>{},
+                                  public_key, lenient{})
                ? 0
                : 1;
 }

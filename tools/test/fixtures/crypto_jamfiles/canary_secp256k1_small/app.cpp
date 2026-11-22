@@ -7,6 +7,7 @@
 // Makes a key pair and signs once: the program reads libsecp256k1's canary, so that a library
 // built other than by webcpp's third_party/Jamfile fails to link.
 #include <webcpp/crypto/curves/secp256k1.hpp>
+#include <webcpp/crypto/signing.hpp>
 
 #include <array>
 #include <cstdint>
@@ -17,5 +18,5 @@ int main() {
     std::array<std::uint8_t, 32> const message{};
     std::array<std::uint8_t, 32> const aux{};
     auto key = webcpp::crypto::curves::secp256k1::keypair::make(secret);
-    return key && key->sign_schnorr(message, aux) ? 0 : 1;
+    return key && key->sign(webcpp::crypto::schnorr, message, aux) ? 0 : 1;
 }
