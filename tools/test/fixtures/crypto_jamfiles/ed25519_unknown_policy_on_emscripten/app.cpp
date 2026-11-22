@@ -21,10 +21,12 @@ struct lenient {};
 }  // namespace
 
 int main() {
-    std::array<std::uint8_t, 32> const public_key{};
+    auto const public_key =
+        webcpp::crypto::curves::ed25519::public_key::make(std::array<std::uint8_t, 32>{});
     std::array<std::uint8_t, 64> const signature{};
-    return webcpp::crypto::verify(webcpp::crypto::eddsa, signature, std::span<std::uint8_t const>{},
-                                  public_key, lenient{})
+    return public_key &&
+                   webcpp::crypto::verify(webcpp::crypto::eddsa, signature,
+                                          std::span<std::uint8_t const>{}, *public_key, lenient{})
                ? 0
                : 1;
 }
