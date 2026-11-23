@@ -4,9 +4,10 @@
 // accompanying file LICENSE_1_0.txt or copy at
 // https://www.boost.org/LICENSE_1_0.txt)
 
-// Agrees RFC 7748's shared secret (section 6.1) from Alice's secret key and Bob's public key on
-// the default backend, checks it against the RFC's, and prints the backend that ran. The keys are
-// the RFC's: a real program draws its own, and never prints a shared secret.
+// Agrees RFC 7748's shared secret (section 6.1) from Alice's key pair, made from her secret key,
+// and Bob's public key on the default backend, checks it against the RFC's, and prints the
+// backend that ran. The keys are the RFC's: a real program draws its own, and never prints a
+// shared secret.
 #include <webcpp/crypto/constant_time_equal.hpp>
 #include <webcpp/crypto/curves/x25519.hpp>
 
@@ -31,9 +32,15 @@ int main() {
         0xf4, 0x80, 0x35, 0x0f, 0x25, 0xe0, 0x7e, 0x21, 0xc9, 0x47, 0xd1,
         0x9e, 0x33, 0x76, 0xf0, 0x9b, 0x3c, 0x1e, 0x16, 0x17, 0x42,
     };
-    auto const shared = x25519::agree(alice_secret, bob_public);
+    auto const alice = x25519::keypair::from_secret(alice_secret);
+    auto const bob = x25519::public_key::from_bytes(bob_public);
+    if (!alice || !bob) {
+        std::printf("x25519 FAILED\n");
+        return 1;
+    }
+    auto const shared = alice->agree(*bob);
     bool const ok = shared && webcpp::crypto::constant_time_equal(shared->bytes(), expected);
-    auto const name = x25519::algorithm<>::backend_type::name;
+    auto const name = x25519::keypair::backend_type::name;
     std::printf("x25519 %s backend=%.*s\n", ok ? "ok" : "FAILED", static_cast<int>(name.size()),
                 name.data());
     return ok ? 0 : 1;
