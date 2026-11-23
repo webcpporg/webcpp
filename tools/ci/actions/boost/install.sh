@@ -24,6 +24,13 @@
 # The headers are installed, and beside them, in <prefix>/source, the sources of Boost's compiled
 # libraries, from which webcpp builds those it needs (the Jamroot's /webcpp//boost_url,
 # boost_charconv and boost_locale; libs/cobalt ships its own sources).
+#
+# Before anything is kept or installed from it, every tree install.sh extracts gets the patches of
+# patches/, each a git diff of Boost's headers (paths under boost/) against the archive's root,
+# that corrects a defect of this Boost until a release fixes it upstream; its opening paragraph
+# names the upstream change. A patch that no longer applies, as when a new Boost holds the fix,
+# fails install.sh, naming it, so that it is removed rather than skipped; and a prefix whose
+# headers lack one of them fails check.
 set -euo pipefail
 
 version=1.92.0
@@ -37,6 +44,51 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # The functions every action shares: digest, mixed, configuration, compiler_identity.
 # shellcheck source=SCRIPTDIR/../../helpers.sh
 . "${here}/../../helpers.sh"
+
+# The patches every extracted tree gets (patches/, above), in the order of their names.
+patches() {
+    local patch
+    for patch in "${here}"/patches/*.patch; do
+        [ -f "${patch}" ] && printf '%s\n' "${patch}"
+    done
+    return 0
+}
+
+# Runs git apply with the rest of the arguments in tree. git looks for no repository above tree:
+# in one, it would read the patch's paths from that repository's root and skip, without a word,
+# those outside tree.
+apply_in() {
+    local tree="$1"
+    shift
+    GIT_CEILING_DIRECTORIES="$(dirname "${tree}")" git -C "${tree}" apply "$@"
+}
+
+# Applies every patch to the tree of Boost's archive, and fails, naming the patch, on one that
+# touches something other than Boost's headers, on one that is applied already (the archive holds
+# the fix: remove the patch) and on one that does not apply (update or remove it).
+patch_tree() {
+    local tree="$1" patch name
+    while IFS= read -r patch; do
+        name="tools/ci/actions/boost/patches/$(basename "${patch}")"
+        if grep -E '^(\+\+\+|---) ' "${patch}" | grep -qvE '^(\+\+\+ b|--- a)/boost/'; then
+            printf 'install.sh: %s patches a file outside boost/, the headers\n' "${name}" >&2
+            exit 1
+        fi
+        if apply_in "${tree}" --check "${patch}" 2>/dev/null; then
+            apply_in "${tree}" "${patch}"
+            printf 'install.sh: applied %s\n' "${name}"
+        elif apply_in "${tree}" --reverse --check "${patch}" 2>/dev/null; then
+            printf 'install.sh: Boost %s holds the change of %s already: remove the patch\n' \
+                "${version}" "${name}" >&2
+            exit 1
+        else
+            printf 'install.sh: %s does not apply to Boost %s: update it, or remove it %s\n' \
+                "${name}" "${version}" 'if this Boost holds the fix it names' >&2
+            apply_in "${tree}" --check "${patch}" || true
+            exit 1
+        fi
+    done < <(patches)
+}
 
 # The file that install.sh writes last into a tree of Boost's sources it made, with the version
 # and the archive's SHA-256: the one sign that a directory is such a tree, which it may replace.
@@ -103,6 +155,7 @@ source_tree() {
     made+=("${work}")
     "${here}/../../download.sh" "${url}" "${sha256}" "${work}/${archive}"
     tar -xzf "${work}/${archive}" -C "${work}"
+    patch_tree "${work}/boost_${version//./_}"
     keep_sources "${work}/boost_${version//./_}" "${directory}"
 }
 
@@ -118,9 +171,13 @@ key() {
         macOS) image="macos-$(sw_vers -productVersion | cut -d . -f 1)" ;;
         *) image="${ImageOS:-windows}" ;;
     esac
-    local files
-    files="$(digest "${here}/action.yml" "${here}/install.sh" "${here}/../../download.sh" \
-        "${here}/../../helpers.sh")"
+    local files patch
+    local inputs=("${here}/action.yml" "${here}/install.sh" "${here}/../../download.sh"
+        "${here}/../../helpers.sh")
+    while IFS= read -r patch; do
+        inputs+=("${patch}")
+    done < <(patches)
+    files="$(digest "${inputs[@]}")"
     printf 'prefix=%s\n' "$(mixed "${RUNNER_TEMP}")/boost-${version}" >> "${GITHUB_OUTPUT}"
     printf 'key=boost-%s-%s-%s-%s\n' "${version}" "${image}" "${RUNNER_ARCH}" \
         "${files:0:16}" >> "${GITHUB_OUTPUT}"
@@ -146,6 +203,7 @@ install() {
     fi
     rm "${archive}"
     cd "boost_${version//./_}"
+    patch_tree "$(pwd)"
     keep_sources "$(pwd)" "${prefix}/source"
     local b2=./b2
     if [ "${RUNNER_OS}" = Windows ]; then
@@ -175,8 +233,9 @@ install() {
 # Whether prefix holds what configure uses: Boost's headers in <prefix>/include/boost, b2 in
 # <prefix>/bin, and in <prefix>/source the tree keep_sources writes for this archive (its marker
 # names the archive's SHA-256) with the sources of each compiled library the Jamroot builds
-# (tools/boost/Jamfile). So a prefix cached before it kept them, or before it kept one of them, is
-# refused here, and not at the first build that needs them.
+# (tools/boost/Jamfile), and headers that hold every patch of patches/. So a prefix cached before
+# it kept them, before it kept one of them, or before a patch was added, is refused here, and not
+# at the first build that needs them.
 check() {
     local prefix="$1"
     local b2="${prefix}/bin/b2"
@@ -197,6 +256,14 @@ check() {
         printf 'install.sh: %s holds no Boost headers, no b2 or no sources\n' "${prefix}" >&2
         exit 1
     fi
+    local patch
+    while IFS= read -r patch; do
+        if ! apply_in "${prefix}/include" --reverse --check "${patch}" 2>/dev/null; then
+            printf 'install.sh: the Boost headers of %s lack %s\n' "${prefix}" \
+                "tools/ci/actions/boost/patches/$(basename "${patch}")" >&2
+            exit 1
+        fi
+    done < <(patches)
 }
 
 configure() {
