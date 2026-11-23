@@ -6974,18 +6974,19 @@ makes a room read, through webcpp::beast's bounded handshake layer.
 webcpp::crypto gives C++20 programs on every target the primitives of
 cryptography over widely used C libraries that webcpp builds from their
 sources: AES-GCM and the AES block cipher, a `random_device` on the system's
-generator, `constant_time_equal`, and secp256k1's BIP340 Schnorr and ECDSA
-signatures, ECDH, strict DER and the x-only tweak. Version 0.1 is the
-proposal's increments 1 and 2, as the owner set them on 2026-11-14; OpenSSL's
-memory option is built after it (its block below, unreleased); what is decided
-and not built is in chapter 17.
+generator, `constant_time_equal`, `erase_secret`, and secp256k1's BIP340
+Schnorr and ECDSA signatures, ECDH, strict DER and the x-only tweak. Version
+0.1 is the proposal's increments 1 and 2, as the owner set them on 2026-11-14;
+OpenSSL's memory option is built after it (its block below, unreleased); what is
+decided and not built is in chapter 17.
 
 **Scope.**
 
 - **crypto holds primitives only, grouped in namespaces whose headers mirror
-  them: the root (`error`, `random_device`, `constant_time_equal`, `config`),
-  `backends`, `ciphers` (`aes128`, `aes192`, `aes256`, `gcm`, `aes128_gcm`,
-  `aes256_gcm`, under `<webcpp/crypto/ciphers/>`) and `curves::secp256k1` (under
+  them: the root (`error`, `random_device`, `constant_time_equal`,
+  `erase_secret`, `config`), `backends`, `ciphers` (`aes128`, `aes192`,
+  `aes256`, `gcm`, `aes128_gcm`, `aes256_gcm`, under
+  `<webcpp/crypto/ciphers/>`) and `curves::secp256k1` (under
   `<webcpp/crypto/curves/>`).** The owner's rule of 2026-11-15: a protocol's
   steps (BIPs, EIPs, NIPs) belong to a domain library built on these
   primitives (a future webcpp::bitcoin, ethereum or nostr), so the Taproot
@@ -7036,10 +7037,10 @@ and not built is in chapter 17.
   Source: `include/webcpp/crypto/detail/limits.hpp` (libs/crypto).
 - **One public header per responsibility; a backend's header checks that its
   library is linked; `config.hpp`, `error.hpp`, `constant_time_equal.hpp`,
-  `random_device.hpp` and `<webcpp/crypto.hpp>` compile with no backend
-  linked.** A program that only draws random bytes or compares tags names no
-  backend library, and one that only signs names `/third_party//secp256k1`
-  alone.
+  `erase_secret.hpp`, `random_device.hpp` and `<webcpp/crypto.hpp>` compile
+  with no backend linked.** A program that only draws random bytes or compares
+  tags names no backend library, and one that only signs names
+  `/third_party//secp256k1` alone.
   Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
   section 2.2 (proposals); `test/Jamfile`'s headers-alone list (libs/crypto).
 - **`constant_time_equal` compares in constant time: it reads every byte,
