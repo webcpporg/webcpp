@@ -292,8 +292,9 @@ def test_a_default_without_its_cell_fails_and_a_partial_cell_is_said(scratch: Pa
     expect('`hash2` (partial: an output under 64 bytes' in blake2, blake2)
     expect('| hash2 (partial: a tag under 32 bytes' in files['backends.adoc'],
            'the backends chapter does not say what the partial cell refuses')
-    expect('`webcrypto` (asynchronous family only) (partial: an application_info longer than 1,024 bytes'
-           in files['generated/backends-hkdf.adoc'], files['generated/backends-hkdf.adoc'])
+    expect('`webcrypto` (asynchronous family only) (partial: an application_info longer than '
+           '1,024 bytes' in files['generated/backends-hkdf.adoc'],
+           files['generated/backends-hkdf.adoc'])
     expect('| webcrypto (asynchronous family only) (partial: an iteration count above 2^32 - 1'
            in files['backends.adoc'], 'webcrypto\'s PBKDF2 limits are not said')
 
