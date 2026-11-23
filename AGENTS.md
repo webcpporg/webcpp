@@ -1804,6 +1804,11 @@ wrapper each quoted as one word of Jam.
   action before it is cached. It refuses an empty or relative prefix: b2 given
   an empty `--prefix` installs into `/usr/local`. `install.sh source <dir>`
   fills such a tree alone, for a machine whose Boost comes from elsewhere.
+  Every tree it extracts gets the patches of `tools/ci/actions/boost/patches`
+  first, with `git apply` (`CODING-GUIDELINES.md` chapter 14, the build):
+  one that does not apply, or that the archive holds already, fails the
+  action naming it, the patches are part of the cache key, and a prefix whose
+  headers lack one is refused.
 - `wasi-sdk` installs wasi-sdk 34 into `.local/wasi-sdk`: the runner's
   build of its clang and tools, with the release's platform-independent
   `wasi-sysroot-34.0` and `libclang_rt-34.0` in place of that build's

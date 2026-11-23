@@ -1,0 +1,20 @@
+Boost 1.92.0's boost/hash2/detail/mul128.hpp repeats, in the
+`#elif defined(_M_ARM64) || defined(_M_ARM64EC)` branch of mul128, the first two lines of
+mul128_impl's definition, its signature and its opening brace, so that MSVC for ARM64 stops with
+C2601 (local function definitions are illegal) in every translation unit that includes
+boost/hash2/xxh3.hpp. This patch removes the two lines, as the upstream fix does:
+https://github.com/boostorg/hash2/pull/49. Remove this file once the Boost that
+tools/ci/actions/boost/install.sh pins contains that fix: install.sh then fails, saying so.
+
+diff --git a/boost/hash2/detail/mul128.hpp b/boost/hash2/detail/mul128.hpp
+--- a/boost/hash2/detail/mul128.hpp
++++ b/boost/hash2/detail/mul128.hpp
+@@ -71,8 +71,6 @@ BOOST_CXX14_CONSTEXPR inline uint128 mul128( std::uint64_t x, std::uint64_t y )
+ 
+ #elif defined(_M_ARM64) || defined(_M_ARM64EC)
+ 
+-BOOST_CXX14_CONSTEXPR inline uint128 mul128_impl( std::uint64_t x, std::uint64_t y ) noexcept
+-{
+     if( !detail::is_constant_evaluated() )
+     {
+         uint128 r = { 0, 0 };
