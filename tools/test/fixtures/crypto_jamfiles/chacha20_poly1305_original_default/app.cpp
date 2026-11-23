@@ -39,7 +39,7 @@ int main() {
     std::array<std::uint8_t, 10> const expected_head{0xe3, 0xe4, 0x46, 0xf7, 0xed,
                                                      0xe9, 0xa1, 0x9b, 0x62, 0xa4};
     // NOLINTEND(readability-trailing-comma)
-    auto sealer = aead::make(key);
+    auto sealer = aead::from_key(key);
     bool ok = false;
     if (sealer) {
         auto const tag = sealer->seal(iv, additional_data, data);

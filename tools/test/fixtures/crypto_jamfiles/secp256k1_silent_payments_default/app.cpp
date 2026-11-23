@@ -67,9 +67,9 @@ bool pay_and_scan(secp256k1::keypair const& scan_pair, secp256k1::keypair const&
 
 int main() {
     namespace crypto = webcpp::crypto;
-    auto const scan_pair = secp256k1::keypair::make(repeated(0x51));
-    auto const spend_pair = secp256k1::keypair::make(repeated(0x52));
-    auto const donor = secp256k1::keypair::make(repeated(0x53));
+    auto const scan_pair = secp256k1::keypair::from_secret(repeated(0x51));
+    auto const spend_pair = secp256k1::keypair::from_secret(repeated(0x52));
+    auto const donor = secp256k1::keypair::from_secret(repeated(0x53));
     bool const ok =
         scan_pair && spend_pair && donor && pay_and_scan(*scan_pair, *spend_pair, *donor);
     auto const name = crypto::default_backend_t<crypto::families::secp256k1_silent_payments>::name;

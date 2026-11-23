@@ -32,7 +32,7 @@ int main() {
         0x59, 0x5b, 0xbe, 0x24, 0x65, 0x51, 0x41, 0x43, 0x8e, 0x7a, 0x10, 0x0b,
     };
     std::span<std::uint8_t const> const message{};
-    auto const key = ed25519::keypair::make(seed);
+    auto const key = ed25519::keypair::from_secret(seed);
     bool ok = false;
     if (key) {
         auto const signature = key->sign(crypto::eddsa, message);

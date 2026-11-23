@@ -14,5 +14,5 @@
 int main() {
     namespace crypto = webcpp::crypto;
     std::array<std::uint8_t, 32> const key{};
-    return crypto::ciphers::chacha20_poly1305<crypto::backends::bearssl>::make(key) ? 0 : 1;
+    return crypto::ciphers::chacha20_poly1305<crypto::backends::bearssl>::from_key(key) ? 0 : 1;
 }

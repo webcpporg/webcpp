@@ -24,7 +24,8 @@ int main() {
     namespace crypto = webcpp::crypto;
     std::array<std::uint8_t, 32> const key{};
     std::array<std::uint8_t, 12> const iv{};
-    auto made = crypto::ciphers::gcm<crypto::ciphers::aes256<crypto::backends::openssl>>::make(key);
+    auto made =
+        crypto::ciphers::gcm<crypto::ciphers::aes256<crypto::backends::openssl>>::from_key(key);
     if (!made) {
         return 1;
     }

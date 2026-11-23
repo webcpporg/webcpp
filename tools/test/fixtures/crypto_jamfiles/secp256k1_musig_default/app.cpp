@@ -76,8 +76,8 @@ bool sign_and_verify(secp256k1::keypair const& first, secp256k1::keypair const& 
 
 int main() {
     namespace crypto = webcpp::crypto;
-    auto const first = secp256k1::keypair::make(repeated(0x11));
-    auto const second = secp256k1::keypair::make(repeated(0x22));
+    auto const first = secp256k1::keypair::from_secret(repeated(0x11));
+    auto const second = secp256k1::keypair::from_secret(repeated(0x22));
     bool const ok = first && second && sign_and_verify(*first, *second);
     auto const name = crypto::default_backend_t<crypto::families::secp256k1_musig>::name;
     std::printf("musig %s backend=%.*s\n", ok ? "ok" : "FAILED", static_cast<int>(name.size()),

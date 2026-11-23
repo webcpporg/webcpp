@@ -28,7 +28,7 @@ int main() {
         0xd0, 0xd1, 0xc8, 0xa7, 0x99, 0x99, 0x6b, 0xf0,
         0x26, 0x5b, 0x98, 0xb5, 0xd4, 0x8a, 0xb9, 0x19,
     };
-    auto aead = webcpp::crypto::ciphers::aes256_gcm::make(key);
+    auto aead = webcpp::crypto::ciphers::aes256_gcm::from_key(key);
     if (!aead) {
         return 1;
     }
@@ -46,7 +46,7 @@ int main() {
     std::array<std::uint8_t, 32> message{};
     message.fill(0x17);
     std::array<std::uint8_t, 32> const aux{};
-    auto pair = secp256k1::keypair::make(secret);
+    auto pair = secp256k1::keypair::from_secret(secret);
     bool signed_ok = false;
     if (pair) {
         auto const signature = pair->sign(webcpp::crypto::schnorr, message, aux);

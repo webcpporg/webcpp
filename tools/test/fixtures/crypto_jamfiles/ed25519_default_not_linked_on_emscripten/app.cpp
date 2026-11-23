@@ -12,5 +12,5 @@
 
 int main() {
     std::array<std::uint8_t, 32> const seed{};
-    return webcpp::crypto::curves::ed25519::keypair::make(seed) ? 0 : 1;
+    return webcpp::crypto::curves::ed25519::keypair::from_secret(seed) ? 0 : 1;
 }

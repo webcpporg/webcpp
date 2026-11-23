@@ -55,8 +55,8 @@ int main() {
     auto const expected_tag = from_hex<16>("f3ffc7703f9400e52a7dfb4b3d3305d9");
     auto const expected_head = from_hex<8>("8e993b9f48681273");
     auto data = plaintext;
-    auto alice = box::make(alice_secret, bob_public);
-    auto bob = box::make(bob_secret, alice_public);
+    auto alice = box::from_keys(alice_secret, bob_public);
+    auto bob = box::from_keys(bob_secret, alice_public);
     bool ok = false;
     if (alice && bob) {
         auto const sealed = alice->seal(iv, data);

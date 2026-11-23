@@ -15,5 +15,5 @@ int main() {
     namespace crypto = webcpp::crypto;
     using aead = crypto::ciphers::aead<crypto::families::gcm, crypto::backends::sodium>;
     std::array<std::uint8_t, 32> const key{};
-    return aead::make(key) ? 0 : 1;
+    return aead::from_key(key) ? 0 : 1;
 }

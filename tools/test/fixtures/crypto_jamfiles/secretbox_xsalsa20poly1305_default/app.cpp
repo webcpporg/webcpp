@@ -49,7 +49,7 @@ int main() {
     auto const expected_tag = from_hex<16>("f3ffc7703f9400e52a7dfb4b3d3305d9");
     auto const expected_head = from_hex<8>("8e993b9f48681273");
     auto data = plaintext;
-    auto sealer = secretbox::make(key);
+    auto sealer = secretbox::from_key(key);
     bool ok = false;
     if (sealer) {
         auto const tag = sealer->seal(iv, {}, data);

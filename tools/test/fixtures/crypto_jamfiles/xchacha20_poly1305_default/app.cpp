@@ -46,7 +46,7 @@ int main() {
         0x47, 0xde, 0xaf, 0xd8, 0x78, 0x0a, 0xcf, 0x49,
     };
     std::array<std::uint8_t, 8> const expected_head{0xbd, 0x6d, 0x17, 0x9d, 0x3e, 0x83, 0xd4, 0x3b};
-    auto sealer = aead::make(key);
+    auto sealer = aead::from_key(key);
     bool ok = false;
     if (sealer) {
         auto const tag = sealer->seal(iv, additional_data, data);

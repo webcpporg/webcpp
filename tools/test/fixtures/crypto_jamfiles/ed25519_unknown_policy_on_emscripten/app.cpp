@@ -22,7 +22,7 @@ struct lenient {};
 
 int main() {
     auto const public_key =
-        webcpp::crypto::curves::ed25519::public_key::make(std::array<std::uint8_t, 32>{});
+        webcpp::crypto::curves::ed25519::public_key::from_bytes(std::array<std::uint8_t, 32>{});
     std::array<std::uint8_t, 64> const signature{};
     return public_key &&
                    webcpp::crypto::verify(webcpp::crypto::eddsa, signature,

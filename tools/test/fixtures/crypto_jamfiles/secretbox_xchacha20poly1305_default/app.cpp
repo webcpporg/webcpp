@@ -44,7 +44,7 @@ int main() {
     auto const expected_tag = from_hex<16>("0c801a037c2ed0500d6ef68e8d195ece");
     auto const expected = from_hex<21>("b05a15f8edb68b35773e81ac2aca18e9be53416f9a");
     auto data = plaintext;
-    auto sealer = secretbox::make(key);
+    auto sealer = secretbox::from_key(key);
     bool ok = false;
     if (sealer) {
         auto const tag = sealer->seal(iv, {}, data);

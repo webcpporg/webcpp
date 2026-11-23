@@ -29,8 +29,8 @@ std::array<std::uint8_t, 32> repeated(std::uint8_t value) {
 int main() {
     namespace crypto = webcpp::crypto;
     namespace secp256k1 = webcpp::crypto::curves::secp256k1;
-    auto const initiator = secp256k1::keypair::make(repeated(0x11));
-    auto const responder = secp256k1::keypair::make(repeated(0x22));
+    auto const initiator = secp256k1::keypair::from_secret(repeated(0x11));
+    auto const responder = secp256k1::keypair::from_secret(repeated(0x22));
     bool ok = false;
     if (initiator && responder) {
         auto const sent = secp256k1::ellswift_create(*initiator, repeated(0x33));

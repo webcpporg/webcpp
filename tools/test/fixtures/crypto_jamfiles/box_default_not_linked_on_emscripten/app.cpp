@@ -17,10 +17,10 @@ int main() {
     namespace crypto = webcpp::crypto;
     std::array<std::uint8_t, 32> const key{};
     std::array<std::uint8_t, 48> sealed{};
-    return crypto::ciphers::secretbox<>::make(key) &&
-                   crypto::ciphers::secretbox_xchacha20poly1305<>::make(key) &&
-                   crypto::hybrid::box::make(key, key) &&
-                   crypto::hybrid::box_xchacha20poly1305::make(key, key) &&
+    return crypto::ciphers::secretbox<>::from_key(key) &&
+                   crypto::ciphers::secretbox_xchacha20poly1305<>::from_key(key) &&
+                   crypto::hybrid::box::from_keys(key, key) &&
+                   crypto::hybrid::box_xchacha20poly1305::from_keys(key, key) &&
                    crypto::hybrid::sealed_box::seal(key, {}, sealed)
                ? 0
                : 1;

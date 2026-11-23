@@ -20,5 +20,5 @@ struct not_a_family {};
 
 int main() {
     std::array<std::uint8_t, 32> const key{};
-    return webcpp::crypto::hybrid::basic_box<not_a_family>::make(key, key) ? 0 : 1;
+    return webcpp::crypto::hybrid::basic_box<not_a_family>::from_keys(key, key) ? 0 : 1;
 }

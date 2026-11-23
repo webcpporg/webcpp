@@ -29,8 +29,8 @@ int main() {
         0x99, 0x18, 0xd1, 0x29, 0xb6, 0x5d, 0xeb, 0x78, 0x9a, 0xf8, 0xc8,
         0x35, 0x1f, 0x39, 0x1f, 0xeb, 0x0c, 0xbf, 0x23, 0x86, 0x04,
     };
-    auto const client = x25519::kx_keypair<>::make(client_seed);
-    auto const server = x25519::kx_keypair<>::make(server_seed);
+    auto const client = x25519::kx_keypair<>::derive_from_seed(client_seed);
+    auto const server = x25519::kx_keypair<>::derive_from_seed(server_seed);
     bool ok = false;
     if (client && server) {
         auto const client_public = client->public_key();
