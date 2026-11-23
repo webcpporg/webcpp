@@ -8,8 +8,8 @@
 // backend, checks the tag and the ciphertext against the test's, opens it again, and prints the
 // backend that ran. The key and nonce are the test's: a real program draws its key from
 // random_device, and a 24-byte nonce drawn at random for every message is safe.
-#include <webcpp/crypto/ciphers/secretbox.hpp>
 #include <webcpp/crypto/constant_time_equal.hpp>
+#include <webcpp/crypto/secret_key_encryption/secretbox.hpp>
 
 #include <array>
 #include <cstddef>
@@ -36,7 +36,7 @@ std::array<std::uint8_t, Size> from_hex(std::string_view hex) {
 }  // namespace
 
 int main() {
-    using secretbox = webcpp::crypto::ciphers::secretbox_xchacha20poly1305<>;
+    using secretbox = webcpp::crypto::secret_key_encryption::secretbox_xchacha20poly1305<>;
     auto const key =
         from_hex<32>("10c0ad4054b48d7d1de1d9ab6f782ca883d886573e9d18c1d47b6ee6b5208189");
     auto const nonce = from_hex<24>("977edf57428d0e0247a3c88c9a9ec321bbaae1a4da8353b5");
@@ -47,9 +47,9 @@ int main() {
     auto sealer = secretbox::from_key(key);
     bool ok = false;
     if (sealer) {
-        auto const tag = sealer->seal(nonce, {}, data);
+        auto const tag = sealer->seal(nonce, data);
         ok = tag && webcpp::crypto::constant_time_equal(*tag, expected_tag) && data == expected &&
-             sealer->open(nonce, {}, data, expected_tag) && data == plaintext;
+             sealer->open(nonce, data, expected_tag) && data == plaintext;
     }
     auto const name = secretbox::backend_type::name;
     std::printf("secretbox_xchacha20poly1305 %s backend=%.*s\n", ok ? "ok" : "FAILED",
