@@ -6,12 +6,12 @@
 
 // As test/messages/kx_default_not_linked, on Emscripten.
 
-#include <webcpp/crypto/curves/x25519/kx.hpp>
+#include <webcpp/crypto/key_exchange/kx.hpp>
 
 #include <array>
 #include <cstdint>
 
 int main() {
     std::array<std::uint8_t, 32> const seed{};
-    return webcpp::crypto::curves::x25519::kx_keypair<>::derive_from_seed(seed) ? 0 : 1;
+    return webcpp::crypto::key_exchange::kx_keypair<>::derive_from_seed(seed) ? 0 : 1;
 }

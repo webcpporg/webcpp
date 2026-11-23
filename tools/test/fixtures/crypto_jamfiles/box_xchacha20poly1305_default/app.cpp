@@ -9,7 +9,7 @@
 // does not print and an independent implementation computed, opens it with Bob's keys, and
 // prints the backend that ran. The keys and nonce are NaCl's test's.
 #include <webcpp/crypto/equal.hpp>
-#include <webcpp/crypto/hybrid/box.hpp>
+#include <webcpp/crypto/public_key_encryption/box.hpp>
 
 #include <algorithm>
 #include <array>
@@ -37,7 +37,7 @@ std::array<std::uint8_t, Size> from_hex(std::string_view hex) {
 }  // namespace
 
 int main() {
-    using box = webcpp::crypto::hybrid::box_xchacha20poly1305;
+    using box = webcpp::crypto::public_key_encryption::box_xchacha20poly1305;
     auto const alice_secret =
         from_hex<32>("77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a");
     auto const alice_public =

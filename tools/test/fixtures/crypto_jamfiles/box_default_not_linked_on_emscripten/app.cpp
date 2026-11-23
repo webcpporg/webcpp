@@ -7,8 +7,8 @@
 // As test/messages/box_default_not_linked, on Emscripten.
 
 #include <webcpp/crypto/ciphers/secretbox.hpp>
-#include <webcpp/crypto/hybrid/box.hpp>
-#include <webcpp/crypto/hybrid/sealed_box.hpp>
+#include <webcpp/crypto/public_key_encryption/box.hpp>
+#include <webcpp/crypto/public_key_encryption/sealed_box.hpp>
 
 #include <array>
 #include <cstdint>
@@ -19,9 +19,9 @@ int main() {
     std::array<std::uint8_t, 48> sealed{};
     return crypto::ciphers::secretbox<>::from_key(key) &&
                    crypto::ciphers::secretbox_xchacha20poly1305<>::from_key(key) &&
-                   crypto::hybrid::box::from_keys(key, key) &&
-                   crypto::hybrid::box_xchacha20poly1305::from_keys(key, key) &&
-                   crypto::hybrid::sealed_box::seal(key, {}, sealed)
+                   crypto::public_key_encryption::box::from_keys(key, key) &&
+                   crypto::public_key_encryption::box_xchacha20poly1305::from_keys(key, key) &&
+                   crypto::public_key_encryption::sealed_box::seal(key, {}, sealed)
                ? 0
                : 1;
 }

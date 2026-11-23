@@ -6,7 +6,7 @@
 
 // As test/messages/box_not_a_family, on Emscripten.
 
-#include <webcpp/crypto/hybrid/box.hpp>
+#include <webcpp/crypto/public_key_encryption/box.hpp>
 
 #include <array>
 #include <cstdint>
@@ -20,5 +20,6 @@ struct not_a_family {};
 
 int main() {
     std::array<std::uint8_t, 32> const key{};
-    return webcpp::crypto::hybrid::basic_box<not_a_family>::from_keys(key, key) ? 0 : 1;
+    using box = webcpp::crypto::public_key_encryption::basic_box<not_a_family>;
+    return box::from_keys(key, key) ? 0 : 1;
 }

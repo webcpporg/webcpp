@@ -9,7 +9,7 @@
 // keys (box2.c), and prints the backend that ran. The keys and nonce are the test's: a real
 // program draws its secret key from random_device, and a nonce at random for every message.
 #include <webcpp/crypto/equal.hpp>
-#include <webcpp/crypto/hybrid/box.hpp>
+#include <webcpp/crypto/public_key_encryption/box.hpp>
 
 #include <algorithm>
 #include <array>
@@ -37,7 +37,7 @@ std::array<std::uint8_t, Size> from_hex(std::string_view hex) {
 }  // namespace
 
 int main() {
-    using webcpp::crypto::hybrid::box;
+    using webcpp::crypto::public_key_encryption::box;
     auto const alice_secret =
         from_hex<32>("77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a");
     auto const alice_public =

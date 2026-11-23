@@ -8,7 +8,7 @@
 // checks that it opened as it was sealed, and prints the backend that ran. Bob's secret key is
 // fixed here: a real program draws it from random_device.
 #include <webcpp/crypto/curves/x25519.hpp>
-#include <webcpp/crypto/hybrid/sealed_box.hpp>
+#include <webcpp/crypto/public_key_encryption/sealed_box.hpp>
 
 #include <algorithm>
 #include <array>
@@ -17,7 +17,7 @@
 #include <string_view>
 
 int main() {
-    using webcpp::crypto::hybrid::sealed_box;
+    using webcpp::crypto::public_key_encryption::sealed_box;
     std::array<std::uint8_t, 32> bob_secret{};
     bob_secret.fill(0x11);
     auto const bob_public = webcpp::crypto::curves::x25519::public_key(bob_secret);
