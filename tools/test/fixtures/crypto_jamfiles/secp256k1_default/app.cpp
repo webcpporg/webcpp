@@ -33,7 +33,8 @@ int main() {
     if (key) {
         auto const signature = key->sign(webcpp::crypto::schnorr, message, aux);
         auto const public_key = key->public_key();
-        ok = signature && public_key && webcpp::crypto::constant_time_equal(*signature, expected) &&
+        ok = signature && public_key &&
+             webcpp::crypto::constant_time_equal(signature->bytes(), expected) &&
              webcpp::crypto::verify(webcpp::crypto::schnorr, *signature, message, *public_key);
     }
     auto const name = secp256k1::keypair::backend_type::name;

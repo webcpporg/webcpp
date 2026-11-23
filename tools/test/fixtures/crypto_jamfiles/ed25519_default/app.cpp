@@ -37,7 +37,7 @@ int main() {
     if (key) {
         auto const signature = key->sign(crypto::eddsa, message);
         auto const public_key = key->public_key();
-        ok = signature && public_key && crypto::constant_time_equal(*signature, expected) &&
+        ok = signature && public_key && crypto::constant_time_equal(signature->bytes(), expected) &&
              crypto::verify(crypto::eddsa, *signature, message, *public_key).has_value();
     }
     auto const name = ed25519::keypair::backend_type::name;
