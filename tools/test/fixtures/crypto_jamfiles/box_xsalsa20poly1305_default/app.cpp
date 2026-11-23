@@ -6,9 +6,11 @@
 
 // Seals NaCl's box (libsodium's test/default/box.c) from Alice to Bob on the default
 // backend, checks the tag and the ciphertext's first bytes against box.exp, opens it with Bob's
-// keys (box2.c), and prints the backend that ran. The keys and nonce are the test's: a real
-// program draws its secret key from random_device, and a nonce at random for every message.
+// keys (box2.c), each an X25519 key pair and the peer's public key, and prints the backend that
+// ran. The keys and nonce are the test's: a real program draws its key pair with generate(), and
+// a nonce at random for every message.
 #include <webcpp/crypto/constant_time_equal.hpp>
+#include <webcpp/crypto/curves/x25519.hpp>
 #include <webcpp/crypto/public_key_encryption/box.hpp>
 
 #include <algorithm>
@@ -55,9 +57,18 @@ int main() {
     auto const expected_tag = from_hex<16>("f3ffc7703f9400e52a7dfb4b3d3305d9");
     auto const expected_head = from_hex<8>("8e993b9f48681273");
     auto data = plaintext;
-    auto alice = box::from_keys(alice_secret, bob_public);
-    auto bob = box::from_keys(bob_secret, alice_public);
+    namespace x25519 = webcpp::crypto::curves::x25519;
+    auto const alice_pair = x25519::keypair::from_secret(alice_secret);
+    auto const bob_pair = x25519::keypair::from_secret(bob_secret);
+    auto const alice_key = x25519::public_key::from_bytes(alice_public);
+    auto const bob_key = x25519::public_key::from_bytes(bob_public);
     bool ok = false;
+    if (!alice_pair || !bob_pair || !alice_key || !bob_key) {
+        std::printf("box FAILED\n");
+        return 1;
+    }
+    auto alice = box::from_keys(*alice_pair, *bob_key);
+    auto bob = box::from_keys(*bob_pair, *alice_key);
     if (alice && bob) {
         auto const sealed = alice->seal(nonce, data);
         ok = sealed && webcpp::crypto::constant_time_equal(*sealed, expected_tag) &&

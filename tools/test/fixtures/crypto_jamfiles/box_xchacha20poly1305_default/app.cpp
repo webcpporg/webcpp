@@ -6,9 +6,11 @@
 
 // Seals NaCl's message from Alice to Bob in the XChaCha20 box on the default backend,
 // checks the tag and the ciphertext's first bytes against those libsodium's own test suite
-// does not print and an independent implementation computed, opens it with Bob's keys, and
-// prints the backend that ran. The keys and nonce are NaCl's test's.
+// does not print and an independent implementation computed, opens it with Bob's keys, each an
+// X25519 key pair and the peer's public key, and prints the backend that ran. The keys and nonce
+// are NaCl's test's.
 #include <webcpp/crypto/constant_time_equal.hpp>
+#include <webcpp/crypto/curves/x25519.hpp>
 #include <webcpp/crypto/public_key_encryption/box.hpp>
 
 #include <algorithm>
@@ -55,9 +57,18 @@ int main() {
     auto const expected_tag = from_hex<16>("0b4ff00742f3c1aa99a6321e3883b03c");
     auto const expected_head = from_hex<8>("ef2c6061b7bcec0c");
     auto data = plaintext;
-    auto alice = box::from_keys(alice_secret, bob_public);
-    auto bob = box::from_keys(bob_secret, alice_public);
+    namespace x25519 = webcpp::crypto::curves::x25519;
+    auto const alice_pair = x25519::keypair::from_secret(alice_secret);
+    auto const bob_pair = x25519::keypair::from_secret(bob_secret);
+    auto const alice_key = x25519::public_key::from_bytes(alice_public);
+    auto const bob_key = x25519::public_key::from_bytes(bob_public);
     bool ok = false;
+    if (!alice_pair || !bob_pair || !alice_key || !bob_key) {
+        std::printf("box_xchacha20poly1305 FAILED\n");
+        return 1;
+    }
+    auto alice = box::from_keys(*alice_pair, *bob_key);
+    auto bob = box::from_keys(*bob_pair, *alice_key);
     if (alice && bob) {
         auto const sealed = alice->seal(nonce, data);
         ok = sealed && webcpp::crypto::constant_time_equal(*sealed, expected_tag) &&

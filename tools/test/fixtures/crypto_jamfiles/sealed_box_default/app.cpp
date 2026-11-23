@@ -31,9 +31,8 @@ int main() {
     std::ranges::copy(feedback, message.begin());
     std::array<std::uint8_t, feedback.size() + sealed_box::overhead> sealed{};
     std::array<std::uint8_t, feedback.size()> opened{};
-    bool const ok = bob_public && sealed_box::seal(bob_public->bytes(), message, sealed) &&
-                    sealed_box::open(bob_public->bytes(), bob_secret, sealed, opened) &&
-                    opened == message;
+    bool const ok = bob_public && sealed_box::seal(*bob_public, message, sealed) &&
+                    sealed_box::open(*bob, sealed, opened) && opened == message;
     auto const name = sealed_box::backend_type::name;
     std::printf("sealed_box %s backend=%.*s\n", ok ? "ok" : "FAILED", static_cast<int>(name.size()),
                 name.data());
