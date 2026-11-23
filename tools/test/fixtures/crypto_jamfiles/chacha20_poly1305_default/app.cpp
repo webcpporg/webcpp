@@ -9,7 +9,7 @@
 // that ran. The key and nonce are the RFC's: a real program draws its key from random_device and
 // never reuses a nonce under it.
 #include <webcpp/crypto/ciphers/chacha20_poly1305.hpp>
-#include <webcpp/crypto/equal.hpp>
+#include <webcpp/crypto/constant_time_equal.hpp>
 
 #include <algorithm>
 #include <array>
@@ -47,7 +47,7 @@ int main() {
     bool ok = false;
     if (sealer) {
         auto const tag = sealer->seal(iv, additional_data, data);
-        ok = tag && webcpp::crypto::equal(*tag, expected_tag) &&
+        ok = tag && webcpp::crypto::constant_time_equal(*tag, expected_tag) &&
              std::equal(expected_head.begin(), expected_head.end(), data.begin()) &&
              sealer->open(iv, additional_data, data, expected_tag) && data == plaintext;
     }

@@ -9,7 +9,7 @@
 // prints the backend that ran. The zero key and IV are the test vector's: a real program draws
 // its key from random_device and never reuses an IV under it.
 #include <webcpp/crypto/ciphers/aes256_gcm.hpp>
-#include <webcpp/crypto/equal.hpp>
+#include <webcpp/crypto/constant_time_equal.hpp>
 
 #include <array>
 #include <cstdint>
@@ -32,7 +32,8 @@ int main() {
         return 1;
     }
     auto const tag = aead->seal(iv, {}, data);
-    bool const sealed = tag && data == cipher && webcpp::crypto::equal(*tag, expected_tag);
+    bool const sealed =
+        tag && data == cipher && webcpp::crypto::constant_time_equal(*tag, expected_tag);
     bool const opened =
         aead->open(iv, {}, data, expected_tag) && data == std::array<std::uint8_t, 16>{};
     auto const name = webcpp::crypto::ciphers::aes256_gcm::backend_type::name;

@@ -8,7 +8,7 @@
 // backend, checks the tag and the ciphertext's first bytes against box.exp, opens it with Bob's
 // keys (box2.c), and prints the backend that ran. The keys and nonce are the test's: a real
 // program draws its secret key from random_device, and a nonce at random for every message.
-#include <webcpp/crypto/equal.hpp>
+#include <webcpp/crypto/constant_time_equal.hpp>
 #include <webcpp/crypto/public_key_encryption/box.hpp>
 
 #include <algorithm>
@@ -60,7 +60,7 @@ int main() {
     bool ok = false;
     if (alice && bob) {
         auto const sealed = alice->seal(iv, data);
-        ok = sealed && webcpp::crypto::equal(*sealed, expected_tag) &&
+        ok = sealed && webcpp::crypto::constant_time_equal(*sealed, expected_tag) &&
              std::equal(expected_head.begin(), expected_head.end(), data.begin()) &&
              bob->open(iv, data, *sealed) && data == plaintext;
     }

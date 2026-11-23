@@ -7,8 +7,8 @@
 // Signs RFC 8032's first Ed25519 test (section 7.1, TEST 1: the empty message) with a key pair
 // made from its seed on the default backend, checks the signature against the RFC's and verifies
 // it, and prints the backend that ran. The seed is the RFC's: a real program draws its own.
+#include <webcpp/crypto/constant_time_equal.hpp>
 #include <webcpp/crypto/curves/ed25519.hpp>
-#include <webcpp/crypto/equal.hpp>
 #include <webcpp/crypto/signing.hpp>
 
 #include <array>
@@ -37,7 +37,7 @@ int main() {
     if (key) {
         auto const signature = key->sign(crypto::eddsa, message);
         auto const public_key = key->public_key();
-        ok = signature && public_key && crypto::equal(*signature, expected) &&
+        ok = signature && public_key && crypto::constant_time_equal(*signature, expected) &&
              crypto::verify(crypto::eddsa, *signature, message, *public_key).has_value();
     }
     auto const name = ed25519::keypair::backend_type::name;

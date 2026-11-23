@@ -12,7 +12,7 @@
 #include <webcpp/crypto/backends/bearssl.hpp>
 #include <webcpp/crypto/ciphers/aes.hpp>
 #include <webcpp/crypto/ciphers/gcm.hpp>
-#include <webcpp/crypto/equal.hpp>
+#include <webcpp/crypto/constant_time_equal.hpp>
 
 #include <array>
 #include <cstdint>
@@ -40,7 +40,8 @@ int main() {
         return 1;
     }
     auto const tag = aead->seal(iv, {}, data);
-    bool const sealed = tag && data == cipher && webcpp::crypto::equal(*tag, expected_tag);
+    bool const sealed =
+        tag && data == cipher && webcpp::crypto::constant_time_equal(*tag, expected_tag);
     bool const opened =
         aead->open(iv, {}, data, expected_tag) && data == std::array<std::uint8_t, 16>{};
     auto const name = aead_type::backend_type::name;

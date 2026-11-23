@@ -8,8 +8,8 @@
 // NIST test vector (GCM test case 14), opens it again, then signs a message with BIP340 through
 // libsecp256k1, verifies the signature, and refuses a changed message.
 #include <webcpp/crypto/ciphers/aes256_gcm.hpp>
+#include <webcpp/crypto/constant_time_equal.hpp>
 #include <webcpp/crypto/curves/secp256k1.hpp>
-#include <webcpp/crypto/equal.hpp>
 #include <webcpp/crypto/signing.hpp>
 
 #include <array>
@@ -33,7 +33,8 @@ int main() {
         return 1;
     }
     auto const tag = aead->seal(iv, {}, data);
-    bool const sealed = tag && data == cipher && webcpp::crypto::equal(*tag, expected_tag);
+    bool const sealed =
+        tag && data == cipher && webcpp::crypto::constant_time_equal(*tag, expected_tag);
     bool const opened =
         aead->open(iv, {}, data, expected_tag) && data == std::array<std::uint8_t, 16>{};
     auto const name = webcpp::crypto::ciphers::aes256_gcm::backend_type::name;

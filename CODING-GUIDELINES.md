@@ -6974,7 +6974,7 @@ makes a room read, through webcpp::beast's bounded handshake layer.
 webcpp::crypto gives C++20 programs on every target the primitives of
 cryptography over widely used C libraries that webcpp builds from their
 sources: AES-GCM and the AES block cipher, a `random_device` on the system's
-generator, a constant-time `equal`, and secp256k1's BIP340 Schnorr and ECDSA
+generator, `constant_time_equal`, and secp256k1's BIP340 Schnorr and ECDSA
 signatures, ECDH, strict DER and the x-only tweak. Version 0.1 is the
 proposal's increments 1 and 2, as the owner set them on 2026-11-14; OpenSSL's
 memory option is built after it (its block below, unreleased); what is decided
@@ -6983,9 +6983,9 @@ and not built is in chapter 17.
 **Scope.**
 
 - **crypto holds primitives only, grouped in namespaces whose headers mirror
-  them: the root (`error`, `random_device`, `equal`, `config`), `backends`,
-  `ciphers` (`aes128`, `aes192`, `aes256`, `gcm`, `aes128_gcm`, `aes256_gcm`,
-  under `<webcpp/crypto/ciphers/>`) and `curves::secp256k1` (under
+  them: the root (`error`, `random_device`, `constant_time_equal`, `config`),
+  `backends`, `ciphers` (`aes128`, `aes192`, `aes256`, `gcm`, `aes128_gcm`,
+  `aes256_gcm`, under `<webcpp/crypto/ciphers/>`) and `curves::secp256k1` (under
   `<webcpp/crypto/curves/>`).** The owner's rule of 2026-11-15: a protocol's
   steps (BIPs, EIPs, NIPs) belong to a domain library built on these
   primitives (a future webcpp::bitcoin, ethereum or nostr), so the Taproot
@@ -7035,27 +7035,27 @@ and not built is in chapter 17.
   clang refuses under `<warnings-as-errors>on`.
   Source: `include/webcpp/crypto/detail/limits.hpp` (libs/crypto).
 - **One public header per responsibility; a backend's header checks that its
-  library is linked; `config.hpp`, `error.hpp`, `equal.hpp`,
+  library is linked; `config.hpp`, `error.hpp`, `constant_time_equal.hpp`,
   `random_device.hpp` and `<webcpp/crypto.hpp>` compile with no backend
   linked.** A program that only draws random bytes or compares tags names no
   backend library, and one that only signs names `/third_party//secp256k1`
   alone.
   Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
   section 2.2 (proposals); `test/Jamfile`'s headers-alone list (libs/crypto).
-- **`equal` compares in constant time: it reads every byte, accumulates the
-  XOR of each pair in a `volatile` local read once after the loop and reduces
-  it without a branch; spans of different sizes compare unequal without their
-  contents being read.** Hash2's `digest<N>::operator==` is `memcmp`; a size
-  is public.
-  Source: `include/webcpp/crypto/equal.hpp` (libs/crypto).
+- **`constant_time_equal` compares in constant time: it reads every byte,
+  accumulates the XOR of each pair in a `volatile` local read once after the
+  loop and reduces it without a branch; spans of different sizes compare
+  unequal without their contents being read.** Hash2's `digest<N>::operator==`
+  is `memcmp`; a size is public.
+  Source: `include/webcpp/crypto/constant_time_equal.hpp` (libs/crypto).
 - **Every public function that runs a backend's cryptographic code, and
-  `equal`, holds `detail::timing_guard` as its first statement: on 64-bit ARM
-  under macOS, iOS, Linux and Android, where the CPU has FEAT_DIT, it sets
-  PSTATE.DIT for the call (`msr s3_3_c4_c2_5`, then `isb`) and returns the
-  thread's DIT as it found it, after an error and an exception too; on x86,
-  WebAssembly and Windows on ARM64 it is empty. A later increment's public
-  function that calls a backend holds one too and joins its backend's
-  coverage test, which checks through the seam
+  `constant_time_equal`, holds `detail::timing_guard` as its first statement:
+  on 64-bit ARM under macOS, iOS, Linux and Android, where the CPU has
+  FEAT_DIT, it sets PSTATE.DIT for the call (`msr s3_3_c4_c2_5`, then `isb`)
+  and returns the thread's DIT as it found it, after an error and an exception
+  too; on x86, WebAssembly and Windows on ARM64 it is empty. A later
+  increment's public function that calls a backend holds one too and joins its
+  backend's coverage test, which checks through the seam
   `WEBCPP_CRYPTO_DETAIL_TIMING_ENTERED` that each call entered its own
   guard.** None of the C libraries sets DIT, which Apple requires of
   constant-time code, and without it libsodium's X25519 was measured not

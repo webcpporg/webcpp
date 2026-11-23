@@ -8,7 +8,7 @@
 // checks the tag and the ciphertext's first bytes against those libsodium's own test suite
 // does not print and an independent implementation computed, opens it with Bob's keys, and
 // prints the backend that ran. The keys and nonce are NaCl's test's.
-#include <webcpp/crypto/equal.hpp>
+#include <webcpp/crypto/constant_time_equal.hpp>
 #include <webcpp/crypto/public_key_encryption/box.hpp>
 
 #include <algorithm>
@@ -60,7 +60,7 @@ int main() {
     bool ok = false;
     if (alice && bob) {
         auto const sealed = alice->seal(iv, data);
-        ok = sealed && webcpp::crypto::equal(*sealed, expected_tag) &&
+        ok = sealed && webcpp::crypto::constant_time_equal(*sealed, expected_tag) &&
              std::equal(expected_head.begin(), expected_head.end(), data.begin()) &&
              bob->open(iv, data, *sealed) && data == plaintext;
     }
