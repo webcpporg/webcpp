@@ -1286,6 +1286,24 @@ site's own decisions follow in the next sections.
   (Homebrew's has no `libs/url/src`).
   Source: `organization/openspec/changes/archive/2026-10-07-genesis/design.md`
   (proposals).
+- **The Boost that the CI provisions, `tools/ci/actions/boost`, is patched in
+  one place: each file of `tools/ci/actions/boost/patches` is a `git apply`
+  patch of Boost's headers, against the archive's root, that `install.sh`
+  applies to every tree it extracts, before anything is installed or kept
+  from it, for every job, MSVC lanes, docs and lint included.** A patch
+  corrects a Boost defect that blocks a lane until a Boost release fixes it,
+  and its opening paragraph names the upstream change. It is removed, never
+  skipped: one that no longer applies, or that the archive already holds,
+  fails `install.sh` naming it, and a cached prefix whose headers lack one is
+  refused. Library-specific corrections stay with their library (Cobalt's
+  `upstream/` bundles, applied by its maintainer import into shipped sources),
+  and a user's build with their own Boost gets no patch: the defect stays
+  theirs until the release. The first is
+  `hash2-mul128-msvc-arm64.patch`, Boost 1.92.0's `mul128.hpp` that MSVC for
+  ARM64 rejects (C2601) wherever `boost/hash2/xxh3.hpp` is included, fixed
+  upstream by https://github.com/boostorg/hash2/pull/49; the owner approved
+  carrying it on 2026-11-22.
+  Source: `tools/ci/actions/boost/install.sh` (webcpp).
 - **Boost.JSON's definitions and Boost.Test's header-only framework are
   objects of webcpp's own build, `/webcpp//boost_json` and
   `tools/boost_test_runner.cpp`.** Boost.JSON is built once per variant, so

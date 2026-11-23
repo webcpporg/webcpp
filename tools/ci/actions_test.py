@@ -14,7 +14,11 @@ in <prefix>/include/boost on every runner, Windows's included, where the default
 b2 in <prefix> itself and the headers in <prefix>/include/boost-1_92, keeps in <prefix>/source the
 archive's boost/version.hpp and every libs/<library>/src, which configure names in
 user-config.jam, and fails, before the prefix is cached, when the prefix holds no headers, no b2 or
-no sources after the install; its source step fills a directory with the same tree alone, and
+no sources after the install; it installs the headers with every patch of its patches/ applied,
+also in a tree inside a git repository, keys its cache on them, fails, naming the patch, on one
+that the archive holds already, one that does not apply and one outside the headers, and configure
+refuses a prefix whose headers lack one; each patch names its upstream fix; its source step fills
+a directory with the same tree alone, and
 the marker it writes last, in place of a tree whose marker says the action wrote it, refuses any
 other directory before it downloads anything, and leaves the tree as it was and nothing behind
 when it fails. The wit-bindgen action
@@ -219,8 +223,9 @@ def test_boost_refuses_an_empty_or_relative_prefix(scratch: Path) -> None:
 # <prefix>/include/boost-1_92/boost, and b2's Jamroot to the portable layout, which puts b2 in
 # --prefix and ignores --bindir; the system and standard layouts, the defaults elsewhere, put them
 # in <prefix>/include/boost and --bindir. The stand-in takes Windows's defaults, so that only an
-# install that names both layouts finds the headers and b2 where configure looks for them. With
-# STAND_IN_INSTALLS_NOTHING set, it installs nothing and succeeds.
+# install that names both layouts finds the headers and b2 where configure looks for them. It
+# installs the headers of the tree it runs in. With STAND_IN_INSTALLS_NOTHING set, it installs
+# nothing and succeeds.
 FAKE_B2 = r'''#!/usr/bin/env bash
 set -euo pipefail
 prefix='' bindir='' layout=portable headers=boost-1_92
@@ -236,8 +241,8 @@ done
 if [ -n "${STAND_IN_INSTALLS_NOTHING-}" ]; then
     exit 0
 elif [ -z "$bindir" ]; then
-    mkdir -p "$prefix/include/$headers/boost"
-    echo '#define BOOST_VERSION 109200' > "$prefix/include/$headers/boost/version.hpp"
+    mkdir -p "$prefix/include/$headers"
+    cp -R boost "$prefix/include/$headers/boost"
 elif [ "$layout" = standard ]; then
     mkdir -p "$bindir" && cp "$0" "$bindir/b2"
 else
@@ -246,11 +251,39 @@ fi
 '''
 
 
+# A header of the stand-in archive with a defect, its two lines repeated, and the patch that
+# removes them, as tools/ci/actions/boost/patches holds one.
+DEFECT = 'int f()\n{\nint f()\n{\n    return 0;\n}\n'
+FIXED = 'int f()\n{\n    return 0;\n}\n'
+DEFECT_PATCH = '''The stand-in defect, fixed upstream by https://github.com/boostorg/example/pull/1.
+
+diff --git a/boost/defect.hpp b/boost/defect.hpp
+--- a/boost/defect.hpp
++++ b/boost/defect.hpp
+@@ -1,6 +1,4 @@
+ int f()
+ {
+-int f()
+-{
+     return 0;
+ }
+'''
+
+
+def boost_patches(scratch: Path, patch: str = DEFECT_PATCH) -> Path:
+    """tools/ci/actions/boost/patches of the scratch superproject, with patch in it."""
+    patches = scratch / 'tools/ci/actions/boost/patches'
+    patches.mkdir()
+    (patches / 'defect.patch').write_text(patch)
+    return patches / 'defect.patch'
+
+
 def boost_archive(scratch: Path) -> Path:
     """A boost_1_92_0.tar.gz whose bootstrap.sh writes the stand-in b2."""
     tree = scratch / 'archive/boost_1_92_0'
     (tree / 'tools/build').mkdir(parents=True)
     for path, text in (('boost/version.hpp', '#define BOOST_VERSION 109200\n'),
+                       ('boost/defect.hpp', DEFECT),
                        ('libs/url/src/url.cpp', '// url\n'),
                        ('libs/url/src/detail/pattern.hpp', '// pattern\n'),
                        ('libs/json/src/src.cpp', '// json\n'),
@@ -462,6 +495,91 @@ def test_boost_source_that_fails_leaves_the_tree_and_no_files(scratch: Path) -> 
         assert sorted(path.name for path in scratch.glob('local sources*')) == [
             'local sources'], (how, list(scratch.iterdir()))
         assert list(temp.iterdir()) == [], (how, list(temp.iterdir()))
+
+
+def test_boost_installs_patched_headers(scratch: Path) -> None:
+    # The tree is patched before its headers are installed, also where it lies inside a git
+    # repository, whose root git apply would otherwise read the patch's paths from, skipping
+    # them without a word; and configure accepts the prefix.
+    script, runner = boost_install_tree(scratch)
+    boost_patches(scratch)
+    subprocess.run(['git', 'init', '-q', str(scratch)], check=True)
+    prefix = scratch / 'prefix'
+    result = run(script, 'install', prefix, env=runner)
+    assert result.returncode == 0, (result.returncode, result.stdout, result.stderr)
+    assert 'install.sh: applied tools/ci/actions/boost/patches/defect.patch' in result.stdout, (
+        result.stdout)
+    assert (prefix / 'include/boost/defect.hpp').read_text() == FIXED
+    result = subprocess.run(['bash', str(script), 'configure', str(prefix)], capture_output=True,
+                            text=True, check=False, cwd=scratch, env={**os.environ, **runner})
+    assert result.returncode == 0, (result.returncode, result.stderr)
+    # A prefix whose headers lack a patch, one cached before it was added, is refused.
+    (prefix / 'include/boost/defect.hpp').write_text(DEFECT)
+    result = subprocess.run(['bash', str(script), 'configure', str(prefix)], capture_output=True,
+                            text=True, check=False, cwd=scratch, env={**os.environ, **runner})
+    assert result.returncode == 1, (result.returncode, result.stderr)
+    assert (f'install.sh: the Boost headers of {prefix} lack '
+            'tools/ci/actions/boost/patches/defect.patch') in result.stderr, result.stderr
+
+
+def test_boost_key_changes_with_the_patches(scratch: Path) -> None:
+    # A digest of the action's files, of the patches with them, keys the cached prefix: a patch
+    # added or changed installs Boost again.
+    script = boost_tree(scratch)
+    shutil.copy2(BOOST.parent / 'action.yml', script.parent / 'action.yml')
+    # A macOS runner, whose image a stand-in sw_vers names, on any machine.
+    tools = scratch / 'stand-in bin'
+    tools.mkdir()
+    (tools / 'sw_vers').write_text('#!/bin/sh\necho 15.7\n')
+    (tools / 'sw_vers').chmod(0o755)
+    output = scratch / 'output'
+    runner = {'RUNNER_OS': 'macOS', 'RUNNER_ARCH': 'ARM64', 'RUNNER_TEMP': str(scratch / 'temp'),
+              'GITHUB_OUTPUT': str(output), 'PATH': f'{tools}{os.pathsep}{os.environ["PATH"]}'}
+    keys = []
+    for patch in (None, DEFECT_PATCH, DEFECT_PATCH + '\n'):
+        if patch is not None:
+            shutil.rmtree(scratch / 'tools/ci/actions/boost/patches', ignore_errors=True)
+            boost_patches(scratch, patch)
+        output.write_text('')
+        result = run(script, 'key', env=runner)
+        assert result.returncode == 0 and not result.stderr, (result.returncode, result.stderr)
+        keys.append(re.search(r'^key=(.+)$', output.read_text(), re.MULTILINE))
+    assert all(keys) and len({key.group(1) for key in keys if key}) == 3, keys
+
+
+def test_boost_fails_on_a_patch_that_does_not_apply(scratch: Path) -> None:
+    # A patch is removed, not skipped: one that the archive holds already (a Boost that has the
+    # fix), one that no longer applies, and one outside the headers each fail the install, naming
+    # the patch, and the prefix is not written.
+    script, runner = boost_install_tree(scratch)
+    name = 'tools/ci/actions/boost/patches/defect.patch'
+    outside = DEFECT_PATCH.replace('boost/defect.hpp', 'libs/url/src/url.cpp')
+    stale = DEFECT_PATCH.replace(' int f()\n {\n-int f()', ' int g()\n {\n-int g()')
+    for patch, archive, expected in (
+            (DEFECT_PATCH, FIXED, f'Boost 1.92.0 holds the change of {name} already: '
+             'remove the patch'),
+            (stale, DEFECT, f'{name} does not apply to Boost 1.92.0: update it, or remove it'),
+            (outside, DEFECT, f'{name} patches a file outside boost/, the headers')):
+        shutil.rmtree(scratch / 'tools/ci/actions/boost/patches', ignore_errors=True)
+        boost_patches(scratch, patch)
+        tree = scratch / 'archive/boost_1_92_0'
+        (tree / 'boost/defect.hpp').write_text(archive)
+        with tarfile.open(scratch / 'boost_1_92_0.tar.gz', 'w:gz') as tar:
+            tar.add(tree, arcname='boost_1_92_0')
+        prefix = scratch / 'prefix'
+        result = run(script, 'install', prefix, env=runner)
+        assert result.returncode == 1, (expected, result.returncode, result.stdout,
+                                        result.stderr)
+        assert f'install.sh: {expected}' in result.stderr, (expected, result.stderr)
+        assert not prefix.exists(), expected
+
+
+def test_the_boost_patches_name_their_upstream_fix(_: Path) -> None:
+    # Each patch says, in its opening paragraph, which upstream change makes it unnecessary.
+    for patch in sorted((CI / 'actions/boost/patches').glob('*.patch')):
+        opening = patch.read_text().split('\ndiff --git ', 1)[0]
+        assert re.search(r'https://github\.com/boostorg/[\w-]+/(pull|issues|commit)/\w+',
+                         opening), patch
 
 
 def place_helpers(scratch: Path) -> None:
@@ -1579,6 +1697,10 @@ CASES: list[Callable[[Path], None]] = [
     test_boost_source_fills_a_directory_alone,
     test_boost_source_refuses_a_directory_it_did_not_write,
     test_boost_source_that_fails_leaves_the_tree_and_no_files,
+    test_boost_installs_patched_headers,
+    test_boost_key_changes_with_the_patches,
+    test_boost_fails_on_a_patch_that_does_not_apply,
+    test_the_boost_patches_name_their_upstream_fix,
     test_wit_bindgen_installs_the_runners_build_alone,
     test_wit_bindgen_refuses_a_runner_it_pins_no_build_for,
     test_wasi_sdk_installs_the_platform_independent_sysroot_and_builtins,
