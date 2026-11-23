@@ -29,15 +29,9 @@ namespace silent_payments = webcpp::crypto::curves::secp256k1::silent_payments;
 
 bool pay_and_scan(secp256k1::keypair const& scan_pair, secp256k1::keypair const& spend_pair,
                   secp256k1::keypair const& donor) {
-    auto const scan_encoding = scan_pair.public_key();
-    auto const spend_encoding = spend_pair.public_key();
-    auto const donor_encoding = donor.public_key();
-    if (!scan_encoding || !spend_encoding || !donor_encoding) {
-        return false;
-    }
-    auto const scan_key = secp256k1::parse_public_key(*scan_encoding);
-    auto const spend_key = secp256k1::parse_public_key(*spend_encoding);
-    auto const donor_key = secp256k1::parse_public_key(*donor_encoding);
+    auto const scan_key = scan_pair.public_key();
+    auto const spend_key = spend_pair.public_key();
+    auto const donor_key = donor.public_key();
     if (!scan_key || !spend_key || !donor_key) {
         return false;
     }

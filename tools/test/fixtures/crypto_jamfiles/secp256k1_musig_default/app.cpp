@@ -10,6 +10,7 @@
 // inside nonce_gen.
 #include <webcpp/crypto/curves/secp256k1.hpp>
 #include <webcpp/crypto/curves/secp256k1/musig.hpp>
+#include <webcpp/crypto/signing.hpp>
 
 #include <algorithm>
 #include <array>
@@ -30,13 +31,8 @@ namespace secp256k1 = webcpp::crypto::curves::secp256k1;
 namespace musig = webcpp::crypto::curves::secp256k1::musig;
 
 bool sign_and_verify(secp256k1::keypair const& first, secp256k1::keypair const& second) {
-    auto const first_encoding = first.public_key();
-    auto const second_encoding = second.public_key();
-    if (!first_encoding || !second_encoding) {
-        return false;
-    }
-    auto const first_key = secp256k1::parse_public_key(*first_encoding);
-    auto const second_key = secp256k1::parse_public_key(*second_encoding);
+    auto const first_key = first.public_key();
+    auto const second_key = second.public_key();
     if (!first_key || !second_key) {
         return false;
     }
@@ -72,8 +68,8 @@ bool sign_and_verify(secp256k1::keypair const& first, secp256k1::keypair const& 
     }
     std::array<musig::partial_signature, 2> const parts{*first_part, *second_part};
     auto const signature = musig::partial_signature_aggregate(*session, parts, space);
-    return signature &&
-           secp256k1::verify_schnorr(*signature, message, aggregate->xonly_public_key());
+    return signature && webcpp::crypto::verify(webcpp::crypto::schnorr, *signature, message,
+                                               aggregate->xonly_public_key());
 }
 
 }  // namespace

@@ -6,6 +6,7 @@
 
 // Signs a message with BIP340 through libsecp256k1, verifies it, and refuses a changed one.
 #include <webcpp/crypto/curves/secp256k1.hpp>
+#include <webcpp/crypto/signing.hpp>
 
 #include <array>
 #include <cstdint>
@@ -21,11 +22,13 @@ int main() {
     auto key = secp256k1::keypair::make(secret);
     bool ok = false;
     if (key) {
-        auto const signature = key->sign_schnorr(message, aux);
-        auto const public_key = key->xonly_public_key();
-        ok = signature && public_key && secp256k1::verify_schnorr(*signature, message, *public_key);
+        auto const signature = key->sign(webcpp::crypto::schnorr, message, aux);
+        auto const public_key = key->public_key();
+        ok = signature && public_key &&
+             webcpp::crypto::verify(webcpp::crypto::schnorr, *signature, message, *public_key);
         message[0] ^= 1U;
-        ok = ok && !secp256k1::verify_schnorr(*signature, message, *public_key);
+        ok = ok &&
+             !webcpp::crypto::verify(webcpp::crypto::schnorr, *signature, message, *public_key);
     }
     std::printf("schnorr %s\n", ok ? "ok" : "FAILED");
     return ok ? 0 : 1;

@@ -7151,18 +7151,20 @@ and not built is in chapter 17.
   creates libsecp256k1's context in it with
   `secp256k1_context_preallocated_create`, aligned to
   `alignof(std::max_align_t)`, and randomizes it from `random_device`;
-  `verify_schnorr` and `verify_ecdsa` use `secp256k1_context_static` after
-  `secp256k1_selftest()` on every call and allocate nothing.** The resource
+  `crypto::verify` with `crypto::schnorr` and `crypto::ecdsa_sha256` uses
+  `secp256k1_context_static` after `secp256k1_selftest()` on every call and
+  allocates nothing.** The resource
   serves the context alone, so that the counting test sees every allocation;
   a run-once flag would be the static mutable state the rulebook forbids.
   Source: `include/webcpp/crypto/curves/secp256k1.hpp` (libs/crypto).
-- **`ecdh` takes the secret into a local array, wipes it on every path, and
-  returns the SHA-256 of the compressed shared point.** libsecp256k1's
-  default hash.
+- **`agree_hashed` takes the secret into a local array, wipes it on every
+  path, and returns the SHA-256 of the compressed shared point.**
+  libsecp256k1's default hash; `agree` gives the raw x and `agree_point` the
+  point.
   Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
   section 2.8 (proposals).
 - **ECDSA's DER is strict (`to_der`, `from_der`, at most 72 bytes) and
-  `normalize_ecdsa` gives the low-S form; the x-only tweak takes any 32-byte
+  `normalize_low_s` gives the low-S form; the x-only tweak takes any 32-byte
   tweak, as a free `tweak_xonly` on an x-only key, giving the key and its
   parity, and as `keypair::tweak_xonly` in place, and a tweak not below the
   group order is `invalid_secret_key` and wipes the key pair.** A wallet's
@@ -7197,32 +7199,48 @@ and not built is in chapter 17.
   WebCrypto write, checked by the oracles; anything else is
   `invalid_encoding`.
   Source: `include/webcpp/crypto/curves/p256/formats.hpp` (libs/crypto).
-- **Low S is two primitives, not a mode: `sign_ecdsa` returns S as computed
-  and `verify_ecdsa` accepts both forms, as FIPS 186-5 and WebCrypto do;
-  `normalize_ecdsa` gives the low form and `check_low_s` refuses the high
-  one, neither calling a backend.** A protocol that requires low S
-  (Trystero's handshakes) applies them; the protocol itself is
-  webcpp::trystero's (D24), which the guide's section on signed handshakes
+- **ECDSA signs low S on both curves; P-256's verification accepts both
+  forms, as FIPS 186-5 and WebCrypto do, and secp256k1's refuses a high S.**
+  P-256's `sign` normalizes RFC 6979's S after signing, selecting n - s by a
+  mask without a branch; `normalize_low_s` gives the low form of a signature
+  made elsewhere and `is_low_s` answers whether one is low, neither calling a
+  backend. A protocol that requires low S of its peers (Trystero's
+  handshakes) checks `is_low_s` before `crypto::verify`; the protocol itself
+  is webcpp::trystero's (D24), which the guide's section on signed handshakes
   shows with an example. Their verdict is marked public for the constant-time
   checkers, a signature being public once made.
   Source: `include/webcpp/crypto/curves/p256.hpp`, `doc/p2p.adoc`
-  (libs/crypto).
+  (libs/crypto); `libraries/crypto/openspec/changes/unified-sign/design.md`
+  D3 and D4b (proposals).
+- **One name per signing operation, the scheme always named: `key.sign(scheme,
+  input)` and `crypto::verify(scheme, signature, input, public_key)`, and
+  their `async_` forms, on Ed25519, P-256 and secp256k1; a digest only as
+  `crypto::prehashed{digest}`; every key pair a `crypto::keypair`, with a
+  typed public key, `secret()` and `agree`.** A span is a message whatever
+  its size, so a 32-byte message is never read as a digest; a pair of scheme
+  and input that is not valid stops the build with its reason. `Backend` is
+  the first template parameter of every `crypto::verify`.
+  Source: `include/webcpp/crypto/signing.hpp`, `keypair.hpp` (libs/crypto);
+  `libraries/crypto/openspec/changes/unified-sign/design.md` (proposals).
 - **Constant time, sizes and throughput cover the family.** memcheck and
   MemorySanitizer run the key pair's making, signing with its low-S
-  normalization and check, `ecdh_x` and `decode_pkcs8` (`paths.hpp`), each
+  normalization and check, `agree` and `decode_pkcs8` (`paths.hpp`), each
   checker failing on a planted early exit in a copy of the scalar check;
   BearSSL's own branches on its signing's verdicts are listed for memcheck in
-  `bearssl_verdicts.supp`. dudect times `sign_ecdsa` and `ecdh_x` against the
+  `bearssl_verdicts.supp`. dudect times `sign` and `agree` against the
   scalar natively and on wasip2. The sizes lane measures signing,
-  verification and `ecdh_x`, and the throughput page the same three, from
-  release builds. The checkers ran on 2026-11-21 in an arm64 Linux container
-  (`linux-lint:arm64`, clang 18, Valgrind 3.22), the lane's CI command: both
-  found upstream BearSSL's signing branching on the RFC 6979 nonce's bit
-  length, `br_ecdsa_i31_bits2int` decoding it with its actual length and
-  `br_i31_rshift` looping by it (a Minerva-class leak), and nothing once
-  webcpp's BearSSL carried the fix, one commit setting the order's length
+  verification and `agree`, and the throughput page the same three, from
+  release builds. The checkers ran on 2026-11-21 and again on 2026-11-22 (the
+  rerun with the signing's low-S step found nothing under either) in an arm64
+  Linux container (`linux-lint:arm64`, clang 18, Valgrind 3.22), the lane's CI
+  command: both found upstream BearSSL's signing branching on the RFC 6979
+  nonce's bit length, `br_ecdsa_i31_bits2int` decoding it with its actual
+  length and `br_i31_rshift` looping by it (a Minerva-class leak), and nothing
+  once webcpp's BearSSL carried the fix, one commit setting the order's length
   before the shift (chapter 5 rule 1); the planted programs failed and dudect
-  passed there too.
+  passed there too: dudect judged P-256's signing with its low-S step (|t|
+  1.70 on Linux, 1.63 natively on an Apple M5 Max, release, one run each;
+  provisional, measured again in the final quiet pass).
   Source: `libs/crypto/test/constant_time/Jamfile`, `test/sizes/Jamfile`,
   `bench/throughput.cpp`, `doc/backends.adoc` (libs/crypto);
   https://github.com/webcpporg/bearssl/commit/32381d6e787a32cbb7a687246349200d78b8ff7c
@@ -7346,7 +7364,7 @@ and not built is in chapter 17.
   webcpp never calls `RAND_bytes`.** No backend chooses its own entropy.
   Source: `third_party/Jamfile` (webcpp).
 - **webcpp's code allocates only `keypair::make`'s context, in the resource
-  the user gives; no seal, open, `encrypt`, `fill`, signature, `ecdh` or
+  the user gives; no seal, open, `encrypt`, `fill`, signature, `agree` or
   verification allocates on any backend; OpenSSL's `make` allocates its
   context through OpenSSL's own allocator, which its page states and
   `allocation_openssl` counts, unless the program takes OpenSSL's memory
@@ -8771,9 +8789,10 @@ increments 1 and 2, whose state is first.
 
 - **Built on the branch `crypto/secp256k1-modules` of the library and the
   superproject, on increment 1's merged trees, awaiting the owner's merge:
-  libsecp256k1's remaining modules.** ECDH in three forms (`ecdh` returning a
-  `secret<32>`, `ecdh_x`, `ecdh_point`), recoverable signatures
-  (`sign_recoverable` of the key pair and `recover`), the tweaks, negation and
+  libsecp256k1's remaining modules.** ECDH in three forms, each a `secret<N>`
+  (`agree_hashed`, `agree`, `agree_point` since unified-sign), recoverable
+  signatures (`sign(crypto::ecdsa_sha256_recoverable, input)` and `recover`),
+  the tweaks, negation and
   combination of whole keys (`curves/secp256k1/tweak.hpp`), keys in SPKI,
   PKCS#8 and PEM (`formats.hpp`), BIP 324's ElligatorSwift (`ellswift.hpp`),
   BIP 327's MuSig2 (`musig.hpp`) and BIP 352's silent payments
@@ -8805,9 +8824,9 @@ increments 1 and 2, whose state is first.
   `xdh`, MuSig2's `nonce_gen` and `partial_sign`, the silent payments'
   `create_outputs`, `create_label` and `scan_outputs`, each workspace's wipe
   included), written once in `test/constant_time/paths.hpp`; dudect times
-  `ecdh_x` natively and on wasip2, in a program of its own, so that
+  `agree` natively and on wasip2, in a program of its own, so that
   libsecp256k1 stays off BearSSL's. The Linux x86-64 run of the lane is the
-  CI's. The sizes lane measures `ecdh_x`, `recover`, ElligatorSwift's
+  CI's. The sizes lane measures `agree`, `recover`, ElligatorSwift's
   exchange, a two-signer MuSig2 signature and a silent payments output, all
   from release builds through `webcpp.program-sizes`.
   Source: `libs/crypto/test/constant_time/Jamfile` and `test/sizes/Jamfile`.
