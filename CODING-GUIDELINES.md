@@ -6993,6 +6993,16 @@ decided and not built is in chapter 17.
   functions became a generic x-only tweak and lax DER left the library; the
   removed code is kept on the library's branch `save/bitcoin-taproot`.
   Source: `libraries/crypto/openspec/changes/genesis/design.md` (proposals).
+- **Public names are spelled out; only algorithm and format proper names stay
+  acronyms.** A nonce is `nonce` (`nonce_bytes`, `nonce_size`,
+  `invalid_nonce_size`), associated data `associated_data`, a context
+  `context`; `aes`, `gcm`, `chacha20`, `hmac`, `hkdf`, `ecdsa`, `eddsa`,
+  `sha256`, `kx`, `der`, `pem`, `spki` and `pkcs8` stay, as do a standard's own
+  variable names (ECDSA's `r` and `s`) and the standard library's `max_`. The
+  owner's rule of 2026-11-23: a reader should not need a glossary for a
+  parameter.
+  Source: `libraries/crypto/openspec/changes/uniform-types/design.md` owner
+  decision 13, D11 (proposals).
 - **Hashing and HMAC stay with Boost.Hash2, and HKDF, when a program needs
   it, is written on `boost::hash2::hmac`; every call is synchronous, and
   WebCrypto is not a backend.** The owner's amendment C1 of 2026-10-10; with C
@@ -7104,9 +7114,10 @@ decided and not built is in chapter 17.
   plaintext before the tag is known.
   Source: `libraries/crypto/openspec/changes/genesis/design.md` D5
   (proposals).
-- **The incremental seal is `begin_seal(iv, additional_data)`, `update(data)`
-  and `result()`, and any error in it ends the message and wipes its state.**
-  Additional data is taken whole, so no piece of it needs a growing buffer.
+- **The incremental seal is `begin_seal(nonce, associated_data)`,
+  `update(data)` and `result()`, and any error in it ends the message and wipes
+  its state.** Associated data is taken whole, so no piece of it needs a
+  growing buffer.
   Source: `libraries/crypto/openspec/changes/genesis/design.md` D6
   (proposals).
 - **GCM accepts IVs of 1 to 128 bytes, keys of 16, 24 and 32 bytes and tags
@@ -9562,6 +9573,11 @@ and G4); the proposal, with the specification, the design and the plan, is in
   D1 to D9 (proposals); `include/webcpp/hash/detail/timing.hpp`,
   `test/timing_coverage_<backend>_test.cpp` (libs/hash);
   `test/timing_hash_interop_test.cpp` (libs/crypto).
+- **hash follows crypto's naming rule: public names spelled out, algorithm
+  proper names excepted.** HKDF's `ikm`, `prk` and `info` are renamed by a
+  change of hash's.
+  Source: `libraries/crypto/openspec/changes/uniform-types/design.md` owner
+  decision 13, D11 (proposals).
 - **Seven increments, each usable alone.** The first, built, is Hash2 by alias,
   `keccak_256`, `blake3`, HKDF, PBKDF2, Argon2id, scrypt, the default backend
   and the measured table; the second, built, is the families and libsodium's

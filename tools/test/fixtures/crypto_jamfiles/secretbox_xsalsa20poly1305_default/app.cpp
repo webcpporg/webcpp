@@ -40,7 +40,7 @@ int main() {
     using secretbox = webcpp::crypto::ciphers::secretbox<>;
     auto const key =
         from_hex<32>("1b27556473e985d462cd51197a9a46c76009549eac6474f206c4ee0844f68389");
-    auto const iv = from_hex<24>("69696ee955b62b73cd62bda875fc73d68219e0036b7a0b37");
+    auto const nonce = from_hex<24>("69696ee955b62b73cd62bda875fc73d68219e0036b7a0b37");
     auto const plaintext = from_hex<131>(
         "be075fc53c81f2d5cf141316ebeb0c7b5228c52a4c62cbd44b66849b64244ffce5ecbaaf33bd751a1ac7"
         "28d45e6c61296cdc3c01233561f41db66cce314adb310e3be8250c46f06dceea3a7fa1348057e2f6556a"
@@ -52,10 +52,10 @@ int main() {
     auto sealer = secretbox::from_key(key);
     bool ok = false;
     if (sealer) {
-        auto const tag = sealer->seal(iv, {}, data);
+        auto const tag = sealer->seal(nonce, {}, data);
         ok = tag && webcpp::crypto::constant_time_equal(*tag, expected_tag) &&
              std::equal(expected_head.begin(), expected_head.end(), data.begin()) &&
-             sealer->open(iv, {}, data, expected_tag) && data == plaintext;
+             sealer->open(nonce, {}, data, expected_tag) && data == plaintext;
     }
     auto const name = secretbox::backend_type::name;
     std::printf("secretbox %s backend=%.*s\n", ok ? "ok" : "FAILED", static_cast<int>(name.size()),

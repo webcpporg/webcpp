@@ -5,9 +5,9 @@
 // https://www.boost.org/LICENSE_1_0.txt)
 
 // Seals one zero block under AES-256-GCM with the default backend and checks it against the
-// GCM specification's test case 14 (key, IV and plaintext all zero), then opens it again, and
-// prints the backend that ran. The zero key and IV are the test vector's: a real program draws
-// its key from random_device and never reuses an IV under it.
+// GCM specification's test case 14 (key, nonce and plaintext all zero), then opens it again, and
+// prints the backend that ran. The zero key and nonce are the test vector's: a real program draws
+// its key from random_device and never reuses a nonce under it.
 #include <webcpp/crypto/ciphers/aes256_gcm.hpp>
 #include <webcpp/crypto/constant_time_equal.hpp>
 
@@ -17,7 +17,7 @@
 
 int main() {
     std::array<std::uint8_t, 32> const key{};
-    std::array<std::uint8_t, 12> const iv{};
+    std::array<std::uint8_t, 12> const nonce{};
     std::array<std::uint8_t, 16> data{};
     std::array<std::uint8_t, 16> const cipher{
         0xce, 0xa7, 0x40, 0x3d, 0x4d, 0x60, 0x6b, 0x6e,
@@ -31,11 +31,11 @@ int main() {
     if (!aead) {
         return 1;
     }
-    auto const tag = aead->seal(iv, {}, data);
+    auto const tag = aead->seal(nonce, {}, data);
     bool const sealed =
         tag && data == cipher && webcpp::crypto::constant_time_equal(*tag, expected_tag);
     bool const opened =
-        aead->open(iv, {}, data, expected_tag) && data == std::array<std::uint8_t, 16>{};
+        aead->open(nonce, {}, data, expected_tag) && data == std::array<std::uint8_t, 16>{};
     auto const name = webcpp::crypto::ciphers::aes256_gcm::backend_type::name;
     std::printf("aes256_gcm %s backend=%.*s\n", sealed && opened ? "ok" : "FAILED",
                 static_cast<int>(name.size()), name.data());

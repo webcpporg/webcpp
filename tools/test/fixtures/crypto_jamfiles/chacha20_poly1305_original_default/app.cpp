@@ -24,10 +24,10 @@ int main() {
         0x57, 0xf3, 0xbe, 0x3b, 0x50, 0x06, 0xda, 0x37, 0x1e, 0xce, 0x27,
         0x2a, 0xfa, 0x1b, 0x5d, 0xbd, 0xd1, 0x10, 0x0a, 0x10, 0x07,
     };
-    std::array<std::uint8_t, 8> const iv{0xcd, 0x7c, 0xf6, 0x7b, 0xe3, 0x9c, 0x79, 0x4a};
+    std::array<std::uint8_t, 8> const nonce{0xcd, 0x7c, 0xf6, 0x7b, 0xe3, 0x9c, 0x79, 0x4a};
     // NOLINTBEGIN(readability-trailing-comma): it asks a list of one row, wrapped, for the comma
     // and refuses it once clang-format puts the brace on a line of its own
-    std::array<std::uint8_t, 10> const additional_data{0x87, 0xe2, 0x29, 0xd4, 0x50,
+    std::array<std::uint8_t, 10> const associated_data{0x87, 0xe2, 0x29, 0xd4, 0x50,
                                                        0x08, 0x45, 0xa0, 0x79, 0xc0};
     std::array<std::uint8_t, 10> const plaintext{0x86, 0xd0, 0x99, 0x74, 0x84,
                                                  0x0b, 0xde, 0xd2, 0xa5, 0xca};
@@ -42,10 +42,10 @@ int main() {
     auto sealer = aead::from_key(key);
     bool ok = false;
     if (sealer) {
-        auto const tag = sealer->seal(iv, additional_data, data);
+        auto const tag = sealer->seal(nonce, associated_data, data);
         ok = tag && webcpp::crypto::constant_time_equal(*tag, expected_tag) &&
              std::equal(expected_head.begin(), expected_head.end(), data.begin()) &&
-             sealer->open(iv, additional_data, data, expected_tag) && data == plaintext;
+             sealer->open(nonce, associated_data, data, expected_tag) && data == plaintext;
     }
     auto const name = aead::backend_type::name;
     std::printf("chacha20_poly1305_original %s backend=%.*s\n", ok ? "ok" : "FAILED",

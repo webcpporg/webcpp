@@ -46,7 +46,7 @@ int main() {
         from_hex<32>("5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb");
     auto const bob_public =
         from_hex<32>("de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f");
-    auto const iv = from_hex<24>("69696ee955b62b73cd62bda875fc73d68219e0036b7a0b37");
+    auto const nonce = from_hex<24>("69696ee955b62b73cd62bda875fc73d68219e0036b7a0b37");
     auto const plaintext = from_hex<131>(
         "be075fc53c81f2d5cf141316ebeb0c7b5228c52a4c62cbd44b66849b64244ffce5ecbaaf33bd751a1ac7"
         "28d45e6c61296cdc3c01233561f41db66cce314adb310e3be8250c46f06dceea3a7fa1348057e2f6556a"
@@ -59,10 +59,10 @@ int main() {
     auto bob = box::from_keys(bob_secret, alice_public);
     bool ok = false;
     if (alice && bob) {
-        auto const sealed = alice->seal(iv, data);
+        auto const sealed = alice->seal(nonce, data);
         ok = sealed && webcpp::crypto::constant_time_equal(*sealed, expected_tag) &&
              std::equal(expected_head.begin(), expected_head.end(), data.begin()) &&
-             bob->open(iv, data, *sealed) && data == plaintext;
+             bob->open(nonce, data, *sealed) && data == plaintext;
     }
     auto const name = box::backend_type::name;
     std::printf("box %s backend=%.*s\n", ok ? "ok" : "FAILED", static_cast<int>(name.size()),
