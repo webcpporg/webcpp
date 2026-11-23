@@ -9,6 +9,7 @@ in which a build publishes its outputs."""
 from pathlib import Path
 import argparse
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -92,6 +93,7 @@ class PublicationTest(unittest.TestCase):
                                   headers_only=False, flags=['--cxx-flags'])
         with patch.object(build, 'check_checkout'), \
                 patch.object(build, 'stage_source', side_effect=stage), \
+                patch.object(build, 'patch_source'), \
                 patch.object(build, 'provider', return_value={'sha256': {}}), \
                 patch.object(build, 'run', side_effect=command), \
                 patch.object(Path, 'replace', publish):
@@ -121,6 +123,48 @@ class PublicationTest(unittest.TestCase):
         record = json.loads((output / 'build.json').read_text())
         self.assertEqual(sorted(record['sha256']), sorted(ARCHIVES))
         self.assertEqual([path.name for path in output.glob('*.new')], [])
+
+
+class PatchTest(unittest.TestCase):
+    """patch_source() over a copy of the pinned checkout's sources."""
+
+    SOURCE = Path(__file__).resolve().parents[2] / 'third_party/libs/libdatachannel'
+
+    def setUp(self) -> None:
+        if not (self.SOURCE / 'src').is_dir():
+            self.skipTest('third_party/libs/libdatachannel is not checked out')
+        self.directory = tempfile.TemporaryDirectory(prefix='libdatachannel patches ')
+        self.staged = Path(self.directory.name) / 'source'
+        shutil.copytree(self.SOURCE / 'src', self.staged / 'src')
+
+    def tearDown(self) -> None:
+        self.directory.cleanup()
+
+    def test_each_patch_applies_to_the_pinned_sources(self) -> None:
+        self.assertTrue(build.patches())
+        build.patch_source(self.staged)
+        start = (self.staged / 'src/impl/dtlstransport.cpp').read_text()
+        # OpenSSL's start(), the last of the three backends' in the file.
+        body = start[start.rindex('void DtlsTransport::start()'):]
+        self.assertLess(body.index('SSL_set_mtu('), body.index('registerIncoming();'))
+        connection = (self.staged / 'src/impl/peerconnection.cpp').read_text()
+        sctp = connection[connection.index('PeerConnection::initSctpTransport() {'):]
+        self.assertLess(sctp.index('std::lock_guard lock(mSctpTransportInitMutex);'),
+                        sctp.index('std::atomic_load(&mSctpTransport)'))
+
+    def test_a_patch_the_sources_hold_already_fails_the_build(self) -> None:
+        build.patch_source(self.staged)
+        with self.assertRaisesRegex(RuntimeError, 'is applied already'):
+            build.patch_source(self.staged)
+
+    def test_a_patch_outside_src_fails_the_build(self) -> None:
+        patches = Path(self.directory.name) / 'patches'
+        patches.mkdir()
+        (patches / 'outside.patch').write_text(
+            '--- a/CMakeLists.txt\n+++ b/CMakeLists.txt\n@@ -1 +1 @@\n-x\n+y\n')
+        with patch.object(build, 'patches', return_value=[patches / 'outside.patch']):
+            with self.assertRaisesRegex(RuntimeError, 'outside src/'):
+                build.patch_source(self.staged)
 
 
 if __name__ == '__main__':
