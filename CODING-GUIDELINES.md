@@ -7095,14 +7095,15 @@ decided and not built is in chapter 17.
 **Authenticated encryption.**
 
 - **`seal` and `open` work in place on `data`, with the tag apart; an AEAD
-  copies the tag into a local array and consumes the IV and the additional
+  copies the tag into a local array and consumes the nonce and the associated
   data before it writes the first byte of `data`.** No buffer is copied, and a
-  tag, IV or additional data in the same buffer as `data` gives correct
+  tag, nonce or associated data in the same buffer as `data` gives correct
   results.
   Source: `libraries/crypto/openspec/changes/genesis/specs/crypto/spec.md`
   "GCM: in place, the tag apart" (proposals).
 - **Every function checks its conditions first, in a fixed order (key size,
-  moved-from, the incremental state, IV size, tag size, the length limits),
+  moved-from, the incremental state, nonce size, tag size, the length
+  limits),
   and returns before it reads a secret byte; a refusal leaves `data`
   untouched.** The rulebook's rule that a function starts with its guards.
   Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
@@ -7120,18 +7121,19 @@ decided and not built is in chapter 17.
   growing buffer.
   Source: `libraries/crypto/openspec/changes/genesis/design.md` D6
   (proposals).
-- **GCM accepts IVs of 1 to 128 bytes, keys of 16, 24 and 32 bytes and tags
-  of 16 bytes on every backend, and refuses a message over 2^36 - 32 bytes
-  and additional data over 2^61 - 1 bytes with `message_too_long`.** OpenSSL
-  accepts no IV longer than 128 bytes, so without webcpp's cap the same call
-  would succeed or fail by backend; the limits are NIST SP 800-38D's; the
-  page says that a key meant for WebCrypto is of 16 or 32 bytes.
+- **GCM accepts nonces of 1 to 128 bytes, keys of 16, 24 and 32 bytes and
+  tags of 16 bytes on every backend, and refuses a message over 2^36 - 32
+  bytes and associated data over 2^61 - 1 bytes with `message_too_long`.**
+  OpenSSL accepts no nonce longer than 128 bytes, so without webcpp's cap the
+  same call would succeed or fail by backend; the limits are NIST SP 800-38D's;
+  the page says that a key meant for WebCrypto is of 16 or 32 bytes.
   Source: `libraries/crypto/openspec/changes/genesis/design.md` D7 and D8
   (proposals).
-- **An AEAD object is used by one thread at a time, and the page says that an
-  IV is never repeated under one key and gives the limit of 2^32 messages per
-  key with random IVs.** It holds a message's state and a key; a repeated IV
-  exposes the XOR of the plaintexts and lets an attacker forge tags.
+- **An AEAD object is used by one thread at a time, and the page says that a
+  nonce is never repeated under one key and gives the limit of 2^32 messages
+  per key with random nonces.** It holds a message's state and a key; a
+  repeated nonce exposes the XOR of the plaintexts and lets an attacker forge
+  tags.
   Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
   section 2.4 (proposals); `doc/aead.adoc` (libs/crypto).
 
@@ -7560,7 +7562,7 @@ decided and not built is in chapter 17.
   pieces; FIPS 197 for the block cipher; BIP340's vectors, Wycheproof's
   Bitcoin ECDSA file and DER through `from_der`, and BIP341's wallet
   vectors through the tweak.** Every case runs because keys of 24 bytes and
-  IVs of any size up to 128 are accepted.
+  nonces of any size up to 128 are accepted.
   Source: `test/Jamfile` (libs/crypto); `third_party/libs/wycheproof`,
   `third_party/libs/bips` (webcpp).
 - **BearSSL and OpenSSL are compared on AES-GCM, and ctaes and OpenSSL on the
