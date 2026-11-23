@@ -5502,62 +5502,59 @@ proposals is given relative to `libraries/document/openspec/`.
   payload on a network.** Honesty about cost is a goal.
   Source: `changes/archive/2026-10-12-genesis/design.md` (proposals).
 
-### trystero (serverless WebRTC rooms; port of Trystero 0.26.0; implemented in 0.1.0)
+### trystero (serverless WebRTC rooms; port of Trystero 0.27.0; implemented in 0.1.0)
 
-trystero ports Trystero 0.26.0: the peers of a room meet over public Nostr
-relays and talk over WebRTC data channels, on Trystero's wire byte for byte,
-over webcpp::webrtc: natively libdatachannel's WebRTC and in the browser the
-page's own. The decisions are those of the tree the superproject records for
-webcpp 0.1.0 (trystero `e9326e9`), which includes the change
-`shared-connection` (trystero `2e2dcd4`, webcpp `1a0dcac` and `d9e5fa6`,
-2026-10-14), implemented and archived on 2026-11-14, and of webrtc's
-increment 3 (trystero's branch `webrtc-backend`, 2026-11-14), which moved both
+trystero ports Trystero 0.27.0 (upstream `8d3f57e`): the peers of a room
+meet over public Nostr relays, verify each other with 0.27.0's signed
+handshake and talk over WebRTC data channels, on Trystero's wire byte for
+byte, over webcpp::webrtc: natively libdatachannel's WebRTC and in the
+browser the page's own. The decisions are those of webcpp 0.1.0's tree, which
+ported Trystero 0.26.0 (trystero `e9326e9`): its genesis, webrtc's increment
+3 (trystero's branch `webrtc-backend`, 2026-11-14), which moved both
 backends' WebRTC onto webcpp::webrtc and trystero's Asio onto webcpp::asio,
-and of trystero's refactor onto webcpp's libraries and Boost (trystero's
-branch `refactor`, at `459b08c` on 2026-11-15). The refactor moved the
-browser onto webcpp::asio's run model, the native relays onto webcpp::beast
-and Boost.URL, and what the core wrote itself onto Boost; replaced the two
+and trystero's refactor onto webcpp's libraries and Boost (trystero's branch
+`refactor`, at `459b08c` on 2026-11-15), which moved the browser onto
+webcpp::asio's run model, the native relays onto webcpp::beast and
+Boost.URL, and what the core wrote itself onto Boost; replaced the two
 backends by one platform backend; moved the core's times, then the backend
 interface's clocks, onto `std::chrono` and its integers to a fixed meaning;
 gave the examples a relay of their own and twins on Trystero JS; read and
 wrote every JSON text with webcpp::document, in the room's resource since
 document took an allocator; and bounded what a relay's refused handshake
-makes a room read, through webcpp::beast's bounded handshake layer.
-
-**On the branch `trystero/port-0.27` (library `port/trystero-0.27`), not
-interoperable before Phase 2.** The change `trystero-0-27` (proposals,
-design D1 to D16) ports Trystero 0.27.0 (upstream `8d3f57e`) on long-lived
-branches that reach `main` once, whole and interoperable (D1). Phase 1, built,
-speaks 0.27.0's topics, room keys, sealing, ids, relays, Nostr events and
-action wire, proven against vectors recorded from 0.27.0's own code, and has
-its room API; Phase 2 brings ECDSA P-256 with webcpp::crypto's
-`curves::p256`, the signed handshake and the interop. Where a line below names
-what the branch changed, it says so; the rest is `main`'s, and Phase 2's
-merge writes the section whole.
+makes a room read, through webcpp::beast's bounded handshake layer. Then the
+change `trystero-0-27` (proposals, design D1 to D23, 2026-11-20 to 11-22)
+ported it to 0.27.0 on long-lived branches merged once, whole and
+interoperable (D1): 0.27.0's topics, room keys, sealing, ids, relays, Nostr
+events and action wire, proven against vectors recorded from 0.27.0's own
+code; its identities and handshake over webcpp::crypto's ECDSA P-256; its
+room API; and one connection per room and remote peer, which retired 0.1.0's
+connection shared by an app's rooms (the archived change
+`shared-connection`, 2026-10-14) with its presence frames, room tokens and
+password handshake.
 Source: `libraries/trystero/openspec/changes/trystero-0-27/design.md`
 (proposals) and `doc/design.adoc` (libs/trystero).
 
-- **trystero's cryptography is webcpp::hash's and webcpp::crypto's, on the
-  branch: SHA-256, HMAC, HKDF and PBKDF2 from webcpp::hash, AES-256-GCM,
-  randomness, secrets and secp256k1's BIP-340 from webcpp::crypto; the
-  backend has no sealer, and no entropy of its own.** The owner asked for the
+- **trystero's cryptography is webcpp::hash's and webcpp::crypto's: SHA-256,
+  HMAC, HKDF and PBKDF2 from webcpp::hash, AES-256-GCM, randomness, secrets,
+  ECDSA P-256 and secp256k1's BIP-340 from webcpp::crypto; the backend has
+  no sealer, and no entropy of its own.** The owner asked for the
   0.27.0 port on webcpp::crypto on 2026-11-20, which supersedes his decision
   of 2026-11-17 that dropped trystero's migration onto webcpp::crypto
   (chapter 17, crypto; the change's design D2): this change is "the later
   change of trystero's own" crypto's genesis anticipated.
   Source: `libraries/trystero/openspec/changes/trystero-0-27/design.md` D2
   (proposals).
-- **On the branch a room seals and opens its signals in the call, with
-  webcpp::crypto's default AES-256-GCM (natively OpenSSL's, on emscripten
-  BearSSL's); the one asynchronous step is the PBKDF2 of a room's password,
-  `factory::derive_password_master`, natively webcpp::hash's `async_pbkdf2`
-  on a one-thread `webcpp::asio::thread_pool` the backend owns, in a page
-  over `backends::webcrypto`.** A signal of a few kilobytes seals in
-  microseconds, so an asynchronous seal only existed because the page's
-  WebCrypto is asynchronous; 600,000 iterations take some 0.2 s natively and
-  several seconds in WebAssembly, and never run on a room's thread (D4, D5).
-  A work executor in `app_config` was set aside: every native program would
-  fill an option for a cost paid once a room.
+- **A room seals and opens its signals in the call, with webcpp::crypto's
+  default AES-256-GCM (natively OpenSSL's, on emscripten BearSSL's); the one
+  asynchronous step is the PBKDF2 of a room's password,
+  `factory::derive_password_master`, natively webcpp::hash's `async_pbkdf2` on
+  a one-thread `webcpp::asio::thread_pool` the backend owns, in a page over
+  `backends::webcrypto`.** A signal of a few kilobytes seals in microseconds,
+  so an asynchronous seal only existed because the page's WebCrypto is
+  asynchronous; 600,000 iterations take some 0.2 s natively and several
+  seconds in WebAssembly, and never run on a room's thread (D4, D5). A work
+  executor in `app_config` was set aside: every native program would fill an
+  option for a cost paid once a room.
   Source: `doc/design.adoc` (libs/trystero); design D4 and D5 (proposals).
 - **An app keeps the keys of at most 64 rooms, the least recently used out,
   wipes each PBKDF2 master after HKDF, forgets a failed derivation and
@@ -5566,13 +5563,13 @@ Source: `libraries/trystero/openspec/changes/trystero-0-27/design.md`
   app's, so the cache is keyed by room id (D6). Secrets are in
   `webcpp::crypto::secret<N>` or wiped with trystero's own `detail::wipe`:
   a library never calls another's `detail`, until webcpp::crypto publishes a
-  wipe (the branch's ruling R19).
+  wipe (the port's ruling R19).
   Source: `doc/design.adoc` (libs/trystero); design D6 (proposals).
 
 **Scope and differences from Trystero JS.**
 
 - **Only what rooms of messages need is ported: the Nostr strategy, the
-  signaling, the password handshake, the action wire and the room API; audio
+  signaling, the identity handshake, the action wire and the room API; audio
   and video are not, and a room ignores a frame of `@_stream`, `@_track` or
   `@_signal`.** Media is the largest part left: in the browser the page's
   `MediaStream` objects, natively libdatachannel's RTP tracks, whose capture,
@@ -5583,15 +5580,15 @@ Source: `libraries/trystero/openspec/changes/trystero-0-27/design.md`
   and Nostr's public relays need no account and no server of the application's
   own.
   Source: `doc/differences.adoc` (libs/trystero).
-- **Request actions, `onReceive`, the progress callbacks, cancelling with an
-  `AbortSignal`, `onPeerHandshake` and passive rooms are left for later.**
-  Meanwhile a room accepts every transfer for an action with a receiver within
-  `max_receive_bytes`, as Trystero does when no `onReceive` is set, reports a
-  transfer only when it completes, and always announces itself. On the
-  branch, request actions, the receive gate and the progress of what a room
+- **Request actions, the receive gate and the progress of what a room
   receives are ported, answering at once; `requestMany`, the progress and
-  `signal` of sends and requests, and passive rooms are not.
-  Source: `doc/differences.adoc` (libs/trystero).
+  `signal` of sends and requests, passive rooms and 0.27.0's plugins
+  (`makeState`, `makeUserState`, `roles`, `scale`) are not.** A decision
+  that answers at once is the C++ form of one the frame waits for, so
+  0.27.0's bounds on decisions pending (128 receive decisions, 8 of one
+  peer, 64 concurrent requests of one peer) have no counterpart; the plugins
+  are each a change of their own (design D16, P2-R23).
+  Source: `doc/differences.adoc` and `doc/roadmap.adoc` (libs/trystero).
 - **`trickleIce: false`, `turnConfig` and `rtcPolyfill` are not ported.**
   Candidates are always trickled, as Trystero's Nostr strategy does by
   default; `ice_servers` names every STUN and TURN server; the backend is what
@@ -5602,38 +5599,56 @@ Source: `libraries/trystero/openspec/changes/trystero-0-27/design.md`
   reconnects with its own backoff and reports what its relays do through its
   log.
   Source: `doc/differences.adoc` (libs/trystero).
-- **`on_peer_join` does not replay the peers already joined.** A join is
-  reported from the executor after `join` has returned, so a handler set right
-  after `join` sees every join; `peers()` lists the joined peers for a handler
-  set later. On the branch this is no difference: listeners are 0.27.0's,
-  each `on_*` returns a `subscription`, and a join listener replays only with
-  `listen_options::replay`, as 0.27.0's (design D10), so the program
-  `diff_peer_join` and its twin are gone.
+- **Every `on_*` adds a listener and returns a `subscription`, whose
+  `unsubscribe()` removes it and whose destruction leaves it; a join
+  listener replays only with `listen_options::replay`.** As 0.27.0's
+  emitter; a token that removed its listener when destroyed would silently
+  remove the listeners whose token a program did not keep (D10).
   Source: `doc/differences.adoc` (libs/trystero).
-- **`peers()` lists ids, not connections.** A connection is the backend's
+- **`peers()` maps each id to a `peer_info`, 0.27.0's `PeerInfo` without its
+  `connection`, and `self()` is synchronous.** A connection is the backend's
   object, webcpp::webrtc's over a page's or libdatachannel's, and the room
-  does not hand it out. On the branch `peers()` maps each id to a
-  `peer_info`, 0.27.0's `PeerInfo` without its `connection` (D11).
+  does not hand it out; an app's identity exists once it is made (D11).
   Source: `doc/differences.adoc` (libs/trystero).
-- **A send to a peer that has not joined completes with `error::no_such_peer`,
-  where Trystero warns and resolves.** An operation that fails says so with
-  its error code. On the branch it completes with `error::not_connected`,
-  0.27.0's message.
+- **A send to a peer that has not joined completes with
+  `error::not_connected`, whose message is the category's fixed "no active
+  peer with this id", where 0.27.0 rejects with a message naming the id.**
+  An error code's message is its category's text; `diff_send_to_absent_peer`
+  and its twin show both.
   Source: `doc/differences.adoc` (libs/trystero).
+- **Identity is the app's: one endpoint key, whose compact key derives
+  `self_id()`, and one user identity, `app_config::identity` or an ephemeral
+  one; no `'local'` persistence and no identity per room.** 0.27.0 caches
+  one endpoint identity per app id and page; a `user_identity` is a copyable
+  handle to an immutable key, so several apps are one user's endpoints, and a
+  program keeps a user across runs with `export_user_identity` and
+  `import_user_identity`, where 0.27.0's default keeps it in IndexedDB (D15,
+  D17).
+  Source: `doc/design.adoc` and `doc/differences.adoc` (libs/trystero).
+- **ECDSA P-256 is webcpp::crypto's, over BearSSL on every target,
+  synchronous and deterministic (RFC 6979), low S written and a high S
+  refused, behind trystero's one seam `protocol/ecdsa.hpp`; signatures,
+  compact keys and a user key's text are read as strict base64url.** Both
+  verify alike, so the wire cannot tell a deterministic signature from
+  WebCrypto's random one; a JS peer writes only canonical base64url, so the
+  strict reading refuses only forged texts; the key records (4,096) and
+  verified signatures (8,192, 2 MiB) are 0.27.0's caches, per app (D18). The
+  seam makes the migration to crypto/sign-unified's message-form API one
+  commit (ruling P2-R26).
+  Source: `doc/design.adoc` (libs/trystero).
 
 **Protocol and wire compatibility.**
 
-- **The wire is Trystero 0.26.0's, byte for byte, and never changes (on the
-  branch 0.27.0's, but for the shared connection's envelope, presence and
-  password handshake, kept until Phase 2): the topic
-  prefixes `"Trystero@"` and `"Trystero:"`, the handshake's `"__trystero_pw"`,
-  every constant and layout under `protocol/`, the default relays in their
-  order, and the names the chat's page calls (`joinRoom`, `sendText`) and the
-  interop page's `window.leave`.** A room joined from C++ and the same
-  room joined from Trystero JS must be one room; the `oracle` lane fails when
-  Trystero's own values differ from the committed ones.
-  Source:
-  `libraries/trystero/openspec/changes/archive/2026-10-09-genesis/design.md`
+- **The wire is Trystero 0.27.0's, byte for byte, and never changes: the
+  library name `"Trystero"` of its topic paths, the domain tags
+  (`trystero:<name>:v<n>`), the handshake's member `"__trystero_id"`, every
+  constant and layout under `protocol/`, the default relays in their order,
+  and the names the chat's page calls (`joinRoom`, `sendText`) and the
+  interop page's `window.leave`.** A room joined from C++ and the same room
+  joined from Trystero JS must be one room; the `oracle` lane fails when
+  Trystero's own values differ from the committed ones, and the interop lane
+  when a 0.27.0 page cannot meet the C++ peers.
+  Source: `libraries/trystero/openspec/changes/trystero-0-27/design.md`
   (proposals).
 - **A rename never replaces the word `trystero` by pattern: it uses the exact
   C++ patterns (`namespace webcpp::trystero`, `<webcpp/trystero/`,
@@ -5656,21 +5671,22 @@ Source: `libraries/trystero/openspec/changes/trystero-0-27/design.md`
   and hashing the written bytes keeps the id and the text from ever
   disagreeing.
   Source: `doc/design.adoc` (libs/trystero).
-- **A self id that is not UTF-8 is set aside for a random one when the app is
-  made, with a configuration report to `app::on_error`, and a local
-  candidate that is not UTF-8 is not reported.** `quote` refuses invalid
-  UTF-8, which no JavaScript string holds, and the self id is the only string
-  a program gives that a signal writes.
+- **A local candidate that is not UTF-8 is not reported.** `quote` refuses
+  invalid UTF-8, which no JavaScript string holds; the self id is derived
+  from a key, so no string a program gives is written in a signal.
   Source: `doc/protocol.adoc` (libs/trystero).
-- **The relay shuffle computes `sin(seed++) * 10000` with `std::sin`.** Every
-  peer of an app, Trystero JS included, must pick the same relays; this relies
-  on `std::sin` and V8's `Math.sin` agreeing on these inputs, which the
-  oracle's fixtures check.
-  Source: `libraries/trystero/openspec/specs/trystero/spec.md` (proposals).
-- **`str_to_num` sums the UTF-16 code units of a text, as JavaScript's
-  `charCodeAt` sees them.** The Nostr kind and the relay shuffle's seed derive
-  from that sum, so a non-ASCII id must count as in JavaScript.
-  Source: `libraries/trystero/openspec/specs/trystero/spec.md` (proposals).
+- **The relay shuffle is 0.27.0's: a Fisher-Yates from the end, driven by a
+  32-bit generator (`state += 0x6d2b79f5` and its two mixing steps) seeded
+  with `str_to_num(<app>)`.** Every peer of an app, Trystero JS included,
+  must pick the same relays; the integer generator needs no agreement of
+  floating-point functions, which the vectors check.
+  Source: `doc/protocol.adoc` (libs/trystero).
+- **`str_to_num` is `hash32`, FNV-1a 32 over the UTF-8 bytes then
+  MurmurHash3's `fmix32`, modulo its limit; a topic's Nostr kind is FNV-1a 32
+  over its UTF-16 code units, without `fmix32`.** As 0.27.0's `utils.ts` and
+  the Nostr strategy compute them, so a non-ASCII id counts as in
+  JavaScript.
+  Source: `doc/protocol.adoc` (libs/trystero).
 - **Of two peers, the lower id offers, on the relay that carried the other's
   announcement.** Trystero answers only on the relay that delivered the
   message; the spike's probe, which published every candidate on every relay,
@@ -5678,10 +5694,12 @@ Source: `libraries/trystero/openspec/changes/trystero-0-27/design.md`
   Source:
   `libraries/trystero/openspec/changes/archive/2026-10-09-genesis/reference/research/TRYSTERO_CPP_SPIKE/FINDINGS.md`
   (proposals).
-- **A sealed signal carries a 16-byte IV, not the usual 12.** It is the IV
-  Trystero draws (`protocol::seal_iv_size`), so that each side opens what the
-  other sealed.
-  Source: `libraries/trystero/openspec/specs/trystero/spec.md` (proposals).
+- **A sealed text is AES-256-GCM with a 12-byte IV, `iv || ciphertext ||
+  tag` in base64url, under the AAD `<type>|<peer id>|<offer id>`, and an
+  opened plaintext must be UTF-8.** 0.27.0's sealing (`crypto.ts`); the AAD
+  binds a signal to its kind, sender and offer, and a replaced text would be
+  another text than the peer sealed (D12).
+  Source: `doc/protocol.adoc` (libs/trystero).
 - **An offer's size is read as a `std::uint64_t` on every target and refused
   beyond 2^53 - 1, as Trystero refuses it.** A float64 size does not fit a
   32-bit `std::size_t`: Emscripten read 2^53 - 1 as 4294967295 (measured).
@@ -5730,8 +5748,7 @@ Source: `libraries/trystero/openspec/changes/trystero-0-27/design.md`
   4's types of a fixed meaning. Every value is Trystero's number, truncated
   where Trystero's is, so nothing a peer sees changes. `double` stays where
   it is JavaScript's Number on Trystero's side, which the oracle's fixtures
-  pin: `str_to_num` and the sum of UTF-16 code units it takes, the relay
-  shuffle, and the action wire's float64 sizes and offsets. The seam's two
+  pin: the action wire's float64 sizes and offsets. The seam's two
   methods lost the unit their names carried (`now_ms`, `unix_seconds`) when
   their types took it, and the memory backend's virtual clock is a time
   point from the steady clock's epoch, so that its tests compare durations
@@ -5750,7 +5767,7 @@ Source: `libraries/trystero/openspec/changes/trystero-0-27/design.md`
 - **The platform backend makes its peer connections and data channels in
   `webrtc/`, on both targets: `webrtc::peer_connection` and
   `webrtc::data_channel` hold webcpp::webrtc's `basic_peer_connection` and
-  `basic_data_channel` over a `std::pmr::polymorphic_allocator` on the app's
+  `basic_data_channel` over a `std::pmr::polymorphic_allocator` on the room's
   resource, and implement the abstract `backend::peer_connection` and
   `backend::data_channel`.** webcpp::webrtc gives both targets one interface,
   so trystero keeps only its policies over WebRTC, the same on both. The
@@ -5774,7 +5791,7 @@ Source: `libraries/trystero/openspec/changes/trystero-0-27/design.md`
   the form libdatachannel parses.
   Source: `doc/design.adoc` (libs/trystero).
 - **A channel reads every message as it comes, with `async_receive`, into a
-  vector of the app's resource, and drops a text message, or a binary one
+  vector of the room's resource, and drops a text message, or a binary one
   larger than any room frame, on the executor.** Neither can be a frame.
   webcpp::webrtc reads a text as the UTF-8 it holds, so the browser's old
   faults (the text `1e300` threw a `RangeError` out of `new Uint8Array`, and
@@ -5783,20 +5800,19 @@ Source: `libraries/trystero/openspec/changes/trystero-0-27/design.md`
   message past 256 KiB, or unread messages past 16 MiB, close the channel.
   Source: `doc/design.adoc` (libs/trystero).
 - **Valid frames received before the message handler is installed wait in a
-  FIFO bounded by 64 frames and 10 seconds, on both targets.** These are the
-  original Trystero peer's pending-data bounds. Overflow or expiry closes the
-  channel; a close releases the retained frames. Installing a handler
-  schedules delivery on the executor, preserving order with later arrivals and
-  rechecking the current handler and channel after each callback. It never
-  calls a message handler synchronously from `set_handlers`, where adoption
-  may still be initializing the shared connection. Queued frames use the
-  supplied resource, and the expiry is a timer of the factory's.
+  FIFO of the room's resource under the link's bounds, 64 frames of at most
+  17 KiB, on both targets.** These are 0.27.0's `peer.ts` bounds on a peer's
+  frames before its room binds it. One more, or a longer one, closes the
+  channel; a close releases the retained frames; the link's 10 s start as it
+  takes them. Installing a handler schedules delivery on the executor,
+  preserving order with later arrivals and rechecking the current handler and
+  channel after each callback; it never calls a message handler
+  synchronously from `set_handlers`.
   Source: `doc/design.adoc` (libs/trystero).
 - **The channel reports the buffered amount falling to 64 KiB only after a
   send left it above, as `onbufferedamountlow` does.** webcpp::webrtc's wait
-  completes whenever the amount is at or under the threshold, and the shared
-  connection gives the bindings waiting to send their turn at each fall, as
-  the browser's event did.
+  completes whenever the amount is at or under the threshold, and the link gives
+  the sends waiting their turn at each fall, as the browser's event did.
   Source: `include/webcpp/trystero/webrtc/data_channel.hpp` (libs/trystero).
 
 **The platform backend.**
@@ -5811,34 +5827,30 @@ Source: `libraries/trystero/openspec/changes/trystero-0-27/design.md`
   version is released yet (0.1.0 is in preparation, chapter 19), so the
   rename costs no release.
   Source: `doc/design.adoc` and `doc/platform.adoc` (libs/trystero).
-- **Two parts are the target's own, chosen by `WEBCPP_TARGET_EMSCRIPTEN`: the
-  sealer, natively OpenSSL's AES-256-GCM and in a page `crypto.subtle`, and
-  the source of randomness, natively OpenSSL's `RAND_bytes` and in a page
-  `crypto.getRandomValues`; the WebRTC, the relays' session, the timer
-  (`detail::timer`) and the clocks (`std::chrono::system_clock` and
-  `std::chrono::steady_clock`) are one code on both.** On the branch neither
-  is: sealing is webcpp::crypto's in the core, randomness webcpp::crypto's
-  `random_device`, and the one part the target chooses is the PBKDF2 of a
-  room's password (above). Until webcpp::crypto was built (chapter 17), the
-  platform's crypto was the target's own;
-  Emscripten reads the standard clocks from the page's `Date.now()` and
-  `performance.now()`, as the browser backend did through embind. A library
-  chooses its code by config's target macro, not the compiler's (chapter 15,
-  config).
+- **One part is the target's own, chosen by `WEBCPP_TARGET_EMSCRIPTEN`: the
+  PBKDF2 of a room's password, natively `webcpp::hash::async_pbkdf2` on a
+  thread of the backend's own and in a page over `backends::webcrypto`;
+  sealing and randomness are webcpp::crypto's, and the WebRTC, the relays'
+  session, the timer (`detail::timer`) and the clocks
+  (`std::chrono::system_clock` and `std::chrono::steady_clock`) are one code
+  on both.** Until the port to 0.27.0 the sealer and the randomness were the
+  target's own; Emscripten reads the standard clocks from the page's
+  `Date.now()` and `performance.now()`, as the browser backend did through
+  embind. A library chooses its code by config's target macro, not the
+  compiler's (chapter 15, config).
   Source: `doc/platform.adoc` and `doc/design.adoc` (libs/trystero).
-- **The platform's one source of randomness is checked wherever it is drawn:
-  `random()` aborts the program without it, and a seal fails with
-  `error::backend_failure`; in a page it is `crypto.getRandomValues`, called
-  from JavaScript that catches what it throws, so that a page whose function
-  is missing or throws has none.** Without secure randomness nothing is
-  safe: the browser backend ignored a failed `getentropy` before trystero's
-  refactor, as chapter 17 recalls, and that is not repeated; and Emscripten's
-  `getentropy` lets the page's exception into WebAssembly, which no call may
-  (below). On the branch the backend's randomness is webcpp::crypto's
-  `random_device`, whose `getentropy` on Emscripten lets that exception in:
-  `random()` still aborts without randomness, `entropy.hpp` is gone, and the
-  guard belongs to `random_device` (the change's Open Question 1).
-  Source: `include/webcpp/trystero/platform/entropy.hpp` and
+- **The platform's one source of randomness is webcpp::crypto's
+  `random_device`: `random()` aborts the program without it.** Without
+  secure randomness nothing is safe: the browser backend ignored a failed
+  `getentropy` before trystero's refactor, as chapter 17 recalls, and that
+  is not repeated. On Emscripten `random_device` reads
+  `crypto.getRandomValues` through `getentropy`, which lets a missing or
+  throwing one into WebAssembly: the guard trystero 0.1.0 had
+  (`entropy.hpp`) is gone, and belongs to `random_device` (the change's Open
+  Question 1, ruling P2-R16); `platform_page_entropy`, which expects each
+  room of such a page to report `identity_failed`, runs only by name until
+  it lands.
+  Source: `doc/platform.adoc` and
   `include/webcpp/trystero/platform/backend.hpp` (libs/trystero).
 - **The window of `backend_config::max_peer_connections_per_minute` (256)
   bounds the connections the backend makes for every app and room it serves,
@@ -5863,14 +5875,6 @@ Source: `libraries/trystero/openspec/changes/trystero-0-27/design.md`
   queued its expiry as a success; on emscripten the wait is in the reactor's
   timer queue, so it fires only while the program runs its `io_context`.
   Source: `include/webcpp/trystero/detail/timer.hpp` (libs/trystero).
-- **The sealer is asynchronous on both targets: natively it works
-  synchronously and posts its completion.** Web Crypto is asynchronous, so
-  the interface is, and a completion never runs inside the call that started
-  it. On the branch the backend has no sealer (above, design D4); a password's
-  derivation completes after the call that started it.
-  Source: `doc/platform.adoc` (libs/trystero) and
-  `libraries/trystero/openspec/changes/archive/2026-10-09-genesis/reference/research/TRYSTERO_CPP_SPIKE/FINDINGS.md`
-  (proposals).
 - **The relays' WebSocket is one session of webcpp::beast on both targets,
   natively Boost.Beast's own WebSocket stream, over webcpp::beast's bounded
   handshake layer, and in a page webcpp::beast's page `WebSocket`: Asio
@@ -6048,23 +6052,10 @@ Source: `libraries/trystero/openspec/changes/trystero-0-27/design.md`
   ping, and webcpp::beast's page stream refuses keep-alive pings, so the
   session sets none there.
   Source: `doc/platform.adoc` (libs/trystero).
-- **A page's platform backend requires a secure context for its sealer.**
-  `crypto.subtle`, which seals the signaling, exists only there; elsewhere
-  every sealing operation fails with `error::backend_failure`. On the branch
-  only a room with a password needs one, for its PBKDF2, whose failure the
-  room reports as `error::backend_failure`.
+- **In a page a room with a password requires a secure context, for its
+  PBKDF2.** `crypto.subtle` exists only there; elsewhere the derivation
+  fails, and the room reports `error::backend_failure`.
   Source: `doc/platform.adoc` (libs/trystero).
-- **In a page the sealer imports its key on its first operation and queues
-  the operations that arrive while it imports.** (reason not recorded) Gone
-  with the sealer on the branch.
-  Source: `libraries/trystero/openspec/specs/trystero/spec.md` (proposals).
-- **A page's sealer reads a Web Crypto settlement only when it is an
-  `ArrayBuffer`, and fails the seal or the open with
-  `error::backend_failure` otherwise.** Only a page whose `crypto.subtle`
-  was replaced settles with another value, whose reading as one could throw
-  (`new Uint8Array(-1)`) or read what it is not. Gone with the sealer on the
-  branch.
-  Source: `include/webcpp/trystero/platform/sealer.hpp` (libs/trystero).
 - **In a page, under webcpp::beast's default policy, a TLS context that asks
   for what a page cannot honour makes every `wss://` relay report a close:
   authorities added, a client certificate or key, options, a method other
@@ -6098,11 +6089,10 @@ Source: `libraries/trystero/openspec/changes/trystero-0-27/design.md`
 
 - **Natively WebRTC is libdatachannel's, through webcpp::webrtc over its C
   API, the relays' WebSockets are Boost.Beast's own, through webcpp::beast,
-  and TLS, AES-GCM and randomness are OpenSSL's (on the branch TLS alone is
-  the backend's OpenSSL; AES-GCM is webcpp::crypto's, OpenSSL's natively),
-  with libdatachannel built without its own WebSocket.** The relays then run on the room's executor
-  like everything else, and the native peer connections are the browser's in
-  interface.
+  and TLS is OpenSSL's, as webcpp::crypto's native AES-GCM is, with
+  libdatachannel built without its own WebSocket.** The relays then run on the
+  room's executor like everything else, and the native peer connections are
+  the browser's in interface.
   Source: `doc/platform.adoc` and `doc/building.adoc` (libs/trystero).
 - **Natively the relays' WebSocket runs over webcpp::beast's
   `bounded_handshake_stream`, made with the room's allocator, with
@@ -6136,12 +6126,6 @@ Source: `libraries/trystero/openspec/changes/trystero-0-27/design.md`
   counts until a collection.
   Source: `doc/platform.adoc` and
   `include/webcpp/trystero/platform/backend.hpp` (libs/trystero).
-- **A channel that closes during adoption before a room binds clears that
-  room's negotiation and restarts its announcements.** No binding exists for
-  the later connection-end callback to remove. Keeping the negotiation marked
-  connected would prevent the room from ever reconnecting.
-  Source: `include/webcpp/trystero/room.hpp` and `test/shared_test.cpp`
-  (libs/trystero).
 - **`backend_config::bind_address` binds every peer connection to one address;
   empty means every interface but the loopback.** Bound to 127.0.0.1, the
   peers of one machine connect with no other network, which a test wants.
@@ -6200,10 +6184,10 @@ Source: `libraries/trystero/openspec/changes/trystero-0-27/design.md`
   Source: `doc/usage.adoc` (libs/trystero).
 - **Text is a view and a copy is a decision: digests are fed the parts of
   their input, signals and relay messages are read as views into the parsed
-  document, a frame is written once inside its room envelope and shared by
-  every target, and a log sentence is composed only when there is a sink.** A
-  string is made only where something must own the text: a map key, a member,
-  a capture of a handler that runs later.
+  document, a frame is written once and shared by every target, and a log
+  sentence is composed only when there is a sink.** A string is made only
+  where something must own the text: a map key, a member, a capture of a
+  handler that runs later.
   Source: `doc/design.adoc` (libs/trystero).
 - **A `room` is a move-only handle of one membership: destroying it, or
   assigning another room over it, leaves at once, without the 99 ms
@@ -6251,11 +6235,12 @@ Source: `libraries/trystero/openspec/changes/trystero-0-27/design.md`
   slot.** One may receive as views while another sends by moving strings, as
   the chat example does.
   Source: `doc/usage.adoc` (libs/trystero).
-- **Frames of an action not made yet are kept, 64 per peer for 120 s, and
-  messages without a handler queue up to 1024 per action, the oldest dropped
-  and logged.** An action made late still receives what arrived before it; for
-  the numbers, (reason not recorded).
-  Source: `doc/usage.adoc` (libs/trystero).
+- **Frames of an action not made are dropped, and its transfers rejected as
+  an "unregistered action"; messages of an action made wait for a listener,
+  32 per sender for 10 s, and once awaited queue up to 1024 per action, the
+  oldest dropped first.** As 0.27.0, which keeps no frame of an action not
+  made: a room makes the actions it receives right after it is joined.
+  Source: `doc/usage.adoc` and `doc/protocol.adoc` (libs/trystero).
 - **`async_send` completes once each target's local data channel has taken the
   inline frame, or the last chunk of an accepted transfer, with the first
   failure if any.** That is when Trystero's `send` resolves; nothing confirms
@@ -6266,24 +6251,31 @@ Source: `libraries/trystero/openspec/changes/trystero-0-27/design.md`
   `error::channel_stalled`.** The threshold is Trystero's
   `bufferedAmountLowThreshold`; for the 10 s bound, (reason not recorded).
   Source: `libraries/trystero/openspec/specs/trystero/spec.md` (proposals).
-- **A receiver takes one transfer per peer at a time, only for an action with
-  a receiver, and reserves at most `max_receive_bytes` (256 MiB) across
-  peers.** The bound is Trystero's `maxReceiveBytes`; for one transfer per
-  peer, (reason not recorded).
-  Source: `libraries/trystero/openspec/specs/trystero/spec.md` (proposals).
+- **A receiver keeps at most 1024 offers pending across its peers and 64 of
+  one peer, reserves at most `max_receive_bytes` (256 MiB) across them, and
+  drops a peer whose channel buffers more than 1 MiB when a control frame is
+  to be sent to it.** 0.27.0's action wire's bounds, its `maxReceiveBytes`
+  among them.
+  Source: `doc/protocol.adoc` (libs/trystero).
 - **A peer that breaks the action wire (a frame that does not decode, a
-  duplicate offer, a chunk at the wrong offset) is kicked.** Trystero drops
-  the peer for any wire error; over a shared connection the kick ends that
-  room's binding only.
-  Source: `libraries/trystero/openspec/specs/trystero/spec.md` (proposals).
+  duplicate offer, a chunk at the wrong offset, a response that answers no
+  request) is reported as `error::peer_error`, with 0.27.0's message, and
+  told to leave.** 0.27.0's `fail_peer`; the backend has no error event of
+  its own (ruling P2-R21).
+  Source: `doc/usage.adoc` (libs/trystero).
 - **A peer still in its handshake may send only `@_leave`, `@_hsdata` and
-  `@_hsready`; its other frames are dropped.** (reason not recorded)
+  `@_hsready`; its other frames are dropped.** As 0.27.0's
+  `canReceiveFromPeer`: a peer is not a member before both sides are ready.
   Source: `libraries/trystero/openspec/specs/trystero/spec.md` (proposals).
-- **`error::handshake_failed` is reserved and reported by nothing; a handshake
-  message of the wrong shape reports `error::wrong_password`.** Trystero's
-  handshake reports it so, and the value 11 is kept so that the values after
-  it do not move.
-  Source: `libraries/trystero/openspec/specs/trystero/spec.md` (proposals).
+- **A failed handshake is `error::handshake_failed`, once a run, with
+  0.27.0's reason without its `Trystero: ` prefix ("handshake timed out after
+  10000ms" among them), and the peer is told to leave; `wrong_password`,
+  `handshake_timed_out` and `too_many_rooms` are gone, and the values after
+  them moved.** 0.27.0 has no password handshake, no code of its own for the
+  timeout and no room bound; nothing on `main` saw the 0.27.0 values (D23,
+  rulings P2-R5 and P2-R6).
+  Source: `include/webcpp/trystero/error.hpp` and `doc/usage.adoc`
+  (libs/trystero).
 - **The error category's `message(int, char*, std::size_t)` returns a static
   text and allocates nothing.** A room logs an error without allocating.
   Source: `include/webcpp/trystero/error.hpp` (libs/trystero).
@@ -6293,198 +6285,91 @@ Source: `libraries/trystero/openspec/changes/trystero-0-27/design.md`
   composes no text at all.
   Source: `include/webcpp/trystero/detail/log.hpp` (libs/trystero).
 
-**The app and the shared connection, as built.**
+**The app and its rooms.**
 
 - **Rooms are joined through an `app`: `app::join` returns
   `boost::system::result<room>`, and the standalone `room` constructor and
-  `room_config` are removed.** One way to join, so no program falls back into
-  one id per room, where two standalone rooms with one id meet a Trystero JS
-  peer in one of them only; the standalone form can return later as an app of
-  one room without breaking anything.
+  `room_config` are removed.** One way to join, the app holding what its
+  rooms share: the identity, the relays' configuration and the rooms' keys.
   Source:
   `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/design.md`
   (proposals).
-- **Two peers in several rooms of one app share one WebRTC connection, each
-  frame naming its room by its token.** Trystero does so, and the owner
-  decided on 2026-10-11 that the difference goes away.
-  Source:
-  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/proposal.md`
-  (proposals).
-- **Sharing is scoped by the `app` object the user makes: nothing is keyed by
+- **Each room negotiates its own connection to each remote peer, in its own
+  resource, and writes its action frames bare on it; nothing of 0.1.0's
+  shared connection stays.** 0.27.0 removed 0.26.0's `shared-peer.ts`, and
+  its `strategy.ts`, `signal-handler.ts`, `peer.ts` and `room.ts` share
+  nothing: a JS peer's connection belongs to one room, so another room's
+  frames on it would be read as this room's (D9, confirmed 2026-11-22,
+  rulings P2-R1 to P2-R4).
+  Source: `libraries/trystero/openspec/changes/trystero-0-27/design.md`
+  (proposals) and `doc/design.adoc` (libs/trystero).
+- **An app is scoped by the `app` object the user makes: nothing is keyed by
   the backend or kept in static storage, and two apps of one app id in one
   process are two peers.** No static state, and several peers in one process,
-  as the tests and the interop peers need; an id across apps is a program's
-  choice.
+  as the tests and the interop peers need; rooms that must stay unlinkable
+  use separate apps.
   Source: `doc/differences.adoc` (libs/trystero).
-- **The app owns the connections and a room its bindings: a room holds the app
-  strongly, the app reaches rooms weakly, a binding holds its connection
-  weakly, and a connection holds plain pointers to its bindings, which remove
-  themselves before they go.** No cycle keeps the objects alive, and after a
-  room has ended the app keeps no allocation of that room's resource.
+- **A room holds the app strongly and the app reaches its rooms weakly,
+  through a registry the room leaves in every way it ends.** No cycle keeps
+  the objects alive, and after a room has ended the app keeps no allocation
+  of that room's resource.
   Source: `doc/design.adoc` (libs/trystero).
-- **One self id per app, drawn once unless named, announces, signals,
-  tie-breaks and handshakes in every room of the app.** Sharing a connection
-  needs one id per app, as Trystero's one `selfId` per page; the program
-  decides which rooms may be linked, and rooms that must stay unlinkable use
-  separate apps.
-  Source:
-  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/reference/spec.md`
-  (proposals).
 - **The password is the app's and immutable: `app_config::password` is copied
-  into the app's resource, and `room_options` has no password.** The initial
-  signaling sealed with it authenticates the domain before any connection is
-  adopted, so a peer that reaches another room through presence already knows
-  its password (owner amendment, 2026-10-14).
-  Source:
-  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/reference/password-domains.md`
-  (proposals).
-- **Different passwords need separate apps with distinct self ids, whose
-  connections, registries, presence and tokens are never shared.** A room
-  token does not depend on the password, so isolation comes from scoped
-  connections and registries, not from a new token format.
-  Source:
-  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/reference/password-domains.md`
-  (proposals).
-- **The room handshake stays Trystero's one-way handshake; no reciprocal room
-  proof is added.** Reciprocal proofs would change compatibility with Trystero
-  JS; a JS page that mixes passwords keeps its own exposure, which the page
-  documents rather than repairs.
-  Source:
-  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/design.md`
-  (proposals).
-- **A passwordless app's rooms are open, by token, to the peers connected
-  through any of its rooms; no proof gate is added.** A gate by a message on
-  the room's topics is passed by anyone who reads the relays, so it gave false
-  assurance, and it cost up to 10 s against a Trystero JS peer that joined
-  first; a room that must be private belongs to an app with a password.
-  Source:
-  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/reference/spec.md`
-  (proposals).
-- **Adoption follows Trystero's rule and the peer's choice: the first
-  connection registered wins and the room is bound to it, a second one to the
-  same peer is held unused until the peer shows which it keeps, a stale one is
-  ended before its replacement, and a crossed pair settles on the connection
-  the peer keeps.** Matching Trystero's rule keeps a C++ and a Trystero JS side
-  agreeing; ending the stale one first fixes the plan's silent replacement, in
-  which a late close erased the new entry. Closing the second at once, as
-  Trystero does, closed in a crossed pair the connection a page kept as it
-  began sending on it: libdatachannel ends an association with a stream reset
-  and a SHUTDOWN, its ABORT a moment later, Chrome failed the page's sends in
-  between, and Trystero JS logged a peer error (measured: 6 of 46 crossed pairs in 1,800
-  two-room meetings, none of 56 once the second is held). A peer that holds
-  its second too, as trystero does, sends on neither, so the higher id gives
-  way: it takes its second once the peer sends on it.
-  Source: `include/webcpp/trystero/detail/app_impl.hpp` (libs/trystero).
-- **A room binds a connected peer only after that peer advertised the room's
-  token itself on that connection.** An announcement or a signal forged in its
-  name must not bind an innocent peer; in Trystero JS it binds the peer by
-  reuse, which is kicked after its handshake timeout.
-  Source:
-  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/specs/trystero/spec.md`
-  (proposals).
-- **A room frame of a room of the app that the connection keeps is the peer's
-  own advertisement of the room, as its presence is.** Trystero sends a
-  room's presence once per connection, and Chrome can drop what a page sends
-  on an answering channel as it opens, so a room waiting for that presence
-  alone would never bind a Trystero JS peer; only the peer writes its
-  connection's frames, so a forged announcement still binds nothing.
-  Source: `AGENTS.md` (libs/trystero).
-- **A bound room keeps its negotiation entry marked connected, and binds by
-  signaling reuse only on its first meeting with that peer over that
-  connection.** Otherwise a room bound by presence or reuse would offer to the
-  peer it is bound to, and later relay signals could shorten a backoff.
-  Source:
-  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/reference/spec.md`
-  (proposals).
-- **A room that binds by reuse or at its rebinding time sends `presence(1, T)`
-  on the connection.** It makes the other side, Trystero JS included, bind at
-  once, with no answer on the relays.
+  into the app's resource, and `room_options` has no password.** One app is
+  one password domain, whose rooms' keys are cached by room id alone (D6,
+  0.1.0's ruling); a peer of another password opens no signal and never
+  connects, as in 0.27.0, which authenticates a password by its sealed
+  signals alone.
+  Source: `doc/design.adoc` (libs/trystero).
+- **Different passwords need separate apps with distinct self ids.** A
+  page of 0.27.0 meets a peer in two rooms of different passwords as one
+  peer, a C++ program as two; `diff_passwords` and its twin show it.
   Source: `doc/differences.adoc` (libs/trystero).
-- **A frame for a room of the app not bound yet is kept, 64 per connection,
-  all dropped 10 s after the first, and a kept `@_leave` discards itself and
-  what was kept before it.** A registered room may receive its handshake
-  before signaling binds it, as Trystero's source notes; the frames before a
-  kept `@_leave` belong to a binding of the other side that has ended.
-  Source:
-  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/reference/spec.md`
-  (proposals).
-- **A bound room has no buffer for frames that wait for its handler, where
-  Trystero keeps 64 for 10 s and then drops the connection.** A binding's
-  delivery is set in the same call that makes it.
-  Source: `doc/differences.adoc` (libs/trystero).
-- **A frame for a token no room of the app has is dropped and the connection
-  stays; a frame that does not decode, or a 65th advertised token, ends the
-  connection for every room.** Presence and routing are Trystero's.
-  Source:
-  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/design.md`
-  (proposals).
-- **A kick, a failed handshake or a peer's `@_leave` ends that room's binding
-  only, and the other rooms keep the connection.** Each room's membership,
-  handshake, actions, queues and bounds stay its own, so a failure in one room
-  costs no other.
-  Source:
-  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/design.md`
-  (proposals).
-- **After a binding ends over a live connection, the room rebinds one step
-  later: the larger of `handshake_timeout` and 10 s, plus 1 s (11 s by
-  default), doubling per further end to 5 minutes, until a completed handshake
-  or the connection's end.** Rebinding on the next signal, as Trystero does,
-  loops kicks, reports and announcements without end on a wrong proof; the
-  added second lets a Trystero JS peer drop the frames it kept from the ended
-  binding (10 s) before the next one.
-  Source:
-  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/reference/spec.md`
-  (proposals).
-- **Meanwhile only the lower id refuses the peer and keeps its frames, while
-  the higher id refuses nothing but drops the peer's frames of that room until
-  it next sends presence.** Two honest peers cannot alternate kicks, and a
-  stale frame of an ended binding is never answered in the next one; a wrong
-  proof costs at most six reports in ten minutes, on the lower id only.
-  Source:
-  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/design.md`
-  (proposals).
-- **The initiator accepts a correct answer to any of the last 8 challenges it
-  sent the peer since their last completed handshake.** A response carries no
-  challenge id, and each challenge is the initiator's own fresh nonce on a
-  channel only the peer can write to, so any of them proves the password; a
-  late answer of an ended binding no longer reports a false error.
-  Source:
-  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/design.md`
-  (proposals).
-- **Announcements restart after a peer leaves only when no live connection to
-  it remains.** Over a live connection every rebinding goes through the
-  connection.
-  Source: `doc/differences.adoc` (libs/trystero).
-- **A connection with no binding left stays idle for
-  `app_config::idle_timeout` (123,333 ms; 0 closes it at once) after a
-  departure, and closes at once after a kick.** The idle time is Trystero's
-  `sharedPeerIdleMs`, made a member for tests and programs that close sooner;
-  closing after a kick is a bound: a failed peer holds no connection.
-  Source: `doc/differences.adoc` (libs/trystero).
+- **A room admits a peer as 0.27.0's handshake manager does: the lower id in
+  UTF-16 order initiates, three `@_hsdata` steps exchange nonces,
+  fingerprints, ids and keys and sign the transcript with the endpoint's and
+  the user's keys, each side sends `@_hsready`, and the peer joins once both
+  did; 10 s and 16 unread messages bound it.** The transcript binds app,
+  room, both ids, both nonces, both sides' DTLS fingerprints and both users,
+  so a peer is the one its key names over this connection.
+  Source: `doc/protocol.adoc` (libs/trystero).
+- **The handshake reads its fingerprints from the last local and remote
+  descriptions the signaling handled; the backend is unchanged.** 0.27.0
+  reads them from the connection's descriptions, which the signaling already
+  holds; the memory backend writes a fingerprint line of its own (D20).
+  Source: `doc/design.adoc` (libs/trystero).
+- **The user's proof of an endpoint is protocol code only.** 0.27.0's core
+  neither sends nor checks one; the handshake's dual signatures bind the
+  user to the endpoint (D21, P2-R14).
+  Source: `doc/design.adoc` (libs/trystero).
+- **`room_options::max_users` counts users, not peers: a peer of a user
+  present is admitted, a new user past the bound is refused with a ready
+  frame `{"ok":false,"err":"room full"}`, its room reports `room_full`, and
+  a refused peer is not dialed again while the room stays full; `join`
+  refuses 0 and a value above 2^53 - 1 with `invalid_max_users`.** As
+  0.27.0's `tryAdmitPeer`, `canConnectPeer` and `joinRoom`.
+  Source: `include/webcpp/trystero/options.hpp` and `doc/usage.adoc`
+  (libs/trystero).
+- **Wide chunks follow the connection's largest message, which
+  `backend::peer_connection::max_message_size()` reports, the platform
+  backend from webcpp::webrtc's `max_message_size()`.** 0.27.0 sends chunks
+  of 64 KiB to a peer whose `sctp.maxMessageSize` is at least 65,536; one
+  source for the quantity, the transport's, as the limit the channel's sends
+  check (D22, ruling P2-R29).
+  Source: `doc/design.adoc` (libs/trystero).
 - **`join` of a room already joined in the app fails with
   `error::already_joined`, and joining an id in its 99 ms farewell finishes
   that farewell first.** A `room` is a move-only handle whose destruction
   leaves, so a second handle to one membership would make that depend on
-  another; finishing the farewell sends the old room's `presence(0)` before
-  the new one's `presence(1)`, as Trystero's rejoin does.
-  Source:
-  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/design.md`
-  (proposals).
-- **An app holds at most `app::max_rooms` (64) rooms, a room counting until
-  its `presence(0)` is sent.** A Trystero peer drops a connection whose remote
-  advertises more than 64 tokens, so a 65th room would cost every connection
-  of the app.
-  Source:
-  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/design.md`
-  (proposals).
+  another; 0.27.0 refuses a second join too, and finalizes a leaving slot
+  before a rejoin.
+  Source: `include/webcpp/trystero/app.hpp` (libs/trystero).
 - **The app handle and every room not yet ended are the users of the app's
-  state: the last to go ends every connection at that call, and
+  state: the last to go stops the page's watch at that call, and
   `detail::app_impl`'s destructor closes and posts nothing.** The destructor
   may run while the `io_context` is destroyed, from the last operation pending
   there, and then may only free.
-  Source:
-  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/design.md`
-  (proposals).
+  Source: `include/webcpp/trystero/detail/app_impl.hpp` (libs/trystero).
 - **Relay sockets, subscriptions and the Nostr signing key stay per room,
   configured once for the app.** No peer sees the difference, and sharing
   sockets, batching topics and one key per app touch the strategy's bounds and
@@ -6493,23 +6378,18 @@ Source: `libraries/trystero/openspec/changes/trystero-0-27/design.md`
   `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/design.md`
   (proposals).
 - **The app's relays and ICE servers serve every room of it.** One
-  configuration for what the rooms share, where Trystero takes the first
-  room's relays and each negotiating room's RTC configuration.
+  configuration for what the rooms share, where Trystero takes each room's.
   Source: `doc/differences.adoc` (libs/trystero).
 - **What the app's configuration sets aside is reported to `app::on_error`
-  after the constructor returns, once, to the handler current at delivery;
-  `room::on_error` reports only problems with peers.** The app's constructor
-  does not fail, and no handler can see a report made during construction.
-  Source:
-  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/reference/spec.md`
-  (proposals).
-- **A send that must wait for the shared channel to drain waits in its
-  binding, and at each drain the bindings take turns; an inline send while the
-  channel buffers at most 64 KiB goes at once.** A room's chunked transfer
-  then sends one chunk per drain while other rooms' waiting sends get their
-  turn, and an inline flood, of pings for one, delays only traffic to the peer
-  that provoked it.
-  Source: `doc/protocol.adoc` (libs/trystero).
+  after the constructor returns, once, to the listeners in place at delivery;
+  `room::on_error` reports only problems with peers and the room's own.** The
+  app's constructor does not fail, and no listener can see a report made
+  during construction.
+  Source: `include/webcpp/trystero/app.hpp` (libs/trystero).
+- **An identity that cannot be made leaves the app without one, and each room
+  it joins reports `identity_failed` once the join has returned, then ends
+  without reaching a relay.** As 0.27.0's rooms fail their setup (P2-R11).
+  Source: `include/webcpp/trystero/app.hpp` (libs/trystero).
 - **An app and all its rooms run on one executor, the app's, and nothing is
   locked.** The state is touched only there, so the resources need not be
   thread-safe on one thread; several threads need a strand.
@@ -6517,21 +6397,11 @@ Source: `libraries/trystero/openspec/changes/trystero-0-27/design.md`
   `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/reference/spec.md`
   (proposals).
 - **trystero runs on the Asio executor it is given, not on xactor.** How a
-  library on Asio meets xactor is still to be designed, and the move onto
-  webcpp::asio, webcpp::webrtc and webcpp::crypto is a change of its own,
-  after this one; webcpp::asio and webcpp::webrtc came first, and
-  webcpp::crypto and webcpp::hash with the port to 0.27.0, on the branch.
+  library on Asio meets xactor is still to be designed; webcpp::asio and
+  webcpp::webrtc came first, and webcpp::crypto and webcpp::hash with the
+  port to 0.27.0.
   Source:
   `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/reference/spec.md`
-  (proposals).
-- **Two residual cases with a Trystero JS lower id are accepted: a reuse
-  binding inside the higher id's dropping window, and a page whose timers run
-  later than the 1 s margin.** In neither does the C++ side report anything
-  false; the first joins by the second rebinding time (at most 43 s by
-  default), the second costs one false error on the JS side, at most three
-  times.
-  Source:
-  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/design.md`
   (proposals).
 
 **Bounded signaling and security.**
@@ -6546,9 +6416,11 @@ Source: `libraries/trystero/openspec/changes/trystero-0-27/design.md`
   forged answer sent in a peer's name must not reset an offer, and a forged
   offer must make no connection.
   Source: `libraries/trystero/openspec/specs/trystero/spec.md` (proposals).
-- **Signals that do not open are reported paced: the first of a quiet 10 s at
-  once, with its peer, and the others of those 10 s in one report, with their
-  number.** A flood of fresh ids makes each a negotiation.
+- **An offer or an answer that does not open is reported as
+  `decrypt_failed`, with its peer and stage, at most once a minute per peer
+  and stage, the last 512 remembered; a candidate is not reported.** As
+  0.27.0's `reportDecryptErr`; a flood of fresh ids makes each a
+  negotiation, and the pacing bounds what it costs the listeners.
   Source: `doc/protocol.adoc` (libs/trystero).
 - **A room remembers, by SHA-256, the opened text of the last 1024 offers and
   answers it made or acted on, and refuses one that comes back to it as a
@@ -6562,8 +6434,9 @@ Source: `libraries/trystero/openspec/changes/trystero-0-27/design.md`
   gives its place to a new peer, the one idle longest and, of those idle as
   long, the one the room took first; a refused peer is logged once.** Anyone
   who knows the app and room ids can announce any number of peer ids.
-  Opening an offer was the sealer's asynchronous step (Web Crypto in a page);
-  on the branch a signal opens in the call, and idle means no connection.
+  Opening an offer was the sealer's asynchronous step (Web Crypto in a page)
+  until the port to 0.27.0; a signal now opens in the call, and idle means
+  no connection.
   While it counted as idle, a tie in id order at one instant of a page's
   coarse clock let new ids arriving meanwhile have honest offers dropped
   unopened, their peers joining 2 s later, and let a flood of fresh ids have
@@ -6602,7 +6475,7 @@ Source: `libraries/trystero/openspec/changes/trystero-0-27/design.md`
 - **A Nostr event is dropped as a repeat only when its id is checked to be
   its own, the SHA-256 of its NIP-01 serialization
   (`protocol::nostr::has_own_id`); any other event is acted on each time
-  and its id never stored, as Trystero 0.26.0 acts on every event.** A relay
+  and its id never stored, as Trystero acts on every event.** A relay
   chooses the id it sends, so trusting it would let one relay hide a genuine
   event behind a forged one sent first under its id; and a remembered id is
   then 64 bytes, whatever a relay sends.
@@ -6625,26 +6498,30 @@ Source: `libraries/trystero/openspec/changes/trystero-0-27/design.md`
   A relay is a third party too.
   Source: `AGENTS.md` (libs/trystero).
 - **Each caller bounds the JSON text it reads, as `parse_options::max_bytes`:
-  68,608 bytes for a relay's text, 66,560 for a signal, 1,024 for a
-  handshake message, 16 KiB for a remote candidate; a longer text is refused
+  68,608 bytes for a relay's text, 66,560 for a signal, 65,536 for a
+  handshake message, 4,096 for a remote candidate; a longer text is refused
   before it is read, as a malformed one is: a relay's text or a signal
   dropped, a handshake failed, a candidate not added.** The bounds come from
-  the fields' own bounds (a sealed offer or answer of 64 KiB with the
-  longest ids, ten times Trystero's longest handshake message, the bound of a
-  sealed candidate), as chapter 18's draft had them, so no text a Trystero
-  peer writes is refused; document keeps no hashed index, so no key set,
-  read twice or chosen to collide, makes a parse quadratic.
+  the fields' own bounds (a sealed offer or answer of 64 Ki characters with
+  the longest ids, 0.27.0's `maxPayloadBytes` of `@_hsdata`, the bound of a
+  sealed candidate), so no text a Trystero peer writes is refused; document
+  keeps no hashed index, so no key set, read twice or chosen to collide,
+  makes a parse quadratic.
   Source: `doc/protocol.adoc` (libs/trystero).
-- **A signal's fields are bounded: the peer id and the offer id at 64 bytes, a
-  sealed offer or answer at 64 KiB, a sealed candidate at 16 KiB.** Trystero
-  JS bounds none; the bounds refuse nothing a browser writes for a data
-  channel, and a static assertion proves that every candidate Trystero accepts
-  (8192 bytes of plaintext) fits sealed.
-  Source: `libraries/trystero/openspec/specs/trystero/spec.md` (proposals).
+- **A signal is read as 0.27.0's `parseSignalEnvelope` reads it, and
+  refused where it refuses it: a peer id of other than 20 base62 characters,
+  an offer id of other than 1 to 64 characters of `[\w.~:!-]`, a sealed offer
+  or answer of more than 64 Ki UTF-16 code units, a sealed candidate of more
+  than 4,096.** The port refuses every signal 0.27.0 refuses, recorded as
+  vectors of refused envelopes (`signal_envelopes`), which JS never sends
+  (ruling P2-R32); 0.27.0 parses a text of up to 128 Ki characters, the port
+  drops one of more than 66,560 bytes unread, a difference.
+  Source: `doc/protocol.adoc` (libs/trystero).
 - **What a flood or a watcher without the key can still do is stated on the
   page, not hidden.** Only a wire that seals the offer id and both peer ids,
   or announcements that prove the room key, closes it, a change Trystero would
-  have to share (reported upstream).
+  have to share (reported upstream); 0.27.0's signed handshake keeps such a
+  watcher from joining or impersonating a peer.
   Source: `doc/protocol.adoc` (libs/trystero).
 
 **Memory.**
@@ -6664,29 +6541,18 @@ Source: `libraries/trystero/openspec/changes/trystero-0-27/design.md`
   targets, makes a backend while a counting resource is the default one,
   which sees none of it.
   Source: `doc/platform.adoc` and `doc/allocation.adoc` (libs/trystero).
-- **Peer connections, data channels and the frames received on them use the
-  app's resource even while a room negotiates them; relay sockets, sealers and
-  room timers use the room's (on the branch there is no sealer, and a
-  password's derivation allocates its operation with its completion's
-  allocator).** A connection belongs to the app once adopted,
-  and serves every room bound to it.
-  Source:
-  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/design.md`
-  (proposals).
-- **A binding fails and frees its drain waiters, in the room's resource, when
-  it detaches.** The waiters are the room's handlers, frames and timers; held
-  by the app's connection, they would outlive a room with a resource of its
-  own.
-  Source:
-  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/reference/spec.md`
-  (proposals).
-- **A received binary payload moves out of its frame when the frame and the
-  room share a resource, and is copied once otherwise; received text is always
-  copied once.** A `std::pmr` container moved into another resource copies
-  anyway; for text, (reason not recorded).
-  Source:
-  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/reference/spec.md`
-  (proposals).
+- **Peer connections, data channels and the frames received on them, relay
+  sockets and room timers use the room's resource; a password's derivation
+  allocates its operation with its completion's allocator.** No connection
+  outlives its room, as in 0.27.0 (ruling P2-R2).
+  Source: `doc/allocation.adoc` (libs/trystero).
+- **A link fails and frees its drain waiters, in the room's resource, when it
+  ends.** The waiters are the room's handlers, frames and timers.
+  Source: `include/webcpp/trystero/detail/peer_link.hpp` (libs/trystero).
+- **A received binary payload moves out of its frame, which is in the room's
+  resource; received text is always copied once.** A `pmr_bytes` payload
+  then costs no copy; for text, (reason not recorded).
+  Source: `doc/allocation.adoc` (libs/trystero).
 - **The log sink, and every sentence of the app and its rooms, are in the
   app's resource, the sink shared through a `std::shared_ptr`.** The sink then
   outlives a part that is still running when the app goes.
@@ -6697,33 +6563,25 @@ Source: `libraries/trystero/openspec/changes/trystero-0-27/design.md`
   no allocator since C++17; the app moves `app_config::log` into its resource,
   which makes `app_config` move-only.
   Source: `doc/allocation.adoc` (libs/trystero).
-- **Every JSON text a room reads is parsed by `webcpp::document::parse` into
-  a `webcpp::document::pmr::document` of the room's resource, of the app's
-  for a remote candidate, which holds its image and the parse's working
-  state; a protocol text nests at most 16 deep, and its image grows in place
-  to at most twice the caller's bound and 64 KiB; trystero keeps no owner of
-  its own.** document's allocator holds every value and the working state,
-  so neither is outside the resource; Trystero's texts nest 4 deep at most,
-  and the image's bound refuses a text of thousands of values once it has
-  cost that bound.
+- **Every JSON text a room reads is parsed by `webcpp::document::parse` into a
+  `webcpp::document::pmr::document` of the room's resource, which holds its
+  image and the parse's working state; a protocol text nests at most 16 deep,
+  and its image grows in place to at most twice the caller's bound and 64 KiB;
+  trystero keeps no owner of its own.** document's allocator holds every value
+  and the working state, so neither is outside the resource; Trystero's texts
+  nest 4 deep at most, and the image's bound refuses a text of thousands of
+  values once it has cost that bound.
   Source: `doc/allocation.adoc`, `doc/protocol.adoc` and
   `include/webcpp/trystero/protocol/json.hpp` (libs/trystero).
 - **A post goes through the `io_context`'s own executor when the room's
-  executor is one, and in a page the sealer awaits each Web Crypto promise
-  through it too, so that after a first seal and open a seal or an open
-  allocates nothing outside the room's resource.** Through
-  `webcpp::asio::any_io_executor`, Asio wraps a post in a function object
-  allocated with `std::allocator` (measured: two `std::aligned_alloc` per
-  post in every round of five, natively and on emscripten, and two for each
-  seal and each open of a page's sealer); `platform_page_sealer_allocation`
-  counts `operator new` and the C library's functions from the start of a
-  seal or an open to its completion and sees none; on the branch the sealer
-  and that test are gone, and natively OpenSSL's cipher context of each seal
-  and open, two allocations, is outside, counted apart by `allocation`. The
-  executor is the program's: on a strand over the `io_context` the wrapper
-  stays Asio's, as the page lists.
-  Source: `doc/allocation.adoc` and
-  `include/webcpp/trystero/platform/sealer.hpp` (libs/trystero).
+  executor is one, so that a room's posts allocate nothing outside its
+  resource.** Through `webcpp::asio::any_io_executor`, Asio wraps a post in a
+  function object allocated with `std::allocator` (measured: two
+  `std::aligned_alloc` per post in every round of five, natively and on
+  emscripten). Natively OpenSSL's cipher context of each seal and open is
+  outside, counted apart by `allocation`. The executor is the program's: on a
+  strand over the `io_context` the wrapper stays Asio's, as the page lists.
+  Source: `doc/allocation.adoc` (libs/trystero).
 - **The room never binds its allocator over a user's completion handler, and
   records, when it erases the handler's type, whether its executor is the
   room's.** A completion handler is the user's, allocated as its own
@@ -6744,6 +6602,12 @@ Source: `libraries/trystero/openspec/changes/trystero-0-27/design.md`
   `curves::secp256k1`, which trystero calls, including no libsecp256k1 header
   of its own).** No allocation of a room escapes its
   resource, and a verification allocates nothing.
+  Source: `doc/allocation.adoc` (libs/trystero).
+- **P-256 allocates nothing: the app's endpoint key pair is part of the
+  app's state, a drawn scalar comes from `random_device` into the stack, and
+  a signature is made and checked in place.** The handshake signs and
+  verifies per peer, and the key records and verified signatures are the
+  app's, in its resource.
   Source: `doc/allocation.adoc` (libs/trystero).
 - **The allocations outside the resources are listed on the page, not claimed:
   libdatachannel's and OpenSSL's, with the copy libdatachannel's C API makes
@@ -6787,13 +6651,12 @@ Source: `libraries/trystero/openspec/changes/trystero-0-27/design.md`
 **Build and dependencies.**
 
 - **libsecp256k1 0.8.0, with `schnorrsig` and `extrakeys`, signs the Nostr
-  events of every room, built with `ECMULT_WINDOW_SIZE=4` and
-  `ECMULT_GEN_KB=2`.** The small tables keep the browser's download small: the
-  spike measured 152 KB of WebAssembly against 1.30 MB with the default
-  tables.
+  events of every room, with the tables `webcpp-secp256k1-tables` chooses.**
+  The small tables keep the browser's download small: the spike measured
+  152 KB of WebAssembly against 1.30 MB with the default tables.
   Source:
   `libraries/trystero/openspec/changes/archive/2026-10-09-genesis/reference/research/TRYSTERO_CPP_SPIKE/FINDINGS.md`
-  (proposals).
+  (proposals) and `doc/building.adoc` (libs/trystero).
 - **trystero builds on webcpp::asio and webcpp::document, and its platform
   backend on webcpp::webrtc, webcpp::beast and Boost.URL:
   `/webcpp/trystero//trystero` is the rooms alone, which bring
@@ -6818,30 +6681,28 @@ Source: `libraries/trystero/openspec/changes/trystero-0-27/design.md`
   (measured). A program whose own parse suspends from a selector's callback
   cannot link this alias under Asyncify; under JSPI nothing is left out.
   Source: `build.jam` and `doc/protocol.adoc` (libs/trystero).
-- **trystero links `/third_party//secp256k1`, webcpp's own build of
-  libsecp256k1, and needs nothing provisioned outside the build; on the branch
-  libsecp256k1 is no direct dependency of trystero's: `parts` links
-  `/webcpp/hash//hash`, `/webcpp/crypto//crypto`, `//gcm-default` and
-  `//secp256k1-default`, which brings `/third_party//secp256k1`, and on
-  emscripten `//gcm-default` brings `/third_party//bearssl`.** Its
-  tables follow the feature `webcpp-secp256k1-tables`: window 15 and comb 11x6
-  natively, window 2 and comb 2x5 on emscripten (the earlier external build was
-  window 4 and comb 2x5 on both). Native
-  libdatachannel and its nested dependencies are pinned source targets, built
-  statically against the same OpenSSL provider as Asio and Beast. The
-  platform backend natively requires `threading=multi`, since libdatachannel
-  runs worker threads, and no exceptions. Its WebRTC is webcpp::webrtc's, its
-  Asio is named webcpp::asio and its relays' WebSockets are webcpp::beast's;
-  natively its sealer and randomness were OpenSSL's, whose migration the
-  owner dropped on 2026-11-17 and took up again on 2026-11-20 with the port
-  to 0.27.0 (design D2, which supersedes that decision): on the branch
-  trystero's own code calls no OpenSSL, and OpenSSL stays natively for TLS,
-  libdatachannel and webcpp::crypto's AES-GCM (design D7).
+- **trystero's cryptography arrives through webcpp::hash and webcpp::crypto:
+  `parts` links `/webcpp/hash//hash`, `/webcpp/crypto//crypto`,
+  `//gcm-default`, `//p256-default` and `//secp256k1-default`, which bring
+  `/third_party//secp256k1` and `/third_party//bearssl`, and needs nothing
+  provisioned outside the build.** Its tables follow the feature
+  `webcpp-secp256k1-tables`: window 15 and comb 11x6 natively, window 2 and
+  comb 2x5 on emscripten. Native libdatachannel and its nested dependencies
+  are pinned source targets, built statically against the same OpenSSL
+  provider as Asio and Beast. The platform backend natively requires
+  `threading=multi`, since libdatachannel runs worker threads, and no
+  exceptions. Its WebRTC is webcpp::webrtc's, its Asio is named webcpp::asio
+  and its relays' WebSockets are webcpp::beast's; natively its sealer and
+  randomness were OpenSSL's, whose migration the owner dropped on 2026-11-17
+  and took up again on 2026-11-20 with the port to 0.27.0 (design D2, which
+  supersedes that decision): trystero's own code calls no OpenSSL, and
+  OpenSSL stays natively for TLS, libdatachannel and webcpp::crypto's
+  AES-GCM (design D7).
   Source: `doc/building.adoc` (libs/trystero).
 - **trystero's three source dependencies are initialised submodules, and a
-  checkout without one stops the build naming it.** `third_party/libs/secp256k1`,
-  `openssl` and `libdatachannel` (and, on the branch, webcpp::crypto's
-  `bearssl` for emscripten) are initialised with one `git submodule update
+  checkout without one stops the build naming it.**
+  `third_party/libs/secp256k1`, `openssl`, `libdatachannel` and
+  webcpp::crypto's `bearssl` are initialised with one `git submodule update
   --init --recursive`; no library is searched for, so none is left out.
   Source: `doc/building.adoc` (libs/trystero).
 - **embind is linked as the flag `-lembind`, which `/webcpp/asio//asio`
@@ -6851,11 +6712,11 @@ Source: `libraries/trystero/openspec/changes/trystero-0-27/design.md`
   undefined).
   Source: `doc/building.adoc` and `AGENTS.md` (libs/trystero).
 - **On MSVC `/third_party//secp256k1` gives `SECP256K1_STATIC` to trystero
-  through its usage requirements, the source providers export their static `.lib` archives
-  with the consumer's runtime settings, and tests and examples add `/bigobj`.** A static
-  libsecp256k1 on Windows declares every function imported from a DLL without
-  the define, and a test of rooms over Asio holds more sections than the
-  default object format allows (C1128).
+  through its usage requirements, the source providers export their static
+  `.lib` archives with the consumer's runtime settings, and tests and examples
+  add `/bigobj`.** A static libsecp256k1 on Windows declares every function
+  imported from a DLL without the define, and a test of rooms over Asio holds
+  more sections than the default object format allows (C1128).
   Source: `libraries/trystero/openspec/specs/trystero/spec.md` (proposals).
 - **libdatachannel is built with the compiler and standard library of the
   programs that link it.** A program built with GCC and libstdc++ does not
@@ -6873,22 +6734,25 @@ Source: `libraries/trystero/openspec/changes/trystero-0-27/design.md`
 
 **Evidence.**
 
-- **The `oracle` lane has Trystero 0.26.0's own functions, pinned by
-  `package-lock.json`, compute every protocol value over the cases, with the
-  action frames and envelopes captured from its action wire manager and
-  `SharedPeerManager` over fake peers.** The wire is proven against Trystero
-  itself, not against a reading of its source. On the branch the oracle and
-  interop lanes are off (`explicit`) until Phase 2 pins them to 0.27.0, and
-  `test/oracle/record_0_27.mjs`, importing 0.27.0's sources unchanged,
-  records the vectors `crypto_layer` reads
-  (`test/fixtures/expected/trystero-0.27.0.json`).
-  Source:
-  `libraries/trystero/openspec/changes/archive/2026-10-09-genesis/design.md`
-  (proposals).
-- **The oracle fixes the sealed fixture's IV by replacing
-  `crypto.getRandomValues` while Trystero's `encrypt` runs.** The sealed text
-  is then the same on every run.
-  Source: `libraries/trystero/openspec/specs/trystero/spec.md` (proposals).
+- **The `oracle` lane has Trystero 0.27.0's own functions, pinned by
+  `package-lock.json`, compute the protocol values the `protocol` and
+  `signaling` tests read, and proves with `generated-vectors` that the
+  published packages compute the vectors the pinned source recorded.** The
+  wire is proven against Trystero itself, not against a reading of its
+  source: `test/oracle/record_0_27.mjs`, importing 0.27.0's sources
+  unchanged, records `test/fixtures/expected/trystero-0.27.0.json`, which
+  `crypto_layer` and `identity_cache` read, and over the published
+  packages (`--dist`) writes it again byte for byte (D19, rulings P2-R17
+  and P2-R19).
+  Source: `libraries/trystero/openspec/changes/trystero-0-27/design.md`
+  (proposals) and `doc/testing.adoc` (libs/trystero).
+- **The recorder pins randomness only around the calls whose output it
+  decides, and keeps each WebCrypto signature of its previous output that
+  0.27.0 still verifies, signing only what is missing.** WebCrypto's ECDSA
+  is random, so a run over the fixture writes it again byte for byte, and
+  every kept signature is verified again by 0.27.0's code on every run
+  (D19).
+  Source: `doc/testing.adoc` (libs/trystero).
 - **The `interop` lane meets the C++ peers, the browser's in headless Chrome
   and the native one as a process, with Trystero JS peers over an in-memory
   Nostr relay on 127.0.0.1 that verifies every event's id and signature.**
@@ -6902,16 +6766,9 @@ Source: `libraries/trystero/openspec/changes/trystero-0-27/design.md`
   for Testing 156 from contacting Google (measured).
   Source: `AGENTS.md` (libs/trystero).
 - **Each interop driver is bounded by 2400 s.** The bound covers the
-  scenarios, Chrome's start, the wrong-password observation windows and the
-  transient-handshake recovery, so a scenario that does not complete fails by
-  name with what each peer saw.
+  scenarios, Chrome's start and the flood's windows, so a scenario that does
+  not complete fails by name with what each peer saw.
   Source: `test/oracle/Jamfile` (libs/trystero).
-- **An interop scenario that lets two rooms negotiate at once fails, naming
-  the counts, when a side makes more than four connections.** A livelock of
-  crossed adoptions then fails by name, not as flakiness.
-  Source:
-  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/reference/spec.md`
-  (proposals).
 - **The unit tests run whole rooms in one process over
   `test/support/memory_backend.hpp`, every event posted, and reach nothing
   beyond the loopback.** A room is tested on both targets without the network;
@@ -6919,14 +6776,14 @@ Source: `libraries/trystero/openspec/changes/trystero-0-27/design.md`
   container with no network but the loopback.
   Source: `doc/guarantees.adoc` (libs/trystero).
 - **The memory backend has a virtual clock, a deliver, drop or hold frame
-  filter, deferred opens, held sealer opens, injection, failure and a
-  buffering channel; the cases whose outcome depends on time run on the
-  virtual clock, which moves only from timer to timer, and a virtual run is
-  bounded by 10^6 timers.** The sharing cases cannot be written without
-  them; on a wall clock, scaled to run faster, a loaded or paused machine had
-  the rooms' timers fire while a case waited, which changed what it
-  compared, so those cases failed by chance; and a timer re-armed without
-  delay fails a test by name instead of hanging it.
+  filter, deferred opens, held derivations, injection, failure and a buffering
+  channel; the cases whose outcome depends on time run on the virtual clock,
+  which moves only from timer to timer, and a virtual run is bounded by 10^6
+  timers.** The handshake's, the flood's and the bounds' cases cannot be
+  written without them; on a wall clock, scaled to run faster, a loaded or
+  paused machine had the rooms' timers fire while a case waited, which changed
+  what it compared, so those cases failed by chance; and a timer re-armed
+  without delay fails a test by name instead of hanging it.
   Source:
   `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/reference/spec.md`
   (proposals); `test/support/memory_backend.hpp` and `test/room_test.cpp`
@@ -6936,17 +6793,11 @@ Source: `libraries/trystero/openspec/changes/trystero-0-27/design.md`
   Source:
   `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/reference/spec.md`
   (proposals).
-- **Every test case with a password fixes which side has the lower id.** Only
-  the handshake's initiator reports a wrong proof.
-  Source:
-  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/reference/spec.md`
-  (proposals).
-- **A test in which a peer leaves and comes back with the same id destroys the
-  peer's `app` between visits, or sets `idle_timeout` to 0.** An idle
-  connection kept by the peer's app would replace the new negotiation.
-  Source:
-  `libraries/trystero/openspec/changes/archive/2026-11-14-shared-connection/reference/spec.md`
-  (proposals).
+- **Every test case whose outcome depends on which side offers or initiates
+  fixes the order of the ids (`test::ordered_labels`).** The lower id offers
+  and initiates the handshake, and ids derive from keys, so a test names its
+  apps by labels whose derived ids are in the order it needs.
+  Source: `AGENTS.md` (libs/trystero).
 - **The allocation test tracks every global allocation until it is freed:
   exchanging a `std::pmr::string`, a `pmr_bytes` or a
   `webcpp::document::pmr::document`, reading each protocol text, and both
@@ -6994,8 +6845,8 @@ Source: `libraries/trystero/openspec/changes/trystero-0-27/design.md`
   only runs under Asyncify in the CI's emscripten lane, which builds JSPI.
   Source: `test/cases.hpp`, `test/Jamfile` and `doc/testing.adoc`
   (libs/trystero).
-- **`platform_websocket`, the native interop peer and `shared_hardened` are
-  built with the standard libraries' own checks
+- **`platform_websocket`, the native interop peer, `peer_link_hardened` and
+  `handshake_manager_hardened` are built with the standard libraries' own checks
   (`_LIBCPP_HARDENING_MODE_EXTENSIVE`, `_GLIBCXX_ASSERTIONS`).** A completion
   that touches a container its socket cleared, or a resource past its
   lifetime, fails at once.
@@ -7017,20 +6868,20 @@ Source: `libraries/trystero/openspec/changes/trystero-0-27/design.md`
   relay of their own the same way. The public relays are a third party a
   build must not depend on, and a relay of the build's own runs Trystero's
   code unchanged. A twin's second peer is a second page, a worker thread
-  (`test/oracle/page.mjs`), since Trystero JS has one `selfId` per page;
-  Node's WebRTC is werift 0.24.4 as `rtcPolyfill`, which Trystero 0.26.0's
-  README names for Node. Of 14 programs, the twins agree with 1, the quick
-  start, and diverge from 11; the chat page and `diff_self_id_not_utf8` have
-  none, each with its reason in `test/oracle/twins/without-twin.txt`.
+  (`test/oracle/page.mjs`), since Trystero JS has one endpoint identity per
+  app id and page; Node's WebRTC is werift 0.24.4 as `rtcPolyfill`, which
+  Trystero's README names for Node. Of 8 programs, the twins agree with 1,
+  the quick start, and diverge from 6; the chat page has none, with its
+  reason in `test/oracle/twins/without-twin.txt`.
   Source: `doc/testing.adoc` and `example/Jamfile` (libs/trystero).
-- **One quick start, native and deterministic: two apps with self ids the
-  program fixes meet in `lobby`, exchange one message each way, print them,
-  leave and exit; without `TRYSTERO_RELAY_URL` they meet over Trystero's
-  public relays, as a user's program does; its twin agrees.** An example
-  whose output depends on who joins, and which runs until stopped, has
-  nothing to compare. The chat page shows the browser, linked and without a
-  twin: doc-check refuses an `.expected` beside a linked source, so one
-  source cannot be both (chapter 19).
+- **One quick start, native and deterministic: two apps meet in `lobby`,
+  exchange one message each way, print them, leave and exit; without
+  `TRYSTERO_RELAY_URL` they meet over Trystero's public relays, as a user's
+  program does; its twin agrees.** An example whose output depends on who
+  joins, and which runs until stopped, has nothing to compare. The chat page
+  shows the browser, linked and without a twin: doc-check refuses an
+  `.expected` beside a linked source, so one source cannot be both (chapter
+  19).
   Source: `example/quick_start.cpp` and `doc/testing.adoc` (libs/trystero);
   `tools/doc/doc-check.py` (webcpp).
 - **A difference no program can show is recorded with its reason on the
