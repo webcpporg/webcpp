@@ -1,0 +1,45 @@
+libdatachannel 0.24.6's DtlsTransport::start() (the OpenSSL backend) registers its incoming
+callback, which replays at once onto the thread pool the records the ICE transport kept while no
+DTLS transport listened, before it sets the DTLS MTU under the SSL mutex. When the peer's
+ClientHello arrived before this side's ICE transport connected, doRecv can take the mutex first
+and answer it while the MTU is still unset: with SSL_OP_NO_QUERY_MTU, OpenSSL's dtls1_query_mtu
+fails the write without an error on its queue, SSL_get_error gives SSL_ERROR_SYSCALL, and the
+handshake fails ("DTLS recv: Handshake failed: fatal I/O error"), so the connection goes to
+failed. webcpp::webrtc's native tests met it about once in 300 runs under load (the native
+run's a_full_exchange on MSVC 14.3, 2026-11-23). This patch sets the MTU before the callback is
+registered. Remove this file once the libdatachannel that tools/libdatachannel/pin.json pins
+sets the MTU first: build.py then fails, saying so.
+
+This patch changes files of libdatachannel, which the Mozilla Public License 2.0 covers, and is
+itself under that licence.
+
+diff --git a/src/impl/dtlstransport.cpp b/src/impl/dtlstransport.cpp
+--- a/src/impl/dtlstransport.cpp
++++ b/src/impl/dtlstransport.cpp
+@@ -856,16 +856,22 @@ DtlsTransport::~DtlsTransport() {
+ 
+ void DtlsTransport::start() {
+ 	PLOG_DEBUG << "Starting DTLS transport";
+-	registerIncoming();
+-	changeState(State::Connecting);
+-
+-	int ret, err;
+ 	{
++		// The MTU is set before any incoming record can reach doRecv: registerIncoming() replays
++		// the records the ICE transport kept, and a peer's ClientHello among them would otherwise
++		// make the handshake write before the MTU exists, which fails it.
+ 		std::lock_guard lock(mSslMutex);
+ 
+ 		size_t mtu = mMtu.value_or(DEFAULT_MTU) - 8 - 40; // UDP/IPv6
+ 		SSL_set_mtu(mSsl, static_cast<unsigned int>(mtu));
+ 		PLOG_VERBOSE << "DTLS MTU set to " << mtu;
++	}
++	registerIncoming();
++	changeState(State::Connecting);
++
++	int ret, err;
++	{
++		std::lock_guard lock(mSslMutex);
+ 
+ 		// Initiate the handshake
+ 		ret = SSL_do_handshake(mSsl);

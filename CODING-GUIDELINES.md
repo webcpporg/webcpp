@@ -991,7 +991,7 @@ update --init third_party/libs/<name>`; a build that needs none never looks.
 | `ctaes` | `src/crypto/ctaes` of `bitcoin/bitcoin` v31.1 at `9be056a` (commit `9be056a8a72b624dae9623b2f7bded92c2a21c91`), the submodule `third_party/libs/bitcoin`, shallow; `third_party/Jamfile` compiles its `ctaes.c` alone, with webcpp::crypto's canary, on every target (`WEBCPP_CRYPTO_HAS_CTAES=1`); the tree's `src/secp256k1/` subtree is never on an include path and no glob over `third_party/libs` reaches it | MIT |
 | `ed25519-speccheck` | `novifinancial/ed25519-speccheck` at `65519336` (2021-02-26), shallow, test data: crypto's tests read the twelve Ed25519 edge cases of "Taming the many EdDSAs", its `cases.json`, at run time under the directory its define `WEBCPP_TEST_ED25519_SPECCHECK` gives, on every target (wasmtime is given it, `webcpp.data`), and run again when it changes | Apache-2.0 |
 | `json-schema-test-suite` | the JSON Schema Test Suite at `5b0ee16` (2026-09-21), test data: a test that names it reads the suite at run time from the directory its define `WEBCPP_TEST_JSON_SCHEMA_TEST_SUITE` gives, on every target (wasmtime is given it, `webcpp.data`), and runs again when a file of the suite changes | MIT |
-| `libdatachannel` | libdatachannel 0.24.6 at `6b1e2e620f1e37f0eafeee702eaea0043cb305fd`, with pinned libjuice, libsrtp, plog and usrsctp sources; static native archives built by upstream CMake through B2 against the same source-built OpenSSL | MPL-2.0 and the nested dependencies' own licences |
+| `libdatachannel` | libdatachannel 0.24.6 at `6b1e2e620f1e37f0eafeee702eaea0043cb305fd`, with pinned libjuice, libsrtp, plog and usrsctp sources; static native archives built by upstream CMake through B2 against the same source-built OpenSSL, from a staged copy the patches of `tools/libdatachannel/patches` correct | MPL-2.0 and the nested dependencies' own licences |
 | `nativejson-benchmark` | Milo Yip's nativejson-benchmark at `478d572` (2022-10-28), test data: document's benchmarks (`libs/document/bench`) read its `data/canada.json`, `data/citm_catalog.json` and `data/twitter.json` at run time under the directory its define `WEBCPP_TEST_NATIVEJSON_BENCHMARK` gives, on every target (wasmtime is given it, `webcpp.data`), and run again when one of them changes; its own submodules are never checked out | MIT |
 | `openssl` | OpenSSL 3.5.9 at `45e844fa2a14ec92d146bd8f5778ac130b6625fb`; static libssl/libcrypto and matching generated headers, built by upstream Configure/Make through B2 for native Clang/GCC/MSVC, WASIp2 single and WASIp3 single/cooperative | Apache-2.0 |
 | `secp256k1` | libsecp256k1 v0.8.0 at `6e2c8bc`; a static library built file by file by `third_party/Jamfile` (`src/secp256k1.c` and its two precomputed tables, every module on) with webcpp::crypto's canary, on every target; its tables by `webcpp-secp256k1-tables` (`auto`: small on Emscripten, large elsewhere); `WEBCPP_CRYPTO_HAS_SECP256K1=1` | MIT |
@@ -1020,6 +1020,27 @@ provider's headers and archive hashes checked first. Native consumers select
 `threading=multi` and matching compiler/runtime settings. This provider decision
 permits Asio, Beast and native Trystero in one program; it does not complete
 Trystero's later API migration or prove libdatachannel's upstream test suite.
+
+The checkout and the archive stay upstream's bytes: `tools/libdatachannel/build.py`
+applies the patches of `tools/libdatachannel/patches`, in the order of their
+names, to its verified staged copy alone, each correcting a defect of the
+pinned release until upstream fixes it, each changing only sources
+(libdatachannel's `src/` or the pinned usrsctp's `deps/usrsctp/usrsctplib/`),
+each under the licence of the files it changes (libdatachannel's MPL-2.0,
+usrsctp's BSD-3-Clause), and each an input of the configuration's key. A patch
+the sources hold already, or one that no longer applies, fails the build by
+name, so that it is removed or updated rather than skipped. They correct what
+webcpp::webrtc's native tests met on 2026-11-23: two connection races,
+`dtls-mtu-before-incoming.patch` (the DTLS server answered a ClientHello kept
+before its start while its MTU was unset, and failed) and `sctp-init-once.patch`
+(two threads each started an SCTP transport, and the replaced one stopped
+DTLS), and a hang of a process that makes a second runtime, which waited
+forever for a cleanup that could not finish while usrsctp held an endpoint:
+`sctp-cleanup-bounded.patch` (the SCTP cleanup gives up after five seconds and
+leaves usrsctp initialized for the next runtime) and
+`usrsctp-iterator-restart.patch` (after a first cleanup, usrsctp's iterator
+thread exited as soon as it started, and an iterator queued later held its
+endpoint forever).
 
 The CA bundle is an authorized exception to the source-submodule rule: curl
 publishes dated PEM artifacts, preserved byte-for-byte with source URL, SHA-256,
@@ -8668,12 +8689,18 @@ trystero on it (built, trystero's branch `webrtc-backend`, in its
   page tells a program to read or close every channel, and closing or
   destroying a channel drains its queue.
   Source: `libraries/webrtc/openspec/changes/genesis/design.md` D9 (proposals).
-- **libdatachannel is the superproject's pinned, source-built copy, unmodified,
-  justified in the documentation, with nothing of it in a public header; its
-  MPL-2.0 is accepted for this library.** The owner's decision of 2026-11-14,
-  as trystero already distributes it; no WebRTC exists in webcpp, Boost, the
-  C++ Alliance or the standard library, and libdatachannel is the smallest
-  complete implementation.
+- **libdatachannel is the superproject's pinned, source-built copy, unmodified
+  but for the build's patches of `tools/libdatachannel/patches`, justified in
+  the documentation, with nothing of it in a public header; its MPL-2.0 is
+  accepted for this library.** The owner's decision of 2026-11-14, as trystero
+  already distributes it; no WebRTC exists in webcpp, Boost, the C++ Alliance or
+  the standard library, and libdatachannel is the smallest complete
+  implementation. The patches (2026-11-23, pending the owner's approval) correct
+  two races of the pinned release that failed a native connection about once in
+  300 runs under load, and two defects, of its SCTP cleanup and of its usrsctp,
+  that hung a process making a second runtime about once in 3000 runs on MSVC;
+  each is under the licence of the files it changes and is removed once upstream
+  carries its fix.
   Source: `libraries/webrtc/openspec/changes/genesis/design.md` D16 (proposals).
 - **webcpp::webrtc knows nothing of xactor: an actor that needs a peer holds a
   `peer_connection` made on the executor its driver runs on, and turns each
