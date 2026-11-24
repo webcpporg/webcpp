@@ -8856,20 +8856,20 @@ increments 1 and 2, whose state is first.
   and the caller lends the workspace.** libsecp256k1 checks counts, a used
   nonce and an id with `ARG_CHECK`, whose callback aborts; the functions
   return `invalid_input_size` or another error before it is reached. A
-  function that needs scratch space (`pubkey_combine`, the MuSig2 aggregates)
-  takes a `workspace` the caller sizes with `combine_workspace_size` or
-  `workspace_size`, and wipes it on every return, a refusal's included, so no
-  function allocates. A silent payments label lookup returns exactly
-  `std::optional<std::span<std::uint8_t const, 32>>` into bytes it owns:
-  libsecp256k1 reads them after the lookup returns, so a result by value, a
-  convertible one included, is refused at compile time.
+  function that needs scratch space (`public_key_combine`, the MuSig2
+  aggregates) takes a `workspace` the caller sizes with
+  `combine_workspace_size` or `workspace_size`, and wipes it on every return,
+  a refusal's included, so no function allocates. A silent payments label
+  lookup returns exactly `std::optional<std::span<std::uint8_t const, 32>>`
+  into bytes it owns: libsecp256k1 reads them after the lookup returns, so a
+  result by value, a convertible one included, is refused at compile time.
   Source: `libs/crypto/include/webcpp/crypto/curves/secp256k1/tweak.hpp`,
   `musig.hpp` and `silent_payments.hpp`.
 - **Constant time and sizes extend to the modules.** Memcheck and
   MemorySanitizer check libsecp256k1's own `ctime_tests.c` and webcpp's code
   around each module (the key pair's making, its signatures and tweak, the
   three ECDH forms, the key tweaks, PKCS#8, ElligatorSwift's `create` and
-  `xdh`, MuSig2's `nonce_gen` and `partial_sign`, the silent payments'
+  `xdh`, MuSig2's `generate_nonce` and `partial_sign`, the silent payments'
   `create_outputs`, `create_label` and `scan_outputs`, each workspace's wipe
   included), written once in `test/constant_time/paths.hpp`; dudect times
   `agree` natively and on wasip2, in a program of its own, so that
@@ -8904,8 +8904,8 @@ Tasks 3.1 to 3.6, built on its branch, merged 2026-11-22).**
   (Valgrind memcheck and MemorySanitizer, each harness failing on a planted
   leak, and libsecp256k1's `ctime_tests`), and statistically by dudect's
   method natively and under wasmtime on wasip2, through the seam
-  `WEBCPP_CRYPTO_DETAIL_DECLASSIFY`.** `equal` compiles in the user's
-  translation unit, so it is checked at -O2 and -Os; under wasmtime the
+  `WEBCPP_CRYPTO_DETAIL_DECLASSIFY`.** `constant_time_equal` compiles in the
+  user's translation unit, so it is checked at -O2 and -Os; under wasmtime the
   engine's compiler decides whether BearSSL's `bmul64` stays constant time.
   The page's per-target cells are generated from the lane's own entries, and
   a target the lane does not run says "not measured yet".
@@ -8976,13 +8976,13 @@ Tasks 3.1 to 3.6, built on its branch, merged 2026-11-22).**
 **ChaCha20-Poly1305 (built in increment 1, Task 8b, merged; the genesis's increment 4).**
 
 - **`ciphers::chacha20_poly1305` on BearSSL and OpenSSL is one shot only,
-  with an IV of exactly 12 bytes, refuses a message over 2^38 - 64 bytes with
+  with a nonce of exactly 12 bytes, refuses a message over 2^38 - 64 bytes with
   `message_too_long`, and where BearSSL leaves the tag check to its caller the
-  backend compares with `equal` and zeroes `data` on a mismatch; it is a
-  family of the one-shot template `ciphers::aead<Family, Backend>`, not
-  new traits.** BearSSL's
-  ChaCha20-Poly1305 is one function over the whole message; 12 bytes and the
-  limit are RFC 8439's.
+  backend compares with `constant_time_equal` and zeroes `data` on a mismatch;
+  it is a family of the one-shot template
+  `ciphers::basic_chacha20_poly1305<Family, Backend>`, not new traits.**
+  BearSSL's ChaCha20-Poly1305 is one function over the whole message; 12
+  bytes and the limit are RFC 8439's.
   Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
   section 2.5 (proposals).
 - **The BearSSL backend takes `br_chacha20_sse2_get()` else
