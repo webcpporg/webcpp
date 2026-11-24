@@ -6973,12 +6973,14 @@ makes a room read, through webcpp::beast's bounded handshake layer.
 
 webcpp::crypto gives C++20 programs on every target the primitives of
 cryptography over widely used C libraries that webcpp builds from their
-sources: AES-GCM and the AES block cipher, a `random_device` on the system's
-generator, `constant_time_equal`, `erase_secret`, and secp256k1's BIP340
-Schnorr and ECDSA signatures, ECDH, strict DER and the x-only tweak. Version
-0.1 is the proposal's increments 1 and 2, as the owner set them on 2026-11-14;
-OpenSSL's memory option is built after it (its block below, unreleased); what is
-decided and not built is in chapter 17.
+sources. Version 0.1 is the proposal's increments 1 and 2, as the owner set
+them on 2026-11-14: AES-GCM and the AES block cipher, a `random_device` on the
+system's generator, a constant-time comparison (named `constant_time_equal`
+since the uniform-types change), and secp256k1's BIP340 Schnorr and ECDSA
+signatures, ECDH, strict DER and the x-only tweak. What is built after it is
+unreleased and has its blocks below: OpenSSL's memory option, the curves and
+constructions of the later changes, and `erase_secret`; what is decided and
+not built is in chapter 17.
 
 **Scope.**
 
@@ -7020,10 +7022,11 @@ decided and not built is in chapter 17.
   the output `result_type`, modes as templates over a cipher
   (`ciphers::gcm<ciphers::aes256<>>`), tags as `boost::hash2::digest<16>`,
   and the backend a template parameter defaulting to the default backend; a
-  keyed object is built by `static make(...)`, which returns
-  `boost::system::result<T>`, never by a constructor.** Boost's own shape is
-  what a Boost user expects; a key can have the wrong size and a backend can
-  fail to allocate, and the library works without exceptions.
+  keyed object is built by a static factory named by its input (`from_key`,
+  `from_secret`), which returns `boost::system::result<T>`, never by a
+  constructor.** Boost's own shape is what a Boost user expects; a key can
+  have the wrong size and a backend can fail to allocate, and the library works
+  without exceptions; the name of the input says where a secret comes from.
   Source: `libraries/crypto/openspec/changes/genesis/design.md` D2
   (proposals); `include/webcpp/crypto/ciphers/gcm.hpp` (libs/crypto).
 - **The algorithm types do every guard, the moved-from state, the
@@ -7144,8 +7147,8 @@ decided and not built is in chapter 17.
 **Block cipher.**
 
 - **`ciphers::aes128`, `aes192` and `aes256` are complete types for every
-  backend; `make`, `encrypt` and `decrypt` exist on ctaes and OpenSSL, and
-  BearSSL's `make` stops with a `static_assert` that names them; the block
+  backend; `from_key`, `encrypt` and `decrypt` exist on ctaes and OpenSSL, and
+  BearSSL's `from_key` stops with a `static_assert` that names them; the block
   cipher has no default backend of its own.** BearSSL exports AES only inside
   its modes; `aes256<>` stays the cipher of `aes256_gcm`, which a second
   default would break.
@@ -7196,16 +7199,16 @@ decided and not built is in chapter 17.
 
 - **`curves::p256` is a family of its own, on BearSSL, its one backend and
   default on all four targets; OpenSSL and Botan join in their increments.**
-  A key pair made from its 32-byte scalar (`make`, refused before BearSSL when
-  0 or not below n, by a constant-time check whose verdict alone is public) or
-  drawn (`generate`), its public point computed once; a `public_key` validated
-  once where it arrives, SEC 1's uncompressed point or its two coordinates;
-  ECDSA over a SHA-256 digest with RFC 6979's nonce, raw (WebCrypto's form)
-  and strict DER; ECDH's raw x, as WebCrypto's `deriveBits` gives it. BearSSL
-  allocates nothing; natively it runs `br_ec_p256_m62` where BearSSL has a
-  128-bit product, on WebAssembly `br_ec_p256_m31` always. BearSSL's own
-  stack frames keep what they compute from the scalar, which webcpp cannot
-  wipe; the page says so.
+  A key pair made from its 32-byte scalar (`from_secret`, refused before
+  BearSSL when 0 or not below n, by a constant-time check whose verdict alone
+  is public) or drawn (`generate`), its public point computed once; a
+  `public_key` validated once where it arrives, SEC 1's uncompressed point or
+  its two coordinates; ECDSA over a SHA-256 digest with RFC 6979's nonce, raw
+  (WebCrypto's form) and strict DER; ECDH's raw x, as WebCrypto's `deriveBits`
+  gives it. BearSSL allocates nothing; natively it runs `br_ec_p256_m62` where
+  BearSSL has a 128-bit product, on WebAssembly `br_ec_p256_m31` always.
+  BearSSL's own stack frames keep what they compute from the scalar, which
+  webcpp cannot wipe; the page says so.
   Source: `libraries/crypto/openspec/changes/foundation/design.md` D36
   (proposals); `include/webcpp/crypto/curves/p256.hpp` and
   `backends/bearssl.hpp` (libs/crypto).
@@ -7314,9 +7317,9 @@ decided and not built is in chapter 17.
   core constant time.
   Source: `doc/jamfile.adoc`, `doc/backends.adoc` (libs/crypto); the owner's
   decision 2 of 2026-11-14 (proposals, `reference/plan.md`).
-- **OpenSSL is given the key once, in `make`; each message re-initialises
+- **OpenSSL is given the key once, in `from_key`; each message re-initialises
   the context with a null key; lengths go in pieces of at most `INT_MAX`
-  rounded down to a multiple of 16; `make` maps a null `EVP_CIPHER_CTX_new`
+  rounded down to a multiple of 16; `from_key` maps a null `EVP_CIPHER_CTX_new`
   to `not_enough_memory` and a failed fetch or init to `backend_failure`; and
   the thread's error queue is left as it was found.** EVP takes lengths as
   `int`; the error queue cannot tell a memory failure apart across versions;
@@ -7381,9 +7384,9 @@ decided and not built is in chapter 17.
   off on Windows; libsecp256k1's context is randomized from `random_device`;
   webcpp never calls `RAND_bytes`.** No backend chooses its own entropy.
   Source: `third_party/Jamfile` (webcpp).
-- **webcpp's code allocates only `keypair::make`'s context, in the resource
-  the user gives; no seal, open, `encrypt`, `fill`, signature, `agree` or
-  verification allocates on any backend; OpenSSL's `make` allocates its
+- **webcpp's code allocates only `keypair::from_secret`'s context, in the
+  resource the user gives; no seal, open, `encrypt`, `fill`, signature, `agree`
+  or verification allocates on any backend; OpenSSL's `from_key` allocates its
   context through OpenSSL's own allocator, which its page states and
   `allocation_openssl` counts, unless the program takes OpenSSL's memory
   option (below), which sends every allocation of OpenSSL's to the program's
@@ -7435,7 +7438,7 @@ decided and not built is in chapter 17.
   functions other than OpenSSL's three defaults are
   `memory_functions_refused`, then the resource is constructed, then the
   adapter is installed, and OpenSSL's refusal is `memory_functions_refused`;
-  every OpenSSL `make` under the option checks that the adapter is in place
+  every OpenSSL `from_key` under the option checks that the adapter is in place
   and otherwise returns `memory_functions_not_installed`.** Replacing another
   party's functions would make OpenSSL free that party's blocks through
   webcpp's adapter; a forgotten install gives an error, not an allocation
@@ -7491,7 +7494,7 @@ decided and not built is in chapter 17.
   every call of the C library's allocator through an interposer per system;
   and `neighbours`, beside Asio's TLS and libdatachannel; `header_alone` and
   the `windows_h` twins compile. The fixtures `memory_option`,
-  `memory_missing_definition_install`, `memory_missing_definition_make`,
+  `memory_missing_definition_install`, `memory_missing_definition_from_key`,
   `memory_two_files` and `openssl_memory_on_emscripten` build the user's
   Jamfiles, and `test/messages` and `test/msvc` check each `#error`.** The
   counter proves the whole process, Beast's TLS and libdatachannel's DTLS
