@@ -342,8 +342,8 @@ def test_a_form_row_is_keyed_by_its_name_and_form(scratch: Path) -> None:
     expect('.Who implements `hkdf_extract`, `hkdf_expand`, `hkdf` (RFC 5869)' in backends,
            backends)
     expect('| `hkdf_extract` over pieces' in backends, backends)
-    expect('The default of `hkdf_extract` over pieces, `hkdf_expand` over pieces and `hkdf` over '
-           'pieces: `hash2` on every target' in backends, backends)
+    expect('The default of `hkdf`, `hkdf_extract` over pieces, `hkdf_expand` over pieces and '
+           '`hkdf` over pieces: `hash2` on every target' in backends, backends)
     compare = files['generated/compare-kdfs.adoc']
     expect('over pieces' not in compare, 'a form has a row of its own in the comparison')
     expect(compare.count('`hkdf_extract`') == 2, 'hkdf_extract is not one row of each table')
@@ -669,7 +669,8 @@ def test_without_measurements_the_tables_say_so(scratch: Path) -> None:
     expect('measurements.adoc' not in files, 'measurements.adoc without its data')
     hkdf = files['generated/backends-hkdf.adoc']
     expect('The default of `hkdf_extract` and `hkdf_expand`: `hash2` on every target' in hkdf
-           and 'The default of `hkdf`: `hash2` on every target' in hkdf,
+           and 'The default of `hkdf`, `hkdf_extract` over pieces, `hkdf_expand` over pieces and '
+           '`hkdf` over pieces: `hash2` on every target' in hkdf,
            f'the backends of HKDF do not name the default: {hkdf}')
     expect('`bearssl`, `botan`, `openssl`, `sodium` only where the call names it' in hkdf, hkdf)
     expect('The default of `argon2id`: `sodium` on every target'
@@ -699,7 +700,8 @@ def test_with_measurements_the_tables_carry_them(scratch: Path) -> None:
     expect('a loaded, shared machine' in digests, 'the note hides that the machine was loaded')
     hkdf = files['generated/backends-hkdf.adoc']
     # BearSSL is the smallest and the fastest HKDF of the fixture: the default stays hash2.
-    expect('`hkdf`: `hash2` on every target' in hkdf, 'the measurements moved a default')
+    expect('`hkdf` over pieces: `hash2` on every target' in hkdf,
+           'the measurements moved a default')
     expect('libsodium 1.0.22: its headers state constant time' in hkdf,
            'the constant-time column does not give its source')
     page = files['measurements.adoc']
