@@ -7000,9 +7000,13 @@ decided and not built is in chapter 17.
   `sha256`, `kx`, `der`, `pem`, `spki` and `pkcs8` stay, as do a standard's own
   variable names (ECDSA's `r` and `s`) and the standard library's `max_`. The
   owner's rule of 2026-11-23: a reader should not need a glossary for a
-  parameter.
+  parameter. Names taken from a C library are spelled out too: secp256k1's
+  `public_key_tweak_add` and `secret_key_negate` (libsecp256k1's `pubkey`,
+  `seckey`), MuSig2's `generate_nonce`, silent payments'
+  `previous_outputs_summary`; a class template is named for its algorithm, as
+  `ciphers::basic_chacha20_poly1305`, `basic_box` and `basic_secretbox` are.
   Source: `libraries/crypto/openspec/changes/uniform-types/design.md` owner
-  decision 13, D11 (proposals).
+  decision 13, D11, owner decision 14, D12 (proposals).
 - **Hashing and HMAC stay with Boost.Hash2, and HKDF, when a program needs
   it, is written on `boost::hash2::hmac`; every call is synchronous, and
   WebCrypto is not a backend.** The owner's amendment C1 of 2026-10-10; with C

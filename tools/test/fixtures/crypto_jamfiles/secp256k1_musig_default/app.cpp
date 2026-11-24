@@ -7,7 +7,7 @@
 // Aggregates two fixed key pairs' public keys with BIP 327's MuSig2 on MuSig2's default backend,
 // signs a message in its two rounds, verifies the aggregate as one BIP 340 signature, and prints
 // the backend that ran. The secrets are fixed: a real program draws its own. The nonces are drawn
-// inside nonce_gen.
+// inside generate_nonce.
 #include <webcpp/crypto/curves/secp256k1.hpp>
 #include <webcpp/crypto/curves/secp256k1/musig.hpp>
 #include <webcpp/crypto/signing.hpp>
@@ -44,8 +44,8 @@ bool sign_and_verify(secp256k1::keypair const& first, secp256k1::keypair const& 
         return false;
     }
     auto const message = repeated(0x5a);
-    auto first_nonce = musig::nonce_gen(first, *aggregate, message);
-    auto second_nonce = musig::nonce_gen(second, *aggregate, message);
+    auto first_nonce = musig::generate_nonce(first, *aggregate, message);
+    auto second_nonce = musig::generate_nonce(second, *aggregate, message);
     if (!first_nonce || !second_nonce) {
         return false;
     }

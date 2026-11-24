@@ -12,5 +12,5 @@
 targets: emscripten
 build: fails
 # tag::messages[]
-contains: webcpp::crypto: ciphers::aead takes an AEAD family: families::chacha20_poly1305, families::chacha20_poly1305_original, families::xchacha20_poly1305, families::secretbox_xsalsa20poly1305 or families::secretbox_xchacha20poly1305.
+contains: webcpp::crypto: ciphers::basic_chacha20_poly1305 takes an AEAD family: families::chacha20_poly1305, families::chacha20_poly1305_original or families::xchacha20_poly1305.
 # end::messages[]
