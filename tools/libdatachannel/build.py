@@ -38,6 +38,46 @@ def run(command: list[str], directory: Path, env: dict[str, str], log: Path) -> 
         raise RuntimeError(f'command failed ({result.returncode}); full log: {log}')
 
 
+# The source trees a patch may change: libdatachannel's own and the pinned usrsctp's.
+SOURCES = ('src/', 'deps/usrsctp/usrsctplib/')
+
+
+def patches() -> list[Path]:
+    """The corrections patches/ holds, in the order of their names."""
+    return sorted((HERE / 'patches').glob('*.patch'))
+
+
+def patch_source(staged: Path) -> None:
+    """Apply each patch to the verified staged copy, never to the pinned checkout.
+
+    Each patch corrects a defect of the pinned libdatachannel, or of the usrsctp it pins, until a
+    release fixes it upstream, and changes only sources: libdatachannel's under src/ or usrsctp's
+    under deps/usrsctp/usrsctplib/. One that is applied already (the pin holds the fix) or that
+    no longer applies fails the build, naming it, so that it is removed or updated rather than
+    skipped. git looks for no repository above the staged copy.
+    """
+    env = os.environ.copy()
+    env['GIT_CEILING_DIRECTORIES'] = str(staged.parent)
+    for patch in patches():
+        name = f'tools/libdatachannel/patches/{patch.name}'
+        touched = [line.split(' ', 1)[1] for line in patch.read_text().splitlines()
+                   if line.startswith(('--- ', '+++ '))]
+        if any(not path.startswith(tuple(f'{side}/{tree}' for side in 'ab' for tree in SOURCES))
+               for path in touched):
+            raise RuntimeError(f'{name} patches a file outside {" and ".join(SOURCES)}')
+
+        def apply(*arguments: str) -> bool:
+            return subprocess.run(['git', '-C', str(staged), 'apply', *arguments, str(patch)],
+                                  env=env, stdout=subprocess.DEVNULL,
+                                  stderr=subprocess.DEVNULL).returncode == 0
+
+        if apply('--reverse', '--check'):
+            raise RuntimeError(f'{name} is applied already: the pinned libdatachannel holds '
+                               'its fix, remove the patch')
+        if not apply('--check') or not apply():
+            raise RuntimeError(f'{name} no longer applies: update or remove it')
+
+
 def provider(root: Path, windows: bool) -> dict:
     """Require the source-built threaded provider, never a discovered system library."""
     record = json.loads((root / 'build.json').read_text())
@@ -107,6 +147,7 @@ def build(args: argparse.Namespace) -> None:
     with tempfile.TemporaryDirectory(prefix='webcpp-libdatachannel-') as temporary:
         scratch = Path(temporary)
         stage_source(source, scratch / 'source', pin)
+        patch_source(scratch / 'source')
         # Upstream's macOS workaround constructs ROOT/lib paths. Supply an
         # isolated prefix with exactly the already-verified B2 provider bytes.
         ssl_prefix = scratch / 'openssl'
