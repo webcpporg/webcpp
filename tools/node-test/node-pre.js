@@ -31,13 +31,25 @@ if (typeof process === 'object' && typeof process.on === 'function') {
     }
     bound(120)
     Module['webcppTestBound'] = bound
-    // Node ends with the first status on its next turn, whatever is still pending or runs
-    // later: a timer, a callback that gives another status, a write of process.exitCode.
+    // Node ends with the first status, whatever runs later: a callback that gives another
+    // status, a write of process.exitCode. It ends on its own as soon as nothing holds it, as
+    // Emscripten's own glue ends under node, and through process.exit only if something
+    // still holds it (a pending timer, a live worker) after the grace below.
+    // Workaround for node issue #64274: in node 26.13.0, process.exit can deadlock when a
+    // background compile of the main isolate waits for a GC that the exiting main thread never
+    // runs (seen in hash's async_heavy, 5 hangs in 300 runs); a natural exit disposes the
+    // isolate first and cannot. Remove the grace and call process.exit(status) on the next
+    // turn again once the pinned node is a release with node PR #66171 (commit 77fdeb6fa0).
+    // The grace is 10 s: async_heavy, under 10 to 36 runs at once on 18 cores, ended on its
+    // own 0.2 ms to 5.4 s after its status (median 0.3 to 1.6 s), and a fallback that fires
+    // before the workers wind down meets the deadlock.
+    const grace = 10000
     Module['webcppTestFinished'] = given => {
         finished = true
         if (status === null) {
             status = given
-            setImmediate(() => process.exit(status))
+            process.exitCode = status
+            setTimeout(() => process.exit(status), grace).unref()
         }
     }
     // Whether main was called: postRun runs all the same in a program whose glue never calls
