@@ -206,6 +206,30 @@ class Data:
         self.arguments = {key: self.backend_argument(function)
                           for key, (_, function) in self.functions.items()
                           if function['kind'] == 'function' or function['kind'] in FAMILY_KINDS}
+        # The parameters a form's overload takes as byte_pieces, read from its header.
+        self.form_parameters = {key: self.pieces_parameters(function)
+                                for key, (_, function) in self.functions.items()
+                                if 'form' in function}
+
+    def pieces_parameters(self, function: dict) -> list[str]:
+        """The names of the byte_pieces parameters of the function's overload over pieces, as
+        input_key_material, read from the declarations in its header."""
+        path = self.library / 'include' / function['header']
+        try:
+            text = path.read_text(encoding='utf-8')
+        except OSError as error:
+            raise Failure(f'{path}: {error}') from error
+        code = re.sub(r'//[^\n]*|/\*.*?\*/', ' ', text, flags=re.DOTALL)
+        found: list[str] = []
+        for match in re.finditer(rf'(?<![\w:]){re.escape(function["name"])}\s*\(([^)]*)\)', code):
+            names = re.findall(r'\bbyte_pieces\s+(\w+)', match.group(1))
+            if names:
+                found = names
+                break
+        if not found:
+            raise Failure(f'{function["header"]} declares no {function["name"]} with a '
+                          f'byte_pieces parameter (doc/capabilities.json, {label(function)})')
+        return found
 
     def backend_argument(self, function: dict) -> str:
         """The words "as its <position> template argument", where a call names the backend,
@@ -755,10 +779,11 @@ def llms_txt(data: Data) -> str:
                 standard = facts.get('standard', algorithm['standard'])
                 if 'form' in function:
                     # A form shares its function's facts: say only what differs.
+                    pieces = listed(data.form_parameters[row_key(function)])
                     lines.append(f'- webcpp::hash::{label(function)} '
                                  f'(<{function["header"]}>, {standard}): '
-                                 f'{function["name"]} with its inputs as byte_pieces, read one '
-                                 'after another as if concatenated, with no cap. '
+                                 f'{function["name"]} with its {pieces} as byte_pieces, read '
+                                 'one after another as if concatenated, with no cap. '
                                  f'Backends: {backends}. [Section]({page}#{facts["anchor"]})')
                     continue
                 lines.append(f'- webcpp::hash::{function["name"]} '
