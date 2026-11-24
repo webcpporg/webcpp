@@ -1024,14 +1024,23 @@ Trystero's later API migration or prove libdatachannel's upstream test suite.
 The checkout and the archive stay upstream's bytes: `tools/libdatachannel/build.py`
 applies the patches of `tools/libdatachannel/patches`, in the order of their
 names, to its verified staged copy alone, each correcting a defect of the
-pinned release until upstream fixes it, each changing only `src/`, each under
-libdatachannel's MPL-2.0, and each an input of the configuration's key. A patch
+pinned release until upstream fixes it, each changing only sources
+(libdatachannel's `src/` or the pinned usrsctp's `deps/usrsctp/usrsctplib/`),
+each under the licence of the files it changes (libdatachannel's MPL-2.0,
+usrsctp's BSD-3-Clause), and each an input of the configuration's key. A patch
 the sources hold already, or one that no longer applies, fails the build by
-name, so that it is removed or updated rather than skipped. The first two
-correct the native connection races found on 2026-11-23:
+name, so that it is removed or updated rather than skipped. They correct what
+webcpp::webrtc's native tests met on 2026-11-23: two connection races,
 `dtls-mtu-before-incoming.patch` (the DTLS server answered a ClientHello kept
 before its start while its MTU was unset, and failed) and `sctp-init-once.patch`
-(two threads each started an SCTP transport, and the replaced one stopped DTLS).
+(two threads each started an SCTP transport, and the replaced one stopped
+DTLS), and a hang of a process that makes a second runtime, which waited
+forever for a cleanup that could not finish while usrsctp held an endpoint:
+`sctp-cleanup-bounded.patch` (the SCTP cleanup gives up after five seconds and
+leaves usrsctp initialized for the next runtime) and
+`usrsctp-iterator-restart.patch` (after a first cleanup, usrsctp's iterator
+thread exited as soon as it started, and an iterator queued later held its
+endpoint forever).
 
 The CA bundle is an authorized exception to the source-submodule rule: curl
 publishes dated PEM artifacts, preserved byte-for-byte with source URL, SHA-256,
@@ -8640,7 +8649,9 @@ trystero on it (built, trystero's branch `webrtc-backend`, in its
   the standard library, and libdatachannel is the smallest complete
   implementation. The patches (2026-11-23, pending the owner's approval) correct
   two races of the pinned release that failed a native connection about once in
-  300 runs under load; each is under MPL-2.0 and is removed once upstream
+  300 runs under load, and two defects, of its SCTP cleanup and of its usrsctp,
+  that hung a process making a second runtime about once in 3000 runs on MSVC;
+  each is under the licence of the files it changes and is removed once upstream
   carries its fix.
   Source: `libraries/webrtc/openspec/changes/genesis/design.md` D16 (proposals).
 - **webcpp::webrtc knows nothing of xactor: an actor that needs a peer holds a

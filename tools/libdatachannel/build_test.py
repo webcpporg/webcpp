@@ -131,11 +131,12 @@ class PatchTest(unittest.TestCase):
     SOURCE = Path(__file__).resolve().parents[2] / 'third_party/libs/libdatachannel'
 
     def setUp(self) -> None:
-        if not (self.SOURCE / 'src').is_dir():
+        if not all((self.SOURCE / tree).is_dir() for tree in build.SOURCES):
             self.skipTest('third_party/libs/libdatachannel is not checked out')
         self.directory = tempfile.TemporaryDirectory(prefix='libdatachannel patches ')
         self.staged = Path(self.directory.name) / 'source'
-        shutil.copytree(self.SOURCE / 'src', self.staged / 'src')
+        for tree in build.SOURCES:
+            shutil.copytree(self.SOURCE / tree, self.staged / tree)
 
     def tearDown(self) -> None:
         self.directory.cleanup()
@@ -151,6 +152,10 @@ class PatchTest(unittest.TestCase):
         sctp = connection[connection.index('PeerConnection::initSctpTransport() {'):]
         self.assertLess(sctp.index('std::lock_guard lock(mSctpTransportInitMutex);'),
                         sctp.index('std::atomic_load(&mSctpTransport)'))
+        iterator = (self.staged / 'deps/usrsctp/usrsctplib/netinet/sctp_bsd_addr.c').read_text()
+        startup = iterator[iterator.index('sctp_startup_iterator(void)'):]
+        self.assertLess(startup.index('sctp_it_ctl.iterator_flags = 0;'),
+                        startup.index('sctp_userspace_thread_create('))
 
     def test_a_patch_the_sources_hold_already_fails_the_build(self) -> None:
         build.patch_source(self.staged)
@@ -163,7 +168,7 @@ class PatchTest(unittest.TestCase):
         (patches / 'outside.patch').write_text(
             '--- a/CMakeLists.txt\n+++ b/CMakeLists.txt\n@@ -1 +1 @@\n-x\n+y\n')
         with patch.object(build, 'patches', return_value=[patches / 'outside.patch']):
-            with self.assertRaisesRegex(RuntimeError, 'outside src/'):
+            with self.assertRaisesRegex(RuntimeError, 'outside src/ and deps/usrsctp/usrsctplib/'):
                 build.patch_source(self.staged)
 
 

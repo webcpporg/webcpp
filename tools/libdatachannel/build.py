@@ -38,6 +38,10 @@ def run(command: list[str], directory: Path, env: dict[str, str], log: Path) -> 
         raise RuntimeError(f'command failed ({result.returncode}); full log: {log}')
 
 
+# The source trees a patch may change: libdatachannel's own and the pinned usrsctp's.
+SOURCES = ('src/', 'deps/usrsctp/usrsctplib/')
+
+
 def patches() -> list[Path]:
     """The corrections patches/ holds, in the order of their names."""
     return sorted((HERE / 'patches').glob('*.patch'))
@@ -46,10 +50,11 @@ def patches() -> list[Path]:
 def patch_source(staged: Path) -> None:
     """Apply each patch to the verified staged copy, never to the pinned checkout.
 
-    Each patch corrects a defect of the pinned libdatachannel until a release fixes it upstream,
-    and changes only its sources under src/. One that is applied already (the pin holds the fix)
-    or that no longer applies fails the build, naming it, so that it is removed or updated rather
-    than skipped. git looks for no repository above the staged copy.
+    Each patch corrects a defect of the pinned libdatachannel, or of the usrsctp it pins, until a
+    release fixes it upstream, and changes only sources: libdatachannel's under src/ or usrsctp's
+    under deps/usrsctp/usrsctplib/. One that is applied already (the pin holds the fix) or that
+    no longer applies fails the build, naming it, so that it is removed or updated rather than
+    skipped. git looks for no repository above the staged copy.
     """
     env = os.environ.copy()
     env['GIT_CEILING_DIRECTORIES'] = str(staged.parent)
@@ -57,8 +62,9 @@ def patch_source(staged: Path) -> None:
         name = f'tools/libdatachannel/patches/{patch.name}'
         touched = [line.split(' ', 1)[1] for line in patch.read_text().splitlines()
                    if line.startswith(('--- ', '+++ '))]
-        if any(not path.startswith(('a/src/', 'b/src/')) for path in touched):
-            raise RuntimeError(f'{name} patches a file outside src/')
+        if any(not path.startswith(tuple(f'{side}/{tree}' for side in 'ab' for tree in SOURCES))
+               for path in touched):
+            raise RuntimeError(f'{name} patches a file outside {" and ".join(SOURCES)}')
 
         def apply(*arguments: str) -> bool:
             return subprocess.run(['git', '-C', str(staged), 'apply', *arguments, str(patch)],

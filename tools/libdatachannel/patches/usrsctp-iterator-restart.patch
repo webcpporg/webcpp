@@ -1,0 +1,33 @@
+usrsctp, as libdatachannel 0.24.6 pins it (deps/usrsctp at fec583d), keeps the iterator thread's
+flags across usrsctp_finish() and usrsctp_init(): sctp_pcb_finish() sets SCTP_ITERATOR_MUST_EXIT,
+the exiting thread sets SCTP_ITERATOR_EXITED, and sctp_startup_iterator() never clears them, so
+every initialization after the first finish starts an iterator thread that exits at once. An
+iterator queued afterwards, as the address work queue does after usrsctp_register_address() or
+usrsctp_deregister_address(), which every SCTP transport of libdatachannel calls, then never runs
+and keeps its reference to an endpoint forever: that endpoint is never freed, usrsctp_finish()
+never succeeds, libdatachannel's SctpTransport::Cleanup() loops, rtcCleanup() gives up after ten
+seconds and the next rtcPreload() waits forever for the cleanup's lock. A process that destroys
+its webcpp::webrtc::runtime and makes another one met it: webcpp::webrtc's native test hung about
+once in 3000 runs on MSVC 14.5 (2026-11-23; the dumps showed the flags at 3, the thread gone and
+an iterator holding the last endpoint). This patch clears the flags when the thread is started.
+Remove this file once the usrsctp that libdatachannel pins clears them: build.py then fails, saying
+so.
+
+This patch changes files of usrsctp, which the BSD 3-Clause License covers, and is itself under
+that licence.
+
+diff --git a/deps/usrsctp/usrsctplib/netinet/sctp_bsd_addr.c b/deps/usrsctp/usrsctplib/netinet/sctp_bsd_addr.c
+--- a/deps/usrsctp/usrsctplib/netinet/sctp_bsd_addr.c
++++ b/deps/usrsctp/usrsctplib/netinet/sctp_bsd_addr.c
+@@ -180,6 +180,11 @@
+ 	SCTP_ITERATOR_LOCK_INIT();
+ 	SCTP_IPI_ITERATOR_WQ_INIT();
+ 	TAILQ_INIT(&sctp_it_ctl.iteratorhead);
++	/*
++	 * A previous sctp_pcb_finish() left SCTP_ITERATOR_MUST_EXIT and SCTP_ITERATOR_EXITED set:
++	 * a thread started with them would exit at once and never run an iterator.
++	 */
++	sctp_it_ctl.iterator_flags = 0;
+ #if defined(__Userspace__)
+ 	if (sctp_userspace_thread_create(&sctp_it_ctl.thread_proc, &sctp_iterator_thread)) {
+ 		SCTP_PRINTF("ERROR: Creating sctp_iterator_thread failed.\n");
