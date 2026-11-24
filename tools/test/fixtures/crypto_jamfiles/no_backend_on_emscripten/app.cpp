@@ -12,5 +12,5 @@
 
 int main() {
     std::array<std::uint8_t, 32> const key{};
-    return webcpp::crypto::ciphers::aes256_gcm::make(key) ? 0 : 1;
+    return webcpp::crypto::ciphers::aes256_gcm::from_key(key) ? 0 : 1;
 }

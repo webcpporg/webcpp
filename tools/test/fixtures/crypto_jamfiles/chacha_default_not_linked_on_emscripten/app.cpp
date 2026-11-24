@@ -14,9 +14,9 @@
 int main() {
     namespace ciphers = webcpp::crypto::ciphers;
     std::array<std::uint8_t, 32> const key{};
-    return ciphers::chacha20_poly1305<>::make(key) &&
-                   ciphers::chacha20_poly1305_original<>::make(key) &&
-                   ciphers::xchacha20_poly1305<>::make(key)
+    return ciphers::chacha20_poly1305<>::from_key(key) &&
+                   ciphers::chacha20_poly1305_original<>::from_key(key) &&
+                   ciphers::xchacha20_poly1305<>::from_key(key)
                ? 0
                : 1;
 }

@@ -8,8 +8,8 @@
 // the tag and the ciphertext's first bytes against secretbox.exp, opens it again, and prints the
 // backend that ran. The key and nonce are the test's: a real program draws its key from
 // random_device, and a 24-byte nonce drawn at random for every message is safe.
-#include <webcpp/crypto/ciphers/secretbox.hpp>
-#include <webcpp/crypto/equal.hpp>
+#include <webcpp/crypto/constant_time_equal.hpp>
+#include <webcpp/crypto/secret_key_encryption/secretbox.hpp>
 
 #include <algorithm>
 #include <array>
@@ -37,10 +37,10 @@ std::array<std::uint8_t, Size> from_hex(std::string_view hex) {
 }  // namespace
 
 int main() {
-    using secretbox = webcpp::crypto::ciphers::secretbox<>;
+    using secretbox = webcpp::crypto::secret_key_encryption::secretbox<>;
     auto const key =
         from_hex<32>("1b27556473e985d462cd51197a9a46c76009549eac6474f206c4ee0844f68389");
-    auto const iv = from_hex<24>("69696ee955b62b73cd62bda875fc73d68219e0036b7a0b37");
+    auto const nonce = from_hex<24>("69696ee955b62b73cd62bda875fc73d68219e0036b7a0b37");
     auto const plaintext = from_hex<131>(
         "be075fc53c81f2d5cf141316ebeb0c7b5228c52a4c62cbd44b66849b64244ffce5ecbaaf33bd751a1ac7"
         "28d45e6c61296cdc3c01233561f41db66cce314adb310e3be8250c46f06dceea3a7fa1348057e2f6556a"
@@ -49,13 +49,13 @@ int main() {
     auto const expected_tag = from_hex<16>("f3ffc7703f9400e52a7dfb4b3d3305d9");
     auto const expected_head = from_hex<8>("8e993b9f48681273");
     auto data = plaintext;
-    auto sealer = secretbox::make(key);
+    auto sealer = secretbox::from_key(key);
     bool ok = false;
     if (sealer) {
-        auto const tag = sealer->seal(iv, {}, data);
-        ok = tag && webcpp::crypto::equal(*tag, expected_tag) &&
+        auto const tag = sealer->seal(nonce, data);
+        ok = tag && webcpp::crypto::constant_time_equal(*tag, expected_tag) &&
              std::equal(expected_head.begin(), expected_head.end(), data.begin()) &&
-             sealer->open(iv, {}, data, expected_tag) && data == plaintext;
+             sealer->open(nonce, data, expected_tag) && data == plaintext;
     }
     auto const name = secretbox::backend_type::name;
     std::printf("secretbox %s backend=%.*s\n", ok ? "ok" : "FAILED", static_cast<int>(name.size()),

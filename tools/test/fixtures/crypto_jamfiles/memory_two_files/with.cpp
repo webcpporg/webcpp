@@ -21,6 +21,6 @@ std::pmr::memory_resource& webcpp::crypto::openssl_memory_resource() noexcept {
 bool make_with_the_option() {
     std::array<std::uint8_t, 32> const key{};
     return webcpp::crypto::ciphers::gcm<
-               webcpp::crypto::ciphers::aes256<webcpp::crypto::backends::openssl>>::make(key)
+               webcpp::crypto::ciphers::aes256<webcpp::crypto::backends::openssl>>::from_key(key)
         .has_value();
 }

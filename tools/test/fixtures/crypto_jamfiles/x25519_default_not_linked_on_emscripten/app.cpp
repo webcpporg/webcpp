@@ -4,15 +4,18 @@
 // accompanying file LICENSE_1_0.txt or copy at
 // https://www.boost.org/LICENSE_1_0.txt)
 
-// A program that agrees an X25519 shared secret on its default backend, libsodium on every target,
-// without linking it, stops where it calls it, with the line that links libsodium, the one backend
-// that has it (design D32).
+// A program that makes an X25519 key pair and agrees a shared secret on its default backend,
+// libsodium on every target, without linking it, stops where it calls it, with the line that
+// links libsodium, the one backend that has it (design D32).
 #include <webcpp/crypto/curves/x25519.hpp>
 
 #include <array>
 #include <cstdint>
 
 int main() {
-    std::array<std::uint8_t, 32> const key{};
-    return webcpp::crypto::curves::x25519::agree(key, key) ? 0 : 1;
+    namespace x25519 = webcpp::crypto::curves::x25519;
+    std::array<std::uint8_t, 32> const key{9};
+    auto const key_pair = x25519::keypair::from_secret(key);
+    auto const peer = x25519::public_key::from_bytes(key);
+    return key_pair && peer && key_pair->agree(*peer) ? 0 : 1;
 }

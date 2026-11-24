@@ -19,7 +19,7 @@ int main() {
     std::array<std::uint8_t, 32> message{};
     message.fill(0x17);
     std::array<std::uint8_t, 32> const aux{};
-    auto key = secp256k1::keypair::make(secret);
+    auto key = secp256k1::keypair::from_secret(secret);
     bool ok = false;
     if (key) {
         auto const signature = key->sign(webcpp::crypto::schnorr, message, aux);

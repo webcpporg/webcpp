@@ -13,5 +13,5 @@
 int main() {
     std::array<std::uint8_t, 32> scalar{};
     scalar.back() = 1;
-    return webcpp::crypto::curves::p256::keypair::make(scalar) ? 0 : 1;
+    return webcpp::crypto::curves::p256::keypair::from_secret(scalar) ? 0 : 1;
 }

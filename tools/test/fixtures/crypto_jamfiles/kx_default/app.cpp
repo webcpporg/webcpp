@@ -8,8 +8,8 @@
 // computes each side's session keys from the other's public key, checks the client's transmit
 // key against kx.exp's and the server's receive key, and prints the backend that ran. The seeds
 // are libsodium's test's: a real program draws its key pair with generate().
-#include <webcpp/crypto/curves/x25519/kx.hpp>
-#include <webcpp/crypto/equal.hpp>
+#include <webcpp/crypto/constant_time_equal.hpp>
+#include <webcpp/crypto/key_exchange/kx.hpp>
 
 #include <array>
 #include <cstddef>
@@ -17,7 +17,7 @@
 #include <cstdio>
 
 int main() {
-    namespace x25519 = webcpp::crypto::curves::x25519;
+    namespace key_exchange = webcpp::crypto::key_exchange;
     std::array<std::uint8_t, 32> client_seed{};
     for (std::size_t i = 0; i < client_seed.size(); ++i) {
         client_seed[i] = static_cast<std::uint8_t>(i);
@@ -29,8 +29,8 @@ int main() {
         0x99, 0x18, 0xd1, 0x29, 0xb6, 0x5d, 0xeb, 0x78, 0x9a, 0xf8, 0xc8,
         0x35, 0x1f, 0x39, 0x1f, 0xeb, 0x0c, 0xbf, 0x23, 0x86, 0x04,
     };
-    auto const client = x25519::kx_keypair<>::make(client_seed);
-    auto const server = x25519::kx_keypair<>::make(server_seed);
+    auto const client = key_exchange::kx_keypair<>::derive_from_seed(client_seed);
+    auto const server = key_exchange::kx_keypair<>::derive_from_seed(server_seed);
     bool ok = false;
     if (client && server) {
         auto const client_public = client->public_key();
@@ -39,11 +39,11 @@ int main() {
             auto const client_keys = client->client_session_keys(*server_public);
             auto const server_keys = server->server_session_keys(*client_public);
             ok = client_keys && server_keys &&
-                 webcpp::crypto::equal(client_keys->transmit.bytes(), expected) &&
-                 webcpp::crypto::equal(server_keys->receive.bytes(), expected);
+                 webcpp::crypto::constant_time_equal(client_keys->transmit.bytes(), expected) &&
+                 webcpp::crypto::constant_time_equal(server_keys->receive.bytes(), expected);
         }
     }
-    auto const name = x25519::kx_keypair<>::backend_type::name;
+    auto const name = key_exchange::kx_keypair<>::backend_type::name;
     std::printf("kx %s backend=%.*s\n", ok ? "ok" : "FAILED", static_cast<int>(name.size()),
                 name.data());
     return ok ? 0 : 1;

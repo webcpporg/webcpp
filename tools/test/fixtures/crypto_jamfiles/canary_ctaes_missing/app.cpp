@@ -15,6 +15,6 @@
 int main() {
     std::array<std::uint8_t, 32> const key{};
     std::array<std::uint8_t, 16> block{};
-    auto aes = webcpp::crypto::ciphers::aes256<webcpp::crypto::backends::ctaes>::make(key);
+    auto aes = webcpp::crypto::ciphers::aes256<webcpp::crypto::backends::ctaes>::from_key(key);
     return aes && aes->encrypt(block) ? 0 : 1;
 }

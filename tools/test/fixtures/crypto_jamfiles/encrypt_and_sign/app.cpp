@@ -8,8 +8,8 @@
 // NIST test vector (GCM test case 14), opens it again, then signs a message with BIP340 through
 // libsecp256k1, verifies the signature, and refuses a changed message.
 #include <webcpp/crypto/ciphers/aes256_gcm.hpp>
+#include <webcpp/crypto/constant_time_equal.hpp>
 #include <webcpp/crypto/curves/secp256k1.hpp>
-#include <webcpp/crypto/equal.hpp>
 #include <webcpp/crypto/signing.hpp>
 
 #include <array>
@@ -18,7 +18,7 @@
 
 int main() {
     std::array<std::uint8_t, 32> const key{};
-    std::array<std::uint8_t, 12> const iv{};
+    std::array<std::uint8_t, 12> const nonce{};
     std::array<std::uint8_t, 16> data{};
     std::array<std::uint8_t, 16> const cipher{
         0xce, 0xa7, 0x40, 0x3d, 0x4d, 0x60, 0x6b, 0x6e,
@@ -28,14 +28,15 @@ int main() {
         0xd0, 0xd1, 0xc8, 0xa7, 0x99, 0x99, 0x6b, 0xf0,
         0x26, 0x5b, 0x98, 0xb5, 0xd4, 0x8a, 0xb9, 0x19,
     };
-    auto aead = webcpp::crypto::ciphers::aes256_gcm::make(key);
+    auto aead = webcpp::crypto::ciphers::aes256_gcm::from_key(key);
     if (!aead) {
         return 1;
     }
-    auto const tag = aead->seal(iv, {}, data);
-    bool const sealed = tag && data == cipher && webcpp::crypto::equal(*tag, expected_tag);
+    auto const tag = aead->seal(nonce, {}, data);
+    bool const sealed =
+        tag && data == cipher && webcpp::crypto::constant_time_equal(*tag, expected_tag);
     bool const opened =
-        aead->open(iv, {}, data, expected_tag) && data == std::array<std::uint8_t, 16>{};
+        aead->open(nonce, {}, data, expected_tag) && data == std::array<std::uint8_t, 16>{};
     auto const name = webcpp::crypto::ciphers::aes256_gcm::backend_type::name;
     std::printf("aes256_gcm %s backend=%.*s\n", sealed && opened ? "ok" : "FAILED",
                 static_cast<int>(name.size()), name.data());
@@ -46,7 +47,7 @@ int main() {
     std::array<std::uint8_t, 32> message{};
     message.fill(0x17);
     std::array<std::uint8_t, 32> const aux{};
-    auto pair = secp256k1::keypair::make(secret);
+    auto pair = secp256k1::keypair::from_secret(secret);
     bool signed_ok = false;
     if (pair) {
         auto const signature = pair->sign(webcpp::crypto::schnorr, message, aux);

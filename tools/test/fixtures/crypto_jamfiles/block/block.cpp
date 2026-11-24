@@ -27,7 +27,7 @@ int main() {
         0xea, 0xfc, 0x49, 0x90, 0x4b, 0x49, 0x60, 0x89,
     };
     std::array<std::uint8_t, 16> block = plain;
-    auto aes = webcpp::crypto::ciphers::aes256<webcpp::crypto::backends::ctaes>::make(key);
+    auto aes = webcpp::crypto::ciphers::aes256<webcpp::crypto::backends::ctaes>::from_key(key);
     bool const ok =
         aes && aes->encrypt(block) && block == expected && aes->decrypt(block) && block == plain;
     std::printf("ctaes aes256 %s\n", ok ? "ok" : "FAILED");

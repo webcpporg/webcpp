@@ -8,9 +8,9 @@
 // checks that each decodes to its key pair's public key and that both sides of BIP 324's
 // exchange agree, and prints the backend that ran. The secrets and the randomness are fixed: a
 // real program draws its own, and never prints a shared secret.
+#include <webcpp/crypto/constant_time_equal.hpp>
 #include <webcpp/crypto/curves/secp256k1.hpp>
 #include <webcpp/crypto/curves/secp256k1/ellswift.hpp>
-#include <webcpp/crypto/equal.hpp>
 
 #include <array>
 #include <cstdint>
@@ -29,8 +29,8 @@ std::array<std::uint8_t, 32> repeated(std::uint8_t value) {
 int main() {
     namespace crypto = webcpp::crypto;
     namespace secp256k1 = webcpp::crypto::curves::secp256k1;
-    auto const initiator = secp256k1::keypair::make(repeated(0x11));
-    auto const responder = secp256k1::keypair::make(repeated(0x22));
+    auto const initiator = secp256k1::keypair::from_secret(repeated(0x11));
+    auto const responder = secp256k1::keypair::from_secret(repeated(0x22));
     bool ok = false;
     if (initiator && responder) {
         auto const sent = secp256k1::ellswift_create(*initiator, repeated(0x33));
@@ -44,7 +44,7 @@ int main() {
                                                       secp256k1::ellswift_party::initiator);
             auto const theirs = secp256k1::ellswift_xdh(*responder, *sent, *received,
                                                         secp256k1::ellswift_party::responder);
-            ok = mine && theirs && crypto::equal(mine->bytes(), theirs->bytes());
+            ok = mine && theirs && crypto::constant_time_equal(mine->bytes(), theirs->bytes());
         }
     }
     auto const name = crypto::default_backend_t<crypto::families::secp256k1_ellswift>::name;

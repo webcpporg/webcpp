@@ -12,5 +12,5 @@
 targets: emscripten
 build: fails
 # tag::messages[]
-contains: webcpp::crypto: hybrid::basic_box takes a box family: families::box_xsalsa20poly1305 or families::box_xchacha20poly1305.
+contains: webcpp::crypto: public_key_encryption::basic_box takes a box family: families::box_xsalsa20poly1305 or families::box_xchacha20poly1305.
 # end::messages[]

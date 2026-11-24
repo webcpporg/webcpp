@@ -1,0 +1,40 @@
+libdatachannel 0.24.6's PeerConnection::initSctpTransport() checks for an SCTP transport and
+creates one without a lock, unlike initDtlsTransport(). When ICE connects before the remote
+description is committed (the offerer, whose ICE transport starts on the answer before
+processRemoteDescription() stores it), processRemoteDescription() starts the DTLS transport and
+then the SCTP transport once DTLS is connected, while the DTLS transport's Connected callback
+starts it too, on another thread: both create one, the second replaces the first, and the first,
+destroyed, stops the DTLS transport under it ("SCTP early shutdown", "DTLS closed"), so the
+connection goes to failed. webcpp::webrtc's native tests met it about once in 3000 runs under
+load (2026-11-23). This patch gives initSctpTransport() a mutex of its own, as
+initDtlsTransport() has. Remove this file once the libdatachannel that
+tools/libdatachannel/pin.json pins serializes initSctpTransport(): build.py then fails, saying so.
+
+This patch changes files of libdatachannel, which the Mozilla Public License 2.0 covers, and is
+itself under that licence.
+
+diff --git a/src/impl/peerconnection.hpp b/src/impl/peerconnection.hpp
+--- a/src/impl/peerconnection.hpp
++++ b/src/impl/peerconnection.hpp
+@@ -154,6 +154,7 @@ private:
+ 	shared_ptr<IceTransport> mIceTransport;
+ 	shared_ptr<DtlsTransport> mDtlsTransport;
+ 	std::mutex mDtlsTransportInitMutex;
++	std::mutex mSctpTransportInitMutex;
+ 	shared_ptr<SctpTransport> mSctpTransport;
+ 
+ 	std::unordered_map<uint16_t, weak_ptr<DataChannel>> mDataChannels; // by stream ID
+diff --git a/src/impl/peerconnection.cpp b/src/impl/peerconnection.cpp
+--- a/src/impl/peerconnection.cpp
++++ b/src/impl/peerconnection.cpp
+@@ -304,6 +304,10 @@ shared_ptr<DtlsTransport> PeerConnection::initDtlsTransport() {
+ 
+ shared_ptr<SctpTransport> PeerConnection::initSctpTransport() {
+ 	try {
++		// The DTLS transport's Connected callback and processRemoteDescription() may both start
++		// the SCTP transport: the second must find the first's rather than replace it, which
++		// would destroy the first and stop the DTLS transport under it.
++		std::lock_guard lock(mSctpTransportInitMutex);
+ 		if (auto transport = std::atomic_load(&mSctpTransport))
+ 			return transport;
+ 
