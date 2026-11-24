@@ -46,9 +46,10 @@ that function's facts of guide.json. It writes, in doc/:
 missing, or is left over; the doc build runs it (doc/Jamfile). It also fails when guide.json
 lacks a public name of the capability table, names one it does not have, or a use case names
 an example that example/ does not hold; when a row's form is not "pieces", is on a row whose
-function the table does not have without a form, or two rows share a name and a form; when a function of the capability table names a
-default that is not among its backends or outside the order hash2, xkcp, blake3, sodium
-(design D33), or none (null) though a backend of that order has it; when a family's tag (kind
+function the table does not have without a form, or two rows share a name and a form; when a
+function of the capability table names a default that is not among its backends or outside the
+order hash2, xkcp, blake3, sodium (design D33), or none (null) though a backend of that order has
+it; when a family's tag (kind
 digest, mac or kdf) names a default outside that order (design D34; null for a tag with none)
 or one without its cell; when any default is a backend that only the asynchronous family takes,
 a type has a default, or a row has an unknown kind; when a tag of digests or macs sits outside
@@ -67,7 +68,7 @@ import json
 import re
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 ROOT = Path(__file__).resolve().parents[2]
 WRITE = 'python3 tools/hash/doc_tables.py --write'
@@ -154,7 +155,7 @@ def link(text: str, url: str) -> str:
 FORMS = ('pieces',)
 
 # A function row's key: its name and its form (None for the function's own row).
-Key = tuple[str, str | None]
+Key = tuple[str, Optional[str]]
 
 
 def row_key(function: dict) -> Key:
