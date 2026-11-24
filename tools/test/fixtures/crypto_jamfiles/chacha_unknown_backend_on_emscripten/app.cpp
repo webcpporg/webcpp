@@ -20,5 +20,5 @@ struct my_backend {};
 
 int main() {
     std::array<std::uint8_t, 32> const key{};
-    return webcpp::crypto::ciphers::chacha20_poly1305<my_backend>::make(key) ? 0 : 1;
+    return webcpp::crypto::ciphers::chacha20_poly1305<my_backend>::from_key(key) ? 0 : 1;
 }

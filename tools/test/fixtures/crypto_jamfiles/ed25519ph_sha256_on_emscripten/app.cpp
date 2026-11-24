@@ -4,10 +4,12 @@
 // accompanying file LICENSE_1_0.txt or copy at
 // https://www.boost.org/LICENSE_1_0.txt)
 
-// A program that names SHA-256 in Ed25519ph's type, which RFC 8032 defines over SHA-512.
+// A program that names SHA-256 in Ed25519ph's streaming signer, which RFC 8032 defines over
+// SHA-512.
 #include <webcpp/crypto/curves/ed25519.hpp>
 #include <webcpp/hash/algorithms.hpp>
 
 int main() {
-    return webcpp::crypto::curves::ed25519::ph<webcpp::hash::sha2_256>::begin() ? 0 : 1;
+    return webcpp::crypto::curves::ed25519::prehashed_signer<webcpp::hash::sha2_256>::begin() ? 0
+                                                                                              : 1;
 }

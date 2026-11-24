@@ -12,5 +12,5 @@
 targets: emscripten
 build: fails
 # tag::messages[]
-contains: webcpp::crypto: Ed25519ph is defined over SHA-512 (RFC 8032 section 5.1); name curves::ed25519::ph<webcpp::hash::sha2_512>.
+contains: webcpp::crypto: Ed25519ph is defined over SHA-512 (RFC 8032 section 5.1); name curves::ed25519::prehashed_signer<webcpp::hash::sha2_512>.
 # end::messages[]

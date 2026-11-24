@@ -13,8 +13,8 @@
 int main() {
     std::array<std::uint8_t, 32> scalar{};
     scalar.back() = 1;
-    return webcpp::crypto::curves::p256::basic_keypair<webcpp::crypto::backends::sodium>::make(
-               scalar)
+    return webcpp::crypto::curves::p256::basic_keypair<
+               webcpp::crypto::backends::sodium>::from_secret(scalar)
                ? 0
                : 1;
 }

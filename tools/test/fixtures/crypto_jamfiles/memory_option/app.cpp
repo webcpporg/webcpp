@@ -6,8 +6,8 @@
 
 // Sends every allocation of OpenSSL's to the program's own resource, then seals and opens one
 // block with AES-256-GCM on the default backend, OpenSSL natively when linked, and prints the
-// backend that ran. The zero key and IV keep the output stable: a real program draws its key
-// from random_device and never reuses an IV under it.
+// backend that ran. The zero key and nonce keep the output stable: a real program draws its key
+// from random_device and never reuses a nonce under it.
 #include <webcpp/crypto/backends/openssl.hpp>
 #include <webcpp/crypto/ciphers/aes256_gcm.hpp>
 
@@ -35,16 +35,17 @@ int main() {
         return 1;
     }
     std::array<std::uint8_t, 32> const key{};
-    std::array<std::uint8_t, 12> const iv{};
+    std::array<std::uint8_t, 12> const nonce{};
     std::array<std::uint8_t, 16> data{};
-    auto aead = webcpp::crypto::ciphers::aes256_gcm::make(key);
+    auto aead = webcpp::crypto::ciphers::aes256_gcm::from_key(key);
     if (!aead) {
         std::string const message = aead.error().message();
-        std::printf("make: %s\n", message.c_str());
+        std::printf("from_key: %s\n", message.c_str());
         return 1;
     }
-    auto const tag = aead->seal(iv, {}, data);
-    bool const ok = tag && aead->open(iv, {}, data, *tag) && data == std::array<std::uint8_t, 16>{};
+    auto const tag = aead->seal(nonce, {}, data);
+    bool const ok =
+        tag && aead->open(nonce, {}, data, *tag) && data == std::array<std::uint8_t, 16>{};
     auto const name = webcpp::crypto::ciphers::aes256_gcm::backend_type::name;
     std::printf("aes256_gcm %s backend=%.*s\n", ok ? "ok" : "FAILED", static_cast<int>(name.size()),
                 name.data());

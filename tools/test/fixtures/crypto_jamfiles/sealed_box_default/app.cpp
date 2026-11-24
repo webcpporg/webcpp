@@ -8,7 +8,7 @@
 // checks that it opened as it was sealed, and prints the backend that ran. Bob's secret key is
 // fixed here: a real program draws it from random_device.
 #include <webcpp/crypto/curves/x25519.hpp>
-#include <webcpp/crypto/hybrid/sealed_box.hpp>
+#include <webcpp/crypto/public_key_encryption/sealed_box.hpp>
 
 #include <algorithm>
 #include <array>
@@ -17,17 +17,22 @@
 #include <string_view>
 
 int main() {
-    using webcpp::crypto::hybrid::sealed_box;
+    using webcpp::crypto::public_key_encryption::sealed_box;
     std::array<std::uint8_t, 32> bob_secret{};
     bob_secret.fill(0x11);
-    auto const bob_public = webcpp::crypto::curves::x25519::public_key(bob_secret);
+    auto const bob = webcpp::crypto::curves::x25519::keypair::from_secret(bob_secret);
+    if (!bob) {
+        std::printf("sealed_box FAILED\n");
+        return 1;
+    }
+    auto const bob_public = bob->public_key();
     constexpr std::string_view feedback = "The coffee machine on the third floor is broken.";
     std::array<std::uint8_t, feedback.size()> message{};
     std::ranges::copy(feedback, message.begin());
     std::array<std::uint8_t, feedback.size() + sealed_box::overhead> sealed{};
     std::array<std::uint8_t, feedback.size()> opened{};
     bool const ok = bob_public && sealed_box::seal(*bob_public, message, sealed) &&
-                    sealed_box::open(*bob_public, bob_secret, sealed, opened) && opened == message;
+                    sealed_box::open(*bob, sealed, opened) && opened == message;
     auto const name = sealed_box::backend_type::name;
     std::printf("sealed_box %s backend=%.*s\n", ok ? "ok" : "FAILED", static_cast<int>(name.size()),
                 name.data());

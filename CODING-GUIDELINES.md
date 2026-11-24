@@ -6994,25 +6994,42 @@ makes a room read, through webcpp::beast's bounded handshake layer.
 
 webcpp::crypto gives C++20 programs on every target the primitives of
 cryptography over widely used C libraries that webcpp builds from their
-sources: AES-GCM and the AES block cipher, a `random_device` on the system's
-generator, a constant-time `equal`, and secp256k1's BIP340 Schnorr and ECDSA
-signatures, ECDH, strict DER and the x-only tweak. Version 0.1 is the
-proposal's increments 1 and 2, as the owner set them on 2026-11-14; OpenSSL's
-memory option is built after it (its block below, unreleased); what is decided
-and not built is in chapter 17.
+sources. Version 0.1 is the proposal's increments 1 and 2, as the owner set
+them on 2026-11-14: AES-GCM and the AES block cipher, a `random_device` on the
+system's generator, a constant-time comparison (named `constant_time_equal`
+since the uniform-types change), and secp256k1's BIP340 Schnorr and ECDSA
+signatures, ECDH, strict DER and the x-only tweak. What is built after it is
+unreleased and has its blocks below: OpenSSL's memory option, the curves and
+constructions of the later changes, and `erase_secret`; what is decided and
+not built is in chapter 17.
 
 **Scope.**
 
 - **crypto holds primitives only, grouped in namespaces whose headers mirror
-  them: the root (`error`, `random_device`, `equal`, `config`), `backends`,
-  `ciphers` (`aes128`, `aes192`, `aes256`, `gcm`, `aes128_gcm`, `aes256_gcm`,
-  under `<webcpp/crypto/ciphers/>`) and `curves::secp256k1` (under
+  them: the root (`error`, `random_device`, `constant_time_equal`,
+  `erase_secret`, `config`), `backends`, `ciphers` (`aes128`, `aes192`,
+  `aes256`, `gcm`, `aes128_gcm`, `aes256_gcm`, under
+  `<webcpp/crypto/ciphers/>`) and `curves::secp256k1` (under
   `<webcpp/crypto/curves/>`).** The owner's rule of 2026-11-15: a protocol's
   steps (BIPs, EIPs, NIPs) belong to a domain library built on these
   primitives (a future webcpp::bitcoin, ethereum or nostr), so the Taproot
   functions became a generic x-only tweak and lax DER left the library; the
   removed code is kept on the library's branch `save/bitcoin-taproot`.
   Source: `libraries/crypto/openspec/changes/genesis/design.md` (proposals).
+- **Public names are spelled out; only algorithm and format proper names stay
+  acronyms.** A nonce is `nonce` (`nonce_bytes`, `nonce_size`,
+  `invalid_nonce_size`), associated data `associated_data`, a context
+  `context`; `aes`, `gcm`, `chacha20`, `hmac`, `hkdf`, `ecdsa`, `eddsa`,
+  `sha256`, `kx`, `der`, `pem`, `spki` and `pkcs8` stay, as do a standard's own
+  variable names (ECDSA's `r` and `s`) and the standard library's `max_`. The
+  owner's rule of 2026-11-23: a reader should not need a glossary for a
+  parameter. Names taken from a C library are spelled out too: secp256k1's
+  `public_key_tweak_add` and `secret_key_negate` (libsecp256k1's `pubkey`,
+  `seckey`), MuSig2's `generate_nonce`, silent payments'
+  `previous_outputs_summary`; a class template is named for its algorithm, as
+  `ciphers::basic_chacha20_poly1305`, `basic_box` and `basic_secretbox` are.
+  Source: `libraries/crypto/openspec/changes/uniform-types/design.md` owner
+  decision 13, D11, owner decision 14, D12 (proposals).
 - **Hashing and HMAC stay with Boost.Hash2, and HKDF, when a program needs
   it, is written on `boost::hash2::hmac`; every call is synchronous, and
   WebCrypto is not a backend.** The owner's amendment C1 of 2026-10-10; with C
@@ -7026,10 +7043,11 @@ and not built is in chapter 17.
   the output `result_type`, modes as templates over a cipher
   (`ciphers::gcm<ciphers::aes256<>>`), tags as `boost::hash2::digest<16>`,
   and the backend a template parameter defaulting to the default backend; a
-  keyed object is built by `static make(...)`, which returns
-  `boost::system::result<T>`, never by a constructor.** Boost's own shape is
-  what a Boost user expects; a key can have the wrong size and a backend can
-  fail to allocate, and the library works without exceptions.
+  keyed object is built by a static factory named by its input (`from_key`,
+  `from_secret`), which returns `boost::system::result<T>`, never by a
+  constructor.** Boost's own shape is what a Boost user expects; a key can
+  have the wrong size and a backend can fail to allocate, and the library works
+  without exceptions.
   Source: `libraries/crypto/openspec/changes/genesis/design.md` D2
   (proposals); `include/webcpp/crypto/ciphers/gcm.hpp` (libs/crypto).
 - **The algorithm types do every guard, the moved-from state, the
@@ -7056,27 +7074,27 @@ and not built is in chapter 17.
   clang refuses under `<warnings-as-errors>on`.
   Source: `include/webcpp/crypto/detail/limits.hpp` (libs/crypto).
 - **One public header per responsibility; a backend's header checks that its
-  library is linked; `config.hpp`, `error.hpp`, `equal.hpp`,
-  `random_device.hpp` and `<webcpp/crypto.hpp>` compile with no backend
-  linked.** A program that only draws random bytes or compares tags names no
-  backend library, and one that only signs names `/third_party//secp256k1`
-  alone.
+  library is linked; `config.hpp`, `error.hpp`, `constant_time_equal.hpp`,
+  `erase_secret.hpp`, `random_device.hpp` and `<webcpp/crypto.hpp>` compile
+  with no backend linked.** A program that only draws random bytes or compares
+  tags names no backend library, and one that only signs names
+  `/third_party//secp256k1` alone.
   Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
   section 2.2 (proposals); `test/Jamfile`'s headers-alone list (libs/crypto).
-- **`equal` compares in constant time: it reads every byte, accumulates the
-  XOR of each pair in a `volatile` local read once after the loop and reduces
-  it without a branch; spans of different sizes compare unequal without their
-  contents being read.** Hash2's `digest<N>::operator==` is `memcmp`; a size
-  is public.
-  Source: `include/webcpp/crypto/equal.hpp` (libs/crypto).
+- **`constant_time_equal` compares in constant time: it reads every byte,
+  accumulates the XOR of each pair in a `volatile` local read once after the
+  loop and reduces it without a branch; spans of different sizes compare
+  unequal without their contents being read.** Hash2's `digest<N>::operator==`
+  is `memcmp`; a size is public.
+  Source: `include/webcpp/crypto/constant_time_equal.hpp` (libs/crypto).
 - **Every public function that runs a backend's cryptographic code, and
-  `equal`, holds `detail::timing_guard` as its first statement: on 64-bit ARM
-  under macOS, iOS, Linux and Android, where the CPU has FEAT_DIT, it sets
-  PSTATE.DIT for the call (`msr s3_3_c4_c2_5`, then `isb`) and returns the
-  thread's DIT as it found it, after an error and an exception too; on x86,
-  WebAssembly and Windows on ARM64 it is empty. A later increment's public
-  function that calls a backend holds one too and joins its backend's
-  coverage test, which checks through the seam
+  `constant_time_equal`, holds `detail::timing_guard` as its first statement:
+  on 64-bit ARM under macOS, iOS, Linux and Android, where the CPU has
+  FEAT_DIT, it sets PSTATE.DIT for the call (`msr s3_3_c4_c2_5`, then `isb`)
+  and returns the thread's DIT as it found it, after an error and an exception
+  too; on x86, WebAssembly and Windows on ARM64 it is empty. A later
+  increment's public function that calls a backend holds one too and joins its
+  backend's coverage test, which checks through the seam
   `WEBCPP_CRYPTO_DETAIL_TIMING_ENTERED` that each call entered its own
   guard.** None of the C libraries sets DIT, which Apple requires of
   constant-time code, and without it libsodium's X25519 was measured not
@@ -7105,14 +7123,15 @@ and not built is in chapter 17.
 **Authenticated encryption.**
 
 - **`seal` and `open` work in place on `data`, with the tag apart; an AEAD
-  copies the tag into a local array and consumes the IV and the additional
+  copies the tag into a local array and consumes the nonce and the associated
   data before it writes the first byte of `data`.** No buffer is copied, and a
-  tag, IV or additional data in the same buffer as `data` gives correct
+  tag, nonce or associated data in the same buffer as `data` gives correct
   results.
   Source: `libraries/crypto/openspec/changes/genesis/specs/crypto/spec.md`
   "GCM: in place, the tag apart" (proposals).
 - **Every function checks its conditions first, in a fixed order (key size,
-  moved-from, the incremental state, IV size, tag size, the length limits),
+  moved-from, the incremental state, nonce size, tag size, the length
+  limits),
   and returns before it reads a secret byte; a refusal leaves `data`
   untouched.** The rulebook's rule that a function starts with its guards.
   Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
@@ -7124,31 +7143,33 @@ and not built is in chapter 17.
   plaintext before the tag is known.
   Source: `libraries/crypto/openspec/changes/genesis/design.md` D5
   (proposals).
-- **The incremental seal is `begin_seal(iv, additional_data)`, `update(data)`
-  and `result()`, and any error in it ends the message and wipes its state.**
-  Additional data is taken whole, so no piece of it needs a growing buffer.
+- **The incremental seal is `begin_seal(nonce, associated_data)`,
+  `update(data)` and `result()`, and any error in it ends the message and wipes
+  its state.** Associated data is taken whole, so no piece of it needs a
+  growing buffer.
   Source: `libraries/crypto/openspec/changes/genesis/design.md` D6
   (proposals).
-- **GCM accepts IVs of 1 to 128 bytes, keys of 16, 24 and 32 bytes and tags
-  of 16 bytes on every backend, and refuses a message over 2^36 - 32 bytes
-  and additional data over 2^61 - 1 bytes with `message_too_long`.** OpenSSL
-  accepts no IV longer than 128 bytes, so without webcpp's cap the same call
-  would succeed or fail by backend; the limits are NIST SP 800-38D's; the
-  page says that a key meant for WebCrypto is of 16 or 32 bytes.
+- **GCM accepts nonces of 1 to 128 bytes, keys of 16, 24 and 32 bytes and
+  tags of 16 bytes on every backend, and refuses a message over 2^36 - 32
+  bytes and associated data over 2^61 - 1 bytes with `message_too_long`.**
+  OpenSSL accepts no nonce longer than 128 bytes, so without webcpp's cap the
+  same call would succeed or fail by backend; the limits are NIST SP 800-38D's;
+  the page says that a key meant for WebCrypto is of 16 or 32 bytes.
   Source: `libraries/crypto/openspec/changes/genesis/design.md` D7 and D8
   (proposals).
-- **An AEAD object is used by one thread at a time, and the page says that an
-  IV is never repeated under one key and gives the limit of 2^32 messages per
-  key with random IVs.** It holds a message's state and a key; a repeated IV
-  exposes the XOR of the plaintexts and lets an attacker forge tags.
+- **An AEAD object is used by one thread at a time, and the page says that a
+  nonce is never repeated under one key and gives the limit of 2^32 messages
+  per key with random nonces.** It holds a message's state and a key; a
+  repeated nonce exposes the XOR of the plaintexts and lets an attacker forge
+  tags.
   Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
   section 2.4 (proposals); `doc/aead.adoc` (libs/crypto).
 
 **Block cipher.**
 
 - **`ciphers::aes128`, `aes192` and `aes256` are complete types for every
-  backend; `make`, `encrypt` and `decrypt` exist on ctaes and OpenSSL, and
-  BearSSL's `make` stops with a `static_assert` that names them; the block
+  backend; `from_key`, `encrypt` and `decrypt` exist on ctaes and OpenSSL, and
+  BearSSL's `from_key` stops with a `static_assert` that names them; the block
   cipher has no default backend of its own.** BearSSL exports AES only inside
   its modes; `aes256<>` stays the cipher of `aes256_gcm`, which a second
   default would break.
@@ -7199,16 +7220,16 @@ and not built is in chapter 17.
 
 - **`curves::p256` is a family of its own, on BearSSL, its one backend and
   default on all four targets; OpenSSL and Botan join in their increments.**
-  A key pair made from its 32-byte scalar (`make`, refused before BearSSL when
-  0 or not below n, by a constant-time check whose verdict alone is public) or
-  drawn (`generate`), its public point computed once; a `public_key` validated
-  once where it arrives, SEC 1's uncompressed point or its two coordinates;
-  ECDSA over a SHA-256 digest with RFC 6979's nonce, raw (WebCrypto's form)
-  and strict DER; ECDH's raw x, as WebCrypto's `deriveBits` gives it. BearSSL
-  allocates nothing; natively it runs `br_ec_p256_m62` where BearSSL has a
-  128-bit product, on WebAssembly `br_ec_p256_m31` always. BearSSL's own
-  stack frames keep what they compute from the scalar, which webcpp cannot
-  wipe; the page says so.
+  A key pair made from its 32-byte scalar (`from_secret`, refused before
+  BearSSL when 0 or not below n, by a constant-time check whose verdict alone
+  is public) or drawn (`generate`), its public point computed once; a
+  `public_key` validated once where it arrives, SEC 1's uncompressed point or
+  its two coordinates; ECDSA over a SHA-256 digest with RFC 6979's nonce, raw
+  (WebCrypto's form) and strict DER; ECDH's raw x, as WebCrypto's `deriveBits`
+  gives it. BearSSL allocates nothing; natively it runs `br_ec_p256_m62` where
+  BearSSL has a 128-bit product, on WebAssembly `br_ec_p256_m31` always.
+  BearSSL's own stack frames keep what they compute from the scalar, which
+  webcpp cannot wipe; the page says so.
   Source: `libraries/crypto/openspec/changes/foundation/design.md` D36
   (proposals); `include/webcpp/crypto/curves/p256.hpp` and
   `backends/bearssl.hpp` (libs/crypto).
@@ -7237,12 +7258,39 @@ and not built is in chapter 17.
   input)` and `crypto::verify(scheme, signature, input, public_key)`, and
   their `async_` forms, on Ed25519, P-256 and secp256k1; a digest only as
   `crypto::prehashed{digest}`; every key pair a `crypto::keypair`, with a
-  typed public key, `secret()` and `agree`.** A span is a message whatever
-  its size, so a 32-byte message is never read as a digest; a pair of scheme
-  and input that is not valid stops the build with its reason. `Backend` is
-  the first template parameter of every `crypto::verify`.
+  typed public key and `secret()`.** A span is a message whatever its size,
+  so a 32-byte message is never read as a digest; a pair of scheme and input
+  that is not valid stops the build with its reason. `Backend` is the first
+  template parameter of every `crypto::verify`.
   Source: `include/webcpp/crypto/signing.hpp`, `keypair.hpp` (libs/crypto);
   `libraries/crypto/openspec/changes/unified-sign/design.md` (proposals).
+- **Every value has its type: signatures per curve and scheme, X25519's keys;
+  key pairs, AEADs and boxes checked by concepts; constructions by purpose;
+  factories named by their input.** Five signature types
+  (`ed25519::signature`, P-256's and secp256k1's `ecdsa_signature`,
+  `recoverable_signature`, `schnorr_signature`), made from bytes by
+  `from_bytes` and converting into nothing; `x25519::public_key` and
+  `x25519::basic_keypair`; the concepts `keypair`, `signing_keypair`,
+  `agreement_keypair`, `secret_key_encryption::aead::cipher`,
+  `streaming_cipher` and `secret_key_encryption::authenticated_box`, each
+  type's header checking its own row; the namespaces `secret_key_encryption`,
+  `public_key_encryption` and `key_exchange`, named by the problem they solve;
+  `from_secret`, `from_bytes`, `from_key`, `from_keys`, `from_keypair`,
+  `derive_from_seed` and `generate`, with no `make`. Ed25519ph is a scheme,
+  `eddsa_prehashed`; the secret-hygiene utilities are named by what they do:
+  `constant_time_equal`, `erase_secret`; the AEAD contract is
+  `secret_key_encryption::aead`'s and the secret boxes
+  `secret_key_encryption`'s; the one-shot ChaCha20-Poly1305 template is
+  `ciphers::basic_chacha20_poly1305`. Bytes passed where a signature or a key
+  of another curve was meant compiled and failed at run time, or verified
+  under the wrong scheme; generic code needs a contract the compiler checks; a
+  factory called `make` read as drawing a key, and a caller who passed fixed
+  bytes got a predictable private key.
+  Source: `include/webcpp/crypto/detail/signature.hpp`, `keypair.hpp`,
+  `factories.hpp`, `secret_key_encryption/aead.hpp`,
+  `secret_key_encryption/authenticated_box.hpp` (libs/crypto);
+  `libraries/crypto/openspec/changes/uniform-types/design.md` owner decisions
+  1 to 14, D1 to D12 (proposals).
 - **Constant time, sizes and throughput cover the family.** memcheck and
   MemorySanitizer run the key pair's making, signing with its low-S
   normalization and check, `agree` and `decode_pkcs8` (`paths.hpp`), each
@@ -7317,9 +7365,9 @@ and not built is in chapter 17.
   core constant time.
   Source: `doc/jamfile.adoc`, `doc/backends.adoc` (libs/crypto); the owner's
   decision 2 of 2026-11-14 (proposals, `reference/plan.md`).
-- **OpenSSL is given the key once, in `make`; each message re-initialises
+- **OpenSSL is given the key once, in `from_key`; each message re-initialises
   the context with a null key; lengths go in pieces of at most `INT_MAX`
-  rounded down to a multiple of 16; `make` maps a null `EVP_CIPHER_CTX_new`
+  rounded down to a multiple of 16; `from_key` maps a null `EVP_CIPHER_CTX_new`
   to `not_enough_memory` and a failed fetch or init to `backend_failure`; and
   the thread's error queue is left as it was found.** EVP takes lengths as
   `int`; the error queue cannot tell a memory failure apart across versions;
@@ -7384,9 +7432,9 @@ and not built is in chapter 17.
   off on Windows; libsecp256k1's context is randomized from `random_device`;
   webcpp never calls `RAND_bytes`.** No backend chooses its own entropy.
   Source: `third_party/Jamfile` (webcpp).
-- **webcpp's code allocates only `keypair::make`'s context, in the resource
-  the user gives; no seal, open, `encrypt`, `fill`, signature, `agree` or
-  verification allocates on any backend; OpenSSL's `make` allocates its
+- **webcpp's code allocates only `keypair::from_secret`'s context, in the
+  resource the user gives; no seal, open, `encrypt`, `fill`, signature, `agree`
+  or verification allocates on any backend; OpenSSL's `from_key` allocates its
   context through OpenSSL's own allocator, which its page states and
   `allocation_openssl` counts, unless the program takes OpenSSL's memory
   option (below), which sends every allocation of OpenSSL's to the program's
@@ -7438,7 +7486,7 @@ and not built is in chapter 17.
   functions other than OpenSSL's three defaults are
   `memory_functions_refused`, then the resource is constructed, then the
   adapter is installed, and OpenSSL's refusal is `memory_functions_refused`;
-  every OpenSSL `make` under the option checks that the adapter is in place
+  every OpenSSL `from_key` under the option checks that the adapter is in place
   and otherwise returns `memory_functions_not_installed`.** Replacing another
   party's functions would make OpenSSL free that party's blocks through
   webcpp's adapter; a forgotten install gives an error, not an allocation
@@ -7494,7 +7542,7 @@ and not built is in chapter 17.
   every call of the C library's allocator through an interposer per system;
   and `neighbours`, beside Asio's TLS and libdatachannel; `header_alone` and
   the `windows_h` twins compile. The fixtures `memory_option`,
-  `memory_missing_definition_install`, `memory_missing_definition_make`,
+  `memory_missing_definition_install`, `memory_missing_definition_from_key`,
   `memory_two_files` and `openssl_memory_on_emscripten` build the user's
   Jamfiles, and `test/messages` and `test/msvc` check each `#error`.** The
   counter proves the whole process, Beast's TLS and libdatachannel's DTLS
@@ -7569,7 +7617,7 @@ and not built is in chapter 17.
   pieces; FIPS 197 for the block cipher; BIP340's vectors, Wycheproof's
   Bitcoin ECDSA file and DER through `from_der`, and BIP341's wallet
   vectors through the tweak.** Every case runs because keys of 24 bytes and
-  IVs of any size up to 128 are accepted.
+  nonces of any size up to 128 are accepted.
   Source: `test/Jamfile` (libs/crypto); `third_party/libs/wycheproof`,
   `third_party/libs/bips` (webcpp).
 - **BearSSL and OpenSSL are compared on AES-GCM, and ctaes and OpenSSL on the
@@ -8835,20 +8883,20 @@ increments 1 and 2, whose state is first.
   and the caller lends the workspace.** libsecp256k1 checks counts, a used
   nonce and an id with `ARG_CHECK`, whose callback aborts; the functions
   return `invalid_input_size` or another error before it is reached. A
-  function that needs scratch space (`pubkey_combine`, the MuSig2 aggregates)
-  takes a `workspace` the caller sizes with `combine_workspace_size` or
-  `workspace_size`, and wipes it on every return, a refusal's included, so no
-  function allocates. A silent payments label lookup returns exactly
-  `std::optional<std::span<std::uint8_t const, 32>>` into bytes it owns:
-  libsecp256k1 reads them after the lookup returns, so a result by value, a
-  convertible one included, is refused at compile time.
+  function that needs scratch space (`public_key_combine`, the MuSig2
+  aggregates) takes a `workspace` the caller sizes with
+  `combine_workspace_size` or `workspace_size`, and wipes it on every return,
+  a refusal's included, so no function allocates. A silent payments label
+  lookup returns exactly `std::optional<std::span<std::uint8_t const, 32>>`
+  into bytes it owns: libsecp256k1 reads them after the lookup returns, so a
+  result by value, a convertible one included, is refused at compile time.
   Source: `libs/crypto/include/webcpp/crypto/curves/secp256k1/tweak.hpp`,
   `musig.hpp` and `silent_payments.hpp`.
 - **Constant time and sizes extend to the modules.** Memcheck and
   MemorySanitizer check libsecp256k1's own `ctime_tests.c` and webcpp's code
   around each module (the key pair's making, its signatures and tweak, the
   three ECDH forms, the key tweaks, PKCS#8, ElligatorSwift's `create` and
-  `xdh`, MuSig2's `nonce_gen` and `partial_sign`, the silent payments'
+  `xdh`, MuSig2's `generate_nonce` and `partial_sign`, the silent payments'
   `create_outputs`, `create_label` and `scan_outputs`, each workspace's wipe
   included), written once in `test/constant_time/paths.hpp`; dudect times
   `agree` natively and on wasip2, in a program of its own, so that
@@ -8883,8 +8931,8 @@ Tasks 3.1 to 3.6, built on its branch, merged 2026-11-22).**
   (Valgrind memcheck and MemorySanitizer, each harness failing on a planted
   leak, and libsecp256k1's `ctime_tests`), and statistically by dudect's
   method natively and under wasmtime on wasip2, through the seam
-  `WEBCPP_CRYPTO_DETAIL_DECLASSIFY`.** `equal` compiles in the user's
-  translation unit, so it is checked at -O2 and -Os; under wasmtime the
+  `WEBCPP_CRYPTO_DETAIL_DECLASSIFY`.** `constant_time_equal` compiles in the
+  user's translation unit, so it is checked at -O2 and -Os; under wasmtime the
   engine's compiler decides whether BearSSL's `bmul64` stays constant time.
   The page's per-target cells are generated from the lane's own entries, and
   a target the lane does not run says "not measured yet".
@@ -8955,13 +9003,13 @@ Tasks 3.1 to 3.6, built on its branch, merged 2026-11-22).**
 **ChaCha20-Poly1305 (built in increment 1, Task 8b, merged; the genesis's increment 4).**
 
 - **`ciphers::chacha20_poly1305` on BearSSL and OpenSSL is one shot only,
-  with an IV of exactly 12 bytes, refuses a message over 2^38 - 64 bytes with
+  with a nonce of exactly 12 bytes, refuses a message over 2^38 - 64 bytes with
   `message_too_long`, and where BearSSL leaves the tag check to its caller the
-  backend compares with `equal` and zeroes `data` on a mismatch; it is a
-  family of the one-shot template `ciphers::aead<Family, Backend>`, not
-  new traits.** BearSSL's
-  ChaCha20-Poly1305 is one function over the whole message; 12 bytes and the
-  limit are RFC 8439's.
+  backend compares with `constant_time_equal` and zeroes `data` on a mismatch;
+  it is a family of the one-shot template
+  `ciphers::basic_chacha20_poly1305<Family, Backend>`, not new traits.**
+  BearSSL's ChaCha20-Poly1305 is one function over the whole message; 12
+  bytes and the limit are RFC 8439's.
   Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
   section 2.5 (proposals).
 - **The BearSSL backend takes `br_chacha20_sse2_get()` else
@@ -9588,6 +9636,11 @@ and G4); the proposal, with the specification, the design and the plan, is in
   D1 to D9 (proposals); `include/webcpp/hash/detail/timing.hpp`,
   `test/timing_coverage_<backend>_test.cpp` (libs/hash);
   `test/timing_hash_interop_test.cpp` (libs/crypto).
+- **hash follows crypto's naming rule: public names spelled out, algorithm
+  proper names excepted.** HKDF's `ikm`, `prk` and `info` are renamed by a
+  change of hash's.
+  Source: `libraries/crypto/openspec/changes/uniform-types/design.md` owner
+  decision 13, D11 (proposals).
 - **Seven increments, each usable alone.** The first, built, is Hash2 by alias,
   `keccak_256`, `blake3`, HKDF, PBKDF2, Argon2id, scrypt, the default backend
   and the measured table; the second, built, is the families and libsodium's

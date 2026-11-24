@@ -5,7 +5,7 @@
 // https://www.boost.org/LICENSE_1_0.txt)
 
 // A user's program that names /webcpp/crypto//openssl: it prints the define the alias gives,
-// then seals an empty message under the zero key of 32 bytes and the zero IV of 12 bytes
+// then seals an empty message under the zero key of 32 bytes and the zero nonce of 12 bytes
 // with OpenSSL's AES-256-GCM, and prints the tag (McGrew and Viega's test case 13).
 
 #include <webcpp/crypto/backends/openssl.hpp>
@@ -23,12 +23,13 @@ int main() {
 #endif
     namespace crypto = webcpp::crypto;
     std::array<std::uint8_t, 32> const key{};
-    std::array<std::uint8_t, 12> const iv{};
-    auto made = crypto::ciphers::gcm<crypto::ciphers::aes256<crypto::backends::openssl>>::make(key);
+    std::array<std::uint8_t, 12> const nonce{};
+    auto made =
+        crypto::ciphers::gcm<crypto::ciphers::aes256<crypto::backends::openssl>>::from_key(key);
     if (!made) {
         return 1;
     }
-    auto const tag = made->seal(iv, {}, std::span<std::uint8_t>());
+    auto const tag = made->seal(nonce, {}, std::span<std::uint8_t>());
     if (!tag) {
         return 1;
     }

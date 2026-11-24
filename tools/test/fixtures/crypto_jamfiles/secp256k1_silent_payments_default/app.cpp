@@ -50,8 +50,8 @@ bool pay_and_scan(secp256k1::keypair const& scan_pair, secp256k1::keypair const&
     std::array<secp256k1::public_key, 1> const input_keys{*donor_key};
     alignas(std::max_align_t) std::array<std::byte, silent_payments::summary_workspace_size(0, 1)>
         summary_space{};
-    auto const summary =
-        silent_payments::make_prevouts_summary(smallest_outpoint, {}, input_keys, summary_space);
+    auto const summary = silent_payments::make_previous_outputs_summary(smallest_outpoint, {},
+                                                                        input_keys, summary_space);
     if (!summary) {
         return false;
     }
@@ -67,9 +67,9 @@ bool pay_and_scan(secp256k1::keypair const& scan_pair, secp256k1::keypair const&
 
 int main() {
     namespace crypto = webcpp::crypto;
-    auto const scan_pair = secp256k1::keypair::make(repeated(0x51));
-    auto const spend_pair = secp256k1::keypair::make(repeated(0x52));
-    auto const donor = secp256k1::keypair::make(repeated(0x53));
+    auto const scan_pair = secp256k1::keypair::from_secret(repeated(0x51));
+    auto const spend_pair = secp256k1::keypair::from_secret(repeated(0x52));
+    auto const donor = secp256k1::keypair::from_secret(repeated(0x53));
     bool const ok =
         scan_pair && spend_pair && donor && pay_and_scan(*scan_pair, *spend_pair, *donor);
     auto const name = crypto::default_backend_t<crypto::families::secp256k1_silent_payments>::name;

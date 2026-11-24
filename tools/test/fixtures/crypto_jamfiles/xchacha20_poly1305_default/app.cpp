@@ -9,7 +9,7 @@
 // backend that ran. The key and nonce are the draft's: a real program draws its key from
 // random_device; a 24-byte nonce drawn at random is safe.
 #include <webcpp/crypto/ciphers/chacha20_poly1305.hpp>
-#include <webcpp/crypto/equal.hpp>
+#include <webcpp/crypto/constant_time_equal.hpp>
 
 #include <algorithm>
 #include <array>
@@ -26,13 +26,13 @@ int main() {
         key[index] = static_cast<std::uint8_t>(0x80 + index);
     }
     // The nonce 0x40, 0x41, ..., 0x57.
-    std::array<std::uint8_t, 24> iv{};
-    for (std::size_t index = 0; index < iv.size(); ++index) {
-        iv[index] = static_cast<std::uint8_t>(0x40 + index);
+    std::array<std::uint8_t, 24> nonce{};
+    for (std::size_t index = 0; index < nonce.size(); ++index) {
+        nonce[index] = static_cast<std::uint8_t>(0x40 + index);
     }
     // NOLINTBEGIN(readability-trailing-comma): it asks a list of one row, wrapped, for the comma
     // and refuses it once clang-format puts the brace on a line of its own
-    std::array<std::uint8_t, 12> const additional_data{0x50, 0x51, 0x52, 0x53, 0xc0, 0xc1,
+    std::array<std::uint8_t, 12> const associated_data{0x50, 0x51, 0x52, 0x53, 0xc0, 0xc1,
                                                        0xc2, 0xc3, 0xc4, 0xc5, 0xc6, 0xc7};
     // NOLINTEND(readability-trailing-comma)
     constexpr std::string_view sunscreen =
@@ -46,13 +46,13 @@ int main() {
         0x47, 0xde, 0xaf, 0xd8, 0x78, 0x0a, 0xcf, 0x49,
     };
     std::array<std::uint8_t, 8> const expected_head{0xbd, 0x6d, 0x17, 0x9d, 0x3e, 0x83, 0xd4, 0x3b};
-    auto sealer = aead::make(key);
+    auto sealer = aead::from_key(key);
     bool ok = false;
     if (sealer) {
-        auto const tag = sealer->seal(iv, additional_data, data);
-        ok = tag && webcpp::crypto::equal(*tag, expected_tag) &&
+        auto const tag = sealer->seal(nonce, associated_data, data);
+        ok = tag && webcpp::crypto::constant_time_equal(*tag, expected_tag) &&
              std::equal(expected_head.begin(), expected_head.end(), data.begin()) &&
-             sealer->open(iv, additional_data, data, expected_tag) && data == plaintext;
+             sealer->open(nonce, associated_data, data, expected_tag) && data == plaintext;
     }
     auto const name = aead::backend_type::name;
     std::printf("xchacha20_poly1305 %s backend=%.*s\n", ok ? "ok" : "FAILED",

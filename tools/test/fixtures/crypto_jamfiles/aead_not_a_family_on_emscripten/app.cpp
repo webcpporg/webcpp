@@ -4,7 +4,8 @@
 // accompanying file LICENSE_1_0.txt or copy at
 // https://www.boost.org/LICENSE_1_0.txt)
 
-// A program for Emscripten that gives ciphers::aead a family that is no AEAD's, AES-GCM's.
+// A program for Emscripten that gives ciphers::basic_chacha20_poly1305 a family that is no AEAD's,
+// AES-GCM's.
 #include <webcpp/crypto/backends/sodium.hpp>
 #include <webcpp/crypto/ciphers/aead.hpp>
 
@@ -13,7 +14,8 @@
 
 int main() {
     namespace crypto = webcpp::crypto;
-    using aead = crypto::ciphers::aead<crypto::families::gcm, crypto::backends::sodium>;
+    using cipher =
+        crypto::ciphers::basic_chacha20_poly1305<crypto::families::gcm, crypto::backends::sodium>;
     std::array<std::uint8_t, 32> const key{};
-    return aead::make(key) ? 0 : 1;
+    return cipher::from_key(key) ? 0 : 1;
 }
