@@ -16,11 +16,11 @@ boost::system::result<int> slow(int value) noexcept {
 }
 
 template <class Executor, class CompletionToken>
-auto async_slow(Executor const& work, int value, CompletionToken&& token) {
+auto async_slow(Executor const& work, int value, CompletionToken&& completion_token) {
     WEBCPP_CRYPTO_DETAIL_REQUIRE_THREADS("async_slow", "slow");
     return webcpp::crypto::detail::run_on_work(
         work, []() noexcept { return boost::system::result<void>(); },
-        [value]() noexcept { return slow(value); }, token);
+        [value]() noexcept { return slow(value); }, completion_token);
 }
 
 struct executor {};
