@@ -30,8 +30,11 @@ Without doc/measurements.json the tables say so, carry no measured column and re
 measurements.adoc; with it (a fixture in its shape) they carry the throughput and the size, and
 measurements.adoc renders it as the dated reference that decides nothing; a hand edit of the
 data, which its digest tells, fails. The includes of the measured chapters name only those
-present. And `--check` passes on the real library's committed files. Run with the names of some
-cases to run only those."""
+present. A row of a form of its function (HKDF's "pieces") is keyed by its name and form,
+rendered as "`hkdf_extract` over pieces" in the backends' tables, the DIT section, the defaults and
+llms.txt, and left out of the comparison tables, which hold one row per public name; an unknown
+form, a form of no function and two rows of one name and form fail. And `--check` passes on the
+real library's committed files. Run with the names of some cases to run only those."""
 
 from __future__ import annotations
 
@@ -331,6 +334,44 @@ def test_a_tag_sits_in_its_namespace_s_chapter(scratch: Path) -> None:
            done.stderr)
 
 
+def test_a_form_row_is_keyed_by_its_name_and_form(scratch: Path) -> None:
+    library = scratch_library(scratch)
+    files = write_ok(library)
+    backends = files['generated/backends-hkdf.adoc']
+    expect('.Who implements `hkdf_extract`, `hkdf_expand`, `hkdf` (RFC 5869)' in backends,
+           backends)
+    expect('| `hkdf_extract` over pieces' in backends, backends)
+    expect('The default of `hkdf_extract` over pieces, `hkdf_expand` over pieces and `hkdf` over '
+           'pieces: `hash2` on every target' in backends, backends)
+    compare = files['generated/compare-kdfs.adoc']
+    expect('over pieces' not in compare, 'a form has a row of its own in the comparison')
+    expect(compare.count('`hkdf_extract`') == 2, 'hkdf_extract is not one row of each table')
+    chapter = files['backends.adoc']
+    expect('`hkdf` over pieces, `pbkdf2`' in chapter, 'the DIT section misses the pieces forms')
+    expect('| hkdf_expand over pieces\n| hash2\n' in chapter, 'the default of a form')
+    expect('webcpp::hash::hkdf over pieces (<webcpp/hash/hkdf.hpp>, RFC 5869)' in files['llms.txt'],
+           'llms.txt misses a form')
+
+    def form_of(form: str, name: str = 'hkdf') -> Callable[[dict], None]:
+        def edit(table: dict) -> None:
+            hkdf = next(a for a in table['algorithms'] if a['name'] == 'hkdf')
+            row = next(f for f in hkdf['functions'] if f.get('form') == 'pieces'
+                       and f['name'] == 'hkdf')
+            row['form'] = form
+            row['name'] = name
+        return edit
+    for edit, fault in ((form_of('slices'), 'hkdf has the unknown form slices'),
+                        (form_of('pieces', 'hkdf_squeeze'),
+                         'hkdf_squeeze over pieces is a form of no row hkdf_squeeze'),
+                        (form_of('pieces', 'hkdf_expand'),
+                         'doc/capabilities.json has two rows hkdf_expand over pieces')):
+        library = scratch_library(scratch / fault.split()[0])
+        edit_capabilities(library, edit)
+        done = run(library, '--write')
+        expect(done.returncode == 1, f'rendered: {fault}')
+        expect(fault in done.stderr, done.stderr)
+
+
 def test_an_asynchronous_backend_is_never_a_default(scratch: Path) -> None:
     library = scratch_library(scratch)
 
@@ -364,6 +405,8 @@ def test_llms_txt_s_defaults_are_the_table_s(scratch: Path) -> None:
     llms = write_ok(library)['llms.txt']
     expect('By default, hkdf_extract, hkdf_expand, hkdf and pbkdf2 run on backends::hash2 unless '
            'the call names another of its backends as its second template argument; '
+           'hkdf_extract over pieces, hkdf_expand over pieces and hkdf over pieces run on '
+           'backends::hash2 alone; '
            'blake2b_subkey runs on backends::sodium alone; kbkdf, sskdf and x963kdf have no '
            'default backend, and the call names one of its backends as its second template '
            'argument; argon2id and scrypt run on backends::sodium unless the call names another '
@@ -733,6 +776,7 @@ CASES: list[Callable[[Path], None]] = [
     test_a_family_default_is_of_the_order_or_none,
     test_a_default_without_its_cell_fails_and_a_partial_cell_is_said,
     test_a_tag_sits_in_its_namespace_s_chapter,
+    test_a_form_row_is_keyed_by_its_name_and_form,
     test_an_asynchronous_backend_is_never_a_default,
     test_an_asynchronous_backend_s_targets_are_spelled,
     test_llms_txt_s_defaults_are_the_table_s,

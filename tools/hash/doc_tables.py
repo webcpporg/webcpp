@@ -17,7 +17,9 @@ Task 14), guide.json (what the guide says of each name that no test produces: it
 security and where the world uses it, each with a source, and the rows of "Choose by use case"),
 and, when it is there, measurements.json (each program's size per target and its throughput, a
 reference measured once, on 2026-11-16, that decides nothing: the default backend is fixed, spec
-4.1). It writes, in doc/:
+4.1). A function row is keyed by its name and its form: a row with "form" (HKDF's "pieces") is
+another form of the function its name names, rendered as "`hkdf_extract` over pieces", and shares
+that function's facts of guide.json. It writes, in doc/:
 
 - generated/compare-<chapter>.adoc: the comparison that opens each chapter, two tables with a
   row per public name: what it is (output, security, standard, status, the browser's
@@ -43,7 +45,8 @@ reference measured once, on 2026-11-16, that decides nothing: the default backen
 `python3 tools/hash/doc_tables.py --write`, when one differs from what is committed, is
 missing, or is left over; the doc build runs it (doc/Jamfile). It also fails when guide.json
 lacks a public name of the capability table, names one it does not have, or a use case names
-an example that example/ does not hold; when a function of the capability table names a
+an example that example/ does not hold; when a row's form is not "pieces", is on a row whose
+function the table does not have without a form, or two rows share a name and a form; when a function of the capability table names a
 default that is not among its backends or outside the order hash2, xkcp, blake3, sodium
 (design D33), or none (null) though a backend of that order has it; when a family's tag (kind
 digest, mac or kdf) names a default outside that order (design D34; null for a tag with none)
@@ -147,6 +150,31 @@ def link(text: str, url: str) -> str:
     return f'link:{url}[{text.replace("]", "&#93;")}]'
 
 
+# The forms a function row may have besides its own: HKDF's overloads over byte_pieces.
+FORMS = ('pieces',)
+
+# A function row's key: its name and its form (None for the function's own row).
+Key = tuple[str, str | None]
+
+
+def row_key(function: dict) -> Key:
+    return function['name'], function.get('form')
+
+
+def label(function: dict) -> str:
+    """A row as prose names it without markup: `hkdf_extract`, or `hkdf_extract over pieces`."""
+    name, form = row_key(function)
+    return name if form is None else f'{name} over {form}'
+
+
+def shown(function: dict, called: str | None = None) -> str:
+    """A row as the guide names it in code: `` `hkdf_extract` ``, or `` `hkdf_extract` over
+    pieces ``; `called` replaces the name inside the backticks (a tag through its family)."""
+    name, form = row_key(function)
+    text = f'`{called or name}`'
+    return text if form is None else f'{text} over {form}'
+
+
 class Data:
     """The capability table, the guide's facts and the measurements, joined."""
 
@@ -158,17 +186,24 @@ class Data:
         measured = doc / 'measurements.json'
         self.measurements = load(measured) if measured.is_file() else None
         self.backends = {b['name']: b for b in self.capabilities['backends']}
-        self.functions: dict[str, tuple[dict, dict]] = {}
+        self.functions: dict[Key, tuple[dict, dict]] = {}
+        repeated = []
         for algorithm in self.capabilities['algorithms']:
             for function in algorithm['functions']:
-                self.functions[function['name']] = (algorithm, function)
+                if row_key(function) in self.functions:
+                    repeated.append(f'doc/capabilities.json has two rows {label(function)}')
+                self.functions[row_key(function)] = (algorithm, function)
+        if repeated:
+            raise Failure('\n'.join(repeated))
+        self.names = {name for name, _ in self.functions}
+        self.check_forms()
         self.check_guide()
         self.check_defaults()
         self.check_chapters()
         self.check_digest()
         # The template argument each function's and each tag's call names its backend as.
-        self.arguments = {name: self.backend_argument(function)
-                          for name, (_, function) in self.functions.items()
+        self.arguments = {key: self.backend_argument(function)
+                          for key, (_, function) in self.functions.items()
                           if function['kind'] == 'function' or function['kind'] in FAMILY_KINDS}
 
     def backend_argument(self, function: dict) -> str:
@@ -190,12 +225,12 @@ class Data:
                       if re.match(r'(?:class|typename)\s+Backend\b', parameter)}
             if not places:
                 raise Failure(f'{header} declares no template {name} with a Backend parameter '
-                              f'(doc/capabilities.json, {function["name"]})')
+                              f'(doc/capabilities.json, {label(function)})')
             found |= places
         indices = {i for i, _ in found}
         if len(indices) != 1:
             raise Failure(f'{header}: {listed(list(names))} take the Backend at different '
-                          f'positions (doc/capabilities.json, {function["name"]})')
+                          f'positions (doc/capabilities.json, {label(function)})')
         (index,) = indices
         position = 'only' if all(count == 1 for _, count in found) else ORDINALS[index]
         return f'as its {position} template argument'
@@ -208,7 +243,8 @@ class Data:
         or none (null): every default has its engine (ruling R84); no default is a backend only
         the asynchronous family takes (design D35); a type has none."""
         faults = []
-        for name, (_, function) in self.functions.items():
+        for _, function in self.functions.values():
+            name = label(function)
             default = function.get('default')
             kind = function['kind']
             ordered = [b for b in FAMILY_DEFAULTS if b in function['backends']]
@@ -244,7 +280,7 @@ class Data:
         """A tag of digests sits in the digests chapter, a tag of macs in the macs chapter, so
         that each chapter's table and llms.txt's section list every tag of its namespace."""
         faults = []
-        for name, (algorithm, _) in self.functions.items():
+        for (name, _), (algorithm, _) in self.functions.items():
             for prefix, chapter in NAMESPACE_CHAPTERS.items():
                 if name.startswith(prefix) and algorithm['chapter'] != chapter:
                     faults.append(f'doc/capabilities.json: the tag {name} is in the chapter '
@@ -264,10 +300,24 @@ class Data:
                           'was edited by hand; the reference measured on 2026-11-16 is kept as '
                           'measured')
 
+    def check_forms(self) -> None:
+        """A row's form is one of FORMS, on a function the table also has without a form."""
+        faults = []
+        for (name, form), _ in self.functions.items():
+            if form is None:
+                continue
+            if form not in FORMS:
+                faults.append(f'doc/capabilities.json: {name} has the unknown form {form}')
+            elif (name, None) not in self.functions:
+                faults.append(f'doc/capabilities.json: {name} over {form} is a form of no row '
+                              f'{name}')
+        if faults:
+            raise Failure('\n'.join(faults))
+
     def check_guide(self) -> None:
         facts = self.guide['functions']
-        missing = [name for name in self.functions if name not in facts]
-        extra = [name for name in facts if name not in self.functions]
+        missing = [name for name in sorted(self.names) if name not in facts]
+        extra = [name for name in facts if name not in self.names]
         faults = [f'doc/guide.json has no entry for {name}, a function of '
                   f'doc/capabilities.json' for name in missing]
         faults += [f'doc/guide.json describes {name}, which doc/capabilities.json does not '
@@ -277,7 +327,7 @@ class Data:
         faults += [f'doc/guide.json has no chapter {c} of doc/capabilities.json'
                    for c in sorted(chapters - set(chapter_names))]
         for case in self.guide['use_cases']:
-            if case['function'] not in self.functions:
+            if (case['function'], None) not in self.functions:
                 faults.append(f'doc/guide.json: the use case "{case["need"]}" names '
                               f'{case["function"]}, which doc/capabilities.json does not have')
             if not (self.library / 'example' / case['example']).is_file():
@@ -346,6 +396,8 @@ def compare_table(data: Data, chapter: dict) -> str:
         if algorithm['chapter'] != key:
             continue
         for function in algorithm['functions']:
+            if 'form' in function:
+                continue  # one row per public name: its forms share its facts
             name = function['name']
             facts = data.guide['functions'][name]
             uses = '; '.join(link(cell(u['text']), u['source']) for u in facts['uses'])
@@ -495,10 +547,10 @@ def hmacs_text(hmacs: list[str] | None) -> str:
 def backends_table(data: Data, algorithm: dict) -> str:
     out = [generated_header('doc/capabilities.json'), '']
     out.append(f'[#hash-backends-of-{algorithm["name"].replace("_", "-")}]')
-    names = [f['name'] for f in algorithm['functions']]
-    shown = ', '.join(f'`{n}`' for n in names) if len(names) <= 3 else \
+    names = list(dict.fromkeys(f['name'] for f in algorithm['functions']))
+    title = ', '.join(f'`{n}`' for n in names) if len(names) <= 3 else \
         f'`{names[0]}` to `{names[-1]}`, {len(names)} names'
-    out.append(f'.Who implements {shown} ({algorithm["standard"]})')
+    out.append(f'.Who implements {title} ({algorithm["standard"]})')
     out.append('[cols="2,1,2,2,3,1",options="header"]')
     out.append('|===')
     out.append('| Function | Backend | The program\'s Jamfile names | Targets | Hmacs '
@@ -506,7 +558,7 @@ def backends_table(data: Data, algorithm: dict) -> str:
     for function in algorithm['functions']:
         for backend, held in function['backends'].items():
             out.append('')
-            out.append(f'| `{function["name"]}`')
+            out.append(f'| {shown(function)}')
             out.append(f'| {backend_text(data, backend, held)}')
             out.append(f'| `{data.backends[backend]["jamfile"]}`')
             out.append(f'| {backend_targets(data, backend)}')
@@ -525,15 +577,15 @@ def backends_table(data: Data, algorithm: dict) -> str:
     for backend in sorted(sources):
         out.extend(source_bullets(f'`{backend}`:', [cell(s) for s in sorted(sources[backend])]))
     out.append('')
-    defaults = [(f['name'], f['default']) for f in algorithm['functions'] if f['default']]
+    defaults = [(row_key(f), f['default']) for f in algorithm['functions'] if f['default']]
     # A family's tag, and a function without a default (design D34), each say how its default
     # stands.
     families = [f for f in algorithm['functions']
                 if f['kind'] in FAMILY_KINDS or (f['kind'] == 'function' and f['default'] is None)]
     for function in families:
         if function['default'] is None:
-            out.append(f'`{function["name"]}` has no default backend: the call names one of its '
-                       f'backends, {data.arguments[function["name"]]} '
+            out.append(f'{shown(function)} has no default backend: the call names one of its '
+                       f'backends, {data.arguments[row_key(function)]} '
                        '(<<hash-default-backend>>).')
             out.append('')
     if not defaults:
@@ -547,15 +599,15 @@ def backends_table(data: Data, algorithm: dict) -> str:
     # One sentence per default and set of other backends, so that each names, as the backends a
     # call may name instead, those of its own functions alone.
     by_backend: dict[tuple[str, tuple[str, ...], str], list[str]] = {}
-    for name, default in defaults:
+    for key, default in defaults:
         # The backends a call may name instead: those of this function, not of the algorithm's
         # others, and never one only the asynchronous family takes.
-        others = tuple(sorted(b for b in set(data.functions[name][1]['backends']) - {default}
+        function = data.functions[key][1]
+        others = tuple(sorted(b for b in set(function['backends']) - {default}
                               if not asynchronous_only(data, b)))
-        by_backend.setdefault((default, others, data.arguments[name]), []).append(name)
+        by_backend.setdefault((default, others, data.arguments[key]), []).append(shown(function))
     used = {b for f in algorithm['functions'] for b in f['backends']}
-    for (default, others, argument), functions in by_backend.items():
-        names = [f'`{name}`' for name in functions]
+    for (default, others, argument), names in by_backend.items():
         named = names[0] if len(names) == 1 else \
             ', '.join(names[:-1]) + f' and {names[-1]}'
         tail = (f'; {", ".join(f"`{b}`" for b in others)} only where the call names it, '
@@ -579,7 +631,7 @@ def choose_table(data: Data) -> str:
     out.append('| I need to ... | Use | Its backends: the Jamfile names | Backend '
                '| Example')
     for case in data.guide['use_cases']:
-        _, function = data.functions[case['function']]
+        _, function = data.functions[(case['function'], None)]
         jamfiles = ', '.join(f'`{b}`{backend_note(data, b)}: `{data.backends[b]["jamfile"]}`'
                              for b in function['backends'])
         out.append('')
@@ -626,7 +678,7 @@ def function_defaults(data: Data) -> str:
     never one only the asynchronous family takes) and per template argument the call names it as
     (the header's), and one for the functions without a default."""
     clauses: dict[tuple[str | None, str, str], list[str]] = {}
-    for name, (_, function) in data.functions.items():
+    for key, (_, function) in data.functions.items():
         if function['kind'] != 'function':
             continue
         default = function['default']
@@ -641,8 +693,8 @@ def function_defaults(data: Data) -> str:
             instead = f'backends::{others[0]}'
         else:
             instead = 'another of its backends'
-        clauses.setdefault((default, instead, data.arguments[name] if instead else ''),
-                           []).append(name)
+        clauses.setdefault((default, instead, data.arguments[key] if instead else ''),
+                           []).append(label(function))
     sentences = []
     for (default, instead, argument), names in clauses.items():
         many = len(names) > 1
@@ -700,6 +752,14 @@ def llms_txt(data: Data) -> str:
                                      f'{backend_targets(data, b)})'
                                      for b in function['backends'])
                 standard = facts.get('standard', algorithm['standard'])
+                if 'form' in function:
+                    # A form shares its function's facts: say only what differs.
+                    lines.append(f'- webcpp::hash::{label(function)} '
+                                 f'(<{function["header"]}>, {standard}): '
+                                 f'{function["name"]} with its inputs as byte_pieces, read one '
+                                 'after another as if concatenated, with no cap. '
+                                 f'Backends: {backends}. [Section]({page}#{facts["anchor"]})')
+                    continue
                 lines.append(f'- webcpp::hash::{function["name"]} '
                              f'(<{function["header"]}>, {standard}): '
                              f'{facts["summary"]} Status: {facts["status"]}. '
@@ -725,8 +785,9 @@ def llms_txt(data: Data) -> str:
 
 
 def keyed_rows(data: Data) -> tuple[dict[str, list[str]], list[str]]:
-    """The rows that set DIT, by chapter, each as a call names it (a tag through its family), and
-    the types of the keyed chapters that do not (the aliases), in the table's order."""
+    """The rows that set DIT, by chapter, each as a call names it (a tag through its family), in
+    code (`` `mac<macs::kmac_128>` ``, `` `hkdf` over pieces ``), and the names of the types of the
+    keyed chapters that do not (the aliases), in the table's order."""
     keyed: dict[str, list[str]] = {}
     aliases: list[str] = []
     for algorithm in data.capabilities['algorithms']:
@@ -737,9 +798,9 @@ def keyed_rows(data: Data) -> tuple[dict[str, list[str]], list[str]]:
                 aliases.append(function['name'])
             else:
                 called = CALLED_AS.get(function['kind'], '{}').format(function['name'])
-                keyed.setdefault(algorithm['chapter'], []).append(called)
-                if function['name'] in ALSO_KEYED:
-                    keyed[algorithm['chapter']].append(ALSO_KEYED[function['name']])
+                keyed.setdefault(algorithm['chapter'], []).append(shown(function, called))
+                if function['name'] in ALSO_KEYED and 'form' not in function:
+                    keyed[algorithm['chapter']].append(f'`{ALSO_KEYED[function["name"]]}`')
     return keyed, aliases
 
 
@@ -767,8 +828,8 @@ def dit_section(data: Data) -> list[str]:
         'it.', '',
         'The functions that set DIT, on every synchronous backend of their cells:', '']
     for chapter, names in keyed.items():
-        lines.append(f'* {KEYED_CHAPTERS[chapter]}: {listed([f"`{name}`" for name in names])}.')
-    calls = [text for row, text in KEYED_CALLS if row in data.functions]
+        lines.append(f'* {KEYED_CHAPTERS[chapter]}: {listed(names)}.')
+    calls = [text for row, text in KEYED_CALLS if row in data.names]
     if calls:
         lines.append('* Keyed by their arguments: ' + '; '.join(calls) + '. Called without a '
                      'key, they hold a disengaged guard, which reads its flag and does nothing '
@@ -851,7 +912,7 @@ def backends_chapter(data: Data) -> str:
                         continue
                     hmacs = ', '.join(c['hmacs']) if c['hmacs'] else '-'
                     targets = ', '.join(data.backends[name]['targets'])
-                    lines += ['', f'| {function["name"]}',
+                    lines += ['', f'| {label(function)}',
                               f'| {name}{backend_note(data, name)}{partial_text(c)}',
                               f'| {hmacs}',
                               f'| {c["constant_time"]["value"]}', f'| {targets}']
@@ -863,9 +924,9 @@ def backends_chapter(data: Data) -> str:
               '[cols="2,1",options="header"]', '|===', '| Function | Default']
     for _, function in data.functions.values():
         if function['default'] is not None:
-            lines += ['', f'| {function["name"]}', f'| {function["default"]}']
+            lines += ['', f'| {label(function)}', f'| {function["default"]}']
         elif function['kind'] in FAMILY_KINDS:
-            lines += ['', f'| {function["name"]}', '| none: the call names its backend']
+            lines += ['', f'| {label(function)}', '| none: the call names its backend']
     lines += ['|===', '', '=== Constant time', '',
               'What each backend\'s upstream states, and where:', '']
     # One bullet per backend and value, in the capability table's order of backends, with each
@@ -891,7 +952,7 @@ def measured_time(ns: float) -> str:
 
 
 def measured_speed(data: Data, operation: str, t: dict) -> str:
-    algorithm, _ = data.functions[operation]
+    algorithm, _ = data.functions[(operation, None)]
     if algorithm['chapter'] in RATE_CHAPTERS:
         def per_second(ns: float) -> str:
             return f'{1e9 / ns:.0f}'
