@@ -7026,7 +7026,7 @@ not built is in chapter 17.
   `from_secret`), which returns `boost::system::result<T>`, never by a
   constructor.** Boost's own shape is what a Boost user expects; a key can
   have the wrong size and a backend can fail to allocate, and the library works
-  without exceptions; the name of the input says where a secret comes from.
+  without exceptions.
   Source: `libraries/crypto/openspec/changes/genesis/design.md` D2
   (proposals); `include/webcpp/crypto/ciphers/gcm.hpp` (libs/crypto).
 - **The algorithm types do every guard, the moved-from state, the
@@ -7237,12 +7237,39 @@ not built is in chapter 17.
   input)` and `crypto::verify(scheme, signature, input, public_key)`, and
   their `async_` forms, on Ed25519, P-256 and secp256k1; a digest only as
   `crypto::prehashed{digest}`; every key pair a `crypto::keypair`, with a
-  typed public key, `secret()` and `agree`.** A span is a message whatever
-  its size, so a 32-byte message is never read as a digest; a pair of scheme
-  and input that is not valid stops the build with its reason. `Backend` is
-  the first template parameter of every `crypto::verify`.
+  typed public key and `secret()`.** A span is a message whatever its size,
+  so a 32-byte message is never read as a digest; a pair of scheme and input
+  that is not valid stops the build with its reason. `Backend` is the first
+  template parameter of every `crypto::verify`.
   Source: `include/webcpp/crypto/signing.hpp`, `keypair.hpp` (libs/crypto);
   `libraries/crypto/openspec/changes/unified-sign/design.md` (proposals).
+- **Every value has its type: signatures per curve and scheme, X25519's keys;
+  key pairs, AEADs and boxes checked by concepts; constructions by purpose;
+  factories named by their input.** Five signature types
+  (`ed25519::signature`, P-256's and secp256k1's `ecdsa_signature`,
+  `recoverable_signature`, `schnorr_signature`), made from bytes by
+  `from_bytes` and converting into nothing; `x25519::public_key` and
+  `x25519::basic_keypair`; the concepts `keypair`, `signing_keypair`,
+  `agreement_keypair`, `secret_key_encryption::aead::cipher`,
+  `streaming_cipher` and `secret_key_encryption::authenticated_box`, each
+  type's header checking its own row; the namespaces `secret_key_encryption`,
+  `public_key_encryption` and `key_exchange`, named by the problem they solve;
+  `from_secret`, `from_bytes`, `from_key`, `from_keys`, `from_keypair`,
+  `derive_from_seed` and `generate`, with no `make`. Ed25519ph is a scheme,
+  `eddsa_prehashed`; the secret-hygiene utilities are named by what they do:
+  `constant_time_equal`, `erase_secret`; the AEAD contract is
+  `secret_key_encryption::aead`'s and the secret boxes
+  `secret_key_encryption`'s; the one-shot ChaCha20-Poly1305 template is
+  `ciphers::basic_chacha20_poly1305`. Bytes passed where a signature or a key
+  of another curve was meant compiled and failed at run time, or verified
+  under the wrong scheme; generic code needs a contract the compiler checks; a
+  factory called `make` read as drawing a key, and a caller who passed fixed
+  bytes got a predictable private key.
+  Source: `include/webcpp/crypto/detail/signature.hpp`, `keypair.hpp`,
+  `factories.hpp`, `secret_key_encryption/aead.hpp`,
+  `secret_key_encryption/authenticated_box.hpp` (libs/crypto);
+  `libraries/crypto/openspec/changes/uniform-types/design.md` owner decisions
+  1 to 14, D1 to D12 (proposals).
 - **Constant time, sizes and throughput cover the family.** memcheck and
   MemorySanitizer run the key pair's making, signing with its low-S
   normalization and check, `agree` and `decode_pkcs8` (`paths.hpp`), each
