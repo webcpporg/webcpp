@@ -408,10 +408,9 @@ def test_llms_txt_s_defaults_are_the_table_s(scratch: Path) -> None:
     their only template argument, hkdf's and pbkdf2's the second, after the hmac."""
     library = scratch_library(scratch)
     llms = write_ok(library)['llms.txt']
-    expect('By default, hkdf_extract, hkdf_expand, hkdf and pbkdf2 run on backends::hash2 unless '
-           'the call names another of its backends as its second template argument; '
-           'hkdf_extract over pieces, hkdf_expand over pieces and hkdf over pieces run on '
-           'backends::hash2 alone; '
+    expect('By default, hkdf_extract, hkdf_expand, hkdf, hkdf_extract over pieces, hkdf_expand '
+           'over pieces, hkdf over pieces and pbkdf2 run on backends::hash2 unless the call '
+           'names another of its backends as its second template argument; '
            'blake2b_subkey runs on backends::sodium alone; kbkdf, sskdf and x963kdf have no '
            'default backend, and the call names one of its backends as its second template '
            'argument; argon2id and scrypt run on backends::sodium unless the call names another '
@@ -681,8 +680,9 @@ def test_without_measurements_the_tables_say_so(scratch: Path) -> None:
     expect('| pbkdf2\n| hash2' in backends and '| scrypt\n| sodium' in backends,
            'backends.adoc does not list the defaults')
     expect('Backends: hash2 (/webcpp/hash//hash' in files['llms.txt'], 'llms.txt has no backends')
-    expect('hkdf_extract, hkdf_expand, hkdf and pbkdf2 run on backends::hash2 unless the call '
-           'names another of its backends as its second template argument' in files['llms.txt'],
+    expect('hkdf_extract, hkdf_expand, hkdf, hkdf_extract over pieces, hkdf_expand over pieces, '
+           'hkdf over pieces and pbkdf2 run on backends::hash2 unless the call names another of '
+           'its backends as its second template argument' in files['llms.txt'],
            'llms.txt does not say the default')
 
 
