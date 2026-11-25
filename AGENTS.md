@@ -77,7 +77,9 @@ for web developers and for AI developers (`CODING-GUIDELINES.md` chapter 16).
 | beast | HTTP and WebSocket applications using native/WASIp3 sockets, browser WebSocket/fetch, WASI host HTTP or supplied streams | native, emscripten, wasip2, wasip3, by backend | a submodule at `libs/beast`; all 53 upstream applications remain in its compatibility matrix |
 | cobalt | Boost.Cobalt coroutine applications with shipped Wasm adaptations and optional corrected SSL | native, emscripten, wasip2, wasip3, by capability | a submodule at `libs/cobalt`; see its feature and application matrices for variants |
 | config | webcpp's configuration, which every library includes first: the target, exceptions and webcpp's version, as Boost.Config is Boost's; webcpp's own | native, wasip2, wasip3, emscripten | a submodule at `libs/config` |
-| crypto | AES-GCM, the AES block cipher, random_device, constant_time_equal and secp256k1 over C libraries built from source (BearSSL, OpenSSL, libsecp256k1, ctaes), webcpp's own | native, wasip2, wasip3, emscripten (OpenSSL not on emscripten); its own lane c-suites | a submodule at libs/crypto |
+| crypto | AES-GCM, the AES block cipher, random_device, constant_time_equal and secp256k1 over C libraries built from source (BearSSL, OpenSSL, libsecp256k1, ctaes), webcpp's own | native, wasip2, wasip3, emscripten (OpenSSL not on emscripten); its own lane `c-suites` | a submodule at `libs/crypto`; depends on hash and secure |
+| hash | hashing and key derivation: Boost.Hash2's algorithms by alias, Keccak-256, BLAKE3, HKDF, PBKDF2, Argon2 and scrypt over C backends (XKCP, BLAKE3, libsodium, BearSSL, OpenSSL, Botan) and a browser backend; a wrapper | native, wasip2, wasip3, emscripten (by backend); its own lane `c-suites` | a submodule at `libs/hash`; depends on config and secure |
+| secure | the side-channel and secret-in-memory primitives crypto, hash and codecs share (the DIT timing guard, `erase_secret`, `secret<N>`, `constant_time_equal`, `declassify` and constant-time building blocks); no algorithm; webcpp's own | native, wasip2, wasip3, emscripten; its own lane `constant-time` | a submodule at `libs/secure`; header-only, depends on config alone |
 | xactor | a deterministic actor system, webcpp's own | native, wasip2, wasip3 (`xactor_asio` native only) | a submodule at `libs/xactor`; the model for every port |
 | xstate | a port of XState 5.33.2's state machines and actors; depends on xactor and Boost.JSON | native, wasip2, wasip3; its oracle lane | a submodule at `libs/xstate`; the first user of the shared oracle (`CODING-GUIDELINES.md` chapter 12) |
 | pratt | a Pratt parser engine, generic through concepts, with a calculator built on it, webcpp's own | native, emscripten, wasip2, wasip3 | a submodule at `libs/pratt`; born with the allocation rule (`CODING-GUIDELINES.md` chapter 4) |
@@ -105,8 +107,8 @@ webcpp/
   .clang-tidy         clang-tidy's checks, every repository's
   pyrightconfig.json  Pyright's settings for every Python file
   libs/<name>/        a library: a repository of its own, a submodule here (asio, beast, cobalt,
-                      config, crypto, xactor, xstate, pratt, wasi, trystero, document, idna,
-                      lexical, webrtc)
+                      config, crypto, hash, secure, xactor, xstate, pratt, wasi, trystero,
+                      document, idna, lexical, webrtc)
   third_party/        third-party code the libraries and their tests use, not webcpp's: each
                       a submodule under third_party/libs/, pinned at a commit and keeping its
                       own licence (openssl, libdatachannel, bearssl, secp256k1, bitcoin for

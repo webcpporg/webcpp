@@ -39,6 +39,10 @@ each also a Boost.URL grammar rule, from R.
 * link:{library-pages}pratt/{library-page}[pratt]: a header-only
 Pratt-parsing engine for {cpp}20, with a decimal calculator built on it,
 from R.
+* link:{library-pages}secure/{library-page}[secure]: the side-channel and
+secret-in-memory primitives of crypto, hash and the codecs for {cpp}20: a
+DIT timing guard, erase_secret, secret<N>, constant_time_equal, declassify and
+constant-time blocks, with no algorithm, from R.
 * link:{library-pages}trystero/{library-page}[trystero]: a port of
 Trystero 0.26.0, serverless WebRTC rooms wire-compatible with the original,
 for {cpp}20, from R.
@@ -77,6 +81,10 @@ None.
 * Improved lint preparation by separating OpenSSL headers from archive builds and upstream tests.
 * Changed the CI's lint to twelve shards, which a slow runner no longer takes past its time limit.
 * Added the user's Jamfiles of webcpp::crypto, tested as fixtures of a test of the tools.
+* Added the user's Jamfiles of webcpp::secure, tested as fixtures of a test of the tools, and `libs/secure` to the copy of the user's Jamfiles tests of crypto and hash.
+* Added secure_collect_test.py, which tests the script that measures the timing guard's cost from release builds.
+* Added secure_dudect_judge_test.py, which runs crypto's judge's tests against secure's copy.
+* Added secure's constant-time lane to matrix.py and library.yml: memcheck, MemorySanitizer and dudect over its blocks, each with a planted leak that must fail.
 * Added a judge to crypto's constant-time lane: dudect results warn at 10, and hosted runners fail on two of three.
 * Added same-as: to crypto's user Jamfiles test, which keeps copied programs identical.
 * Added not-contains: to crypto's user Jamfiles test, which shows the canary is a library's only link error.
