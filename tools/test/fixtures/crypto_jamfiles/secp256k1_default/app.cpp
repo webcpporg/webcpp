@@ -7,9 +7,9 @@
 // Signs BIP 340's first test vector (secret key 3, a zero message and zero auxiliary data) with
 // a key pair on the default backend, checks the signature against the vector's and verifies it,
 // and prints the backend that ran. The secret key is the vector's: a real program draws its own.
-#include <webcpp/crypto/constant_time_equal.hpp>
 #include <webcpp/crypto/curves/secp256k1.hpp>
 #include <webcpp/crypto/signing.hpp>
+#include <webcpp/secure/constant_time_equal.hpp>
 
 #include <array>
 #include <cstdint>
@@ -34,7 +34,7 @@ int main() {
         auto const signature = key->sign(webcpp::crypto::schnorr, message, aux);
         auto const public_key = key->public_key();
         ok = signature && public_key &&
-             webcpp::crypto::constant_time_equal(signature->bytes(), expected) &&
+             webcpp::secure::constant_time_equal(signature->bytes(), expected) &&
              webcpp::crypto::verify(webcpp::crypto::schnorr, *signature, message, *public_key);
     }
     auto const name = secp256k1::keypair::backend_type::name;

@@ -892,7 +892,8 @@ def dit_section(data: Data) -> list[str]:
         'while HKDF, PBKDF2 and `mac` compute, through a hash that records it at each update, '
         'on the calling thread and on an `async_pbkdf2` pool\'s. The guard is secure\'s, shared '
         'with webcpp::crypto and webcpp::codecs: secure\'s `timing_guard_nesting_test` nests '
-        'guards as two libraries do.', '']
+        'guards as two libraries do, and crypto\'s `timing_nested_hash_test` runs a keyed call '
+        'of hash inside a guarded call of crypto.', '']
     if (data.library / 'doc' / 'performance.adoc').is_file():
         lines += ['What the guard adds to a call, measured from a release build, is in '
                   '<<hash-performance-timing>>.', '']

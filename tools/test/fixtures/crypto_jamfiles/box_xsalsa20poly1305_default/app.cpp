@@ -9,9 +9,9 @@
 // keys (box2.c), each an X25519 key pair and the peer's public key, and prints the backend that
 // ran. The keys and nonce are the test's: a real program draws its key pair with generate(), and
 // a nonce at random for every message.
-#include <webcpp/crypto/constant_time_equal.hpp>
 #include <webcpp/crypto/curves/x25519.hpp>
 #include <webcpp/crypto/public_key_encryption/box.hpp>
+#include <webcpp/secure/constant_time_equal.hpp>
 
 #include <algorithm>
 #include <array>
@@ -71,7 +71,7 @@ int main() {
     auto bob = box::from_keys(*bob_pair, *alice_key);
     if (alice && bob) {
         auto const sealed = alice->seal(nonce, data);
-        ok = sealed && webcpp::crypto::constant_time_equal(*sealed, expected_tag) &&
+        ok = sealed && webcpp::secure::constant_time_equal(*sealed, expected_tag) &&
              std::equal(expected_head.begin(), expected_head.end(), data.begin()) &&
              bob->open(nonce, data, *sealed) && data == plaintext;
     }

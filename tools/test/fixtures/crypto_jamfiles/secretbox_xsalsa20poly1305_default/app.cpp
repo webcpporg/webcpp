@@ -8,8 +8,8 @@
 // the tag and the ciphertext's first bytes against secretbox.exp, opens it again, and prints the
 // backend that ran. The key and nonce are the test's: a real program draws its key from
 // random_device, and a 24-byte nonce drawn at random for every message is safe.
-#include <webcpp/crypto/constant_time_equal.hpp>
 #include <webcpp/crypto/secret_key_encryption/secretbox.hpp>
+#include <webcpp/secure/constant_time_equal.hpp>
 
 #include <algorithm>
 #include <array>
@@ -53,7 +53,7 @@ int main() {
     bool ok = false;
     if (sealer) {
         auto const tag = sealer->seal(nonce, data);
-        ok = tag && webcpp::crypto::constant_time_equal(*tag, expected_tag) &&
+        ok = tag && webcpp::secure::constant_time_equal(*tag, expected_tag) &&
              std::equal(expected_head.begin(), expected_head.end(), data.begin()) &&
              sealer->open(nonce, data, expected_tag) && data == plaintext;
     }

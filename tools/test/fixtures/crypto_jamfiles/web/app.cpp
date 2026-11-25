@@ -9,7 +9,7 @@
 // prints the backend that ran. The zero key and nonce are the test vector's: a real program draws
 // its key from random_device and never reuses a nonce under it.
 #include <webcpp/crypto/ciphers/aes256_gcm.hpp>
-#include <webcpp/crypto/constant_time_equal.hpp>
+#include <webcpp/secure/constant_time_equal.hpp>
 
 #include <array>
 #include <cstdint>
@@ -33,7 +33,7 @@ int main() {
     }
     auto const tag = aead->seal(nonce, {}, data);
     bool const sealed =
-        tag && data == cipher && webcpp::crypto::constant_time_equal(*tag, expected_tag);
+        tag && data == cipher && webcpp::secure::constant_time_equal(*tag, expected_tag);
     bool const opened =
         aead->open(nonce, {}, data, expected_tag) && data == std::array<std::uint8_t, 16>{};
     auto const name = webcpp::crypto::ciphers::aes256_gcm::backend_type::name;
