@@ -9548,11 +9548,12 @@ summary.
   `organization/openspec/changes/site-increments-4-5/specs/site/spec.md`
   (proposals).
 
-### hash (hashing and key derivation over Boost.Hash2 and C backends; wrapper; accepted 2026-11-14, increments 1 to 7 built, not merged)
+### hash (hashing and key derivation over Boost.Hash2 and C backends; wrapper; accepted 2026-11-14, increments 1 to 7 merged)
 
 webcpp::hash is one entry point for hashing and key derivation in a C++20
-program on every target webcpp has, a wrapper (`"port-of": null`). Increment 1
-is built on the library's branch (`libs/hash`, to become `webcpporg/hash`):
+program on every target webcpp has, a wrapper (`"port-of": null`). It is
+implemented in `webcpporg/hash`, the submodule `libs/hash`, its increments 1 to
+7 merged into the `main` of its repository and of the superproject. Increment 1:
 Boost.Hash2's algorithms and `hmac` re-exported by alias (`algorithms.hpp`,
 `hmac.hpp`); Keccak-256 with the original padding over XKCP's permutation
 (`keccak.hpp`) and BLAKE3 over its official C implementation (`blake3.hpp`),
@@ -9594,9 +9595,8 @@ allocates nothing in webcpp's own code; increment 7 adds an asynchronous family
 in `async.hpp` over webcpp::asio (any completion token, Cobalt's `use_op`
 included): the password hashes and PBKDF2 on a thread pool where the build has
 threads, the digests, HMAC and HKDF through a post, and `backends::webcrypto`,
-the browser's WebCrypto on Emscripten, which only that family takes. Its
-repository, `webcpporg/hash`, is still to be created by the owner (gates G1, G2
-and G4); the proposal, with the specification, the design and the plan, is in
+the browser's WebCrypto on Emscripten, which only that family takes. The
+proposal, with the specification, the design and the plan, is in
 `libraries/hash/openspec/changes/genesis/` (proposals).
 
 - **Two constructions of webcpp's own, over an audited primitive each, and no
