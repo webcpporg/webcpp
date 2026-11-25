@@ -9,10 +9,11 @@
 into doc/measurements.allocation.json and renders doc/allocation.adoc, builds its table only from
 release builds: an output of a program whose build directory, b2's
 bench/<name>.test/<toolset>/<variant>/..., names another variant (the lanes' test/ directories
-included), or does not say, is refused before anything is written; one at variant=release is
-taken and the data records the build and the toolset; backends::botan's records give one row per
-operation and target; `--render-only` and `--check` refuse data whose build is not
-variant=release. Run with the names of some cases to run only those."""
+included), or does not say, is refused before anything is written; one at variant=release is taken
+and the data records the build and the toolset; backends::botan's records give one row per operation
+and target; a record of HKDF over pieces is named by its function; `--render-only` and `--check`
+refuse data whose build is not variant=release. Run with the names of some cases to run only
+those."""
 
 from __future__ import annotations
 
@@ -137,6 +138,40 @@ def test_botan_s_records_give_one_row_per_operation(scratch: Path) -> None:
     expect(run('--check', '--data', data, '--page', page), 0)
 
 
+PIECES_RECORDS = (
+    'record operation=counter c_counted=1\n'
+    'record operation=hkdf_pieces backend=openssl new=0 hmac=hmac_sha2_256 call=1 openssl=9\n'
+    'record operation=hkdf_pieces backend=openssl new=0 hmac=hmac_sha2_512 call=1 openssl=6\n'
+    'record operation=hkdf_pieces backend=openssl new=0 hmac=hmac_sha2_512 call=2 openssl=3\n'
+    'record operation=hkdf_extract_pieces tag=hmac_sha2_256 backend=botan target=native call=1 '
+    'new=2 c=4 counted=1\n'
+    'record operation=hkdf_extract_pieces tag=hmac_sha2_256 backend=botan target=native call=2 '
+    'new=2 c=4 counted=1\n'
+)
+
+
+def test_hkdf_over_pieces_is_named_by_its_function(scratch: Path) -> None:
+    """A record of HKDF over byte pieces, operation=<name>_pieces, becomes the row of "`<name>`
+    over pieces", OpenSSL's and Botan's alike."""
+    base = (scratch / 'bin/libs/hash/bench/allocation_openssl_release.test/clang-darwin-21'
+            / 'release/cxxstd-20-iso')
+    base.mkdir(parents=True)
+    (base / 'allocation_openssl_release.output').write_text(PIECES_RECORDS)
+    data, page = scratch / 'data.json', scratch / 'page.adoc'
+    page.write_text(PAGE.read_text())
+    expect(run('--lane', f'native={scratch / "bin"}', '--data', data, '--page', page), 0)
+    table = page.read_text()
+    for row in ('| `hkdf` over pieces | `openssl` | native | 0 | OpenSSL: 9 first call '
+                '(hmac_sha2_256), 6 first call (hmac_sha2_512), 3 steady state',
+                '| `hkdf_extract` over pieces | `botan` | native | 2 | Botan: 4 C library calls '
+                "(operator new's included), of hmac_sha2_256; the same in a steady call"):
+        if row not in table:
+            raise AssertionError(f'{row!r} is not in the table:\n{table}')
+    if '_pieces`' in table:
+        raise AssertionError(f'a record name was rendered as a function name:\n{table}')
+    expect(run('--check', '--data', data, '--page', page), 0)
+
+
 def test_render_only_and_check_refuse_data_not_built_at_variant_release(scratch: Path) -> None:
     committed = json.loads(DATA.read_text())
     page = scratch / 'page.adoc'
@@ -166,6 +201,7 @@ CASES: list[Callable[[Path], None]] = [
     test_an_output_not_built_at_variant_release_is_refused,
     test_an_output_built_at_variant_release_is_collected,
     test_botan_s_records_give_one_row_per_operation,
+    test_hkdf_over_pieces_is_named_by_its_function,
     test_render_only_and_check_refuse_data_not_built_at_variant_release,
     test_the_committed_data_is_from_release_builds_and_renders_the_page,
 ]

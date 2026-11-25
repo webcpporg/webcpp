@@ -20,14 +20,15 @@ The suspension variant, jspi by default and asyncify on request, builds with the
 needs, asyncify in a directory of its own, and natively adds nothing. Every program node runs links
 the test support (/webcpp//node-test), whose fixture library node_test_demo pins each case's exact
 status: a main that did not finish fails, the first status given through webcpp::test::exit_status
-ends the test at once and is kept, and a test past its bound is stopped; a program node runs that
-links -sMODULARIZE or -sEXPORT_ES6, which node would load without running, is refused. A program a
-page loads (webcpp.variants) is named Boost's way in each variant, debug and release, with its
-manifest beside its jspi artifact and its size table (webcpp.size-table), and none of them is built
-natively; a build of them that asks for JavaScript exceptions, which their jspi variant would keep,
-is refused. Each case builds a scratch superproject with browser_demo and node_test_demo, whose
-path holds a space, and the emsdk linked into its .local; Emscripten's cache is the one the harness
-gives every b2. Run with the names of some cases to run only those."""
+ends the test and is kept, as node ends on its own or, with a timer still pending, 10 s later, and
+a test past its bound is stopped; a program node runs that links -sMODULARIZE or -sEXPORT_ES6,
+which node would load without running, is refused. A program a page loads (webcpp.variants) is
+named Boost's way in each variant, debug and release, with its manifest beside its jspi artifact
+and its size table (webcpp.size-table), and none of them is built natively; a build of them that
+asks for JavaScript exceptions, which their jspi variant would keep, is refused. Each case builds a
+scratch superproject with browser_demo and node_test_demo, whose path holds a space, and the emsdk
+linked into its .local; Emscripten's cache is the one the harness gives every b2. Run with the
+names of some cases to run only those."""
 
 from __future__ import annotations
 
@@ -334,7 +335,8 @@ def test_a_test_ends_as_its_main_ends(root):
         'returns_zero_after_suspension_jspi', 'never_resumes_jspi', 'never_resumes_asyncify',
         'keeps_the_first_status_jspi', 'keeps_the_first_status_asyncify',
         'ends_with_a_timer_pending_jspi', 'ends_with_a_timer_pending_asyncify',
-        'exits_unmarked_jspi', 'exits_unmarked_asyncify', 'main_never_called', 'bound_zero',
+        'ends_on_its_own_jspi', 'ends_on_its_own_asyncify', 'exits_unmarked_jspi',
+        'exits_unmarked_asyncify', 'main_never_called', 'bound_zero',
         'bound_too_long'}, result.stdout[-4000:]
     assert exit_status(root, 'returns_one_after_suspension_jspi')[0] == 1
     # Under JSPI a main that returns 0 after a suspension finished: the pre-js reads its end
@@ -352,14 +354,19 @@ def test_a_test_ends_as_its_main_ends(root):
         assert 'past its bound' not in text, (name, text)
     assert exit_status(root, 'exit_in_coroutine_asyncify')[0] == 3
     assert exit_status(root, 'exit_in_handler_jspi')[0] == 3
-    # The first status exit_status gives ends the test at once: neither a later exit_status(0)
-    # nor a later write of process.exitCode = 0 replaces it, and a pending timer does not hold
-    # it to its bound.
+    # The first status exit_status gives ends the test: neither a later exit_status(0) nor a
+    # later write of process.exitCode = 0 replaces it, and a pending timer does not hold it to
+    # its bound, only to the pre-js's grace of 10 s.
     for name in ('keeps_the_first_status_jspi', 'keeps_the_first_status_asyncify'):
         assert exit_status(root, name)[0] == 3, name
     for name in ('ends_with_a_timer_pending_jspi', 'ends_with_a_timer_pending_asyncify'):
         status, text = exit_status(root, name)
         assert status == 0 and 'past its bound' not in text, (name, text)
+    # A test that gives its status with nothing pending ends as node ends on its own, never
+    # through process.exit, which can hang in node 26.13.0 (node issue #64274).
+    for name in ('ends_on_its_own_jspi', 'ends_on_its_own_asyncify'):
+        status, text = exit_status(root, name)
+        assert status == 0 and 'node ended on its own' in text, (name, text)
     # An unmarked std::exit after a suspension: JSPI keeps its status, Asyncify fails it.
     assert exit_status(root, 'exits_unmarked_jspi')[0] == 0
     status, text = exit_status(root, 'exits_unmarked_asyncify')

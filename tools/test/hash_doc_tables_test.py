@@ -30,8 +30,12 @@ Without doc/measurements.json the tables say so, carry no measured column and re
 measurements.adoc; with it (a fixture in its shape) they carry the throughput and the size, and
 measurements.adoc renders it as the dated reference that decides nothing; a hand edit of the
 data, which its digest tells, fails. The includes of the measured chapters name only those
-present. And `--check` passes on the real library's committed files. Run with the names of some
-cases to run only those."""
+present. A row of a form of its function (HKDF's "pieces") is keyed by its name and form,
+rendered as "`hkdf_extract` over pieces" in the backends' tables, the DIT section, the defaults and
+llms.txt (with the parameters its header declares as byte_pieces), and left out of the
+comparison tables, which hold one row per public name; an unknown form, a form of no function
+and two rows of one name and form fail. And `--check` passes on the
+real library's committed files. Run with the names of some cases to run only those."""
 
 from __future__ import annotations
 
@@ -292,8 +296,9 @@ def test_a_default_without_its_cell_fails_and_a_partial_cell_is_said(scratch: Pa
     expect('`hash2` (partial: an output under 64 bytes' in blake2, blake2)
     expect('| hash2 (partial: a tag under 32 bytes' in files['backends.adoc'],
            'the backends chapter does not say what the partial cell refuses')
-    expect('`webcrypto` (asynchronous family only) (partial: an info longer than 1,024 bytes'
-           in files['generated/backends-hkdf.adoc'], files['generated/backends-hkdf.adoc'])
+    expect('`webcrypto` (asynchronous family only) (partial: an application_info longer than '
+           '1,024 bytes' in files['generated/backends-hkdf.adoc'],
+           files['generated/backends-hkdf.adoc'])
     expect('| webcrypto (asynchronous family only) (partial: an iteration count above 2^32 - 1'
            in files['backends.adoc'], 'webcrypto\'s PBKDF2 limits are not said')
 
@@ -330,6 +335,48 @@ def test_a_tag_sits_in_its_namespace_s_chapter(scratch: Path) -> None:
            done.stderr)
 
 
+def test_a_form_row_is_keyed_by_its_name_and_form(scratch: Path) -> None:
+    library = scratch_library(scratch)
+    files = write_ok(library)
+    backends = files['generated/backends-hkdf.adoc']
+    expect('.Who implements `hkdf_extract`, `hkdf_expand`, `hkdf` (RFC 5869)' in backends,
+           backends)
+    expect('| `hkdf_extract` over pieces' in backends, backends)
+    expect('The default of `hkdf`, `hkdf_extract` over pieces, `hkdf_expand` over pieces and '
+           '`hkdf` over pieces: `hash2` on every target' in backends, backends)
+    compare = files['generated/compare-kdfs.adoc']
+    expect('over pieces' not in compare, 'a form has a row of its own in the comparison')
+    expect(compare.count('`hkdf_extract`') == 2, 'hkdf_extract is not one row of each table')
+    chapter = files['backends.adoc']
+    expect('`hkdf` over pieces, `pbkdf2`' in chapter, 'the DIT section misses the pieces forms')
+    expect('| hkdf_expand over pieces\n| hash2\n' in chapter, 'the default of a form')
+    llms = files['llms.txt']
+    for name, pieces in (('hkdf_extract', 'input_key_material'),
+                         ('hkdf_expand', 'application_info'),
+                         ('hkdf', 'input_key_material and application_info')):
+        expect(f'webcpp::hash::{name} over pieces (<webcpp/hash/hkdf.hpp>, RFC 5869): {name} '
+               f'with its {pieces} as byte_pieces,' in llms, f'llms.txt on {name} over pieces')
+
+    def form_of(form: str, name: str = 'hkdf') -> Callable[[dict], None]:
+        def edit(table: dict) -> None:
+            hkdf = next(a for a in table['algorithms'] if a['name'] == 'hkdf')
+            row = next(f for f in hkdf['functions'] if f.get('form') == 'pieces'
+                       and f['name'] == 'hkdf')
+            row['form'] = form
+            row['name'] = name
+        return edit
+    for edit, fault in ((form_of('slices'), 'hkdf has the unknown form slices'),
+                        (form_of('pieces', 'hkdf_squeeze'),
+                         'hkdf_squeeze over pieces is a form of no row hkdf_squeeze'),
+                        (form_of('pieces', 'hkdf_expand'),
+                         'doc/capabilities.json has two rows hkdf_expand over pieces')):
+        library = scratch_library(scratch / fault.split()[0])
+        edit_capabilities(library, edit)
+        done = run(library, '--write')
+        expect(done.returncode == 1, f'rendered: {fault}')
+        expect(fault in done.stderr, done.stderr)
+
+
 def test_an_asynchronous_backend_is_never_a_default(scratch: Path) -> None:
     library = scratch_library(scratch)
 
@@ -361,8 +408,9 @@ def test_llms_txt_s_defaults_are_the_table_s(scratch: Path) -> None:
     their only template argument, hkdf's and pbkdf2's the second, after the hmac."""
     library = scratch_library(scratch)
     llms = write_ok(library)['llms.txt']
-    expect('By default, hkdf_extract, hkdf_expand, hkdf and pbkdf2 run on backends::hash2 unless '
-           'the call names another of its backends as its second template argument; '
+    expect('By default, hkdf_extract, hkdf_expand, hkdf, hkdf_extract over pieces, hkdf_expand '
+           'over pieces, hkdf over pieces and pbkdf2 run on backends::hash2 unless the call '
+           'names another of its backends as its second template argument; '
            'blake2b_subkey runs on backends::sodium alone; kbkdf, sskdf and x963kdf have no '
            'default backend, and the call names one of its backends as its second template '
            'argument; argon2id and scrypt run on backends::sodium unless the call names another '
@@ -621,7 +669,8 @@ def test_without_measurements_the_tables_say_so(scratch: Path) -> None:
     expect('measurements.adoc' not in files, 'measurements.adoc without its data')
     hkdf = files['generated/backends-hkdf.adoc']
     expect('The default of `hkdf_extract` and `hkdf_expand`: `hash2` on every target' in hkdf
-           and 'The default of `hkdf`: `hash2` on every target' in hkdf,
+           and 'The default of `hkdf`, `hkdf_extract` over pieces, `hkdf_expand` over pieces and '
+           '`hkdf` over pieces: `hash2` on every target' in hkdf,
            f'the backends of HKDF do not name the default: {hkdf}')
     expect('`bearssl`, `botan`, `openssl`, `sodium` only where the call names it' in hkdf, hkdf)
     expect('The default of `argon2id`: `sodium` on every target'
@@ -632,8 +681,9 @@ def test_without_measurements_the_tables_say_so(scratch: Path) -> None:
     expect('| pbkdf2\n| hash2' in backends and '| scrypt\n| sodium' in backends,
            'backends.adoc does not list the defaults')
     expect('Backends: hash2 (/webcpp/hash//hash' in files['llms.txt'], 'llms.txt has no backends')
-    expect('hkdf_extract, hkdf_expand, hkdf and pbkdf2 run on backends::hash2 unless the call '
-           'names another of its backends as its second template argument' in files['llms.txt'],
+    expect('hkdf_extract, hkdf_expand, hkdf, hkdf_extract over pieces, hkdf_expand over pieces, '
+           'hkdf over pieces and pbkdf2 run on backends::hash2 unless the call names another of '
+           'its backends as its second template argument' in files['llms.txt'],
            'llms.txt does not say the default')
 
 
@@ -650,7 +700,8 @@ def test_with_measurements_the_tables_carry_them(scratch: Path) -> None:
     expect('a loaded, shared machine' in digests, 'the note hides that the machine was loaded')
     hkdf = files['generated/backends-hkdf.adoc']
     # BearSSL is the smallest and the fastest HKDF of the fixture: the default stays hash2.
-    expect('`hkdf`: `hash2` on every target' in hkdf, 'the measurements moved a default')
+    expect('`hkdf` over pieces: `hash2` on every target' in hkdf,
+           'the measurements moved a default')
     expect('libsodium 1.0.22: its headers state constant time' in hkdf,
            'the constant-time column does not give its source')
     page = files['measurements.adoc']
@@ -732,6 +783,7 @@ CASES: list[Callable[[Path], None]] = [
     test_a_family_default_is_of_the_order_or_none,
     test_a_default_without_its_cell_fails_and_a_partial_cell_is_said,
     test_a_tag_sits_in_its_namespace_s_chapter,
+    test_a_form_row_is_keyed_by_its_name_and_form,
     test_an_asynchronous_backend_is_never_a_default,
     test_an_asynchronous_backend_s_targets_are_spelled,
     test_llms_txt_s_defaults_are_the_table_s,

@@ -21,8 +21,9 @@
 int main() {
     webcpp::asio::io_context context;
     std::array<std::uint8_t, 64> output{};
-    webcpp::hash::async_scrypt(context.get_executor(), output, {}, {},
-                               webcpp::hash::scrypt_parameters{.n = 16, .r = 1, .p = 1},
-                               [](boost::system::error_code /*code*/) {});
+    webcpp::hash::async_scrypt(
+        context.get_executor(), output, {}, {},
+        webcpp::hash::scrypt_parameters{.cost = 16, .block_size = 1, .parallelism = 1},
+        [](boost::system::error_code /*code*/) {});
     return 0;
 }

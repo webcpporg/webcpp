@@ -21,7 +21,8 @@ namespace webcpp::test {
 /**
  Gives status to webcpp's test support and returns it, so that main ends with it: natively
  the status is main's; on emscripten the support ends node with the first status it is given,
- on its next turn, whatever is still pending or runs later.
+ whatever runs later: as soon as nothing holds node, or 10 s later if something still does (a
+ pending timer, a live worker).
 
  Tip: it never calls std::exit, which under Emscripten's default EXIT_RUNTIME=0 neither ends
  node nor keeps the status from a later write, and in a debug build prints Emscripten's notice

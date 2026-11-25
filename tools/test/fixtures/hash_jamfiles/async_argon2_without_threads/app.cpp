@@ -24,7 +24,7 @@ int main() {
     std::array<std::uint8_t, 16> const salt{};
     webcpp::hash::async_argon2<webcpp::hash::kdfs::argon2id>(
         context.get_executor(), output, {}, salt,
-        webcpp::hash::argon2_parameters{.passes = 3, .memory_kib = 65536},
+        webcpp::hash::argon2_parameters{.passes = 3, .memory_kibibytes = 65536},
         [](boost::system::error_code /*code*/) {});
     return 0;
 }

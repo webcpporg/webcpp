@@ -1015,7 +1015,8 @@ variants; and `std::exit` sets the status without ending node, so that a
 later write replaces it, and anything pending keeps node running. Under the
 pre-js, a program ends with these statuses (measured with Emscripten 6.0.11
 and node 26.7.0, the same source built without a variant, with `-sJSPI` and
-with `-sASYNCIFY`):
+with `-sASYNCIFY`; the two rows of work still pending after the status with
+node 26.13.0, since node ends on its own):
 
 | `main` | without suspension | JSPI | Asyncify |
 | --- | --- | --- | --- |
@@ -1026,8 +1027,8 @@ with `-sASYNCIFY`):
 | suspends, `std::exit(7)` unmarked | (aborts) | 7 | 7 |
 | suspends, `std::exit(0)` unmarked | (aborts) | 0 | **1**, with the line below |
 | awaits a promise that nothing settles | (aborts) | **1** at once, with the line below | **1** at once, with the line below |
-| suspends, `exit_status(3)`; later a callback gives `exit_status(0)` and a timer sets `process.exitCode = 0` | (aborts) | 3 at once | 3 at once |
-| suspends, `exit_status(0)` while a timer of 300 s is pending | (aborts) | 0 at once | 0 at once |
+| suspends, `exit_status(3)`; later a callback gives `exit_status(0)` and a timer sets `process.exitCode = 0` (both after 50 ms) | (aborts) | 3, once the pending 50 ms timers have run | 3, once the pending 50 ms timers have run |
+| suspends, `exit_status(0)` while a timer of 300 s is pending | (aborts) | 0 after 10 s | 0 after 10 s |
 | sleeps 600 s after `bound(3s)` | (aborts) | 1 after 3 s | 1 after 3 s |
 | never called (`-sINVOKE_RUN=0`), returns 0 | **1**, with the line below | **1**, with the line below | **1**, with the line below |
 | `bound(0s)`, or a bound past 2147483 s | (aborts) | **1** at once, naming it | **1** at once, naming it |
@@ -1041,10 +1042,23 @@ is a failure already. It reads `main` as finished only when the glue called
 it (it wraps the glue's `callMain`), so that a program linked with
 `-sINVOKE_RUN=0`, whose `main` nothing calls, fails too.
 `webcpp::test::exit_status` gives its status to the pre-js, which ends node
-with the first status it is given on node's next turn, whatever is still
-pending or runs later, and restores it over any later write of
-`process.exitCode`. It never calls `std::exit`, which in a debug build prints
-Emscripten's notice that the runtime is kept alive. A test is also bounded: past 120 s, the
+with the first status it is given, whatever runs later, and restores it over
+any later write of `process.exitCode`. Node ends on its own as soon as
+nothing holds it, and through `process.exit` only if something still holds it
+(a pending timer, a live worker) 10 s after the status. That is a workaround
+for node issue #64274: in node 26.13.0 `process.exit` can deadlock, when a
+background compile waits for a GC that the exiting main thread never runs
+(hash's `async_heavy` hung 5 times in 300 runs, 10 at a time), and a natural
+exit cannot. Under 10 to 36 runs at once on 18 cores, `async_heavy` ended on
+its own 0.2 ms to 5.4 s after its status, hence the 10 s. Two paths still
+end through `process.exit` and can meet the same deadlock: the 10 s fallback
+itself, for a test that holds node past its grace, and the bound below, for a
+test that runs past it; such a test can then hang until the CI job's timeout
+instead of failing at its bound. Both are rare and outside a test's normal
+end. Once the pinned node is a release with node PR #66171, which fixes it,
+the pre-js calls `process.exit` on node's next turn again, and both paths are
+safe again. It never calls `std::exit`, which
+in a debug build prints Emscripten's notice that the runtime is kept alive. A test is also bounded: past 120 s, the
 pre-js stops it with 1 and the line `webcpp: the test ran past its bound of
 <n> s`. 120 s is longer than any emscripten test of webcpp, and short enough
 that a test that waits forever fails inside the CI job instead of running to

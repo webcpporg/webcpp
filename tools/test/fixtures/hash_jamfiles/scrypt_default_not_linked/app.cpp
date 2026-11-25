@@ -15,6 +15,8 @@
 int main() {
     std::array<std::uint8_t, 32> output{};
     std::array<std::uint8_t, 16> salt{};
-    auto done = webcpp::hash::scrypt(output, {}, salt, webcpp::hash::scrypt_parameters{1024, 8, 1});
+    auto done = webcpp::hash::scrypt(
+        output, {}, salt,
+        webcpp::hash::scrypt_parameters{.cost = 1024, .block_size = 8, .parallelism = 1});
     return done ? 0 : 1;
 }
