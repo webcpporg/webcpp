@@ -9648,7 +9648,7 @@ proposal, with the specification, the design and the plan, is in
   its own function's, or when an unkeyed function enters one: a new keyed
   function or cell holds the guard and gets its call. The guard is webcpp::secure's, the one guard
   crypto and hash share (hash depends on config and secure and on no other
-  webcpp library), with its `engaged` flag: hash's first copy,
+  webcpp library), with its `guard_engaged` flag: hash's first copy,
   `detail/timing.hpp`, is deleted, and so is `detail/wipe.hpp`, whose stores
   are `secure::detail::wipe`, reached through `secure::erase_secret` (a range
   of one erases a C library's plain state). A test of hash counts its own
@@ -9890,7 +9890,7 @@ delivery.
   (proposals); `test/constant_time/Jamfile`, `doc/blocks.adoc` (libs/secure);
   `tools/ci/matrix.py`, `tools/test/secure_dudect_judge_test.py` (webcpp).
 - **D11: the documentation and the one measurement.** The page (`doc/`): what
-  secure is and is not, the guard with its coverage table, nesting, `engaged`
+  secure is and is not, the guard with its coverage table, nesting, `guard_engaged`
   and seam, erasing, `secret<N>`, `constant_time_equal`, `declassify`, the
   blocks with their limits, the guard's cost and the changelog. The cost is
   measured by `bench/collect.py` from a release build (it refuses another
