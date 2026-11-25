@@ -201,6 +201,28 @@ def test_render_only_refuses_data_not_built_at_variant_release(scratch: Path) ->
         raise AssertionError('the committed data does not render the committed page')
 
 
+def test_the_load_note_states_only_the_loads_and_only_at_two_or_more(scratch: Path) -> None:
+    committed = json.loads(DATA.read_text())
+    for loads, noted in (([[4.5, 4.0, 3.0], [1.0, 1.0, 1.0]], True),
+                         ([[1.0, 1.0, 1.0], [2.0, 1.0, 1.0]], True),
+                         ([[0.5, 1.0, 1.0], [1.99, 1.0, 1.0]], False)):
+        data, page = scratch / 'data.json', scratch / 'page.adoc'
+        data.write_text(json.dumps({**committed, 'load_average_before_after': loads}))
+        expect(run('--render-only', '--data', data, '--page', page), 0)
+        text = page.read_text()
+        note = [line for line in text.splitlines() if line.startswith('NOTE:')]
+        if bool(note) != noted:
+            raise AssertionError(f'{loads}: the note is {"absent" if noted else "present"}')
+        if noted:
+            for expected in (f'{loads[0][0]:.2f} before and {loads[1][0]:.2f}', 'below 2',
+                             "upper bound of an idle machine's"):
+                if expected not in ' '.join(text.split()):
+                    raise AssertionError(f'{expected!r} is not in the note:\n{text}')
+            for claim in ('system tasks', 'no build', 'core was free', 'idle by that rule'):
+                if claim in text:
+                    raise AssertionError(f'the page claims a cause, {claim!r}:\n{text}')
+
+
 def test_exactly_one_of_timing_and_render_only_is_given(scratch: Path) -> None:
     data, page = scratch / 'data.json', scratch / 'page.adoc'
     data.write_text(DATA.read_text())
@@ -220,6 +242,7 @@ CASES: list[Callable[[Path], None]] = [
     test_a_program_that_fails_is_refused_with_a_message,
     test_a_timing_line_or_data_of_another_form_is_refused_with_a_message,
     test_render_only_refuses_data_not_built_at_variant_release,
+    test_the_load_note_states_only_the_loads_and_only_at_two_or_more,
     test_exactly_one_of_timing_and_render_only_is_given,
 ]
 
