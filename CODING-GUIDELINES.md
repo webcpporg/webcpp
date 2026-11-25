@@ -7113,10 +7113,11 @@ since that change); what is decided and not built is in chapter 17.
   webcpp::secure, which crypto, hash and the codecs share (chapter 17,
   secure), so a keyed call of hash inside a guarded call of crypto nests in
   either order, which `test/timing_nested_hash_test.cpp` runs. The guard's
-  cost is measured by secure, from a release build, and published on its page
-  (`doc/performance.adoc`); crypto's own page publishes the throughput, and
-  the constant-time lane sets no DIT of its own: it measures what a program
-  gets.
+  cost of reference is secure's, measured from a release build and published
+  on its page (`doc/performance.adoc`); crypto's own page publishes the
+  throughput and keeps its own provisional measurement of the guard, taken
+  by its bench, and the constant-time lane sets no DIT of its own: it
+  measures what a program gets.
   Source: `libraries/crypto/openspec/changes/data-independent-timing/design.md`
   D1 to D7 (proposals); `libraries/secure/openspec/changes/genesis/design.md`
   D2 and D3 (proposals); `test/timing_coverage_<backend>_test.cpp`,
@@ -9655,9 +9656,10 @@ and G4); the proposal, with the specification, the design and the plan, is in
   `include/webcpp/hash/` in the guard's `file_name()`, and reads
   `secure::test::wipe_record` (`WEBCPP_SECURE_TEST_WIPE_RECORD`) for what a
   wipe zeroed; crypto's `test/timing_nested_hash_test.cpp` runs a guarded call
-  of hash inside a guarded call of crypto. The guard's cost is measured by
-  secure from a release build and published in secure's
-  `doc/performance.adoc`.
+  of hash inside a guarded call of crypto. The guard's cost of reference is
+  secure's, measured from a release build and published in secure's
+  `doc/performance.adoc`; hash's own page keeps its own provisional
+  measurement of the guard, taken by its bench.
   Source: `libraries/hash/openspec/changes/data-independent-timing/design.md`
   D1 to D9, whose copy of the guard `libraries/secure/openspec/changes/genesis/design.md`
   D2 and D4 replaced (proposals); `test/timing_coverage_<backend>_test.cpp`,
@@ -9688,14 +9690,14 @@ and G4); the proposal, with the specification, the design and the plan, is in
   Source: `libraries/hash/openspec/changes/genesis/reference/spec.md` section
   1.5 (proposals).
 
-### secure (side-channel and secret-in-memory primitives; own; accepted 2026-11-24, built, not merged)
+### secure (side-channel and secret-in-memory primitives; own; accepted 2026-11-24, implemented)
 
 webcpp::secure is the one home of the primitives that crypto, hash and the
 codecs share to keep a secret from leaking through time and through memory, and
-holds no algorithm (`"port-of": null`, category Cryptography). It is built on
-the branch `secure/genesis` of `libs/secure` (to become `webcpporg/secure`)
-and of the superproject, with hash's and crypto's migrations onto it, awaiting
-the owner's merge. Its headers are `<webcpp/secure.hpp>`, which includes the
+holds no algorithm (`"port-of": null`, category Cryptography). It is
+implemented in `webcpporg/secure`, the submodule `libs/secure`, merged into the
+`main` of its repository and of the superproject with hash's and crypto's
+migrations onto it. Its headers are `<webcpp/secure.hpp>`, which includes the
 others, and `<webcpp/secure/{config,timing_guard,erase_secret,constant_time_equal,secret,declassify,constant_time}.hpp>`
 with `<webcpp/secure/detail/wipe.hpp>`; its target is `/webcpp/secure//secure`,
 header-only, depending on config and Boost's assert alone; every name is in
