@@ -98,7 +98,8 @@ def message_faults(cases: list[Path]) -> list[str]:
 
 
 def main(argv: list[str]) -> int:
-    return user_jamfiles.main('hash_jamfiles', CASES, ('config', 'secure', 'hash', 'crypto', 'asio'), NOT_YET,
+    return user_jamfiles.main('hash_jamfiles', CASES,
+                              ('config', 'secure', 'hash', 'crypto', 'asio'), NOT_YET,
                               argv, message_faults)
 
 
