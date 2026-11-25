@@ -15,6 +15,6 @@ int main() {
     std::array<std::uint8_t, 32> output{};
     std::array<std::uint8_t, 16> salt{};
     auto done = webcpp::hash::argon2<webcpp::hash::kdfs::argon2d>(
-        output, {}, salt, {.passes = 3, .memory_kib = 65536});
+        output, {}, salt, {.passes = 3, .memory_kibibytes = 65536});
     return done ? 0 : 1;
 }

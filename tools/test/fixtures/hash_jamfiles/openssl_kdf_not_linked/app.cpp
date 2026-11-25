@@ -20,7 +20,7 @@ int main() {
     std::array<std::uint8_t, 16> salt{};
     auto const argon2id = hash::argon2id<hash::backends::openssl>(
         output, {}, salt, hash::argon2id_parameters{.passes = 2, .memory = 19456 * 1024});
-    auto const scrypt = hash::scrypt<hash::backends::openssl>(output, {}, salt,
-                                                              hash::scrypt_parameters{1024, 8, 1});
+    auto const scrypt = hash::scrypt<hash::backends::openssl>(
+        output, {}, salt, hash::scrypt_parameters{.cost = 1024, .block_size = 8, .parallelism = 1});
     return argon2id && scrypt ? 0 : 1;
 }

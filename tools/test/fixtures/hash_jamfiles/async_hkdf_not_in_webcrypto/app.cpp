@@ -20,7 +20,9 @@
 int main() {
     webcpp::asio::io_context context;
     std::array<std::uint8_t, 32> output{};
+    std::array<std::uint8_t, 4> input{};
     webcpp::hash::async_hkdf<webcpp::hash::hmac_sha3_256>(
-        context.get_executor(), output, {}, {}, {}, [](boost::system::error_code /*code*/) {});
+        context.get_executor(), output, input, input, input,
+        [](boost::system::error_code /*code*/) {});
     return 0;
 }

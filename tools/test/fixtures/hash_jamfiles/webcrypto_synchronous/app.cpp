@@ -15,7 +15,8 @@
 
 int main() {
     std::array<std::uint8_t, 32> output{};
+    std::array<std::uint8_t, 4> input{};
     auto done = webcpp::hash::hkdf<webcpp::hash::hmac_sha2_256, webcpp::hash::backends::webcrypto>(
-        output, {}, {}, {});
+        output, input, input, input);
     return done ? 0 : 1;
 }
