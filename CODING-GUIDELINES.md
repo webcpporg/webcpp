@@ -7126,9 +7126,9 @@ since that change); what is decided and not built is in chapter 17.
   either order, which `test/timing_nested_hash_test.cpp` runs. The guard's
   cost of reference is secure's, measured from a release build and published
   on its page (`doc/performance.adoc`); crypto's own page publishes the
-  throughput and keeps its own provisional measurement of the guard, taken
-  by its bench, and the constant-time lane sets no DIT of its own: it
-  measures what a program gets.
+  throughput and keeps its own measurement of the guard, taken
+  by its bench (37.0 and 1.2 ns, on an idle machine), and the constant-time
+  lane sets no DIT of its own: it measures what a program gets.
   Source: `libraries/crypto/openspec/changes/data-independent-timing/design.md`
   D1 to D7 (proposals); `libraries/secure/openspec/changes/genesis/design.md`
   D2 and D3 (proposals); `test/timing_coverage_<backend>_test.cpp`,
@@ -9675,8 +9675,8 @@ proposal, with the specification, the design and the plan, is in
   wipe zeroed; crypto's `test/timing_nested_hash_test.cpp` runs a guarded call
   of hash inside a guarded call of crypto. The guard's cost of reference is
   secure's, measured from a release build and published in secure's
-  `doc/performance.adoc`; hash's own page keeps its own provisional
-  measurement of the guard, taken by its bench. The guard leaves the thread's
+  `doc/performance.adoc`; hash's own page keeps its own measurement of the
+  guard, taken by its bench on an idle machine. The guard leaves the thread's
   DIT as it found it after an error and while an exception unwinds the call;
   Windows on ARM64 clears DIT when it resumes the thread after a catch (chapter
   17, secure, D3), and hash's own catches inside a guarded scope (Botan's
@@ -9765,11 +9765,11 @@ delivery.
   `include/webcpp/<library>/` with either separator (B6). The page says what DIT
   covers, Arm's list of data-independent instructions, and what it does not:
   memory access patterns, branches, and arithmetic on registers that the
-  compiler may move across the writes. The guard costs 39.6 ns where it sets
-  and clears DIT, 1.3 ns where DIT is already set (two `mrs`) and nothing where
+  compiler may move across the writes. The guard costs 37.0 ns where it sets
+  and clears DIT, 1.2 ns where DIT is already set (two `mrs`) and nothing where
   disengaged,
-  measured on a release build on an Apple M5 Max under a load the page states
-  (`bench/collect.py`; re-measured on an idle machine at the delivery).
+  measured on a release build on an Apple M5 Max at a 1-minute load of 1.9, as
+  the page states (`bench/collect.py`, 2026-11-26).
   Source: `libraries/secure/openspec/changes/genesis/design.md` D2 and owner
   decision 4 (proposals); `include/webcpp/secure/timing_guard.hpp`,
   `test/timing_guard_*_test.cpp`, `doc/guard.adoc` (libs/secure).
