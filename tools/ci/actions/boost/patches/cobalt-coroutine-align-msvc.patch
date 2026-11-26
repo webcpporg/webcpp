@@ -6,12 +6,19 @@ std::max_align_t is 8 bytes and __STDCPP_DEFAULT_NEW_ALIGNMENT__ is 16, so the f
 off a 16-byte boundary, though an operator new without std::align_val_t must return storage
 aligned to 16 there. MSVC's optimizer stores into the frame with aligned SSE instructions (movaps),
 which fault: webcpp::hash's async_cobalt test exited with 0xC0000005 on MSVC 14.3 x64 release in
-every run (the fault at movaps [frame+0x6D90] with the frame at 8 mod 16). This patch aligns every
-coroutine allocation of Cobalt to boost::cobalt::coroutine_align, 16 on MSVC and
-alignof(std::max_align_t) elsewhere (no change there), as the upstream fix does:
-https://github.com/boostorg/cobalt/commit/d67080b ("Added MSVC max_align workaround"). Remove this
-file once the Boost that tools/ci/actions/boost/install.sh pins contains that fix: install.sh then
-fails, saying so.
+every run (the fault at movaps [frame+0x6D90] with the frame at 8 mod 16). The upstream fix is
+https://github.com/boostorg/cobalt/commit/d67080b ("Added MSVC max_align workaround"), which adds
+boost::cobalt::coroutine_align and coroutine_align_t to config.hpp and uses them in every coroutine
+allocation of Cobalt. This patch takes the same names and the same places, MSVC's values (16, and
+a 16-byte type aligned to 16) and upstream's change to the unsized branch of detail/main.hpp, in
+one other form: the header before a frame is counted in sizeof(coroutine_align_t), where upstream
+counts it in coroutine_align. Off MSVC, coroutine_align is alignof(std::max_align_t) and
+coroutine_align_t is std::max_align_t, so every size, offset and alignment is Boost 1.92.0's (the
+alignment the patch passes is the one the resources took by default), and only MSVC's build
+changes; upstream's form would also shrink the header off MSVC, from 32 to 16 bytes on x86-64 and
+arm64 Linux and on WebAssembly. Remove this file once the Boost that
+tools/ci/actions/boost/install.sh pins contains the upstream fix: install.sh then fails, saying the
+patch does not apply.
 
 diff --git a/boost/cobalt/composition.hpp b/boost/cobalt/composition.hpp
 --- a/boost/cobalt/composition.hpp
@@ -22,16 +29,16 @@ diff --git a/boost/cobalt/composition.hpp b/boost/cobalt/composition.hpp
      // | memory_resource | size_t | <padding> | coroutine.
 -    constexpr auto block_size =  sizeof(tt) / sizeof(std::max_align_t)
 -                                 + (sizeof(tt) % sizeof(std::max_align_t) ? 1 : 0);
-+    constexpr auto block_size =  sizeof(tt) / coroutine_align
-+                                 + (sizeof(tt) % coroutine_align ? 1 : 0);
++    constexpr auto block_size =  sizeof(tt) / sizeof(coroutine_align_t)
++                                 + (sizeof(tt) % sizeof(coroutine_align_t) ? 1 : 0);
  
  
      auto res = std::get<sizeof... (Ts) - 1>(std::tie(args...)).get_allocator().resource();
 -    const auto p = res->allocate(size + (block_size * sizeof(std::max_align_t)));
-+    const auto p = res->allocate(size + (block_size * coroutine_align), coroutine_align);
++    const auto p = res->allocate(size + (block_size * sizeof(coroutine_align_t)), coroutine_align);
      new (p) tt(res, size);
 -    return static_cast<std::max_align_t*>(p) + block_size;
-+    return static_cast<char*>(p) + (block_size * coroutine_align);
++    return static_cast<coroutine_align_t*>(p) + block_size;
    }
  
    static void operator delete(void * raw) noexcept
@@ -41,18 +48,18 @@ diff --git a/boost/cobalt/composition.hpp b/boost/cobalt/composition.hpp
      // | memory_resource | size_t | <padding> | coroutine.
 -    constexpr auto block_size =  sizeof(tt) / sizeof(std::max_align_t)
 -                                 + (sizeof(tt) % sizeof(std::max_align_t) ? 1 : 0);
-+    constexpr auto block_size =  sizeof(tt) / coroutine_align
-+                                 + (sizeof(tt) % coroutine_align ? 1 : 0);
++    constexpr auto block_size =  sizeof(tt) / sizeof(coroutine_align_t)
++                                 + (sizeof(tt) % sizeof(coroutine_align_t) ? 1 : 0);
  
 -    const auto p = static_cast<std::max_align_t*>(raw) - block_size;
-+    const auto p = static_cast<char*>(raw) - (block_size * coroutine_align);
++    const auto p = static_cast<coroutine_align_t*>(raw) - block_size;
  
      const auto tp = *reinterpret_cast<tt*>(p);
      const auto res = tp.first;
      const auto size = tp.second;
  
 -    res->deallocate(p, size +  (block_size * sizeof(std::max_align_t)));
-+    res->deallocate(p, size +  (block_size * coroutine_align), coroutine_align);
++    res->deallocate(p, size +  (block_size * sizeof(coroutine_align_t)), coroutine_align);
    }
  
    completion_handler<Args...> handler;
@@ -67,12 +74,14 @@ diff --git a/boost/cobalt/config.hpp b/boost/cobalt/config.hpp
  
  #ifndef BOOST_COBALT_CONFIG_HPP
  #define BOOST_COBALT_CONFIG_HPP
-@@ -90,6 +91,19 @@ namespace pmr = boost::container::pmr;
+@@ -90,6 +91,21 @@ namespace pmr = boost::container::pmr;
  namespace pmr = std::pmr;
  #endif
  
-+// The alignment of the storage cobalt gives a coroutine frame. std::max_align_t is only 8-byte
-+// aligned on MSVC, but the compiler may emit aligned SSE stores into the frame.
++// The alignment of the storage cobalt gives a coroutine frame, and coroutine_align_t the unit of
++// the header before it. std::max_align_t is only 8-byte aligned on MSVC, but the compiler may emit
++// aligned SSE stores into the frame. Elsewhere they are alignof(std::max_align_t) and
++// std::max_align_t, as in Boost 1.92.0, so that nothing changes there.
 +#if defined(BOOST_MSVC)
 +constexpr static std::size_t coroutine_align = 16;
 +struct alignas(coroutine_align) coroutine_align_t
@@ -90,7 +99,7 @@ diff --git a/boost/cobalt/config.hpp b/boost/cobalt/config.hpp
 diff --git a/boost/cobalt/detail/main.hpp b/boost/cobalt/detail/main.hpp
 --- a/boost/cobalt/detail/main.hpp
 +++ b/boost/cobalt/detail/main.hpp
-@@ -56,12 +56,12 @@ struct main_promise : signal_helper,
+@@ -56,29 +56,29 @@ struct main_promise : signal_helper,
  #if defined(__cpp_sized_deallocation)
      void * operator new(const std::size_t size)
      {
@@ -105,6 +114,27 @@ diff --git a/boost/cobalt/detail/main.hpp b/boost/cobalt/detail/main.hpp
      }
  #else
    void * operator new(const std::size_t size)
+   {
+       // embed the size at the end
+-      constexpr auto sz = (std::max)(alignof(std::max_align_t), sizeof(std::size_t));
+-      auto data = my_resource->allocate(size + sz);
++      constexpr auto sz = (std::max)(coroutine_align, sizeof(std::size_t));
++      auto data = my_resource->allocate(size + sz, coroutine_align);
+ 
+       return static_cast<char*>(data) + sz;
+   }
+ 
+   void operator delete(void * data)
+   {
+-      constexpr auto sz = (std::max)(alignof(std::max_align_t), sizeof(std::size_t));
++      constexpr auto sz = (std::max)(coroutine_align, sizeof(std::size_t));
+       const auto size = *reinterpret_cast<std::size_t*>(static_cast<char*>(data) - sz);
+ 
+-      return my_resource->deallocate(data, size);
++      return my_resource->deallocate(data, size, coroutine_align);
+   }
+ #endif
+ 
 diff --git a/boost/cobalt/detail/monotonic_resource.hpp b/boost/cobalt/detail/monotonic_resource.hpp
 --- a/boost/cobalt/detail/monotonic_resource.hpp
 +++ b/boost/cobalt/detail/monotonic_resource.hpp
@@ -168,20 +198,20 @@ diff --git a/boost/cobalt/this_coro.hpp b/boost/cobalt/this_coro.hpp
    {
      auto res = detail::get_memory_resource_from_args(args...);
 -    const auto p = res->allocate(size + sizeof(std::max_align_t));
-+    const auto p = res->allocate(size + coroutine_align, coroutine_align);
++    const auto p = res->allocate(size + sizeof(coroutine_align_t), coroutine_align);
      auto pp = static_cast<pmr::memory_resource**>(p);
      *pp = res;
 -    return static_cast<std::max_align_t *>(p) + 1;
-+    return static_cast<char *>(p) + coroutine_align;
++    return static_cast<coroutine_align_t *>(p) + 1;
    }
  
    static void operator delete(void * raw, const std::size_t size) noexcept
    {
 -    const auto p = static_cast<std::max_align_t *>(raw) - 1;
-+    const auto p = static_cast<char *>(raw) - coroutine_align;
++    const auto p = static_cast<coroutine_align_t *>(raw) - 1;
      pmr::memory_resource * res = *reinterpret_cast<pmr::memory_resource**>(p);
 -    res->deallocate(p, size + sizeof(std::max_align_t));
-+    res->deallocate(p, size + coroutine_align, coroutine_align);
++    res->deallocate(p, size + sizeof(coroutine_align_t), coroutine_align);
    }
  #else
    template<typename ... Args>
@@ -191,16 +221,16 @@ diff --git a/boost/cobalt/this_coro.hpp b/boost/cobalt/this_coro.hpp
      // | memory_resource | size_t | <padding> | coroutine.
 -    constexpr auto block_size =  sizeof(tt) / sizeof(std::max_align_t)
 -                              + (sizeof(tt) % sizeof(std::max_align_t) ? 1 : 0);
-+    constexpr auto block_size =  sizeof(tt) / coroutine_align
-+                              + (sizeof(tt) % coroutine_align ? 1 : 0);
++    constexpr auto block_size =  sizeof(tt) / sizeof(coroutine_align_t)
++                              + (sizeof(tt) % sizeof(coroutine_align_t) ? 1 : 0);
  
  
      auto res = detail::get_memory_resource_from_args(args...);
 -    const auto p = res->allocate(size + (block_size * sizeof(std::max_align_t)));
-+    const auto p = res->allocate(size + (block_size * coroutine_align), coroutine_align);
++    const auto p = res->allocate(size + (block_size * sizeof(coroutine_align_t)), coroutine_align);
      new (p) tt(res, size);
 -    return static_cast<std::max_align_t*>(p) + block_size;
-+    return static_cast<char*>(p) + (block_size * coroutine_align);
++    return static_cast<coroutine_align_t*>(p) + block_size;
    }
  
    static void operator delete(void * raw) noexcept
@@ -210,18 +240,18 @@ diff --git a/boost/cobalt/this_coro.hpp b/boost/cobalt/this_coro.hpp
      // | memory_resource | size_t | <padding> | coroutine.
 -    constexpr auto block_size =  sizeof(tt) / sizeof(std::max_align_t)
 -                              + (sizeof(tt) % sizeof(std::max_align_t) ? 1 : 0);
-+    constexpr auto block_size =  sizeof(tt) / coroutine_align
-+                              + (sizeof(tt) % coroutine_align ? 1 : 0);
++    constexpr auto block_size =  sizeof(tt) / sizeof(coroutine_align_t)
++                              + (sizeof(tt) % sizeof(coroutine_align_t) ? 1 : 0);
  
 -    const auto p = static_cast<std::max_align_t*>(raw) - block_size;
-+    const auto p = static_cast<char*>(raw) - (block_size * coroutine_align);
++    const auto p = static_cast<coroutine_align_t*>(raw) - block_size;
  
      const auto tp = *reinterpret_cast<tt*>(p);
      const auto res = tp.first;
      const auto size = tp.second;
  
 -    res->deallocate(p, size +  (block_size * sizeof(std::max_align_t)));
-+    res->deallocate(p, size +  (block_size * coroutine_align), coroutine_align);
++    res->deallocate(p, size +  (block_size * sizeof(coroutine_align_t)), coroutine_align);
    }
  #endif
  
