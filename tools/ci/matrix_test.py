@@ -1335,13 +1335,15 @@ APT_RETRIES = '-o Acquire::Retries=5'
 
 def test_an_own_lane_installs_its_packages(root):
     # An own lane runs on its runner, never in the container, so the packages it needs come with
-    # its entry, by library, lane and target: crypto's constant-time lane natively has Valgrind,
-    # llvm-18 (llvm-symbolizer-18, which reads MemorySanitizer's frames) and libclang-rt-18-dev
-    # (clang-18's MemorySanitizer runtime and its sanitizer/ headers); on wasip2, where it runs
-    # dudect alone, none; every other own lane none. The own-lanes job installs them with apt on
-    # Linux, only where the list is not empty, before the lane runs.
+    # its entry, by library, lane and target: crypto's and secure's constant-time lanes natively
+    # have Valgrind, llvm-18 (llvm-symbolizer-18, which reads MemorySanitizer's frames) and
+    # libclang-rt-18-dev (clang-18's MemorySanitizer runtime and its sanitizer/ headers);
+    # crypto's on wasip2, where it runs dudect alone, none; every other own lane none. The
+    # own-lanes job installs them with apt on Linux, only where the list is not empty, before the
+    # lane runs.
     packages = ('valgrind', 'llvm-18', 'libclang-rt-18-dev')
-    assert matrix.OWN_LANE_PACKAGES == {('crypto', 'constant-time', 'native'): packages}
+    assert matrix.OWN_LANE_PACKAGES == {('crypto', 'constant-time', 'native'): packages,
+                                        ('secure', 'constant-time', 'native'): packages}
     boost_only(root)
     oracle_library(root, 'beta')
     harness.add_library(root, 'crypto',
@@ -1350,9 +1352,16 @@ def test_an_own_lane_installs_its_packages(root):
                         'webcpp.run plain : plain.cpp ;\n'
                         'webcpp.lane constant-time : plain : native wasip2 ;\n',
                         {'plain.cpp': 'int main() {}\n'})
+    harness.add_library(root, 'secure',
+                        'import webcpp ;\n'
+                        'webcpp.targets native ;\n'
+                        'webcpp.run plain : plain.cpp ;\n'
+                        'webcpp.lane constant-time : plain : native ;\n',
+                        {'plain.cpp': 'int main() {}\n'})
     assert {entry.get('id', entry['lane']): entry['apt'] for entry in own_lanes(root)} == {
         'oracle': [], 'native.crypto.constant-time': list(packages),
-        'wasip2.crypto.constant-time': []}, own_lanes(root)
+        'wasip2.crypto.constant-time': [], 'native.secure.constant-time': list(packages)}, \
+        own_lanes(root)
     steps = job_steps(workflow_jobs()['own-lanes'])
     installs = [step for step in steps if 'matrix.apt' in step]
     assert len(installs) == 1, installs
@@ -1366,7 +1375,8 @@ def test_an_own_lane_installs_its_packages(root):
 def test_the_lint_installs_the_own_lanes_packages(root):
     # The lint analyses every own lane's programs, natively with clang-18 on Linux, so it needs
     # their headers: lint-packages prints every package of OWN_LANE_PACKAGES once, sorted, the
-    # one source, and the lint job installs them before the lint runs.
+    # one source (crypto's and secure's constant-time lanes list the same three), and the lint
+    # job installs them before the lint runs.
     result = run(root, 'lint-packages')
     assert result.returncode == 0, (result.returncode, result.stderr)
     assert result.stdout == 'libclang-rt-18-dev llvm-18 valgrind\n', result.stdout

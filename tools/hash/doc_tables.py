@@ -756,8 +756,8 @@ def llms_txt(data: Data) -> str:
              'examples, never as this library\'s API.', '',
              'Timing: every MAC, key derivation and password hash, and BLAKE2b\'s and BLAKE3\'s '
              'keyed modes, set DIT (data-independent timing) around each call on 64-bit ARM under '
-             'Apple\'s systems and Linux where the CPU has FEAT_DIT, on every synchronous backend, '
-             'and leave the thread\'s DIT as they found it; '
+             'Apple\'s systems, Linux and Windows where the CPU has FEAT_DIT, on every synchronous '
+             'backend, and leave the thread\'s DIT as they found it; '
              'unkeyed digests and Boost.Hash2\'s hmac<H> by alias do not, so an HMAC with DIT is '
              f'mac<macs::hmac<D>>. [Section]({page}#hash-backends-dit)', '',
              f'- [The guide]({page}): every chapter, example and table',
@@ -841,17 +841,21 @@ def dit_section(data: Data) -> list[str]:
         f'({link("Apple, enable DIT for constant-time cryptographic operations", APPLE_DIT)}). '
         'None of the libraries hash calls sets it, so hash does: every function that computes '
         'on a key, a password or a key derivation\'s secret input runs its whole body inside '
-        '`detail::timing_guard`, on every synchronous backend, which on 64-bit ARM under '
-        'macOS, iOS, Linux and Android, where the CPU has FEAT_DIT (`hw.optional.arm.FEAT_DIT` '
-        'on Apple\'s systems, `HWCAP_DIT` on Linux), sets DIT for the call and returns with '
+        '`webcpp::secure::timing_guard`, webcpp::secure\'s guard, on every synchronous backend, '
+        'which on 64-bit ARM under macOS, iOS, Linux, Android and Windows, where the CPU has '
+        'FEAT_DIT (`hw.optional.arm.FEAT_DIT` on Apple\'s systems, `HWCAP_DIT` on Linux, one '
+        'read of the register under structured exception handling on Windows), sets DIT for the '
+        'call and returns with '
         'the thread\'s DIT as it found it: clear when it was clear, set when the program set '
         'it itself (Apple\'s `timingsafe_enable_if_supported`) or an outer call did. An error '
-        'and an exception leave it as found too, and DIT is a thread\'s own state, so a call '
-        'never changes another thread\'s. A program does nothing. Elsewhere the guard executes '
+        'leaves it as found too, and so does an exception, while it unwinds the call. After the '
+        'catch, Windows on ARM64 clears DIT when it resumes the thread: a program there that set '
+        'DIT itself and catches an exception from a call sets it again after the catch '
+        '(webcpp::secure\'s guide, "Exceptions" of its guard). DIT is a thread\'s own state, so '
+        'a call never changes another thread\'s. Otherwise a program does nothing. Elsewhere '
+        'the guard executes '
         'no instruction: on x86 the counterpart, DOITM, is a register only the kernel writes; '
-        'on WebAssembly the engine decides; on Windows on ARM64 no documented way to ask '
-        'whether the CPU has FEAT_DIT was found, and DIT\'s instructions trap on a CPU without '
-        'it.', '',
+        'on WebAssembly the engine decides.', '',
         'The functions that set DIT, on every synchronous backend of their cells:', '']
     for chapter, names in keyed.items():
         lines.append(f'* {KEYED_CHAPTERS[chapter]}: {listed(names)}.')
@@ -890,10 +894,10 @@ def dit_section(data: Data) -> list[str]:
         'otherwise than it found it, from a thread with DIT clear and from one that set it; it '
         'checks that the unkeyed functions enter none. `test/timing_during_test.cpp` reads DIT '
         'while HKDF, PBKDF2 and `mac` compute, through a hash that records it at each update, '
-        'on the calling thread and on an `async_pbkdf2` pool\'s. The guard '
-        'is hash\'s own copy of '
-        'webcpp::crypto\'s, which depends on hash: a change to one is a change to the other, and '
-        'crypto\'s test `timing_hash_interop_test` runs both nested, in either order.', '']
+        'on the calling thread and on an `async_pbkdf2` pool\'s. The guard is secure\'s, shared '
+        'with webcpp::crypto and webcpp::codecs: secure\'s `timing_guard_nesting_test` nests '
+        'guards as two libraries do, and crypto\'s `timing_nested_hash_test` runs a keyed call '
+        'of hash inside a guarded call of crypto.', '']
     if (data.library / 'doc' / 'performance.adoc').is_file():
         lines += ['What the guard adds to a call, measured from a release build, is in '
                   '<<hash-performance-timing>>.', '']

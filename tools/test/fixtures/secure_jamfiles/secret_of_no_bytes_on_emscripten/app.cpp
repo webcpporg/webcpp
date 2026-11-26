@@ -5,8 +5,9 @@
 // https://www.boost.org/LICENSE_1_0.txt)
 
 // A program that names a secret of no bytes stops where it names it.
-#include <webcpp/crypto/secret.hpp>
+
+#include <webcpp/secure/secret.hpp>
 
 int main() {
-    return static_cast<int>(webcpp::crypto::secret<0>::size_bytes);
+    return static_cast<int>(webcpp::secure::secret<0>::size_bytes);
 }

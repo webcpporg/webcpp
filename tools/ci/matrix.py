@@ -194,14 +194,15 @@ CHROME_LANES = {('asio', 'browser'), ('asio', 'browser-workers'),
 
 # The packages an own lane needs from the runner's apt, by (library, lane, target): an own lane
 # runs on its runner, never in the container, so they come with its entry ("apt"), which the
-# own-lanes job installs on Linux. crypto's constant-time lane runs its native programs under
-# Valgrind's memcheck (valgrind, with valgrind/memcheck.h) and under MemorySanitizer, whose
-# runtime and sanitizer/ headers are libclang-rt-18-dev's, and its driver reads
-# MemorySanitizer's frames with llvm-symbolizer-18, which llvm-18 installs; on wasip2 it runs
-# dudect alone, which needs none. The lint, which analyses those programs natively, installs
-# every package of the table (lint-packages).
+# own-lanes job installs on Linux. crypto's and secure's constant-time lanes run their native
+# programs under Valgrind's memcheck (valgrind, with valgrind/memcheck.h) and under
+# MemorySanitizer, whose runtime and sanitizer/ headers are libclang-rt-18-dev's, and their
+# drivers read MemorySanitizer's frames with llvm-symbolizer-18, which llvm-18 installs; on
+# wasip2 crypto's runs dudect alone, which needs none. The lint, which analyses those programs
+# natively, installs every package of the table (lint-packages).
 OWN_LANE_PACKAGES: dict[tuple[str, str, str], tuple[str, ...]] = {
-    ('crypto', 'constant-time', 'native'): ('valgrind', 'llvm-18', 'libclang-rt-18-dev')}
+    ('crypto', 'constant-time', 'native'): ('valgrind', 'llvm-18', 'libclang-rt-18-dev'),
+    ('secure', 'constant-time', 'native'): ('valgrind', 'llvm-18', 'libclang-rt-18-dev')}
 
 # MSVC's lanes build 64-bit programs, embed their manifest with the linker and abbreviate b2's
 # paths against Windows's MAX_PATH, as xstate-cpp's green Windows jobs did. b2 abbreviates each

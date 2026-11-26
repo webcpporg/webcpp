@@ -103,6 +103,8 @@ Not built yet:
     `tools/test/emscripten_test.py`, `tools/test/crypto_jamfiles_test.py`,
     `tools/test/crypto_jamfiles_format_test.py`,
     `tools/test/hash_jamfiles_test.py`, `tools/test/hash_jamfiles_format_test.py`,
+    `tools/test/secure_jamfiles_test.py`, `tools/test/secure_collect_test.py`,
+    `tools/test/secure_dudect_judge_test.py`,
     `tools/test/external_test.py`,
     `tools/test/doc_test.py`,
     `tools/test/harness_test.py`, `tools/test/third_party_test.py`,
@@ -1323,7 +1325,17 @@ site's own decisions follow in the next sections.
   `hash2-mul128-msvc-arm64.patch`, Boost 1.92.0's `mul128.hpp` that MSVC for
   ARM64 rejects (C2601) wherever `boost/hash2/xxh3.hpp` is included, fixed
   upstream by https://github.com/boostorg/hash2/pull/49; the owner approved
-  carrying it on 2026-11-22.
+  carrying it on 2026-11-22. The second is
+  `cobalt-coroutine-align-msvc.patch`, Boost 1.92.0's Cobalt, whose promises'
+  `operator new` places a coroutine frame 8 bytes off a 16-byte boundary on
+  MSVC, where release builds fault on aligned SSE stores into it (hash's
+  `async_cobalt` on MSVC 14.3 x64): it aligns every coroutine allocation of
+  Cobalt to 16 on MSVC alone, every size, offset and alignment elsewhere
+  staying Boost 1.92.0's, after upstream's fix
+  https://github.com/boostorg/cobalt/commit/d67080b, whose form also changes
+  the layout off MSVC; it is carried under the owner's standing instruction of
+  2026-11-18, pending his confirmation. Cobalt's own bundles carry neither:
+  native Cobalt reads the configured Boost's headers.
   Source: `tools/ci/actions/boost/install.sh` (webcpp).
 - **Boost.JSON's definitions and Boost.Test's header-only framework are
   objects of webcpp's own build, `/webcpp//boost_json` and
@@ -6997,17 +7009,17 @@ cryptography over widely used C libraries that webcpp builds from their
 sources. Version 0.1 is the proposal's increments 1 and 2, as the owner set
 them on 2026-11-14: AES-GCM and the AES block cipher, a `random_device` on the
 system's generator, a constant-time comparison (named `constant_time_equal`
-since the uniform-types change), and secp256k1's BIP340 Schnorr and ECDSA
+since the uniform-types change, and webcpp::secure's since the secure change:
+chapter 17), and secp256k1's BIP340 Schnorr and ECDSA
 signatures, ECDH, strict DER and the x-only tweak. What is built after it is
 unreleased and has its blocks below: OpenSSL's memory option, the curves and
-constructions of the later changes, and `erase_secret`; what is decided and
-not built is in chapter 17.
+constructions of the later changes, and `erase_secret` (webcpp::secure's too
+since that change); what is decided and not built is in chapter 17.
 
 **Scope.**
 
 - **crypto holds primitives only, grouped in namespaces whose headers mirror
-  them: the root (`error`, `random_device`, `constant_time_equal`,
-  `erase_secret`, `config`), `backends`, `ciphers` (`aes128`, `aes192`,
+  them: the root (`error`, `random_device`, `config`), `backends`, `ciphers` (`aes128`, `aes192`,
   `aes256`, `gcm`, `aes128_gcm`, `aes256_gcm`, under
   `<webcpp/crypto/ciphers/>`) and `curves::secp256k1` (under
   `<webcpp/crypto/curves/>`).** The owner's rule of 2026-11-15: a protocol's
@@ -7074,40 +7086,54 @@ not built is in chapter 17.
   clang refuses under `<warnings-as-errors>on`.
   Source: `include/webcpp/crypto/detail/limits.hpp` (libs/crypto).
 - **One public header per responsibility; a backend's header checks that its
-  library is linked; `config.hpp`, `error.hpp`, `constant_time_equal.hpp`,
-  `erase_secret.hpp`, `random_device.hpp` and `<webcpp/crypto.hpp>` compile
-  with no backend linked.** A program that only draws random bytes or compares
-  tags names no backend library, and one that only signs names
+  library is linked; `config.hpp`, `error.hpp`, `random_device.hpp` and
+  `<webcpp/crypto.hpp>` compile with no backend linked.** A program that only
+  draws random bytes names no backend library, and one that only signs names
   `/third_party//secp256k1` alone.
   Source: `libraries/crypto/openspec/changes/genesis/reference/spec.md`
   section 2.2 (proposals); `test/Jamfile`'s headers-alone list (libs/crypto).
-- **`constant_time_equal` compares in constant time: it reads every byte,
-  accumulates the XOR of each pair in a `volatile` local read once after the
-  loop and reduces it without a branch; spans of different sizes compare
-  unequal without their contents being read.** Hash2's `digest<N>::operator==`
-  is `memcmp`; a size is public.
-  Source: `include/webcpp/crypto/constant_time_equal.hpp` (libs/crypto).
+- **crypto's secret hygiene is webcpp::secure's: `secure::constant_time_equal`,
+  `secure::erase_secret`, `secure::secret<N>`, `secure::declassify` and
+  `secure::detail::wipe`, with no alias in crypto.** crypto's `constant_time_equal.hpp`,
+  `erase_secret.hpp`, `secret.hpp`, `detail/wipe.hpp`, `detail/declassify.hpp`
+  and `detail/timing.hpp` are deleted, and a program that compared tags with
+  `crypto::constant_time_equal` names `webcpp::secure::constant_time_equal`
+  (`<webcpp/secure/constant_time_equal.hpp>`), which takes any two contiguous
+  sequences of bytes, Hash2's `digest<N>` and `secret<N>` included, reads
+  every byte, accumulates the XOR of each pair in a `volatile` local read once
+  after the loop and reduces it without a branch; sequences of different
+  sizes compare unequal without their contents being read, and a size is
+  public (chapter 17, secure).
+  Source: `libraries/secure/openspec/changes/genesis/design.md` D4 to D6 and
+  owner decision 5 (proposals); `include/webcpp/secure/constant_time_equal.hpp`
+  (libs/secure).
 - **Every public function that runs a backend's cryptographic code, and
-  `constant_time_equal`, holds `detail::timing_guard` as its first statement:
-  on 64-bit ARM under macOS, iOS, Linux and Android, where the CPU has
-  FEAT_DIT, it sets PSTATE.DIT for the call (`msr s3_3_c4_c2_5`, then `isb`)
-  and returns the thread's DIT as it found it, after an error and an exception
-  too; on x86, WebAssembly and Windows on ARM64 it is empty. A later
-  increment's public function that calls a backend holds one too and joins its
-  backend's coverage test, which checks through the seam
-  `WEBCPP_CRYPTO_DETAIL_TIMING_ENTERED` that each call entered its own
-  guard.** None of the C libraries sets DIT, which Apple requires of
-  constant-time code, and without it libsodium's X25519 was measured not
-  constant time on Apple silicon; a program does nothing. The guard's cost is
-  measured from a release build by `bench/collect.py --timing` and published
-  beside the throughput, and the constant-time lane sets no DIT of its own: it
-  measures what a program gets. webcpp::hash's keyed functions hold hash's own
-  copy of the guard, a change to either copy is a change to both, and
-  `test/timing_hash_interop_test.cpp` runs the two together (chapter 17, hash).
+  `secure::constant_time_equal`, holds `secure::timing_guard` as its first
+  statement:
+  on 64-bit ARM under macOS, iOS, Linux, Android and Windows, where the CPU
+  has FEAT_DIT, it sets PSTATE.DIT for the call and returns the thread's DIT
+  as it found it, after an error and while an exception unwinds the call too
+  (Windows on ARM64 clears DIT when it resumes the thread after a catch, chapter
+  17, secure, D3); on x86, WebAssembly and ARM64EC it is empty. A later increment's public function that calls a
+  backend holds one too and joins its backend's coverage test, which checks
+  through the seam `WEBCPP_SECURE_TIMING_ENTERED` that each call entered its
+  own guard, counting the guards declared under `include/webcpp/crypto/`.**
+  None of the C libraries sets DIT, which Apple requires of constant-time
+  code, and without it libsodium's X25519 was measured not constant time on
+  Apple silicon; a program does nothing. The guard is the one of
+  webcpp::secure, which crypto, hash and the codecs share (chapter 17,
+  secure), so a keyed call of hash inside a guarded call of crypto nests in
+  either order, which `test/timing_nested_hash_test.cpp` runs. The guard's
+  cost of reference is secure's, measured from a release build and published
+  on its page (`doc/performance.adoc`); crypto's own page publishes the
+  throughput and keeps its own measurement of the guard, taken
+  by its bench (37.0 and 1.2 ns, on an idle machine), and the constant-time
+  lane sets no DIT of its own: it measures what a program gets.
   Source: `libraries/crypto/openspec/changes/data-independent-timing/design.md`
-  D1 to D7 (proposals); `include/webcpp/crypto/detail/timing.hpp`,
-  `test/timing_coverage_<backend>_test.cpp`,
-  `test/timing_hash_interop_test.cpp` (libs/crypto).
+  D1 to D7 (proposals); `libraries/secure/openspec/changes/genesis/design.md`
+  D2 and D3 (proposals); `test/timing_coverage_<backend>_test.cpp`,
+  `test/timing_nested_hash_test.cpp` (libs/crypto);
+  `include/webcpp/secure/timing_guard.hpp` (libs/secure).
 - **`<windows.h>` is reached only through `detail/windows.hpp`, which defines
   `NOMINMAX` and `WIN32_LEAN_AND_MEAN` only when absent and undefines only
   what it defined, and every header writes `(max)()`, `(min)()` and
@@ -7278,7 +7304,8 @@ not built is in chapter 17.
   `from_secret`, `from_bytes`, `from_key`, `from_keys`, `from_keypair`,
   `derive_from_seed` and `generate`, with no `make`. Ed25519ph is a scheme,
   `eddsa_prehashed`; the secret-hygiene utilities are named by what they do:
-  `constant_time_equal`, `erase_secret`; the AEAD contract is
+  `constant_time_equal`, `erase_secret` (webcpp::secure's since that name
+  moved, chapter 17); the AEAD contract is
   `secret_key_encryption::aead`'s and the secret boxes
   `secret_key_encryption`'s; the one-shot ChaCha20-Poly1305 template is
   `ciphers::basic_chacha20_poly1305`. Bytes passed where a signature or a key
@@ -7445,10 +7472,14 @@ not built is in chapter 17.
   (proposals); `test/support/counting.hpp`, `test/openssl_memory/Jamfile`
   (libs/crypto).
 - **Key schedules inside webcpp's objects are wiped on destruction and on
-  move by stores through a `volatile` pointer followed by
-  `std::atomic_signal_fence(std::memory_order_seq_cst)`.** The optimiser
-  cannot drop these stores, where it can drop a `memset`.
-  Source: `include/webcpp/crypto/detail/wipe.hpp` (libs/crypto).
+  move by webcpp::secure's wipe, `secure::detail::wipe`: stores through a
+  `volatile` pointer followed by
+  `std::atomic_signal_fence(std::memory_order_seq_cst)`; a C library's plain
+  state is erased as a range of one,
+  `secure::erase_secret(std::span(&context, 1))`.** The optimiser cannot drop
+  these stores, where it can drop a `memset`.
+  Source: `include/webcpp/secure/detail/wipe.hpp` (libs/secure);
+  `libraries/secure/openspec/changes/genesis/design.md` D4 (proposals).
 
 **OpenSSL's memory option (built after 0.1.0; plan Tasks 15, 16 and 33).**
 
@@ -7497,9 +7528,15 @@ not built is in chapter 17.
   external linkage, each block headed by its size and aligned to the larger
   of `alignof(std::max_align_t)` and `__STDCPP_DEFAULT_NEW_ALIGNMENT__`; with
   exceptions each call into the resource sits in a `try` whose `catch (...)`
-  returns null.** OpenSSL calls them as C functions and frees without a size;
-  no exception may cross OpenSSL.
-  Source: `include/webcpp/crypto/backends/openssl.hpp` (libs/crypto).
+  returns null (or, in `free`, swallows the exception), inside a
+  `secure::timing_guard` engaged only when DIT is set, which sets DIT again
+  after the catch.** OpenSSL calls them as C functions and frees without a size;
+  no exception may cross OpenSSL. OpenSSL goes on after either catch inside the
+  guarded call that reached it, and Windows on ARM64 clears DIT when it resumes
+  a thread after a catch (chapter 17, secure, D3), so the adapter keeps DIT as
+  the call's guard wants; it never sets DIT where it was clear.
+  Source: `include/webcpp/crypto/backends/openssl.hpp`,
+  `test/openssl_memory/timing_adapter_test.cpp` (libs/crypto).
 - **On MSVC `backends/openssl.hpp` carries
   `#pragma detect_mismatch("webcpp_crypto_openssl_memory", ...)`, `"resource"`
   with the option and `"openssl"` without it.** Two files of one program
@@ -8828,7 +8865,7 @@ increments 1 and 2, whose state is first.
   formats and PEM), `curves::x25519` and `kx_keypair`, `ciphers::aead` with
   `chacha20_poly1305` (also on BearSSL and OpenSSL), its original form and
   `xchacha20_poly1305`, `ciphers::secretbox`, `hybrid::box` and `sealed_box`,
-  and `secret<N>` with the errors 15 to 20. `supports_v` and
+  and `secure::secret<N>` with the errors 15 to 20. `supports_v` and
   `default_backend_t` read the capability table, which `doc/tables/generate.py`
   writes from `crypto.json` and the tests the Jamfiles declare (it replaced
   `capabilities.py` and `measure.py`); the own lanes are `c-suites` (the
@@ -8845,7 +8882,7 @@ increments 1 and 2, whose state is first.
   timing), which wasmtime does not set; with DIT set in wasmtime's main thread,
   an experiment and not the lane, the case reads |t| 1.5 to 2.1. The native
   dudect programs no longer set DIT: the library sets it in each call on
-  64-bit ARM (chapter 15); the WebAssembly cannot set it. The page's
+  64-bit ARM, through webcpp::secure's guard (chapter 15); the WebAssembly cannot set it. The page's
   constant-time table and `crypto.json` record it as an open finding, not a
   pass, and the lane prints its value without judging it. Valgrind,
   MemorySanitizer and dudect are not run on wasip3 or Emscripten, which the
@@ -8864,7 +8901,7 @@ increments 1 and 2, whose state is first.
 
 - **Built on the branch `crypto/secp256k1-modules` of the library and the
   superproject, on increment 1's merged trees, awaiting the owner's merge:
-  libsecp256k1's remaining modules.** ECDH in three forms, each a `secret<N>`
+  libsecp256k1's remaining modules.** ECDH in three forms, each a `secure::secret<N>`
   (`agree_hashed`, `agree`, `agree_point` since unified-sign), recoverable
   signatures (`sign(crypto::ecdsa_sha256_recoverable, input)` and `recover`),
   the tweaks, negation and
@@ -8930,8 +8967,9 @@ Tasks 3.1 to 3.6, built on its branch, merged 2026-11-22).**
 - **Constant time is checked deterministically on Linux x86-64 and arm64
   (Valgrind memcheck and MemorySanitizer, each harness failing on a planted
   leak, and libsecp256k1's `ctime_tests`), and statistically by dudect's
-  method natively and under wasmtime on wasip2, through the seam
-  `WEBCPP_CRYPTO_DETAIL_DECLASSIFY`.** `constant_time_equal` compiles in the
+  method natively and under wasmtime on wasip2, through webcpp::secure's
+  `secure::declassify` (built under `WEBCPP_SECURE_CT_VALGRIND` or
+  `WEBCPP_SECURE_CT_MSAN`).** `secure::constant_time_equal` compiles in the
   user's translation unit, so it is checked at -O2 and -Os; under wasmtime the
   engine's compiler decides whether BearSSL's `bmul64` stays constant time.
   The page's per-target cells are generated from the lane's own entries, and
@@ -9005,7 +9043,7 @@ Tasks 3.1 to 3.6, built on its branch, merged 2026-11-22).**
 - **`ciphers::chacha20_poly1305` on BearSSL and OpenSSL is one shot only,
   with a nonce of exactly 12 bytes, refuses a message over 2^38 - 64 bytes with
   `message_too_long`, and where BearSSL leaves the tag check to its caller the
-  backend compares with `constant_time_equal` and zeroes `data` on a mismatch;
+  backend compares with `secure::constant_time_equal` and zeroes `data` on a mismatch;
   it is a family of the one-shot template
   `ciphers::basic_chacha20_poly1305<Family, Backend>`, not new traits.**
   BearSSL's ChaCha20-Poly1305 is one function over the whole message; 12
@@ -9527,11 +9565,12 @@ summary.
   `organization/openspec/changes/site-increments-4-5/specs/site/spec.md`
   (proposals).
 
-### hash (hashing and key derivation over Boost.Hash2 and C backends; wrapper; accepted 2026-11-14, increments 1 to 7 built, not merged)
+### hash (hashing and key derivation over Boost.Hash2 and C backends; wrapper; accepted 2026-11-14, increments 1 to 7 merged)
 
 webcpp::hash is one entry point for hashing and key derivation in a C++20
-program on every target webcpp has, a wrapper (`"port-of": null`). Increment 1
-is built on the library's branch (`libs/hash`, to become `webcpporg/hash`):
+program on every target webcpp has, a wrapper (`"port-of": null`). It is
+implemented in `webcpporg/hash`, the submodule `libs/hash`, its increments 1 to
+7 merged into the `main` of its repository and of the superproject. Increment 1:
 Boost.Hash2's algorithms and `hmac` re-exported by alias (`algorithms.hpp`,
 `hmac.hpp`); Keccak-256 with the original padding over XKCP's permutation
 (`keccak.hpp`) and BLAKE3 over its official C implementation (`blake3.hpp`),
@@ -9573,9 +9612,8 @@ allocates nothing in webcpp's own code; increment 7 adds an asynchronous family
 in `async.hpp` over webcpp::asio (any completion token, Cobalt's `use_op`
 included): the password hashes and PBKDF2 on a thread pool where the build has
 threads, the digests, HMAC and HKDF through a post, and `backends::webcrypto`,
-the browser's WebCrypto on Emscripten, which only that family takes. Its
-repository, `webcpporg/hash`, is still to be created by the owner (gates G1, G2
-and G4); the proposal, with the specification, the design and the plan, is in
+the browser's WebCrypto on Emscripten, which only that family takes. The
+proposal, with the specification, the design and the plan, is in
 `libraries/hash/openspec/changes/genesis/` (proposals).
 
 - **Two constructions of webcpp's own, over an audited primitive each, and no
@@ -9608,7 +9646,7 @@ and G4); the proposal, with the specification, the design and the plan, is in
   Source: `libraries/hash/openspec/changes/genesis/reference/spec.md` section
   5 (proposals).
 - **Every function that computes on a key, a password or a key derivation's
-  secret input holds `detail::timing_guard` as its first statement, on every
+  secret input holds `secure::timing_guard` as its first statement, on every
   backend: `mac`, the key derivations, the password hashes (`bcrypt_verify`
   included), and the keyed modes of BLAKE2b (`digest_of` and `hasher` when the
   options carry a key) and of the `blake3` class, which construct it with
@@ -9625,17 +9663,29 @@ and G4); the proposal, with the specification, the design and the plan, is in
   (`test/timing_coverage_<backend>_test.cpp`) reads `doc/capabilities.json`
   and fails when a keyed cell has no call, when a call's first guard is not
   its own function's, or when an unkeyed function enters one: a new keyed
-  function or cell holds the guard and gets its call. The guard is a copy of
-  webcpp::crypto's (`include/webcpp/hash/detail/timing.hpp`; crypto depends on
-  hash, so hash cannot include crypto's), with the engaged flag added; a change
-  to either copy is made to both, and crypto's
-  `test/timing_hash_interop_test.cpp` runs the two nested in either order. Its
-  cost is measured from a release build by `bench/collect.py --timing` and
-  published in `doc/performance.adoc`.
+  function or cell holds the guard and gets its call. The guard is webcpp::secure's, the one guard
+  crypto and hash share (hash depends on config and secure and on no other
+  webcpp library), with its `guard_engaged` flag: hash's first copy,
+  `detail/timing.hpp`, is deleted, and so is `detail/wipe.hpp`, whose stores
+  are `secure::detail::wipe`, reached through `secure::erase_secret` (a range
+  of one erases a C library's plain state). A test of hash counts its own
+  guards through the seam `WEBCPP_SECURE_TIMING_ENTERED`, filtered by
+  `include/webcpp/hash/` in the guard's `file_name()`, and reads
+  `secure::test::wipe_record` (`WEBCPP_SECURE_TEST_WIPE_RECORD`) for what a
+  wipe zeroed; crypto's `test/timing_nested_hash_test.cpp` runs a guarded call
+  of hash inside a guarded call of crypto. The guard's cost of reference is
+  secure's, measured from a release build and published in secure's
+  `doc/performance.adoc`; hash's own page keeps its own measurement of the
+  guard, taken by its bench on an idle machine. The guard leaves the thread's
+  DIT as it found it after an error and while an exception unwinds the call;
+  Windows on ARM64 clears DIT when it resumes the thread after a catch (chapter
+  17, secure, D3), and hash's own catches inside a guarded scope (Botan's
+  boundary) only erase and free before they return.
   Source: `libraries/hash/openspec/changes/data-independent-timing/design.md`
-  D1 to D9 (proposals); `include/webcpp/hash/detail/timing.hpp`,
-  `test/timing_coverage_<backend>_test.cpp` (libs/hash);
-  `test/timing_hash_interop_test.cpp` (libs/crypto).
+  D1 to D9, whose copy of the guard `libraries/secure/openspec/changes/genesis/design.md`
+  D2 and D4 replaced (proposals); `test/timing_coverage_<backend>_test.cpp`,
+  `test/support/timing_seam.hpp`, `test/support/wipe_record.hpp` (libs/hash);
+  `test/timing_nested_hash_test.cpp` (libs/crypto).
 - **hash follows crypto's naming rule: public names spelled out, algorithm
   proper names excepted.** HKDF's `ikm`, `prk` and `info` are renamed by a
   change of hash's.
@@ -9660,6 +9710,252 @@ and G4); the proposal, with the specification, the design and the plan, is in
   have is checked to give the same bytes on each pair of them, on random cases.
   Source: `libraries/hash/openspec/changes/genesis/reference/spec.md` section
   1.5 (proposals).
+
+### secure (side-channel and secret-in-memory primitives; own; accepted 2026-11-24, implemented)
+
+webcpp::secure is the one home of the primitives that crypto, hash and the
+codecs share to keep a secret from leaking through time and through memory, and
+holds no algorithm (`"port-of": null`, category Cryptography). It is
+implemented in `webcpporg/secure`, the submodule `libs/secure`, merged into the
+`main` of its repository and of the superproject with hash's and crypto's
+migrations onto it. Its headers are `<webcpp/secure.hpp>`, which includes the
+others, and `<webcpp/secure/{config,timing_guard,erase_secret,constant_time_equal,secret,declassify,constant_time}.hpp>`
+with `<webcpp/secure/detail/wipe.hpp>`; its target is `/webcpp/secure//secure`,
+header-only, depending on config and Boost's assert alone; every name is in
+`webcpp::secure` (the blocks in `webcpp::secure::constant_time`, test support in
+`webcpp::secure::test`), every function is `noexcept` and none allocates or
+throws. The proposal, with the specification, the design and the plan, is in
+`libraries/secure/openspec/changes/genesis/` (proposals); the page is
+`libs/secure/doc/`. The owner's nine decisions of 2026-11-24 are binding: a new
+library with no algorithm; config alone as its dependency, config staying macros
+only; everything under `webcpp::secure` and `<webcpp/secure/...>`; the guard as a
+public API; `erase_secret`, `constant_time_equal` and `secret<N>` moved from
+crypto with their names and no alias; the checkers' markers; the constant-time
+building blocks codecs needs; test support in each library's own
+`test/support/`; and the migrations of hash and then crypto in the same
+delivery.
+
+- **D1: one target, `secure`, headers only, nothing compiled and nothing
+  linked; no header of another webcpp library but config's.** `config.hpp`,
+  included first by every public header, includes `<webcpp/config.hpp>` first
+  and defines `WEBCPP_SECURE_NO_EXCEPTIONS` by chapter 6's rule; include guards
+  are `WEBCPP_SECURE_<PATH>_HPP`; `secure::detail` is not API and no header of
+  another library includes a header of `detail/`. The system calls the guard
+  makes are the C library's and the compiler's intrinsics. Every test runs with
+  exceptions on and off (`secure-run`, `secure-compile`), on native (clang and
+  gcc 15), wasip2, wasip3 and Emscripten, and on MSVC 14.3 and 14.5.
+  Source: `libraries/secure/openspec/changes/genesis/design.md` D1
+  (proposals); `build.jam`, `include/webcpp/secure/config.hpp` (libs/secure).
+- **D2: `timing_guard`, `cpu_has_dit()` and `dit_is_set()` are public, the one
+  guard of webcpp's libraries, and nest in any order.** An engaged guard runs
+  the seam (a test's build), sets DIT when the CPU has FEAT_DIT and it is clear,
+  and leaves DIT at its end as it found it: it clears DIT when it set it, and a
+  guard that found DIT set reads it again and sets it if something inside its
+  scope cleared it (a catch on Windows on ARM64, D3); a disengaged guard
+  (`timing_guard{false}`, for a function keyed only by its arguments) does
+  nothing, the seam included; each write keeps its `memory` clobber and an
+  `isb` after it; the guard is not copyable and not movable. A guard that finds
+  DIT set leaves it set, so crypto inside hash, hash inside crypto and a program
+  that set DIT itself all keep their state, and DIT is one thread's: a guard
+  never changes another's. The seam is `WEBCPP_SECURE_TIMING_ENTERED(where)`,
+  defined by a test before its first include in every translation unit of its
+  program (the constructor then takes a trailing `std::source_location`, so
+  the One Definition Rule applies); without it no function name or path reaches
+  a program. A library tells its own guards by `file_name()`, anchored on
+  `include/webcpp/<library>/` with either separator (B6). The page says what DIT
+  covers, Arm's list of data-independent instructions, and what it does not:
+  memory access patterns, branches, and arithmetic on registers that the
+  compiler may move across the writes. The guard costs 37.0 ns where it sets
+  and clears DIT, 1.2 ns where DIT is already set (two `mrs`) and nothing where
+  disengaged,
+  measured on a release build on an Apple M5 Max at a 1-minute load of 1.9, as
+  the page states (`bench/collect.py`, 2026-11-26).
+  Source: `libraries/secure/openspec/changes/genesis/design.md` D2 and owner
+  decision 4 (proposals); `include/webcpp/secure/timing_guard.hpp`,
+  `test/timing_guard_*_test.cpp`, `doc/guard.adoc` (libs/secure).
+- **D3: coverage by target, and FEAT_DIT on Windows.** The guard acts on
+  `defined(__aarch64__) && (defined(__APPLE__) || defined(__linux__))` (Android
+  included) and on `defined(_MSC_VER) && defined(_M_ARM64) && !defined(_M_ARM64EC)`;
+  there `WEBCPP_SECURE_TIMING_COVERED` is defined. Elsewhere (x86, ARM64EC,
+  WebAssembly) it is an empty class and both functions return `false`. FEAT_DIT
+  is read once: by `sysctlbyname("hw.optional.arm.FEAT_DIT")` on Apple's
+  systems, `getauxval(AT_HWCAP)` and `HWCAP_DIT` on Linux, and on Windows, which
+  documents neither a feature flag nor a user-mode read of `ID_AA64PFR0_EL1`,
+  by one read of the DIT register under `__try` and `__except`, whose filter
+  takes `STATUS_ILLEGAL_INSTRUCTION` as absent, in a function of its own that
+  holds no object needing unwinding (C2712); it needs `<excpt.h>` and
+  `<intrin.h>`, not `<windows.h>`. No DIT instruction runs where FEAT_DIT may
+  be absent but that read. Measured: on the owner's Windows 11 ARM64 machine,
+  MSVC 14.3 and 14.5, debug and release, the guard sets DIT and keeps it across
+  sleeps. Windows on ARM64 keeps DIT through the search for a handler, the
+  unwinding and the catch block, then resumes the thread after the catch (or in
+  an `__except` block) with DIT clear, from set as from clear
+  (`RtlRestoreContext`, observed on MSVC 14.3 and 14.5, debug and release;
+  Microsoft documents none of it): a guard whose scope holds the catch leaves
+  DIT as it found it at its end, code that computes on a secret after such a
+  catch holds a guard of its own, code that catches inside a guarded scope and
+  returns into a C library holds, around its `try`, a guard engaged only when
+  DIT is set (crypto's OpenSSL memory adapter), and after a catch outside every
+  guard DIT is clear. **Not tested: the path where FEAT_DIT is absent, which no
+  machine available ran; the filter is small, reviewed and fails closed.**
+  Source: `libraries/secure/openspec/changes/genesis/design.md` D3 and B7
+  (proposals); `include/webcpp/secure/timing_guard.hpp`,
+  `test/timing_guard_windows_test.cpp`, `test/timing_guard_exceptions_test.cpp`,
+  `doc/guard.adoc` (libs/secure).
+- **D4: `erase_secret(Range&&)` is crypto's, moved, over `secure::detail::wipe`,
+  and a C library's plain state is erased as a range of one (B1).** It takes a
+  contiguous sized range of non-const, trivially copyable elements, zeroes
+  `size() * sizeof(element)` bytes (a `std::string`'s size, not its capacity),
+  has no pointer and size form, and a refused range stops the build with a
+  message naming the ranges it takes. The wipe is stores through a `volatile`
+  pointer and then `std::atomic_signal_fence(std::memory_order_seq_cst)`. Its
+  test seam (B9) is hash's moved: a program built with
+  `WEBCPP_SECURE_TEST_WIPE_RECORD` defines
+  `secure::test::wipe_record(void const*, std::size_t)`, which `detail::wipe`
+  calls once its bytes are zero; without the macro nothing is declared. The
+  wipe covers the object's own storage, not a copy in a register or a
+  temporary.
+  Source: `libraries/secure/openspec/changes/genesis/design.md` D4, B1 and B9
+  (proposals); `include/webcpp/secure/erase_secret.hpp`,
+  `include/webcpp/secure/detail/wipe.hpp`, `test/erase_secret_test.cpp`,
+  `test/wipe_record_test.cpp` (libs/secure).
+- **D5: `constant_time_equal(first, second)` is one function over any two
+  contiguous sized ranges of one-byte elements (`std::uint8_t`,
+  `unsigned char`, `char`, `std::byte`), and over a `secret<N>` or a type whose
+  `bytes()` view it reads (B2).** It names no Boost.Hash2 type, so a `digest<N>`
+  works through its own range. Different sizes compare unequal without reading
+  the contents, a size being public; otherwise every byte is read, the XOR of
+  each pair accumulated with OR in a `volatile` local read once after the loop
+  and reduced to one bit without a branch (BearSSL's tag check, as crypto's),
+  under an engaged guard. A by-value `bytes()` result is held for the whole
+  comparison, so a temporary key's view does not dangle; `char` with the high bit
+  set and a sequence whose `data()` is null with a size of 31 against 32 bytes
+  are pinned by tests.
+  Source: `libraries/secure/openspec/changes/genesis/design.md` D5 and B2
+  (proposals); `include/webcpp/secure/constant_time_equal.hpp`,
+  `test/constant_time_equal_test.cpp` (libs/secure).
+- **D6: `secret<N>` is crypto's, moved with its interface.** `N > 0`;
+  zero-initialised; move-only, the source wiped on move and the target wiped
+  before it takes new bytes, a self-move changing nothing; `clone()` the only
+  copy; `bytes()` and the implicit view as `std::span<std::uint8_t const, N>`
+  on an lvalue, deleted on an rvalue so that no view dangles; `writable()` on an
+  lvalue; wiped on destruction through `detail::wipe`. A function that accepts
+  a secret accepts it through `bytes()` although it is not a range.
+  Source: `libraries/secure/openspec/changes/genesis/design.md` D6
+  (proposals); `include/webcpp/secure/secret.hpp`, `test/secret_test.cpp`
+  (libs/secure).
+- **D7: `declassify(x)` is a function template on a non-const trivially
+  copyable lvalue, empty in a program's build, memcheck's or MemorySanitizer's
+  in a checker's (B3).** Library code calls it on a value derived from secrets
+  that it branches on by design, right before the branch; the value is never
+  const, so that the branch reads it again. Under `WEBCPP_SECURE_CT_VALGRIND` it
+  is `VALGRIND_MAKE_MEM_DEFINED` and includes `<valgrind/memcheck.h>`; under
+  `WEBCPP_SECURE_CT_MSAN` it is `__msan_unpoison`; defining both stops the
+  build; neither includes anything in a program's build. The other half,
+  marking a secret and reading a checker's shadow, only a test does
+  (`test/support/constant_time_marks.hpp`), copied rather than moved from
+  crypto's, which keeps its own for its lane.
+  Source: `libraries/secure/openspec/changes/genesis/design.md` D7 and B3
+  (proposals); `include/webcpp/secure/declassify.hpp`,
+  `test/declassify_compile_test.cpp` (libs/secure).
+- **D8: the constant-time blocks (`constant_time::value_barrier`,
+  `mask_from_bit`, `is_zero_mask`, `is_equal_mask`, `is_less_mask`,
+  `is_in_range_mask`, `select`, `lookup`, `select_bytes`, `equal_mask`,
+  `less_mask`) take any unsigned integral type but `bool`, return masks (all
+  zeros or all ones, never a `bool`) and pass every mask through
+  `value_barrier` (B4, B5).** `value_barrier` is an `asm volatile` statement
+  with the value in a register on GCC and clang (BoringSSL's), a `volatile`
+  round trip on MSVC, on WebAssembly and under clang's MemorySanitizer (which
+  reports an `asm` statement's register input), and the identity in a constant
+  expression. `std::unsigned_integral` admits `bool`, so the blocks are
+  constrained by `detail::mask_word<U>`, `std::unsigned_integral<U> && !std::same_as<U, bool>`.
+  `lookup` reads every entry in order, compares the index in the wider of
+  `std::size_t` and the entry (a 64-bit entry keeps its top half on
+  WebAssembly's 32-bit `size_t`) and returns a value-initialised element for an
+  index past the table, `SIZE_MAX` included; its cost is the table's size, so a
+  caller with a large public table indexes it directly. The byte blocks read
+  every byte of both sequences, whose sizes are public and must be equal
+  (`BOOST_ASSERT` in a debug build; unequal sizes give the zero mask or write
+  nothing, pinned with assertions off); `less_mask` compares as big-endian
+  unsigned numbers. There are no signed blocks and no `msb`. Tests check every
+  block against a plain reference over every pair, and triple for
+  `is_in_range_mask`, of `std::uint8_t`, at random over the wider types with
+  their edges, in constant expressions where declared, and for allocation (a
+  counting `operator new` of every form sees none).
+  Source: `libraries/secure/openspec/changes/genesis/design.md` D8, B4 and B5
+  (proposals); `include/webcpp/secure/constant_time.hpp`,
+  `test/constant_time_test.cpp`, `test/constant_time_sizes_test.cpp`,
+  `test/allocation_test.cpp` (libs/secure).
+- **D9 and O1: test support lives in each library's own `test/support/`.**
+  secure's own are `timing_seam.hpp` (a recorder counting guards entered,
+  keeping the first's `function_name()`, filtered by `file_name()`),
+  `timing_dit.hpp` (`force_dit`, to test that a program that set DIT keeps it)
+  and `constant_time_marks.hpp`, in `webcpp::secure::test`; hash keeps its seam
+  recorder and DIT helper and its wipe recorder, and crypto keeps its seam
+  recorder and marks and has a DIT helper, each pointed at secure's seam and
+  counting its own library's guards. Not in `tools/node-test`, and no
+  `webcpp::core` library is made for them (owner's decision O1 of
+  2026-11-24); hex helpers stay where they are.
+  Source: `libraries/secure/openspec/changes/genesis/design.md` D9 and O1
+  (proposals); `test/support/` (libs/secure, libs/hash, libs/crypto).
+- **D10: the lane `constant-time` (`test/constant_time/`) checks the machine
+  code of every block, `constant_time_equal` and `secret<N>`'s moves, at the
+  speed and the space optimisation, and every checker runs planted leaks that it
+  must report.** memcheck (Valgrind, the operands marked undefined, ctgrind)
+  and MemorySanitizer (clang) report a `select` written with a branch and a
+  `lookup` that indexes; memcheck also reports a branch on an undeclassified
+  verdict; dudect, natively, with a control of two identical classes, measures
+  `constant_time_equal`, `lookup`, `select_bytes` and `less_mask` and a planted
+  comparison that returns at the first byte that differs. The CI's judge
+  (`test/constant_time/dudect_judge.py`, crypto's copied, tested by
+  `tools/test/secure_dudect_judge_test.py`) warns at |t| of 10 and fails a
+  hosted runner on two of three. The lane's programs are native only, one
+  checker build each, with no `_no_exceptions` twins, and its Jamfile says so;
+  the lane is `matrix.py`'s and `library.yml`'s, with its packages. **Measured
+  limits, recorded on the page and not hidden:** MemorySanitizer does not
+  report a branch on an undeclassified verdict (it drops a subtraction's carry,
+  so the verdict comes out initialised), and memcheck checks it; under
+  MemorySanitizer `value_barrier` is the round trip, not the `asm` statement; a
+  checker sees one compiler and one build, and the runs for the page used
+  Valgrind with gcc 14 because gcc 15 was not in the lane's container; dudect
+  shows a leak and cannot prove there is none; the x86-64 lane was not run
+  locally.
+  Source: `libraries/secure/openspec/changes/genesis/design.md` D10
+  (proposals); `test/constant_time/Jamfile`, `doc/blocks.adoc` (libs/secure);
+  `tools/ci/matrix.py`, `tools/test/secure_dudect_judge_test.py` (webcpp).
+- **D11: the documentation and the one measurement.** The page (`doc/`): what
+  secure is and is not, the guard with its coverage table, nesting, `guard_engaged`
+  and seam, erasing, `secret<N>`, `constant_time_equal`, `declassify`, the
+  blocks with their limits, the guard's cost and the changelog. The cost is
+  measured by `bench/collect.py` from a release build (it refuses another
+  variant), which writes `doc/measurements.json` and `doc/performance.adoc`
+  (generated, never edited) and states the machine's load averages, the
+  figures to be taken on an idle machine with a 1 minute load average below 2;
+  `tools/test/secure_collect_test.py` tests the script. The guard's lane on the
+  owner's Windows ARM64 virtual machine runs in a release build too, which the
+  withdrawn change did not.
+  Source: `libraries/secure/openspec/changes/genesis/design.md` D11
+  (proposals); `bench/collect.py`, `doc/performance.adoc` (libs/secure).
+- **B6 to B8: one seam told by `file_name()`; FEAT_DIT on Windows by an
+  SEH-guarded read; `<webcpp/secure.hpp>` includes every header.** None of the
+  headers brings a heavy dependency, so the convenience header costs a program
+  nothing it did not ask for, and `convenience_header_test` compiles it alone.
+  Source: `libraries/secure/openspec/changes/genesis/design.md` B6 to B8
+  (proposals); `test/convenience_header_test.cpp`,
+  `test/timing_seam_support_test.cpp` (libs/secure).
+- **The migrations are in the delivery (owner decision 9).** hash's guard and
+  wipe and then crypto's every guard, wipe, erase, comparison, secret and
+  declassify are secure's; `crypto/detail/timing.hpp`, `detail/wipe.hpp`,
+  `detail/declassify.hpp`, `erase_secret.hpp`, `constant_time_equal.hpp` and
+  `secret.hpp` and hash's `detail/timing.hpp` and `detail/wipe.hpp` are deleted
+  with no alias; hash depends on config and secure, crypto on hash and secure;
+  crypto's `timing_hash_interop_test` is `timing_nested_hash_test`, which nests
+  a guarded hash call in a guarded crypto call; the tools' user Jamfile tests
+  copy `libs/secure` as they copy hash's.
+  Source: `libraries/secure/openspec/changes/genesis/design.md` Migration Plan
+  (proposals); `tools/test/secure_jamfiles_test.py`,
+  `tools/test/crypto_jamfiles_test.py`, `tools/test/hash_jamfiles_test.py`
+  (webcpp).
 
 ## 18. Proposed, not decided
 

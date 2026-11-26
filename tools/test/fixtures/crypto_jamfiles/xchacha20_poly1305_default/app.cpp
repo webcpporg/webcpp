@@ -9,7 +9,7 @@
 // backend that ran. The key and nonce are the draft's: a real program draws its key from
 // random_device; a 24-byte nonce drawn at random is safe.
 #include <webcpp/crypto/ciphers/chacha20_poly1305.hpp>
-#include <webcpp/crypto/constant_time_equal.hpp>
+#include <webcpp/secure/constant_time_equal.hpp>
 
 #include <algorithm>
 #include <array>
@@ -50,7 +50,7 @@ int main() {
     bool ok = false;
     if (sealer) {
         auto const tag = sealer->seal(nonce, associated_data, data);
-        ok = tag && webcpp::crypto::constant_time_equal(*tag, expected_tag) &&
+        ok = tag && webcpp::secure::constant_time_equal(*tag, expected_tag) &&
              std::equal(expected_head.begin(), expected_head.end(), data.begin()) &&
              sealer->open(nonce, associated_data, data, expected_tag) && data == plaintext;
     }

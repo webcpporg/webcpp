@@ -8,8 +8,8 @@
 // computes each side's session keys from the other's public key, checks the client's transmit
 // key against kx.exp's and the server's receive key, and prints the backend that ran. The seeds
 // are libsodium's test's: a real program draws its key pair with generate().
-#include <webcpp/crypto/constant_time_equal.hpp>
 #include <webcpp/crypto/key_exchange/kx.hpp>
+#include <webcpp/secure/constant_time_equal.hpp>
 
 #include <array>
 #include <cstddef>
@@ -39,8 +39,8 @@ int main() {
             auto const client_keys = client->client_session_keys(*server_public);
             auto const server_keys = server->server_session_keys(*client_public);
             ok = client_keys && server_keys &&
-                 webcpp::crypto::constant_time_equal(client_keys->transmit.bytes(), expected) &&
-                 webcpp::crypto::constant_time_equal(server_keys->receive.bytes(), expected);
+                 webcpp::secure::constant_time_equal(client_keys->transmit.bytes(), expected) &&
+                 webcpp::secure::constant_time_equal(server_keys->receive.bytes(), expected);
         }
     }
     auto const name = key_exchange::kx_keypair<>::backend_type::name;

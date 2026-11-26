@@ -460,6 +460,27 @@ def boost_source() -> Path:
     return Path(found.group(1)) if found else (ROOT / '.local/boost-source').resolve()
 
 
+def released_cobalt_headers(destination: Path) -> Path:
+    """destination, filled with Boost.Cobalt's headers of the configured Boost as its release
+    archive has them, the pinned inputs of libs/cobalt/upstream/sync.py: the CI's Boost carries
+    the patches of tools/ci/actions/boost/patches, and each one applied to these headers is taken
+    back out here. Returns destination, a directory for sync.py's --boost-include."""
+    (destination / 'boost').mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(boost_include() / 'boost/cobalt.hpp', destination / 'boost/cobalt.hpp')
+    # copyfile: Homebrew's headers are read-only, and a patch taken out rewrites a copy.
+    shutil.copytree(boost_include() / 'boost/cobalt', destination / 'boost/cobalt',
+                    copy_function=shutil.copyfile)
+    environment = dict(os.environ, GIT_CEILING_DIRECTORIES=str(destination.parent))
+    for patch in sorted((ROOT / 'tools/ci/actions/boost/patches').glob('*.patch')):
+        reverse = ('git', '-C', str(destination), 'apply', '--reverse',
+                   '--include=boost/cobalt.hpp', '--include=boost/cobalt/*')
+        if subprocess.run((*reverse, '--check', str(patch)), env=environment,
+                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                          check=False).returncode == 0:
+            subprocess.run((*reverse, str(patch)), env=environment, check=True)
+    return destination
+
+
 # A line of a user-config.jam that configures gcc, and the version it names.
 USING_GCC = re.compile(r'^\s*using\s+gcc\s*(?::\s*([^\s:;]+))?', re.MULTILINE)
 

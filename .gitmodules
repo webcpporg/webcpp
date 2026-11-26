@@ -96,3 +96,6 @@
 [submodule "third_party/libs/botan"]
 	path = third_party/libs/botan
 	url = https://github.com/randombit/botan.git
+[submodule "libs/secure"]
+	path = libs/secure
+	url = ../secure.git

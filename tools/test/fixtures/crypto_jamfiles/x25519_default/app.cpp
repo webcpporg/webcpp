@@ -8,8 +8,8 @@
 // and Bob's public key on the default backend, checks it against the RFC's, and prints the
 // backend that ran. The keys are the RFC's: a real program draws its own, and never prints a
 // shared secret.
-#include <webcpp/crypto/constant_time_equal.hpp>
 #include <webcpp/crypto/curves/x25519.hpp>
+#include <webcpp/secure/constant_time_equal.hpp>
 
 #include <array>
 #include <cstdint>
@@ -39,7 +39,7 @@ int main() {
         return 1;
     }
     auto const shared = alice->agree(*bob);
-    bool const ok = shared && webcpp::crypto::constant_time_equal(shared->bytes(), expected);
+    bool const ok = shared && webcpp::secure::constant_time_equal(shared->bytes(), expected);
     auto const name = x25519::keypair::backend_type::name;
     std::printf("x25519 %s backend=%.*s\n", ok ? "ok" : "FAILED", static_cast<int>(name.size()),
                 name.data());

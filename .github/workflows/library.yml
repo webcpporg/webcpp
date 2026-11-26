@@ -423,22 +423,24 @@ jobs:
           WEBCPP_WASIP2_TEST_TIMEOUT: ${{ (matrix.library == 'crypto' && matrix.lane == 'constant-time') && '1800' || '600' }}
         run: python3 tools/ci/matrix.py own-lane "$LANE"
 
-      # crypto's constant-time lane: every dudect output printed, a warning for every |t| of 10
-      # or more, and on a runner GitHub hosts a case over 10 measured again in two fresh
-      # processes, failing when two of the three exceed 10 (libs/crypto's change api-gaps, D7).
-      # The launcher's bound is the lane's, so a run of the judge's own lasts at most that, and
-      # the judge's subprocess timeout (2400 s) lies beyond it.
+      # crypto's and secure's constant-time lanes, each by its own library's judge: every dudect
+      # output printed, a warning for every |t| of 10 or more, and on a runner GitHub hosts a case
+      # over 10 measured again in two fresh processes, failing when two of the three exceed 10
+      # (libs/crypto's change api-gaps, D7; secure's judge is a copy of crypto's). The launcher's
+      # bound is the lane's, so a run of the judge's own lasts at most that, and the judge's
+      # subprocess timeout (2400 s) lies beyond it.
       - name: Judge dudect
-        if: ${{ !cancelled() && matrix.library == 'crypto' && matrix.lane == 'constant-time' }}
+        if: ${{ !cancelled() && matrix.lane == 'constant-time' && (matrix.library == 'crypto' || matrix.library == 'secure') }}
         env:
           WEBCPP_WASIP2_TEST_TIMEOUT: '1800'
+          LIBRARY: ${{ matrix.library }}
           TARGET: ${{ matrix.platform }}
           RERUN: ${{ runner.environment == 'github-hosted' && '--rerun' || '' }}
         shell: bash
         run: |
           # RERUN is empty off the hosted runners, so it is left unquoted to vanish.
           # shellcheck disable=SC2086
-          python3 libs/crypto/test/constant_time/dudect_judge.py --bin bin \
+          python3 "libs/$LIBRARY/test/constant_time/dudect_judge.py" --bin bin \
             --target "$TARGET" $RERUN --launcher tools/boost/asio-wasip2/run.sh
 
       - name: Save the third-party builds
