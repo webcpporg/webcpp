@@ -66,7 +66,8 @@ def test_changed_ssl_maintainer_input_is_refused(root: Path) -> None:
     ssl_source.write_text(ssl_source.read_text() + '\n// Different upstream input.\n')
     result = subprocess.run(
         [sys.executable, str(harness.ROOT / 'libs/cobalt/upstream/sync.py'),
-         '--boost-include', str(harness.boost_include()), '--boost-source', str(source), '--check'],
+         '--boost-include', str(harness.released_cobalt_headers(root / 'released Boost')),
+         '--boost-source', str(source), '--check'],
         text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=60)
     harness.expect(result, False,
                    'upstream file differs from pinned Cobalt 1.92: libs/cobalt/src/io/ssl.cpp')
