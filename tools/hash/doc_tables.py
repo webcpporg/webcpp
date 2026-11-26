@@ -848,8 +848,12 @@ def dit_section(data: Data) -> list[str]:
         'call and returns with '
         'the thread\'s DIT as it found it: clear when it was clear, set when the program set '
         'it itself (Apple\'s `timingsafe_enable_if_supported`) or an outer call did. An error '
-        'and an exception leave it as found too, and DIT is a thread\'s own state, so a call '
-        'never changes another thread\'s. A program does nothing. Elsewhere the guard executes '
+        'leaves it as found too, and so does an exception, while it unwinds the call. After the '
+        'catch, Windows on ARM64 clears DIT when it resumes the thread: a program there that set '
+        'DIT itself and catches an exception from a call sets it again after the catch '
+        '(webcpp::secure\'s guide, "Exceptions" of its guard). DIT is a thread\'s own state, so '
+        'a call never changes another thread\'s. Otherwise a program does nothing. Elsewhere '
+        'the guard executes '
         'no instruction: on x86 the counterpart, DOITM, is a register only the kernel writes; '
         'on WebAssembly the engine decides.', '',
         'The functions that set DIT, on every synchronous backend of their cells:', '']
