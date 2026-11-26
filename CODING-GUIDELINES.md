@@ -67,10 +67,10 @@ Design:
 14. The organization's design
 15. The libraries' design
 
-Not built yet:
+Not in the design yet:
 
 16. Roadmap
-17. Decided, not built
+17. Decided, not yet in chapters 14 and 15
 18. Proposed, not decided
 19. Conflicts and open questions
 
@@ -8778,9 +8778,9 @@ What webcpp does not have yet, and the chapters that mention it:
   webcpp::asio (chapter 15's trystero entry). Authenticated encryption and
   randomness are webcpp::crypto's, and the relays' WebSockets Beast's.
   Trystero can then retain its protocol over those shared facilities.
-- **crypto after 0.1** (chapter 17): constant time checked, sizes and
-  throughput measured, the browser lane, the CI's nightly level, NIST CAVP's
-  vectors, ChaCha20-Poly1305 and Botan.
+- **crypto after 0.1** (chapter 17): the browser lane, the CI's nightly
+  level, NIST CAVP's vectors and Botan. Its constant-time lane, its sizes and
+  throughput, and ChaCha20-Poly1305 merged with the foundation's increment 1.
 - **The libraries web developers use most,** brought to C++: a JavaScript
   interpreter (QuickJS), libp2p, HTTP fetch.
 - **The site, increments 2 to 8.** Increment 1 is done: the site's
@@ -8833,15 +8833,18 @@ What webcpp does not have yet, and the chapters that mention it:
 - **Bundled toolchains.** Each toolchain is installed by hand and configured
   in `user-config.jam` (`AGENTS.md` chapter 1), until webcpp bundles them.
 
-## 17. Decided, not built
+## 17. Decided, not yet in chapters 14 and 15
 
-The proposals the owner accepted that are not in the superproject's `main`,
-each with its decisions as decided. While a proposal is open, its own
-`design.md` and specification hold it in full and rule over this summary; the
-change that builds it moves its decisions into chapter 14 or 15. Their
-conflicts with chapters 1 to 13 are in chapter 19.
+The proposals the owner accepted whose decisions are not yet in chapter 14 or
+15, each with its decisions as decided and its heading saying how much of it
+the superproject's `main` holds: wasi's redesign and the site's increments 4
+and 5 are not built, crypto's foundation is merged in part, and hash and secure
+are merged whole. While a proposal is open, its own `design.md` and
+specification hold it in full and rule over this summary; the change that
+builds it moves its decisions into chapter 14 or 15. Their conflicts with
+chapters 1 to 13 are in chapter 19.
 
-### crypto, after 0.1 (genesis accepted 2026-10-11, foundation accepted 2026-11-14; the foundation's increment 1 merged, its increment 2 built on its branch, not merged)
+### crypto, after 0.1 (genesis accepted 2026-10-11, foundation accepted 2026-11-14; the foundation's increments 1 and 2, increment 3's P-256 and increment 4's asynchronous family merged)
 
 The genesis's plan (`reference/plan.md`, revised on 2026-11-14) built version
 0.1 from its increments 1 and 2, and OpenSSL's memory option after it. The
@@ -8852,7 +8855,7 @@ Its rules are webcpp::hash's: one default backend per family and target with
 its reason stated, no profile and no per-family override (design D32), tables
 of size and speed only from release builds, and primitives only (D24). What
 is built is in chapter 15; what follows is decided and not built, except
-increments 1 and 2, whose state is first.
+increments 1 and 2 and P-256, whose state is given with each.
 
 **The foundation's increment 1 (plan Tasks 1 to 16; merged).**
 
@@ -8890,18 +8893,20 @@ increments 1 and 2, whose state is first.
   Source: `libs/crypto/doc/generated/constant-time.adoc`,
   `doc/tables/crypto.json` (libs/crypto).
 - **What is not built is in the other increments: BearSSL's remaining
-  modules (3), the browser backend and the asynchronous family (4), libsodium
-  completed (5), blst (6), Botan as a submodule (7), OpenSSL's remaining
-  algorithms (8), KZG, BN254, Shamir and HPKE (9 to 12).** Increment 2's
-  merges, the CI's run and the proposals' status are the owner's.
+  modules after P-256 (3), the browser backend (4, whose part A, the
+  asynchronous family over the synchronous backends, merged on 2026-11-22 from
+  the branch `crypto/async`, library `e8c0740`, superproject `2ce16b6`),
+  libsodium completed (5), blst (6), Botan as a submodule (7), OpenSSL's
+  remaining algorithms (8), KZG, BN254, Shamir and HPKE (9 to 12).** The CI's
+  run and the proposals' status are the owner's.
   Source: `libraries/crypto/openspec/changes/foundation/reference/roadmap.md`
   (proposals).
 
-**The foundation's increment 2 (plan Tasks 2.1 to 2.7; built on its branch).**
+**The foundation's increment 2 (plan Tasks 2.1 to 2.7; merged).**
 
-- **Built on the branch `crypto/secp256k1-modules` of the library and the
-  superproject, on increment 1's merged trees, awaiting the owner's merge:
-  libsecp256k1's remaining modules.** ECDH in three forms, each a `secure::secret<N>`
+- **Merged on 2026-11-19 from the branch `crypto/secp256k1-modules` of the
+  library (`6fc9d7a`) and of the superproject (`8fa1633`): libsecp256k1's
+  remaining modules.** ECDH in three forms, each a `secure::secret<N>`
   (`agree_hashed`, `agree`, `agree_point` since unified-sign), recoverable
   signatures (`sign(crypto::ecdsa_sha256_recoverable, input)` and `recover`),
   the tweaks, negation and
@@ -8944,19 +8949,20 @@ increments 1 and 2, whose state is first.
   Source: `libs/crypto/test/constant_time/Jamfile` and `test/sizes/Jamfile`.
 
 **The foundation's increment 3 (plan Tasks 3.1 to 3.11; its P-256 part,
-Tasks 3.1 to 3.6, built on its branch, merged 2026-11-22).**
+Tasks 3.1 to 3.6, merged 2026-11-22).**
 
-- **P-256 on BearSSL is built on the branch `crypto/p256` of the library and
-  the superproject, for webcpp::trystero's port of Trystero 0.27.0 (design
-  D36): the family, its formats, its oracles (OpenSSL natively and on WASI,
-  node's WebCrypto on Emscripten), its constant-time paths, sizes and
-  throughput, and the guide's signed handshakes.** Chapter 15 holds what is
+- **P-256 on BearSSL, merged on 2026-11-22 from the branch `crypto/p256` of
+  the library (`dd176cf`) and of the superproject (`83755de`), for
+  webcpp::trystero's port of Trystero 0.27.0 (design D36): the family, its
+  formats, its oracles (OpenSSL natively and on WASI, node's WebCrypto on
+  Emscripten), its constant-time paths, sizes and throughput, and the guide's
+  signed handshakes.** Chapter 15 holds what is
   built. NIST's ACVP vectors wait for the `acvp` submodule of Task 3.8, and
   the WebCrypto oracle runs in node, Chrome with the browser lane's increment.
   Source: `libraries/crypto/openspec/changes/foundation/reference/plan.md`
   Tasks 3.1 to 3.6 (proposals).
-- **The rest of increment 3 is outlined, each task written in full when
-  P-256 has merged: P-384 and P-521 on the same engine (3.7), X25519 on
+- **The rest of increment 3 is outlined, each task to be written in full now
+  that P-256 has merged: P-384 and P-521 on the same engine (3.7), X25519 on
   BearSSL and the `acvp` submodule (3.8), AES-CTR, AES-CBC, AES-CCM and
   AES-EAX on BearSSL (3.9), RSA (3.10), and the increment's close (3.11).**
   Source: `libraries/crypto/openspec/changes/foundation/reference/plan.md`
@@ -9565,7 +9571,7 @@ summary.
   `organization/openspec/changes/site-increments-4-5/specs/site/spec.md`
   (proposals).
 
-### hash (hashing and key derivation over Boost.Hash2 and C backends; wrapper; accepted 2026-11-14, increments 1 to 7 merged)
+### hash (hashing and key derivation over Boost.Hash2 and C backends; wrapper; accepted 2026-11-14, increments 1 to 7 and the changes data-independent-timing and hkdf-pieces merged)
 
 webcpp::hash is one entry point for hashing and key derivation in a C++20
 program on every target webcpp has, a wrapper (`"port-of": null`). It is
@@ -9613,8 +9619,14 @@ in `async.hpp` over webcpp::asio (any completion token, Cobalt's `use_op`
 included): the password hashes and PBKDF2 on a thread pool where the build has
 threads, the digests, HMAC and HKDF through a post, and `backends::webcrypto`,
 the browser's WebCrypto on Emscripten, which only that family takes. The
-proposal, with the specification, the design and the plan, is in
-`libraries/hash/openspec/changes/genesis/` (proposals).
+change hkdf-pieces (decided 2026-11-23, merged 2026-11-25: library `569b51b`,
+superproject `5ee3e98`) adds HKDF over `byte_pieces` (`byte_pieces.hpp`), a
+list of spans read as if concatenated, with no cap and no heap on every
+backend that has the HMAC, and `async_hkdf_extract` and `async_hkdf_expand`
+beside `async_hkdf`, each over a span and over pieces. The proposal, with the
+specification, the design and the plan, is in
+`libraries/hash/openspec/changes/genesis/`, and the change in
+`libraries/hash/openspec/changes/hkdf-pieces/` (proposals).
 
 - **Two constructions of webcpp's own, over an audited primitive each, and no
   primitive.** HKDF and PBKDF2 over Boost.Hash2's `hmac<H>` on every target,
@@ -9687,8 +9699,9 @@ proposal, with the specification, the design and the plan, is in
   `test/support/timing_seam.hpp`, `test/support/wipe_record.hpp` (libs/hash);
   `test/timing_nested_hash_test.cpp` (libs/crypto).
 - **hash follows crypto's naming rule: public names spelled out, algorithm
-  proper names excepted.** HKDF's `ikm`, `prk` and `info` are renamed by a
-  change of hash's.
+  proper names excepted.** HKDF's `ikm`, `prk` and `info` became
+  `input_key_material`, `pseudorandom_key` and `application_info` with the
+  change hkdf-pieces.
   Source: `libraries/crypto/openspec/changes/uniform-types/design.md` owner
   decision 13, D11 (proposals).
 - **Seven increments, each usable alone.** The first, built, is Hash2 by alias,
@@ -9711,7 +9724,7 @@ proposal, with the specification, the design and the plan, is in
   Source: `libraries/hash/openspec/changes/genesis/reference/spec.md` section
   1.5 (proposals).
 
-### secure (side-channel and secret-in-memory primitives; own; accepted 2026-11-24, implemented)
+### secure (side-channel and secret-in-memory primitives; own; accepted 2026-11-24, merged)
 
 webcpp::secure is the one home of the primitives that crypto, hash and the
 codecs share to keep a secret from leaking through time and through memory, and
@@ -10388,9 +10401,9 @@ it says.
     `LNK2038`) is checked on no CI. The text is checked on clang, GNU ld and
     wasm-ld by the tools job, and ld64's on a developer's macOS, recorded in
     the ledger; the tools job has no macOS or Windows leg.
-  - crypto has no measured size until its sizes lane (chapter 17), so a pin's
-    move (rule 12) updates the submodule, the canary's commit and the tests
-    on every target, and no table.
+  - crypto's size tables are dated references of its sizes lane (chapter 17),
+    so a pin's move (rule 12) updates the submodule, the canary's commit and
+    the tests on every target, and no table.
   - The c-suites lane runs BearSSL's and libsecp256k1's own suites on one
     native toolset per target, so they never run on the MSVC build, whose
     BearSSL configuration (no seeder, `BR_USE_WIN32_RAND=0`) differs most from
