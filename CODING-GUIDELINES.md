@@ -1325,7 +1325,17 @@ site's own decisions follow in the next sections.
   `hash2-mul128-msvc-arm64.patch`, Boost 1.92.0's `mul128.hpp` that MSVC for
   ARM64 rejects (C2601) wherever `boost/hash2/xxh3.hpp` is included, fixed
   upstream by https://github.com/boostorg/hash2/pull/49; the owner approved
-  carrying it on 2026-11-22.
+  carrying it on 2026-11-22. The second is
+  `cobalt-coroutine-align-msvc.patch`, Boost 1.92.0's Cobalt, whose promises'
+  `operator new` places a coroutine frame 8 bytes off a 16-byte boundary on
+  MSVC, where release builds fault on aligned SSE stores into it (hash's
+  `async_cobalt` on MSVC 14.3 x64): it aligns every coroutine allocation of
+  Cobalt to 16 on MSVC alone, every size, offset and alignment elsewhere
+  staying Boost 1.92.0's, after upstream's fix
+  https://github.com/boostorg/cobalt/commit/d67080b, whose form also changes
+  the layout off MSVC; it is carried under the owner's standing instruction of
+  2026-11-18, pending his confirmation. Cobalt's own bundles carry neither:
+  native Cobalt reads the configured Boost's headers.
   Source: `tools/ci/actions/boost/install.sh` (webcpp).
 - **Boost.JSON's definitions and Boost.Test's header-only framework are
   objects of webcpp's own build, `/webcpp//boost_json` and
@@ -7102,8 +7112,9 @@ since that change); what is decided and not built is in chapter 17.
   statement:
   on 64-bit ARM under macOS, iOS, Linux, Android and Windows, where the CPU
   has FEAT_DIT, it sets PSTATE.DIT for the call and returns the thread's DIT
-  as it found it, after an error and an exception too; on x86, WebAssembly
-  and ARM64EC it is empty. A later increment's public function that calls a
+  as it found it, after an error and while an exception unwinds the call too
+  (Windows on ARM64 clears DIT when it resumes the thread after a catch, chapter
+  17, secure, D3); on x86, WebAssembly and ARM64EC it is empty. A later increment's public function that calls a
   backend holds one too and joins its backend's coverage test, which checks
   through the seam `WEBCPP_SECURE_TIMING_ENTERED` that each call entered its
   own guard, counting the guards declared under `include/webcpp/crypto/`.**
@@ -7517,9 +7528,15 @@ since that change); what is decided and not built is in chapter 17.
   external linkage, each block headed by its size and aligned to the larger
   of `alignof(std::max_align_t)` and `__STDCPP_DEFAULT_NEW_ALIGNMENT__`; with
   exceptions each call into the resource sits in a `try` whose `catch (...)`
-  returns null.** OpenSSL calls them as C functions and frees without a size;
-  no exception may cross OpenSSL.
-  Source: `include/webcpp/crypto/backends/openssl.hpp` (libs/crypto).
+  returns null (or, in `free`, swallows the exception), inside a
+  `secure::timing_guard` engaged only when DIT is set, which sets DIT again
+  after the catch.** OpenSSL calls them as C functions and frees without a size;
+  no exception may cross OpenSSL. OpenSSL goes on after either catch inside the
+  guarded call that reached it, and Windows on ARM64 clears DIT when it resumes
+  a thread after a catch (chapter 17, secure, D3), so the adapter keeps DIT as
+  the call's guard wants; it never sets DIT where it was clear.
+  Source: `include/webcpp/crypto/backends/openssl.hpp`,
+  `test/openssl_memory/timing_adapter_test.cpp` (libs/crypto).
 - **On MSVC `backends/openssl.hpp` carries
   `#pragma detect_mismatch("webcpp_crypto_openssl_memory", ...)`, `"resource"`
   with the option and `"openssl"` without it.** Two files of one program
@@ -9659,7 +9676,11 @@ proposal, with the specification, the design and the plan, is in
   of hash inside a guarded call of crypto. The guard's cost of reference is
   secure's, measured from a release build and published in secure's
   `doc/performance.adoc`; hash's own page keeps its own provisional
-  measurement of the guard, taken by its bench.
+  measurement of the guard, taken by its bench. The guard leaves the thread's
+  DIT as it found it after an error and while an exception unwinds the call;
+  Windows on ARM64 clears DIT when it resumes the thread after a catch (chapter
+  17, secure, D3), and hash's own catches inside a guarded scope (Botan's
+  boundary) only erase and free before they return.
   Source: `libraries/hash/openspec/changes/data-independent-timing/design.md`
   D1 to D9, whose copy of the guard `libraries/secure/openspec/changes/genesis/design.md`
   D2 and D4 replaced (proposals); `test/timing_coverage_<backend>_test.cpp`,
@@ -9728,7 +9749,9 @@ delivery.
 - **D2: `timing_guard`, `cpu_has_dit()` and `dit_is_set()` are public, the one
   guard of webcpp's libraries, and nest in any order.** An engaged guard runs
   the seam (a test's build), sets DIT when the CPU has FEAT_DIT and it is clear,
-  and clears it on destruction only if it set it; a disengaged guard
+  and leaves DIT at its end as it found it: it clears DIT when it set it, and a
+  guard that found DIT set reads it again and sets it if something inside its
+  scope cleared it (a catch on Windows on ARM64, D3); a disengaged guard
   (`timing_guard{false}`, for a function keyed only by its arguments) does
   nothing, the seam included; each write keeps its `memory` clobber and an
   `isb` after it; the guard is not copyable and not movable. A guard that finds
@@ -9743,7 +9766,8 @@ delivery.
   covers, Arm's list of data-independent instructions, and what it does not:
   memory access patterns, branches, and arithmetic on registers that the
   compiler may move across the writes. The guard costs 39.6 ns where it sets
-  and clears DIT, 0.5 ns where DIT is already set and nothing where disengaged,
+  and clears DIT, 1.3 ns where DIT is already set (two `mrs`) and nothing where
+  disengaged,
   measured on a release build on an Apple M5 Max under a load the page states
   (`bench/collect.py`; re-measured on an idle machine at the delivery).
   Source: `libraries/secure/openspec/changes/genesis/design.md` D2 and owner
@@ -9763,11 +9787,21 @@ delivery.
   `<intrin.h>`, not `<windows.h>`. No DIT instruction runs where FEAT_DIT may
   be absent but that read. Measured: on the owner's Windows 11 ARM64 machine,
   MSVC 14.3 and 14.5, debug and release, the guard sets DIT and keeps it across
-  sleeps. **Not tested: the path where FEAT_DIT is absent, which no machine
-  available ran; the filter is small, reviewed and fails closed.**
+  sleeps. Windows on ARM64 keeps DIT through the search for a handler, the
+  unwinding and the catch block, then resumes the thread after the catch (or in
+  an `__except` block) with DIT clear, from set as from clear
+  (`RtlRestoreContext`, observed on MSVC 14.3 and 14.5, debug and release;
+  Microsoft documents none of it): a guard whose scope holds the catch leaves
+  DIT as it found it at its end, code that computes on a secret after such a
+  catch holds a guard of its own, code that catches inside a guarded scope and
+  returns into a C library holds, around its `try`, a guard engaged only when
+  DIT is set (crypto's OpenSSL memory adapter), and after a catch outside every
+  guard DIT is clear. **Not tested: the path where FEAT_DIT is absent, which no
+  machine available ran; the filter is small, reviewed and fails closed.**
   Source: `libraries/secure/openspec/changes/genesis/design.md` D3 and B7
   (proposals); `include/webcpp/secure/timing_guard.hpp`,
-  `test/timing_guard_windows_test.cpp` (libs/secure).
+  `test/timing_guard_windows_test.cpp`, `test/timing_guard_exceptions_test.cpp`,
+  `doc/guard.adoc` (libs/secure).
 - **D4: `erase_secret(Range&&)` is crypto's, moved, over `secure::detail::wipe`,
   and a C library's plain state is erased as a range of one (B1).** It takes a
   contiguous sized range of non-const, trivially copyable elements, zeroes
